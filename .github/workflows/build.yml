@@ -54,6 +54,14 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       
+      # Windows特定配置
+      - name: Install Windows targets and tools
+        if: matrix.platform == 'windows-latest'
+        run: |
+          rustup target add ${{ matrix.target }}
+          choco install nuget.commandline
+        shell: powershell
+
       # Android特定配置
       - name: Install Android targets
         if: matrix.android
