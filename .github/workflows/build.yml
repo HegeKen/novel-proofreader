@@ -23,7 +23,7 @@ jobs:
             target: x86_64-pc-windows-msvc
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-          # Android构建配置
+          # Android构建配置 - 使用Ubuntu 22.04 (最新可用版本)
           - platform: ubuntu-22.04
             target: aarch64-linux-android  # ARM v8 (64-bit)
             android: true
@@ -70,6 +70,14 @@ jobs:
           # 为Android构建添加通用的目标平台
           rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
 
+      # Android特定：安装Java 17
+      - name: Setup Java for Android
+        if: matrix.android
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Setup Android SDK
         if: matrix.android
         uses: android-actions/setup-android@v3
@@ -90,6 +98,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
+
+      # Android构建需要的Linux依赖
+      - name: Install Android Linux dependencies
+        if: matrix.android
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk libc6-dev libstdc++-10-dev
 
       - name: Install frontend dependencies
         run: pnpm install
