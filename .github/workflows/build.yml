@@ -25,13 +25,13 @@ jobs:
             target: x86_64-unknown-linux-gnu
           # Android构建配置 - 使用Ubuntu 22.04 (最新可用版本)
           - platform: ubuntu-22.04
-            target: aarch64-linux-android  # ARM v8 (64-bit)
+            target: aarch64  # ARM v8 (64-bit)
             android: true
           - platform: ubuntu-22.04
-            target: armv7-linux-androideabi  # ARM v7 (32-bit)
+            target: armv7  # ARM v7 (32-bit)
             android: true
           - platform: ubuntu-22.04
-            target: x86_64-linux-android  # x86_64 (64-bit Intel/AMD)
+            target: x86_64  # x86_64 (64-bit Intel/AMD)
             android: true
 
     runs-on: ${{ matrix.platform }}
