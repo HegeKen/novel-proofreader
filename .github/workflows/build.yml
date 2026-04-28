@@ -54,13 +54,27 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       
+      # 为所有平台准备图标文件
+      - name: Prepare icon files
+        run: |
+          # 使用ImageMagick将PNG转换为ICO
+          if [ "$RUNNER_OS" == "Windows" ]; then
+              magick convert src-tauri/icons/icon.png src-tauri/icons/icon.ico
+          elif [ "$RUNNER_OS" == "Linux" ] || [ "$RUNNER_OS" == "macOS" ]; then
+              convert src-tauri/icons/icon.png src-tauri/icons/icon.ico
+          fi
+        shell: bash
+        continue-on-error: true
+
       # Windows特定配置
       - name: Install Windows targets and tools
         if: matrix.platform == 'windows-latest'
         run: |
           rustup target add ${{ matrix.target }}
-          choco install nuget.commandline
-        shell: powershell
+          choco install imagemagick
+          # 再次确认PNG到ICO的转换
+          magick convert src-tauri/icons/icon.png src-tauri/icons/icon.ico
+        shell: pwsh
 
       # Android特定配置
       - name: Install Android targets
