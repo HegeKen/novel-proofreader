@@ -3,6 +3,9 @@ name: Build Android
 on:
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: write
 
@@ -90,6 +93,17 @@ jobs:
         run: |
           cd src-tauri
           cargo tauri android build --target ${{ matrix.android_arch }}
+          # 重命名 APK 和 AAB 文件
+          VERSION=$(cat Cargo.toml | grep 'version =' | head -n1 | sed 's/version = "\(.*\)"/\1/')
+          APP_NAME="ProofReader"
+          # 重命名 APK
+          find gen/android/app/build/outputs/apk -name "*.apk" | head -n1 | while read apk; do
+            mv "$apk" "gen/android/app/build/outputs/apk/${APP_NAME}-v${VERSION}-${{ matrix.android_arch }}.apk"
+          done
+          # 重命名 AAB
+          find gen/android/app/build/outputs/bundle -name "*.aab" | head -n1 | while read aab; do
+            mv "$aab" "gen/android/app/build/outputs/bundle/${APP_NAME}-v${VERSION}-${{ matrix.android_arch }}.aab"
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_ANDROID_MIN_SDK_VERSION: 24
