@@ -56,7 +56,7 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 9
-          
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -157,7 +157,7 @@ jobs:
         if: ${{ matrix.android && env.HAS_ANDROID_KEYSTORE == 'true' }}
         run: |
           cd src-tauri
-          cargo tauri android build --target ${{ matrix.android_arch }} \
+          cargo tauri android build --target ${{ matrix.android_arch }} -- \
             --keystore $ANDROID_KEYSTORE \
             --keystore-password ${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
             --key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \

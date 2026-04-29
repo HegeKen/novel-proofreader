@@ -1,0 +1,114 @@
+name: Build Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  HAS_WINDOWS_CERT: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 != '' }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install Windows targets and tools
+        run: |
+          rustup target add ${{ matrix.target }}
+          choco install nuget.commandline
+        shell: powershell
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build frontend
+        run: pnpm build
+
+      # Windows签名：安装证书
+      - name: Install Windows code signing certificate
+        if: ${{ env.HAS_WINDOWS_CERT == 'true' }}
+        run: |
+          $certBytes = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}")
+          $certPath = Join-Path $env:TEMP "codesign.pfx"
+          [System.IO.File]::WriteAllBytes($certPath, $certBytes)
+          Write-Host "Certificate saved to $certPath"
+        shell: powershell
+
+      # Windows构建（带签名）
+      - name: Build Tauri app for Windows (signed)
+        if: ${{ env.HAS_WINDOWS_CERT == 'true' }}
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_WINDOWS_CERTIFICATE_PATH: ${{ runner.temp }}\codesign.pfx
+          TAURI_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        with:
+          args: --target ${{ matrix.target }}
+
+      # Windows构建（无签名）
+      - name: Build Tauri app for Windows (unsigned)
+        if: ${{ env.HAS_WINDOWS_CERT != 'true' }}
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target ${{ matrix.target }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: artifacts/**/*
+          generate_release_notes: true
