@@ -1,5 +1,5 @@
 /* ============================================================
-   小说校对助手 — Apple Liquid Glass Design
+   校对助手 — Apple Liquid Glass Design
    Apple-inspired design with liquid glass effects, dynamic gradients,
    fluid animations, and iOS/macOS aesthetics
    ============================================================ */
@@ -2409,6 +2409,52 @@ input, textarea, select {
 
   .header-center {
     display: none;
+  }
+
+  .header-left {
+    flex-shrink: 0;
+    min-width: 0;
+  }
+
+  .header-left .app-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+  }
+
+  .header-right {
+    flex-shrink: 0;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .btn-theme-toggle {
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  .btn-settings {
+    font-size: 0;
+    padding: 6px;
+    min-width: 36px;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 20px;
+  }
+
+  .btn-settings:hover {
+    transform: none;
+  }
+
+  .btn-settings::after {
+    font-size: 16px;
+    content: '⚙️';
   }
 
   /* Mobile Tab Bar */
