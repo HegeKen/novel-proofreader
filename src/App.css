@@ -14,6 +14,7 @@
   --bg-overlay: rgba(60, 64, 92, 0.5);
   --bg-hover: rgba(80, 84, 116, 0.6);
   --bg-active: rgba(100, 104, 140, 0.7);
+  --bg-highlight: rgba(47, 51, 71, 0.85);
 
   /* Text */
   --text-primary: #ffffff;
@@ -80,6 +81,7 @@
   --bg-overlay: rgba(255, 255, 255, 0.6);
   --bg-hover: rgba(245, 245, 247, 0.8);
   --bg-active: rgba(232, 232, 237, 0.9);
+  --bg-highlight: rgba(220, 220, 225, 0.9);
 
   /* Text */
   --text-primary: #1d1d1f;
@@ -136,8 +138,15 @@ html, body, #root {
   transition: background var(--duration-slow) var(--ease), color var(--duration) var(--ease);
 }
 
+@font-face {
+  font-family: 'MiSans';
+  src: local('MiSans'), local('MiSans-Normal'), local('MiSans-Light'), local('MiSans-Regular');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-family: 'MiSans', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   background: var(--bg-base);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
@@ -794,8 +803,9 @@ input, textarea, select {
 }
 
 .reader-paragraph.highlighted {
-  background: var(--accent-dim);
+  background: var(--bg-highlight);
   border-left-color: var(--accent);
+  border-left-width: 3px;
 }
 
 .line-number {
@@ -824,8 +834,8 @@ input, textarea, select {
 }
 
 .line-number.start-line {
-  color: #fff;
-  background: var(--accent);
+  color: var(--accent);
+  background: var(--bg-highlight);
   font-weight: 600;
   opacity: 1;
 }
@@ -891,31 +901,58 @@ input, textarea, select {
 
 /* 精确文本高亮样式 */
 .text-highlight {
-  padding: 1px 2px;
-  border-radius: 3px;
-  transition: background-color 0.3s ease;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+  font-weight: 500;
 }
 
 .text-highlight.highlight-old {
-  background-color: rgba(247, 118, 142, 0.4);
+  background: linear-gradient(135deg, rgba(247, 118, 142, 0.4) 0%, rgba(247, 118, 142, 0.25) 100%);
   color: var(--red);
+  border: 1px solid rgba(247, 118, 142, 0.3);
   animation: text-pulse-old 0.6s var(--ease);
+  box-shadow: 0 2px 8px rgba(247, 118, 142, 0.2);
 }
 
 .text-highlight.highlight-new {
-  background-color: rgba(158, 206, 106, 0.4);
+  background: linear-gradient(135deg, rgba(158, 206, 106, 0.4) 0%, rgba(158, 206, 106, 0.25) 100%);
   color: var(--green);
+  border: 1px solid rgba(158, 206, 106, 0.3);
   animation: text-pulse-new 1.2s var(--ease) forwards;
+  box-shadow: 0 2px 8px rgba(158, 206, 106, 0.2);
 }
 
 @keyframes text-pulse-old {
-  0%, 100% { background-color: rgba(247, 118, 142, 0.4); }
-  50% { background-color: rgba(247, 118, 142, 0.6); }
+  0% {
+    background: rgba(247, 118, 142, 0.6);
+    transform: scale(1.02);
+    box-shadow: 0 0 20px rgba(247, 118, 142, 0.4);
+  }
+  50% {
+    background: rgba(247, 118, 142, 0.5);
+  }
+  100% {
+    background: linear-gradient(135deg, rgba(247, 118, 142, 0.4) 0%, rgba(247, 118, 142, 0.25) 100%);
+    transform: scale(1);
+    box-shadow: 0 2px 8px rgba(247, 118, 142, 0.2);
+  }
 }
 
 @keyframes text-pulse-new {
-  0% { background-color: rgba(158, 206, 106, 0.5); }
-  100% { background-color: rgba(158, 206, 106, 0.25); }
+  0% {
+    background: rgba(158, 206, 106, 0.6);
+    transform: scale(1.02);
+    box-shadow: 0 0 20px rgba(158, 206, 106, 0.4);
+  }
+  50% {
+    background: rgba(158, 206, 106, 0.45);
+  }
+  100% {
+    background: linear-gradient(135deg, rgba(158, 206, 106, 0.4) 0%, rgba(158, 206, 106, 0.25) 100%);
+    transform: scale(1);
+    box-shadow: 0 2px 8px rgba(158, 206, 106, 0.2);
+  }
 }
 
 /* 精确高亮时的段落样式（不再整段高亮） */

@@ -65,6 +65,7 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
           retention-days: 7
+          compression-level: 0
 
   release:
     needs: build

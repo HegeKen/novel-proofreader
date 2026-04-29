@@ -1,7 +1,7 @@
 // ============================================================
 // 右侧校对区（带按行检测 + 采纳动画）
 // ============================================================
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useProofreadStore } from '../stores/proofreadStore';
 import { useAICheck } from '../hooks/useAICheck';
@@ -49,6 +49,21 @@ export function ProofreadPanel() {
     const chapter = chapters[currentChapterIndex];
   const chapterResults = chapter ? results[chapter.id] ?? [] : [];
   const totalLines = chapter ? chapter.content.split('\n').length : 0;
+  
+  // 确保始终有段落列表用于高亮匹配
+  const displayResults = useMemo(() => {
+    if (!chapter) return [];
+    if (chapterResults.length > 0) return chapterResults;
+    
+    // 如果没有结果，生成空的段落列表
+    const paragraphs = splitParagraphs(chapter.content);
+    return paragraphs.map((p, i) => ({
+      paragraphIndex: i,
+      originalText: p,
+      errors: [],
+      status: 'pending' as const,
+    }));
+  }, [chapter, chapterResults]);
 
     // 切换章节时，自动把段落列表以"待校对"状态渲染出来（如果没有已有结果）
   const lastChapterIdRef = useRef<number | null>(null);
@@ -243,12 +258,12 @@ export function ProofreadPanel() {
       </div>
 
             <div className="proofread-content">
-        {chapterResults.length === 0 ? (
+        {displayResults.length === 0 ? (
           <div className="empty-hint">
             <p>点击"开始检测"对当前章节进行 AI 校对</p>
           </div>
         ) : (
-          chapterResults.map((paraResult) => (
+          displayResults.map((paraResult) => (
                         <div
               key={paraResult.paragraphIndex}
               className={`proofread-paragraph ${
