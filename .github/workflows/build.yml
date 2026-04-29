@@ -144,13 +144,6 @@ jobs:
           Write-Host "Certificate saved to $certPath"
         shell: powershell
 
-      # Android签名：创建keystore文件
-      - name: Create Android keystore
-        if: ${{ matrix.android && env.HAS_ANDROID_KEYSTORE == 'true' }}
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > $HOME/keystore.jks
-        shell: bash
-
       # 初始化 Android 项目
       - name: Initialize Android project
         if: ${{ matrix.android }}
@@ -161,24 +154,59 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_ANDROID_MIN_SDK_VERSION: 24
 
-      # Android构建步骤（带签名）
-      - name: Build Tauri app for Android (signed)
+      # Android签名：创建keystore.properties文件
+      - name: Setup Android signing
         if: ${{ matrix.android && env.HAS_ANDROID_KEYSTORE == 'true' }}
         run: |
-          cd src-tauri
-          cargo tauri android build \
-            --target ${{ matrix.android_arch }} \
-            --keystore $HOME/keystore.jks \
-            --keystore-password ${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
-            --key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
-            --key-password ${{ secrets.ANDROID_KEY_PASSWORD }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_ANDROID_MIN_SDK_VERSION: 24
+          cd src-tauri/gen/android
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" > keystore.properties
+          echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}" >> keystore.properties
+          base64 -d <<< "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" > $RUNNER_TEMP/keystore.jks
+          echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
 
-      # Android构建步骤（无签名）
-      - name: Build Tauri app for Android (unsigned)
-        if: ${{ matrix.android && env.HAS_ANDROID_KEYSTORE != 'true' }}
+      # 修改 build.gradle.kts 添加签名配置
+      - name: Configure signing in build.gradle.kts
+        if: ${{ matrix.android && env.HAS_ANDROID_KEYSTORE == 'true' }}
+        run: |
+      # 修改 build.gradle.kts 添加签名配置
+      - name: Configure signing in build.gradle.kts
+        if: ${{ env.HAS_ANDROID_KEYSTORE == 'true' }}
+        run: |
+          cat > src-tauri/gen/android/app/build.gradle.kts.append << 'KOTLIN_EOF'
+
+          import java.io.FileInputStream
+          import java.util.Properties
+
+          val keystorePropertiesFile = rootProject.file("keystore.properties")
+          val keystoreProperties = Properties()
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+          }
+
+          android {
+              signingConfigs {
+                  create("release") {
+                      keyAlias = keystoreProperties["keyAlias"] as String
+                      keyPassword = keystoreProperties["password"] as String
+                      storeFile = file(keystoreProperties["storeFile"] as String)
+                      storePassword = keystoreProperties["password"] as String
+                  }
+              }
+              buildTypes {
+                  getByName("release") {
+                      signingConfig = signingConfigs.getByName("release")
+                  }
+              }
+          }
+          KOTLIN_EOF
+
+          # 将生成的配置追加到 build.gradle.kts
+          cat src-tauri/gen/android/app/build.gradle.kts.append >> src-tauri/gen/android/app/build.gradle.kts
+          rm src-tauri/gen/android/app/build.gradle.kts.append
+
+      # Android构建步骤
+      - name: Build Tauri app for Android
+        if: ${{ matrix.android }}
         run: |
           cd src-tauri
           cargo tauri android build --target ${{ matrix.android_arch }}
