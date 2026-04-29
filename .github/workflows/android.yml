@@ -11,9 +11,6 @@ on:
 permissions:
   contents: write
 
-env:
-  HAS_ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-
 jobs:
   build:
     strategy:
@@ -22,15 +19,12 @@ jobs:
         include:
           - platform: ubuntu-22.04
             target: aarch64-linux-android
-            android: true
             android_arch: aarch64
           - platform: ubuntu-22.04
             target: armv7-linux-androideabi
-            android: true
             android_arch: armv7
           - platform: ubuntu-22.04
             target: x86_64-linux-android
-            android: true
             android_arch: x86_64
 
     runs-on: ${{ matrix.platform }}
@@ -77,6 +71,7 @@ jobs:
 
       - name: Install Android dependencies
         run: |
+          echo "Installing Android dependencies"
           cargo install cargo-ndk
           cargo install tauri-cli
 
@@ -88,10 +83,6 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Build frontend
-        run: pnpm build
-
-      # 初始化 Android 项目
       - name: Initialize Android project
         run: |
           cd src-tauri
@@ -100,59 +91,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_ANDROID_MIN_SDK_VERSION: 24
 
-      # Android签名：创建keystore.properties文件
-      - name: Setup Android signing
-        if: ${{ env.HAS_ANDROID_KEYSTORE == 'true' }}
-        run: |
-          cd src-tauri/gen/android
-          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" > keystore.properties
-          echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}" >> keystore.properties
-          base64 -d <<< "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" > $RUNNER_TEMP/keystore.jks
-          echo "storeFile=$RUNNER_TEMP/keystore.jks" >> keystore.properties
-
-      # 修改 build.gradle.kts 添加签名配置
-      - name: Configure signing in build.gradle.kts
-        if: ${{ env.HAS_ANDROID_KEYSTORE == 'true' }}
-        run: |
-          cat >> src-tauri/gen/android/app/build.gradle.kts << 'EOF'
-
-      # 修改 build.gradle.kts 添加签名配置
-      - name: Configure signing in build.gradle.kts
-        if: ${{ env.HAS_ANDROID_KEYSTORE == 'true' }}
-        run: |
-          cat > src-tauri/gen/android/app/build.gradle.kts.append << 'KOTLIN_EOF'
-
-          import java.io.FileInputStream
-          import java.util.Properties
-
-          val keystorePropertiesFile = rootProject.file("keystore.properties")
-          val keystoreProperties = Properties()
-          if (keystorePropertiesFile.exists()) {
-              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-          }
-
-          android {
-              signingConfigs {
-                  create("release") {
-                      keyAlias = keystoreProperties["keyAlias"] as String
-                      keyPassword = keystoreProperties["password"] as String
-                      storeFile = file(keystoreProperties["storeFile"] as String)
-                      storePassword = keystoreProperties["password"] as String
-                  }
-              }
-              buildTypes {
-                  getByName("release") {
-                      signingConfig = signingConfigs.getByName("release")
-                  }
-              }
-          }
-          KOTLIN_EOF
-
-          # 将生成的配置追加到 build.gradle.kts
-          cat src-tauri/gen/android/app/build.gradle.kts.append >> src-tauri/gen/android/app/build.gradle.kts
-          rm src-tauri/gen/android/app/build.gradle.kts.append
-
-      # Android构建步骤
       - name: Build Tauri app for Android
         run: |
           cd src-tauri
@@ -166,14 +104,14 @@ jobs:
         with:
           name: release-${{ matrix.target }}
           path: |
-            src-tauri/gen/android/app/build/outputs/apk/release/*.apk
-            src-tauri/gen/android/app/build/outputs/bundle/release/*.aab
+            src-tauri/gen/android/app/build/outputs/apk/**/*
+            src-tauri/gen/android/app/build/outputs/bundle/**/*
           retention-days: 7
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
       - name: Download all artifacts
