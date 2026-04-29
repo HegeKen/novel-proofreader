@@ -23,3 +23,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+src-tauri/target/flycheck0/stderr
+src-tauri/target/flycheck0/stdout
