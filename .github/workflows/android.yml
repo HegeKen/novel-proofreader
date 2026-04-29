@@ -99,6 +99,15 @@ jobs:
           echo "ANDROID_KEYSTORE=$HOME/keystore.jks" >> $GITHUB_ENV
         shell: bash
 
+      # 初始化 Android 项目（仅首次需要，但每次运行都会检查是否需要）
+      - name: Initialize Android project
+        run: |
+          cd src-tauri
+          cargo tauri android init
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_ANDROID_MIN_SDK_VERSION: 24
+
       # Android构建步骤（带签名）
       - name: Build Tauri app for Android (signed)
         if: ${{ env.HAS_ANDROID_KEYSTORE == 'true' }}
