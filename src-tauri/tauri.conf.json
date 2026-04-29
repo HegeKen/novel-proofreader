@@ -31,17 +31,5 @@
       "icons/icon.png",
       "icons/icon.ico"
     ]
-  },
-  "android": {
-    "versionCode": 1,
-    "minSdkVersion": 24,
-    "targetSdkVersion": 34,
-    "compileSdkVersion": 34,
-    "buildToolsVersion": "34.0.0",
-    "packageName": "cn.helilab.proofreader",
-    "statusBar": {
-      "style": "Dark",
-      "visible": true
-    }
   }
 }
