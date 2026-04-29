@@ -140,7 +140,7 @@ export default function App() {
       {/* 顶部栏 */}
       <header className="app-header">
         <div className="header-left">
-          <h1 className="app-title">📖 小说校对助手</h1>
+          <h1 className="app-title">📖 校对助手</h1>
         </div>
         <div className="header-center">
                     <button className="btn-import" onClick={handleImport}>

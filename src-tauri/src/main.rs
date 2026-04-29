@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    novel_proofreader_lib::run()
+    proofreader_lib::run()
 }

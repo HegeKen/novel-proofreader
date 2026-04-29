@@ -1,10 +1,10 @@
 [package]
-name = "novel-proofreader"
-version = "0.1.0"
+name = "proofreader"
+version = "0.2.0"
 edition = "2021"
 
 [lib]
-name = "novel_proofreader_lib"
+name = "proofreader_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
