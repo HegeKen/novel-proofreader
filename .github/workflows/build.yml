@@ -9,6 +9,11 @@ on:
 permissions:
   contents: write
 
+env:
+  HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+  HAS_WINDOWS_CERT: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 != '' }}
+  HAS_ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+
 jobs:
   build:
     strategy:
@@ -120,7 +125,7 @@ jobs:
 
       # macOS签名：导入Apple Developer ID证书
       - name: Import Apple Developer ID certificate
-        if: ${{ matrix.platform == 'macos-latest' && secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        if: ${{ matrix.platform == 'macos-latest' && env.HAS_APPLE_CERT == 'true' }}
         uses: apple-actions/import-codesign-certs@v2
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
@@ -128,7 +133,7 @@ jobs:
 
       # Windows签名：安装证书
       - name: Install Windows code signing certificate
-        if: ${{ matrix.platform == 'windows-latest' && secrets.WINDOWS_CERTIFICATE_BASE64 != '' }}
+        if: ${{ matrix.platform == 'windows-latest' && env.HAS_WINDOWS_CERT == 'true' }}
         run: |
           $certBytes = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}")
           $certPath = Join-Path $env:TEMP "codesign.pfx"
@@ -138,7 +143,7 @@ jobs:
 
       # Android签名：创建keystore文件
       - name: Create Android keystore
-        if: ${{ matrix.android && secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: ${{ matrix.android && env.HAS_ANDROID_KEYSTORE == 'true' }}
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > $HOME/keystore.jks
           echo "ANDROID_KEYSTORE=$HOME/keystore.jks" >> $GITHUB_ENV
@@ -155,7 +160,7 @@ jobs:
           TAURI_ANDROID_MIN_SDK_VERSION: 24
 
       - name: Build Tauri app for Android (signed)
-        if: ${{ matrix.android && secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: ${{ matrix.android && env.HAS_ANDROID_KEYSTORE == 'true' }}
         run: |
           cd src-tauri
           ./gen/android/gradlew -p gen/android assembleRelease --warning-mode all \
@@ -169,7 +174,7 @@ jobs:
           TAURI_ANDROID_MIN_SDK_VERSION: 24
 
       - name: Build Tauri app for Android (unsigned)
-        if: ${{ matrix.android && secrets.ANDROID_KEYSTORE_BASE64 == '' }}
+        if: ${{ matrix.android && env.HAS_ANDROID_KEYSTORE != 'true' }}
         run: |
           cd src-tauri
           ./gen/android/gradlew -p gen/android assembleRelease --warning-mode all
@@ -180,7 +185,7 @@ jobs:
 
       # macOS构建（带签名）
       - name: Build Tauri app for macOS (signed)
-        if: ${{ matrix.platform == 'macos-latest' && secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        if: ${{ matrix.platform == 'macos-latest' && env.HAS_APPLE_CERT == 'true' }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -192,7 +197,7 @@ jobs:
 
       # macOS构建（无签名）
       - name: Build Tauri app for macOS (unsigned)
-        if: ${{ matrix.platform == 'macos-latest' && secrets.APPLE_CERTIFICATE_BASE64 == '' }}
+        if: ${{ matrix.platform == 'macos-latest' && env.HAS_APPLE_CERT != 'true' }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -201,7 +206,7 @@ jobs:
 
       # Windows构建（带签名）
       - name: Build Tauri app for Windows (signed)
-        if: ${{ matrix.platform == 'windows-latest' && secrets.WINDOWS_CERTIFICATE_BASE64 != '' }}
+        if: ${{ matrix.platform == 'windows-latest' && env.HAS_WINDOWS_CERT == 'true' }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -212,7 +217,7 @@ jobs:
 
       # Windows构建（无签名）
       - name: Build Tauri app for Windows (unsigned)
-        if: ${{ matrix.platform == 'windows-latest' && secrets.WINDOWS_CERTIFICATE_BASE64 == '' }}
+        if: ${{ matrix.platform == 'windows-latest' && env.HAS_WINDOWS_CERT != 'true' }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
