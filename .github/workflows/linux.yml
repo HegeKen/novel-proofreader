@@ -40,7 +40,7 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install non-Android targets
+      - name: Install targets
         run: |
           rustup target add ${{ matrix.target }}
 
@@ -52,11 +52,7 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Build frontend
-        run: pnpm build
-
-      # Linux构建
-      - name: Build Tauri app for Linux
+      - name: Build Tauri app for desktop
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -75,7 +71,7 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
       - name: Download all artifacts

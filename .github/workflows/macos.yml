@@ -11,9 +11,6 @@ on:
 permissions:
   contents: write
 
-env:
-  HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
-
 jobs:
   build:
     strategy:
@@ -45,39 +42,14 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install non-Android targets
+      - name: Install targets
         run: |
           rustup target add ${{ matrix.target }}
 
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Build frontend
-        run: pnpm build
-
-      # macOS签名：导入Apple Developer ID证书
-      - name: Import Apple Developer ID certificate
-        if: ${{ env.HAS_APPLE_CERT == 'true' }}
-        uses: apple-actions/import-codesign-certs@v2
-        with:
-          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-
-      # macOS构建（带签名）
-      - name: Build Tauri app for macOS (signed)
-        if: ${{ env.HAS_APPLE_CERT == 'true' }}
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          TAURI_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-        with:
-          args: --target ${{ matrix.target }}
-
-      # macOS构建（无签名）
-      - name: Build Tauri app for macOS (unsigned)
-        if: ${{ env.HAS_APPLE_CERT != 'true' }}
+      - name: Build Tauri app for desktop
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -96,7 +68,7 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
       - name: Download all artifacts
