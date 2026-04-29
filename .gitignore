@@ -25,3 +25,4 @@ dist-ssr
 *.sw?
 src-tauri/target/flycheck0/stderr
 src-tauri/target/flycheck0/stdout
+src-tauri/target/aarch64-apple-darwin

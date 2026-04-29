@@ -1,7 +1,7 @@
 // ============================================================
 // 左侧阅读区（带行号 + 采纳动画 + 双击编辑）
 // ============================================================
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useProofreadStore } from '../stores/proofreadStore';
 import { splitParagraphs } from '../utils/chapterSplit';
@@ -27,7 +27,9 @@ export function ReaderPanel() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const chapter = chapters[currentChapterIndex];
-  const paragraphs = chapter ? splitParagraphs(chapter.content) : [];
+  const paragraphs = useMemo(() => {
+    return chapter ? splitParagraphs(chapter.content) : [];
+  }, [chapter]);
 
   /** 进入编辑模式 */
   const startEditing = useCallback((index: number, currentText: string) => {
