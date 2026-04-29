@@ -239,6 +239,48 @@ input, textarea, select {
   flex-shrink: 0;
   z-index: 100;
   box-shadow: var(--shadow-inner);
+  /* Android 状态栏安全区域支持 */
+  padding-top: env(safe-area-inset-top, 0);
+  min-height: calc(64px + env(safe-area-inset-top, 0));
+  position: sticky;
+  top: 0;
+}
+
+/* 移动端顶部栏特殊处理 */
+@media screen and (max-width: 768px) {
+  .app-header {
+    padding: 0 16px;
+    padding-top: env(safe-area-inset-top, 0);
+    min-height: calc(56px + env(safe-area-inset-top, 0));
+    height: auto;
+  }
+  
+  .header-left {
+    min-width: 0;
+  }
+  
+  .app-title {
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .header-center {
+    display: none;
+  }
+  
+  .header-right {
+    gap: 8px;
+  }
+  
+  .btn-theme-toggle,
+  .btn-settings {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    font-size: 18px;
+  }
 }
 
 .header-left {
@@ -2346,7 +2388,9 @@ input, textarea, select {
 @media (max-width: 1024px) {
   .app-header {
     padding: 0 16px;
-    height: 56px;
+    padding-top: env(safe-area-inset-top, 0);
+    min-height: calc(56px + env(safe-area-inset-top, 0));
+    height: auto;
   }
 
   .header-left {
@@ -2391,7 +2435,9 @@ input, textarea, select {
 @media (max-width: 768px) {
   .app-header {
     padding: 0 12px;
-    height: 52px;
+    padding-top: env(safe-area-inset-top, 0);
+    min-height: calc(52px + env(safe-area-inset-top, 0));
+    height: auto;
   }
 
   .app-title {

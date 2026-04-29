@@ -178,9 +178,19 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: List files to upload
+        run: find artifacts -type f -name "*.dmg" -o -name "*.exe" -o -name "*.msi" -o -name "*.apk" -o -name "*.aab" -o -name "*.deb" -o -name "*.AppImage"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: artifacts/**/*
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.msi
+            artifacts/**/*.apk
+            artifacts/**/*.aab
+            artifacts/**/*.deb
+            artifacts/**/*.AppImage
           generate_release_notes: true
