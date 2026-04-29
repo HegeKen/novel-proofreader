@@ -3,7 +3,6 @@
   "productName": "Novel Proofreader",
   "version": "0.1.0",
   "identifier": "cn.helilab.proofreader",
-  "signingIdentity": "-",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
