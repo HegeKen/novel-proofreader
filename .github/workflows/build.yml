@@ -157,7 +157,7 @@ jobs:
         if: ${{ matrix.android && env.HAS_ANDROID_KEYSTORE == 'true' }}
         run: |
           cd src-tauri
-          cargo tauri android build --target ${{ matrix.android_arch }} --release \
+          cargo tauri android build --target ${{ matrix.android_arch }} \
             --keystore $ANDROID_KEYSTORE \
             --keystore-password ${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
             --key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
@@ -171,7 +171,7 @@ jobs:
         if: ${{ matrix.android && env.HAS_ANDROID_KEYSTORE != 'true' }}
         run: |
           cd src-tauri
-          cargo tauri android build --target ${{ matrix.android_arch }} --release
+          cargo tauri android build --target ${{ matrix.android_arch }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_ANDROID_MIN_SDK_VERSION: 24
