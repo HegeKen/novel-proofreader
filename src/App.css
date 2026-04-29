@@ -1304,9 +1304,40 @@ input, textarea, select {
   justify-content: space-between;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 .task-header h3 { font-size: 14px; font-weight: 600; }
 .task-chapter { font-size: 12px; color: var(--text-muted); }
+
+.task-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.task-section {
+  margin-bottom: 16px;
+}
+
+.prompt-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: 13px;
+  line-height: 1.7;
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--duration), box-shadow var(--duration);
+}
+.prompt-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.prompt-textarea::placeholder { color: var(--text-muted); }
 
 /* 工具栏样式 */
 .task-toolbar {
@@ -2506,6 +2537,8 @@ input, textarea, select {
     flex-direction: column;
     padding-bottom: 64px;
     padding-bottom: calc(64px + env(safe-area-inset-bottom, 8px));
+    height: calc(100vh - env(safe-area-inset-top, 0) - env(safe-area-inset-bottom, 0));
+    overflow: hidden;
   }
 
   /* Hide desktop sidebars by default on mobile */
@@ -2513,7 +2546,8 @@ input, textarea, select {
   .app-sidebar {
     display: none;
     width: 100%;
-    height: 50vh;
+    flex: 1;
+    min-height: 0;
     border-right: none;
     border-bottom: 1px solid var(--border);
   }
@@ -2521,14 +2555,19 @@ input, textarea, select {
   .app-novel-list.mobile-active,
   .app-sidebar.mobile-active {
     display: flex;
+    flex: 1;
+    min-height: 0;
   }
 
   .app-main {
     flex: 1;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   .app-main.task-mode {
+    flex: 1;
     min-height: 0;
   }
 
@@ -2539,7 +2578,8 @@ input, textarea, select {
   .app-right {
     display: none;
     width: 100%;
-    height: 60vh;
+    flex: 1;
+    min-height: 0;
     border-left: none;
     border-top: 1px solid var(--border);
   }
@@ -2550,17 +2590,80 @@ input, textarea, select {
 
   .app-right.task-mode {
     width: 100%;
-    flex: none;
-    height: 60vh;
+    flex: 1;
+    min-height: 0;
   }
 
   /* Reader Panel Mobile */
+  .reader-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
   .reader-toolbar {
     padding: 10px 16px;
+    flex-shrink: 0;
   }
 
   .reader-content {
-    padding: 20px 16px;
+    flex: 1;
+    min-height: 0;
+    padding: 16px;
+    overflow-y: auto;
+  }
+
+  /* Proofread Panel Mobile */
+  .proofread-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .proofread-content {
+    flex: 1;
+    min-height: 0;
+    padding: 12px;
+    overflow-y: auto;
+  }
+
+  /* Task Panel Mobile */
+  .task-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .task-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  .task-prompt {
+    width: 100%;
+    min-height: 80px;
+  }
+
+  .task-result-wrapper {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .result-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .segment-content {
+    word-break: break-all;
   }
 
   /* Right Tabs Mobile */
