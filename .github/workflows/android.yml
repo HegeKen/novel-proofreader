@@ -96,13 +96,13 @@ jobs:
           # 重命名 APK 和 AAB 文件
           VERSION=$(cat Cargo.toml | grep 'version =' | head -n1 | sed 's/version = "\(.*\)"/\1/')
           APP_NAME="ProofReader"
-          # 重命名 APK
-          find gen/android/app/build/outputs/apk -name "*.apk" | head -n1 | while read apk; do
-            mv "$apk" "gen/android/app/build/outputs/apk/${APP_NAME}-v${VERSION}-${{ matrix.android_arch }}.apk"
+          # 重命名 APK (release 版本)
+          find gen/android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | while read apk; do
+            mv "$apk" "gen/android/app/build/outputs/apk/release/${APP_NAME}-v${VERSION}-${{ matrix.android_arch }}.apk"
           done
-          # 重命名 AAB
-          find gen/android/app/build/outputs/bundle -name "*.aab" | head -n1 | while read aab; do
-            mv "$aab" "gen/android/app/build/outputs/bundle/${APP_NAME}-v${VERSION}-${{ matrix.android_arch }}.aab"
+          # 重命名 AAB (release 版本)
+          find gen/android/app/build/outputs/bundle/release -name "*.aab" 2>/dev/null | while read aab; do
+            mv "$aab" "gen/android/app/build/outputs/bundle/release/${APP_NAME}-v${VERSION}-${{ matrix.android_arch }}.aab"
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -116,6 +116,7 @@ jobs:
             src-tauri/gen/android/app/build/outputs/apk/**/*
             src-tauri/gen/android/app/build/outputs/bundle/**/*
           retention-days: 7
+          compression-level: 0
 
   release:
     needs: build
