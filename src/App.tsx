@@ -1,5 +1,5 @@
 // ============================================================
-// 主布局
+// 主布局 - Apple Liquid Glass Design
 // ============================================================
 import { useState, useEffect } from 'react';
 import { NovelList } from './components/NovelList';
@@ -13,15 +13,28 @@ import { splitChapters } from './utils/chapterSplit';
 import { decodeTextBuffer } from './utils/decodeText';
 
 type RightTab = 'proofread' | 'task';
+type MobileTab = 'novels' | 'chapters' | 'reader' | 'proofread' | 'task';
 
 export default function App() {
-    const novels = useAppStore((s) => s.novels);
+  const novels = useAppStore((s) => s.novels);
   const currentNovelId = useAppStore((s) => s.currentNovelId);
   const setChapters = useAppStore((s) => s.setChapters);
   const theme = useAppStore((s) => s.theme);
   const setTheme = useAppStore((s) => s.setTheme);
   const [configOpen, setConfigOpen] = useState(false);
   const [rightTab, setRightTab] = useState<RightTab>('proofread');
+  const [mobileTab, setMobileTab] = useState<MobileTab>('reader');
+  const [isMobile, setIsMobile] = useState(false);
+
+  // 检测是否为移动端
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -114,6 +127,14 @@ export default function App() {
     alert('文件已下载！请手动覆盖原文件。');
   };
 
+  // 移动端标签切换
+  const handleMobileTabChange = (tab: MobileTab) => {
+    setMobileTab(tab);
+    if (tab === 'proofread' || tab === 'task') {
+      setRightTab(tab);
+    }
+  };
+
   return (
     <div className="app">
       {/* 顶部栏 */}
@@ -150,35 +171,41 @@ export default function App() {
         </div>
       </header>
 
-      {/* 主体四栏布局 */}
+      {/* 主体布局 - 响应式 */}
       <div className="app-body">
         {/* 最左：小说列表 */}
-        <aside className="app-novel-list">
+        <aside className={`app-novel-list ${isMobile && mobileTab === 'novels' ? 'mobile-active' : ''}`}>
           <NovelList />
         </aside>
 
         {/* 左二：章节导航 */}
-        <aside className="app-sidebar">
+        <aside className={`app-sidebar ${isMobile && mobileTab === 'chapters' ? 'mobile-active' : ''}`}>
           <ChapterNav />
         </aside>
 
         {/* 中间：阅读区 */}
-        <main className={`app-main ${rightTab === 'task' ? 'task-mode' : ''}`}>
+        <main className={`app-main ${rightTab === 'task' ? 'task-mode' : ''} ${isMobile && mobileTab === 'reader' ? '' : isMobile ? 'hidden' : ''}`}>
           <ReaderPanel />
         </main>
 
         {/* 右侧：校对 / 任务 */}
-        <aside className={`app-right ${rightTab === 'task' ? 'task-mode' : ''}`}>
+        <aside className={`app-right ${rightTab === 'task' ? 'task-mode' : ''} ${isMobile && (mobileTab === 'proofread' || mobileTab === 'task') ? 'mobile-active' : ''}`}>
           <div className="right-tabs">
             <button
               className={`tab-btn ${rightTab === 'proofread' ? 'active' : ''}`}
-              onClick={() => setRightTab('proofread')}
+              onClick={() => {
+                setRightTab('proofread');
+                if (isMobile) setMobileTab('proofread');
+              }}
             >
               🔍 校对检测
             </button>
             <button
               className={`tab-btn ${rightTab === 'task' ? 'active' : ''}`}
-              onClick={() => setRightTab('task')}
+              onClick={() => {
+                setRightTab('task');
+                if (isMobile) setMobileTab('task');
+              }}
             >
               🎬 剧本改编
             </button>
@@ -188,6 +215,47 @@ export default function App() {
           </div>
         </aside>
       </div>
+
+      {/* 移动端底部标签栏 */}
+      {isMobile && (
+        <div className="mobile-tab-bar">
+          <button
+            className={`mobile-tab-btn ${mobileTab === 'novels' ? 'active' : ''}`}
+            onClick={() => handleMobileTabChange('novels')}
+          >
+            📚
+            <span>小说</span>
+          </button>
+          <button
+            className={`mobile-tab-btn ${mobileTab === 'chapters' ? 'active' : ''}`}
+            onClick={() => handleMobileTabChange('chapters')}
+          >
+            📑
+            <span>章节</span>
+          </button>
+          <button
+            className={`mobile-tab-btn ${mobileTab === 'reader' ? 'active' : ''}`}
+            onClick={() => handleMobileTabChange('reader')}
+          >
+            📖
+            <span>阅读</span>
+          </button>
+          <button
+            className={`mobile-tab-btn ${mobileTab === 'proofread' ? 'active' : ''}`}
+            onClick={() => handleMobileTabChange('proofread')}
+          >
+            🔍
+            <span>校对</span>
+          </button>
+          <button
+            className={`mobile-tab-btn ${mobileTab === 'task' ? 'active' : ''}`}
+            onClick={() => handleMobileTabChange('task')}
+          >
+            🎬
+            <span>剧本</span>
+          </button>
+        </div>
+      )}
 
       {/* 设置弹窗 */}
       <ConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
