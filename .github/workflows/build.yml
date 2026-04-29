@@ -123,6 +123,9 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      - name: Build frontend
+        run: pnpm build
+
       # macOS签名：导入Apple Developer ID证书
       - name: Import Apple Developer ID certificate
         if: ${{ matrix.platform == 'macos-latest' && env.HAS_APPLE_CERT == 'true' }}
@@ -150,34 +153,24 @@ jobs:
         shell: bash
 
       # Android构建步骤（带签名）
-      - name: Initialize Android project
-        if: ${{ matrix.android }}
-        run: |
-          cd src-tauri
-          cargo tauri android init
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_ANDROID_MIN_SDK_VERSION: 24
-
       - name: Build Tauri app for Android (signed)
         if: ${{ matrix.android && env.HAS_ANDROID_KEYSTORE == 'true' }}
         run: |
           cd src-tauri
-          ./gen/android/gradlew -p gen/android assembleRelease --warning-mode all \
-            -Pandroid.injected.signing.store.file=$ANDROID_KEYSTORE \
-            -Pandroid.injected.signing.store.password=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
-            -Pandroid.injected.signing.key.alias=${{ secrets.ANDROID_KEY_ALIAS }} \
-            -Pandroid.injected.signing.key.password=${{ secrets.ANDROID_KEY_PASSWORD }}
-          cargo tauri android build --target ${{ matrix.android_arch }} --release
+          cargo tauri android build --target ${{ matrix.android_arch }} --release \
+            --keystore $ANDROID_KEYSTORE \
+            --keystore-password ${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            --key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
+            --key-password ${{ secrets.ANDROID_KEY_PASSWORD }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_ANDROID_MIN_SDK_VERSION: 24
 
+      # Android构建步骤（无签名）
       - name: Build Tauri app for Android (unsigned)
         if: ${{ matrix.android && env.HAS_ANDROID_KEYSTORE != 'true' }}
         run: |
           cd src-tauri
-          ./gen/android/gradlew -p gen/android assembleRelease --warning-mode all
           cargo tauri android build --target ${{ matrix.android_arch }} --release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
