@@ -243,9 +243,12 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onClick={(e) => {
-          if (showReadingSettings && e.target === e.currentTarget) {
-            setShowReadingSettings(false);
+          if (!showReadingSettings) return;
+          const target = e.target as HTMLElement;
+          if (target.closest('.reading-settings-panel') || target.closest('.reading-settings-toggle')) {
+            return;
           }
+          setShowReadingSettings(false);
         }}
         style={{
           ...(readingMode && {
@@ -253,6 +256,12 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
             backgroundColor: readingBackground === 'white' ? '#FFFFFF' :
                           readingBackground === 'cream' ? '#FDF6E3' :
                           readingBackground === 'sepia' ? '#F4E4BC' :
+                          readingBackground === 'mint' ? '#E8F5E9' :
+                          readingBackground === 'sky' ? '#E3F2FD' :
+                          readingBackground === 'lavender' ? '#F3E5F5' :
+                          readingBackground === 'peach' ? '#FFEBEE' :
+                          readingBackground === 'sage' ? '#EFEBE9' :
+                          readingBackground === 'slate' ? '#ECEFF1' :
                           readingBackground === 'dark' ? '#2C2C2C' :
                           readingBackground === 'custom' ? customBgColor : undefined,
             backgroundImage: readingBackground === 'image' ? `url(${bgImageUrl})` : undefined,
@@ -292,10 +301,16 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
               className={`reader-paragraph${readingMode ? ' reading-mode' : ''}${highlightedParagraph === i && !readingMode ? ' highlighted' : ''}${animClass}${isEditing ? ' editing' : ''}`}
               style={{
                 fontSize: `${fontSize}px`,
+                marginBottom: readingMode ? `${Math.max(4, paragraphSpacing * 0.5)}px` : `${paragraphSpacing}px`,
                 ...(readingMode && {
                   textIndent: `${paragraphIndent}em`,
-                  marginBottom: `${paragraphSpacing}px`,
                   color: readingBackground === 'dark' ? '#E0E0E0' :
+                        readingBackground === 'mint' ? '#2E4A3E' :
+                        readingBackground === 'sky' ? '#1565C0' :
+                        readingBackground === 'lavender' ? '#6A1B9A' :
+                        readingBackground === 'peach' ? '#B71C1C' :
+                        readingBackground === 'sage' ? '#4E342E' :
+                        readingBackground === 'slate' ? '#37474F' :
                         readingBackground === 'custom' ? customTextColor : '#333333',
                 }),
               }}
@@ -355,8 +370,8 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
                 <div className="setting-control">
                   <input
                     type="range"
-                    min="1.2"
-                    max="2.5"
+                    min="1.0"
+                    max="4.0"
                     step="0.1"
                     value={lineSpacing}
                     onChange={(e) => setLineSpacing(parseFloat(e.target.value))}
@@ -388,7 +403,7 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
                   <input
                     type="range"
                     min="0"
-                    max="30"
+                    max="80"
                     step="2"
                     value={paragraphSpacing}
                     onChange={(e) => setParagraphSpacing(parseInt(e.target.value))}
@@ -402,16 +417,22 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
                 <span className="setting-label">阅读背景</span>
                 <div className="setting-control background-options">
                   {[
-                    { value: 'white', label: '白底', color: '#FFFFFF' },
-                    { value: 'cream', label: '护眼', color: '#FDF6E3' },
-                    { value: 'sepia', label: '棕黄', color: '#F4E4BC' },
-                    { value: 'dark', label: '深色', color: '#2C2C2C' },
+                    { value: 'white', label: '白底', color: '#FFFFFF', textColor: '#333333' },
+                    { value: 'cream', label: '护眼', color: '#FDF6E3', textColor: '#5C4A32' },
+                    { value: 'sepia', label: '棕黄', color: '#F4E4BC', textColor: '#5C4033' },
+                    { value: 'mint', label: '薄荷', color: '#E8F5E9', textColor: '#2E4A3E' },
+                    { value: 'sky', label: '淡蓝', color: '#E3F2FD', textColor: '#1565C0' },
+                    { value: 'lavender', label: '薰衣草', color: '#F3E5F5', textColor: '#6A1B9A' },
+                    { value: 'peach', label: '桃色', color: '#FFEBEE', textColor: '#B71C1C' },
+                    { value: 'sage', label: '鼠尾草', color: '#EFEBE9', textColor: '#4E342E' },
+                    { value: 'slate', label: '石板', color: '#ECEFF1', textColor: '#37474F' },
+                    { value: 'dark', label: '深色', color: '#2C2C2C', textColor: '#E0E0E0' },
                   ].map((bg) => (
                     <button
                       key={bg.value}
                       className={`background-option${readingBackground === bg.value ? ' active' : ''}`}
                       style={{ backgroundColor: bg.color }}
-                      onClick={() => setReadingBackground(bg.value as 'white' | 'cream' | 'sepia' | 'dark')}
+                      onClick={() => setReadingBackground(bg.value as 'white' | 'cream' | 'sepia' | 'mint' | 'sky' | 'lavender' | 'peach' | 'sage' | 'slate' | 'dark')}
                       title={bg.label}
                     >
                       {readingBackground === bg.value && '✓'}
@@ -442,11 +463,13 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
                   </div>
                   <button
                     className={`background-option custom-color-btn${readingBackground === 'custom' ? ' active' : ''}`}
-                    style={{ background: `linear-gradient(135deg, ${customBgColor} 50%, ${customTextColor} 50%)` }}
+                    style={{
+                      '--custom-bg': customBgColor,
+                      '--custom-text': customTextColor,
+                    } as React.CSSProperties}
                     onClick={() => setReadingBackground('custom')}
                     title="应用自定义颜色"
                   >
-                    {readingBackground === 'custom' && '✓'}
                   </button>
                 </div>
               </div>
