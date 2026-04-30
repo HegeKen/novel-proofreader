@@ -80,7 +80,7 @@ jobs:
           merge-multiple: true
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v8
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           files: |
