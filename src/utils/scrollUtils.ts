@@ -9,24 +9,27 @@
  * @param index - 要滚动到的元素索引
  */
 export function scrollToElement(
-  containerRef: React.RefObject<HTMLDivElement | null>,
-  elementRefs: React.RefObject<(HTMLDivElement | null)[]>,
-  index: number
+	containerRef: React.RefObject<HTMLDivElement | null>,
+	elementRefs: React.RefObject<(HTMLDivElement | null)[]>,
+	index: number,
 ): void {
-  const container = containerRef.current;
-  const el = elementRefs.current[index];
-  
-  if (!container || !el) return;
+	const container = containerRef.current;
+	const el = elementRefs.current[index];
 
-  const containerRect = container.getBoundingClientRect();
-  const elRect = el.getBoundingClientRect();
+	if (!container || !el) return;
 
-  // 如果元素已在可视区域内，不需要滚动
-  if (elRect.top >= containerRect.top && elRect.bottom <= containerRect.bottom) {
-    return;
-  }
+	const containerRect = container.getBoundingClientRect();
+	const elRect = el.getBoundingClientRect();
 
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+	// 如果元素已在可视区域内，不需要滚动
+	if (
+		elRect.top >= containerRect.top &&
+		elRect.bottom <= containerRect.bottom
+	) {
+		return;
+	}
+
+	el.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 /**
@@ -34,20 +37,20 @@ export function scrollToElement(
  * 每个面板应该有自己的锁实例
  */
 export class ScrollLock {
-  private locked = false;
-  private lockTimeout: ReturnType<typeof setTimeout> | null = null;
+	private locked = false;
+	private lockTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  acquire(duration: number = 800): boolean {
-    if (this.locked) return false;
-    this.locked = true;
-    if (this.lockTimeout) clearTimeout(this.lockTimeout);
-    this.lockTimeout = setTimeout(() => {
-      this.locked = false;
-    }, duration);
-    return true;
-  }
+	acquire(duration: number = 800): boolean {
+		if (this.locked) return false;
+		this.locked = true;
+		if (this.lockTimeout) clearTimeout(this.lockTimeout);
+		this.lockTimeout = setTimeout(() => {
+			this.locked = false;
+		}, duration);
+		return true;
+	}
 
-  isLocked(): boolean {
-    return this.locked;
-  }
+	isLocked(): boolean {
+		return this.locked;
+	}
 }
