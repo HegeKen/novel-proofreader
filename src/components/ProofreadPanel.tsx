@@ -264,14 +264,13 @@ export function ProofreadPanel() {
             <div className="proofread-toolbar">
         <div className="toolbar-left">
           <label className="granularity-select">
-            检测粒度：
+            检测项：
             <select
               value={granularity}
               onChange={(e) => setGranularity(e.target.value as CheckGranularity)}
               disabled={checking}
             >
               <option value="paragraph">按段落</option>
-              <option value="line">按行</option>
               <option value="chapter">按章节</option>
             </select>
           </label>
