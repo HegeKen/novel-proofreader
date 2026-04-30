@@ -8,6 +8,8 @@ import {
   buildScriptUserPrompt,
 } from '../utils/aiClient';
 import { splitParagraphs } from '../utils/chapterSplit';
+import { exportToFile } from '../utils/fileExport';
+import { EmptyState } from './EmptyState';
 import type { ChatMessage } from '../utils/aiClient';
 import type { Chapter, AIConfig } from '../types';
 
@@ -162,20 +164,14 @@ function TaskPanelContent({
     }
   }, [chapter, prompt, aiConfig, granularity, startLine, setScriptResult]);
 
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback(async () => {
     if (result.length === 0) return;
 
     const fullScript = result
       .map((s) => `// ${s.chapterTitle}\n\n${s.content}`)
       .join('\n\n' + '='.repeat(60) + '\n\n');
 
-    const blob = new Blob([fullScript], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${chapter?.title ?? '剧本'}_改编.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    await exportToFile(fullScript, `${chapter?.title ?? '剧本'}_改编.txt`);
   }, [result, chapter]);
 
   return (
@@ -280,16 +276,13 @@ function TaskPanelContent({
               </div>
               {/* 右下角固定保存按钮 */}
               <div className="task-export-bar">
-                <button className="btn-export-primary" onClick={handleExport}>
+                <button className="btn-export" onClick={handleExport}>
                   💾 导出剧本
                 </button>
               </div>
             </>
           ) : (
-            <div className="result-empty">
-              <span className="empty-icon">📄</span>
-              <p>点击「开始转换」按钮，将当前章节内容转换为剧本格式</p>
-            </div>
+            <EmptyState icon="📄" message="点击「开始转换」按钮，将当前章节内容转换为剧本格式" />
           )}
         </div>
       </div>
@@ -311,10 +304,7 @@ export function TaskPanel() {
   if (!chapter) {
     return (
       <div className="task-panel empty">
-        <div className="empty-hint">
-          <span className="empty-icon">🎬</span>
-          <p>导入文件后可使用剧本改编功能</p>
-        </div>
+        <EmptyState icon="🎬" message="导入文件后可使用剧本改编功能" />
       </div>
     );
   }

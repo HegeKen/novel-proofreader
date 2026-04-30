@@ -35,6 +35,17 @@ interface AppState {
   configModalOpen: boolean;
   fontSize: number;
   theme: 'light' | 'dark';
+  readingMode: boolean;
+  lineSpacing: number; // 行间距（1.0-2.5）
+  paragraphIndent: number; // 首行缩进（0-4字符，整数）
+  paragraphSpacing: number; // 段间距（0-30px）
+  readingBackground: 'white' | 'cream' | 'sepia' | 'dark' | 'custom' | 'image'; // 阅读背景
+  customTextColor: string; // 自定义文字颜色
+  customBgColor: string; // 自定义背景颜色
+  bgImageUrl: string; // 背景图片URL
+  setReadingBackground: (background: 'white' | 'cream' | 'sepia' | 'dark' | 'custom' | 'image') => void;
+  setCustomColors: (textColor: string, bgColor: string) => void;
+  setBgImageUrl: (url: string) => void;
 
   // 剧本改编结果缓存（按章节存储）
   scriptResults: Record<number, ScriptResult>;
@@ -78,6 +89,10 @@ interface AppState {
   setConfigModalOpen: (open: boolean) => void;
   setFontSize: (size: number) => void;
   setTheme: (theme: 'light' | 'dark') => void;
+  setReadingMode: (enabled: boolean) => void;
+  setLineSpacing: (spacing: number) => void;
+  setParagraphIndent: (indent: number) => void;
+  setParagraphSpacing: (spacing: number) => void;
 }
 
 const DEFAULT_AI_CONFIG: AIConfig = {
@@ -102,6 +117,14 @@ export const useAppStore = create<AppState>()(
       configModalOpen: false,
       fontSize: 16,
       theme: 'dark',
+      readingMode: false,
+      lineSpacing: 1.8,
+      paragraphIndent: 2,
+      paragraphSpacing: 16,
+      readingBackground: 'cream',
+      customTextColor: '#333333',
+      customBgColor: '#FDF6E3',
+      bgImageUrl: '',
       scriptResults: {},
 
       addNovel: (novel) =>
@@ -266,6 +289,20 @@ export const useAppStore = create<AppState>()(
       setFontSize: (size) => set({ fontSize: size }),
 
       setTheme: (theme) => set({ theme }),
+
+      setReadingMode: (enabled) => set({ readingMode: enabled }),
+
+      setLineSpacing: (spacing) => set({ lineSpacing: spacing }),
+
+      setParagraphIndent: (indent) => set({ paragraphIndent: indent }),
+
+      setParagraphSpacing: (spacing) => set({ paragraphSpacing: spacing }),
+
+      setReadingBackground: (background) => set({ readingBackground: background }),
+
+      setCustomColors: (textColor, bgColor) => set({ customTextColor: textColor, customBgColor: bgColor }),
+
+      setBgImageUrl: (url) => set({ bgImageUrl: url }),
     }),
     {
       name: 'novel-proofreader-store',

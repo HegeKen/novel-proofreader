@@ -1,7 +1,7 @@
 // ============================================================
 // 主布局 - Apple Liquid Glass Design
 // ============================================================
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { NovelList } from './components/NovelList';
 import { ChapterNav } from './components/ChapterNav';
 import { ReaderPanel } from './components/ReaderPanel';
@@ -11,9 +11,10 @@ import { ConfigModal } from './components/ConfigModal';
 import { useAppStore } from './stores/appStore';
 import { splitChapters } from './utils/chapterSplit';
 import { decodeTextBuffer } from './utils/decodeText';
+import { exportToFile } from './utils/fileExport';
 
 type RightTab = 'proofread' | 'task';
-type MobileTab = 'novels' | 'chapters' | 'reader' | 'proofread' | 'task';
+type MobileTab = 'novels' | 'chapters' | 'reader' | 'task' | 'settings';
 
 export default function App() {
   const novels = useAppStore((s) => s.novels);
@@ -25,6 +26,8 @@ export default function App() {
   const [rightTab, setRightTab] = useState<RightTab>('proofread');
   const [mobileTab, setMobileTab] = useState<MobileTab>('reader');
   const [isMobile, setIsMobile] = useState(false);
+  // 移动端校对面板显示/隐藏状态
+  const [mobileProofreadVisible, setMobileProofreadVisible] = useState(true);
 
   // 检测是否为移动端
   useEffect(() => {
@@ -39,6 +42,35 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  // 移动端音量键翻页功能
+  const chapters = useAppStore((s) => s.chapters);
+  const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
+  const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
+  const readingMode = useAppStore((s) => s.readingMode);
+
+  const handleVolumeKey = useCallback((e: KeyboardEvent) => {
+    if (!isMobile) return;
+    
+    if (e.code === 'VolumeUp') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (currentChapterIndex > 0) {
+        setCurrentChapterIndex(currentChapterIndex - 1);
+      }
+    } else if (e.code === 'VolumeDown') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (currentChapterIndex < chapters.length - 1) {
+        setCurrentChapterIndex(currentChapterIndex + 1);
+      }
+    }
+  }, [isMobile, currentChapterIndex, chapters.length, setCurrentChapterIndex]);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleVolumeKey);
+    return () => window.removeEventListener('keydown', handleVolumeKey);
+  }, [handleVolumeKey]);
 
   const handleImport = async () => {
     const input = document.createElement('input');
@@ -60,77 +92,28 @@ export default function App() {
   const handleExportAsNew = async () => {
     const novel = novels.find((n) => n.id === currentNovelId);
     if (!novel) return;
-
-    // 优先使用 File System Access API，让用户选择保存位置
-    if ('showSaveFilePicker' in window) {
-      try {
-        const handle = await (window as unknown as { showSaveFilePicker: (options: { suggestedName: string; types: { description: string; accept: { 'text/plain': string[] } }[] }) => Promise<{ createWritable: () => Promise<{ write: (data: string) => Promise<void>; close: () => Promise<void> }> }> }).showSaveFilePicker({
-          suggestedName: `${novel.name}_edited.txt`,
-          types: [{ description: '文本文件', accept: { 'text/plain': ['.txt'] } }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(novel.fullText);
-        await writable.close();
-        return;
-      } catch {
-        // 用户取消选择，静默返回
-        return;
-      }
-    }
-
-    // fallback：直接下载
-    const blob = new Blob([novel.fullText], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${novel.name}_edited.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    await exportToFile(novel.fullText, `${novel.name}_edited.txt`);
   };
 
   /** 保存到原文件 */
   const handleSaveToOriginal = async () => {
     const novel = novels.find((n) => n.id === currentNovelId);
     if (!novel) return;
-
-    // 提示用户确认覆盖原文件
     if (!confirm(`确定要覆盖原文件 "${novel.name}" 吗？此操作不可撤销。`)) {
       return;
     }
-
-    // 优先使用 File System Access API 写入原文件
-    if ('showSaveFilePicker' in window) {
-      try {
-        const handle = await (window as unknown as { showSaveFilePicker: (options: { suggestedName: string; types: { description: string; accept: { 'text/plain': string[] } }[] }) => Promise<{ createWritable: () => Promise<{ write: (data: string) => Promise<void>; close: () => Promise<void> }> }> }).showSaveFilePicker({
-          suggestedName: novel.name,
-          types: [{ description: '文本文件', accept: { 'text/plain': ['.txt'] } }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(novel.fullText);
-        await writable.close();
-        alert('文件已成功保存！');
-        return;
-      } catch {
-        // 用户取消选择，静默返回
-        return;
-      }
+    const result = await exportToFile(novel.fullText, novel.name);
+    if (result === 'success') {
+      alert('文件已成功保存！');
+    } else if (result === 'fallback') {
+      alert('文件已下载！请手动覆盖原文件。');
     }
-
-    // fallback：直接下载覆盖
-    const blob = new Blob([novel.fullText], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = novel.name;
-    a.click();
-    URL.revokeObjectURL(url);
-    alert('文件已下载！请手动覆盖原文件。');
   };
 
   // 移动端标签切换
   const handleMobileTabChange = (tab: MobileTab) => {
     setMobileTab(tab);
-    if (tab === 'proofread' || tab === 'task') {
+    if (tab === 'task') {
       setRightTab(tab);
     }
   };
@@ -140,7 +123,10 @@ export default function App() {
       {/* 顶部栏 */}
       <header className="app-header">
         <div className="header-left">
-          <h1 className="app-title">📖 校对助手</h1>
+          <h1 className="app-title">
+            <img src="/icons/icon.png" alt="" className="app-icon" />
+            校对助手
+          </h1>
         </div>
         <div className="header-center">
                     <button className="btn-import" onClick={handleImport}>
@@ -148,7 +134,7 @@ export default function App() {
           </button>
           {currentNovelId && (
             <>
-              <button className="btn-import" onClick={handleExportAsNew}>
+              <button className="btn-export" onClick={handleExportAsNew}>
                 💾 导出修改版本
               </button>
               <button className="btn-save-original" onClick={handleSaveToOriginal}>
@@ -158,6 +144,11 @@ export default function App() {
           )}
         </div>
         <div className="header-right">
+          {isMobile && currentNovelId && (
+            <button className="btn-save-mobile" onClick={handleSaveToOriginal} title="保存到原文件">
+              💾
+            </button>
+          )}
           <button
             className="btn-theme-toggle"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -173,46 +164,72 @@ export default function App() {
 
       {/* 主体布局 - 响应式 */}
       <div className="app-body">
-        {/* 最左：小说列表 */}
-        <aside className={`app-novel-list ${isMobile && mobileTab === 'novels' ? 'mobile-active' : ''}`}>
-          <NovelList />
+        {/* 最左：小说列表 - 桌面端阅读模式隐藏 */}
+        <aside className={`app-novel-list ${isMobile && mobileTab === 'novels' ? 'mobile-active' : ''} ${!isMobile && readingMode ? 'hidden-panel' : ''}`}>
+          <NovelList onNovelSelect={() => isMobile && setMobileTab('chapters')} />
         </aside>
 
-        {/* 左二：章节导航 */}
-        <aside className={`app-sidebar ${isMobile && mobileTab === 'chapters' ? 'mobile-active' : ''}`}>
-          <ChapterNav />
+        {/* 左二：章节导航 - 桌面端阅读模式隐藏 */}
+        <aside className={`app-sidebar ${isMobile && mobileTab === 'chapters' ? 'mobile-active' : ''} ${!isMobile && readingMode ? 'hidden-panel' : ''}`}>
+          <ChapterNav onChapterSelect={() => isMobile && setMobileTab('reader')} />
         </aside>
 
-        {/* 中间：阅读区 */}
-        <main className={`app-main ${rightTab === 'task' ? 'task-mode' : ''} ${isMobile && mobileTab === 'reader' ? '' : isMobile ? 'hidden' : ''}`}>
-          <ReaderPanel />
+        {/* 中间：阅读区（桌面端） */}
+        <main className={`app-main ${rightTab === 'task' ? 'task-mode' : ''} ${isMobile && mobileTab === 'reader' ? '' : isMobile ? 'hidden' : ''} ${!isMobile && readingMode ? '' : ''}`}>
+          {/* 移动端：阅读区 + 校对区合并 */}
+          {isMobile && mobileTab === 'reader' && (
+            <div className="mobile-reader-proofread">
+              <div className="mobile-reader-section">
+                <ReaderPanel showReadingModeToggle={true} />
+              </div>
+              {/* 校对区切换按钮 - 阅读模式下隐藏 */}
+              {!readingMode && (
+                <button
+                  className="mobile-proofread-toggle"
+                  onClick={() => setMobileProofreadVisible(!mobileProofreadVisible)}
+                >
+                  {mobileProofreadVisible ? '🔍 收起校对' : '📝 显示校对'}
+                </button>
+              )}
+              {/* 校对区 - 阅读模式下隐藏 */}
+              {!readingMode && mobileProofreadVisible && (
+                <div className="mobile-proofread-section">
+                  <div className="right-content">
+                    <ProofreadPanel />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {/* 桌面端：仅显示阅读区 */}
+          {!isMobile && <ReaderPanel showReadingModeToggle={true} />}
         </main>
 
-        {/* 右侧：校对 / 任务 */}
-        <aside className={`app-right ${rightTab === 'task' ? 'task-mode' : ''} ${isMobile && (mobileTab === 'proofread' || mobileTab === 'task') ? 'mobile-active' : ''}`}>
-          <div className="right-tabs">
-            <button
-              className={`tab-btn ${rightTab === 'proofread' ? 'active' : ''}`}
-              onClick={() => {
-                setRightTab('proofread');
-                if (isMobile) setMobileTab('proofread');
-              }}
-            >
-              🔍 校对检测
-            </button>
-            <button
-              className={`tab-btn ${rightTab === 'task' ? 'active' : ''}`}
-              onClick={() => {
-                setRightTab('task');
-                if (isMobile) setMobileTab('task');
-              }}
-            >
-              🎬 剧本改编
-            </button>
-          </div>
-          <div className="right-content">
-            {rightTab === 'proofread' ? <ProofreadPanel /> : <TaskPanel />}
-          </div>
+        {/* 右侧：校对 / 任务（桌面端）- 桌面端阅读模式隐藏 */}
+        <aside className={`app-right ${rightTab === 'task' ? 'task-mode' : ''} ${isMobile && mobileTab === 'task' ? 'mobile-active' : ''} ${!isMobile && readingMode ? 'hidden-panel' : ''}`}>
+          {isMobile && mobileTab === 'task' ? (
+            <TaskPanel />
+          ) : (
+            <>
+              <div className="right-tabs">
+                <button
+                  className={`tab-btn ${rightTab === 'proofread' ? 'active' : ''}`}
+                  onClick={() => setRightTab('proofread')}
+                >
+                  🔍 校对检测
+                </button>
+                <button
+                  className={`tab-btn ${rightTab === 'task' ? 'active' : ''}`}
+                  onClick={() => setRightTab('task')}
+                >
+                  🎬 剧本改编
+                </button>
+              </div>
+              <div className="right-content">
+                {rightTab === 'proofread' ? <ProofreadPanel /> : <TaskPanel />}
+              </div>
+            </>
+          )}
         </aside>
       </div>
 
@@ -239,13 +256,6 @@ export default function App() {
           >
             📖
             <span>阅读</span>
-          </button>
-          <button
-            className={`mobile-tab-btn ${mobileTab === 'proofread' ? 'active' : ''}`}
-            onClick={() => handleMobileTabChange('proofread')}
-          >
-            🔍
-            <span>校对</span>
           </button>
           <button
             className={`mobile-tab-btn ${mobileTab === 'task' ? 'active' : ''}`}

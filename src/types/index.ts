@@ -35,7 +35,7 @@ export interface AIConfig {
 }
 
 /** 错误类型 */
-export type ErrorType = 'typo' | 'format' | 'grammar';
+export type ErrorType = 'typo' | 'format' | 'grammar' | 'punctuation';
 
 /** 单个检测错误 */
 export interface ProofreadError {

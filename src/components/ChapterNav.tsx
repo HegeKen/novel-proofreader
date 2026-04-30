@@ -2,8 +2,9 @@
 // 章节导航侧栏
 // ============================================================
 import { useAppStore } from '../stores/appStore';
+import { EmptyState } from './EmptyState';
 
-export function ChapterNav() {
+export function ChapterNav({ onChapterSelect }: { onChapterSelect?: () => void } = {}) {
   const chapters = useAppStore((s) => s.chapters);
   const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
   const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
@@ -14,9 +15,7 @@ export function ChapterNav() {
         <div className="nav-header">
           <h3>📑 章节</h3>
         </div>
-        <div className="empty-hint">
-          <p>导入 TXT 文件后<br />章节将在此列出</p>
-        </div>
+        <EmptyState icon="📑" message="导入 TXT 文件后" hint="章节将在此列出" />
       </div>
     );
   }
@@ -32,7 +31,12 @@ export function ChapterNav() {
           <button
             key={ch.id}
             className={`chapter-item ${i === currentChapterIndex ? 'active' : ''}`}
-            onClick={() => setCurrentChapterIndex(i)}
+            onClick={() => {
+              setCurrentChapterIndex(i);
+              if (onChapterSelect) {
+                onChapterSelect();
+              }
+            }}
             title={ch.title}
           >
             <span className="chapter-number">{i + 1}</span>
