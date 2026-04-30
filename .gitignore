@@ -26,3 +26,7 @@ dist-ssr
 src-tauri/target/flycheck0/stderr
 src-tauri/target/flycheck0/stdout
 src-tauri/target/aarch64-apple-darwin
+src-tauri/target/aarch64-linux-android
+src-tauri/target/armv7-linux-androideabi
+src-tauri/target/i686-linux-android
+src-tauri/target/x86_64-linux-android

@@ -45,15 +45,15 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '24' # 更新到Node.js 24
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9
           
@@ -88,14 +88,14 @@ jobs:
       # Android特定：安装Java 17
       - name: Setup Java for Android
         if: matrix.android
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
 
       - name: Setup Android SDK
         if: matrix.android
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           packages: >
             platform-tools
@@ -168,7 +168,7 @@ jobs:
           args: --target ${{ matrix.target }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.target }}
           path: |
@@ -199,7 +199,7 @@ jobs:
         run: find artifacts -type f -name "*.dmg" -o -name "*.exe" -o -name "*.msi" -o -name "*.apk" -o -name "*.aab" -o -name "*.deb" -o -name "*.AppImage"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v8
         with:
           draft: true
           files: |
