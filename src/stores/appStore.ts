@@ -39,11 +39,11 @@ interface AppState {
   lineSpacing: number; // 行间距（1.0-2.5）
   paragraphIndent: number; // 首行缩进（0-4字符，整数）
   paragraphSpacing: number; // 段间距（0-30px）
-  readingBackground: 'white' | 'cream' | 'sepia' | 'dark' | 'custom' | 'image'; // 阅读背景
+  readingBackground: 'white' | 'cream' | 'sepia' | 'mint' | 'sky' | 'lavender' | 'peach' | 'sage' | 'slate' | 'dark' | 'custom' | 'image'; // 阅读背景
   customTextColor: string; // 自定义文字颜色
   customBgColor: string; // 自定义背景颜色
   bgImageUrl: string; // 背景图片URL
-  setReadingBackground: (background: 'white' | 'cream' | 'sepia' | 'dark' | 'custom' | 'image') => void;
+  setReadingBackground: (background: 'white' | 'cream' | 'sepia' | 'mint' | 'sky' | 'lavender' | 'peach' | 'sage' | 'slate' | 'dark' | 'custom' | 'image') => void;
   setCustomColors: (textColor: string, bgColor: string) => void;
   setBgImageUrl: (url: string) => void;
 
