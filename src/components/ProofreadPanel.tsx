@@ -6,18 +6,22 @@ import { useAppStore } from '../stores/appStore';
 import { useProofreadStore } from '../stores/proofreadStore';
 import { useAICheck } from '../hooks/useAICheck';
 import { splitParagraphs } from '../utils/chapterSplit';
+import { buildParagraphIndexMap } from '../utils/formatters';
+import { EmptyState } from './EmptyState';
 import type { CheckGranularity, ProofreadError } from '../types';
 
 const ERROR_TYPE_LABELS: Record<string, string> = {
   typo: '🔤 错别字',
   format: '📐 排版',
   grammar: '📝 病句',
+  punctuation: '📖 标点',
 };
 
 const ERROR_TYPE_COLORS: Record<string, string> = {
   typo: '#ff4d4f',
   format: '#faad14',
   grammar: '#1677ff',
+  punctuation: '#52c41a',
 };
 
 /** 采纳动画时长（ms） */
@@ -45,25 +49,52 @@ export function ProofreadPanel() {
   const [singleCheckingLine, setSingleCheckingLine] = useState<number | null>(null);
   // 动画互斥：防止快速连续点击"采纳"
   const animatingRef = useRef(false);
+  // 滚动容器 ref
+  const proofreadContentRef = useRef<HTMLDivElement>(null);
+  const paragraphRefs = useRef<(HTMLDivElement | null)[]>([]);
 
     const chapter = chapters[currentChapterIndex];
-  const chapterResults = chapter ? results[chapter.id] ?? [] : [];
-  const totalLines = chapter ? chapter.content.split('\n').length : 0;
-  
-  // 确保始终有段落列表用于高亮匹配
+  const chapterResults = useMemo(() => {
+    return chapter ? results[chapter.id] ?? [] : [];
+  }, [chapter, results]);
+  const totalLines = chapter ? splitParagraphs(chapter.content).filter(p => p.trim() !== '').length : 0;
+
+  // 建立过滤后索引到原始索引的映射
+  const paragraphIndexMap = useMemo(() => {
+    return chapter ? buildParagraphIndexMap(chapter.content) : [];
+  }, [chapter]);
+
+  // 确保始终有段落列表用于高亮匹配（与阅读区保持同步）
   const displayResults = useMemo(() => {
     if (!chapter) return [];
-    if (chapterResults.length > 0) return chapterResults;
     
+    // 获取过滤后的段落列表（与阅读区一致）
+    const paragraphs = splitParagraphs(chapter.content).filter(p => p.trim() !== '');
+    
+    // 如果有结果，合并结果数据
+    if (chapterResults.length > 0) {
+      return paragraphs.map((p, i) => {
+        const existing = chapterResults.find(r => r.paragraphIndex === paragraphIndexMap[i]);
+        if (existing) {
+          return existing;
+        }
+        return {
+          paragraphIndex: paragraphIndexMap[i],
+          originalText: p,
+          errors: [],
+          status: 'pending' as const,
+        };
+      });
+    }
+
     // 如果没有结果，生成空的段落列表
-    const paragraphs = splitParagraphs(chapter.content);
     return paragraphs.map((p, i) => ({
-      paragraphIndex: i,
+      paragraphIndex: paragraphIndexMap[i],
       originalText: p,
       errors: [],
       status: 'pending' as const,
     }));
-  }, [chapter, chapterResults]);
+  }, [chapter, chapterResults, paragraphIndexMap]);
 
     // 切换章节时，自动把段落列表以"待校对"状态渲染出来（如果没有已有结果）
   const lastChapterIdRef = useRef<number | null>(null);
@@ -73,19 +104,19 @@ export function ProofreadPanel() {
     lastChapterIdRef.current = chapter.id;
     // 切换章节时重置起始行
     setStartLine(null);
-    // 如果该章节还没有校对结果，初始化为待校对列表
+    // 如果该章节还没有校对结果，初始化为待校对列表（过滤掉空段落）
     const existing = useProofreadStore.getState().results[chapter.id];
     if (!existing || existing.length === 0) {
-      const paragraphs = splitParagraphs(chapter.content);
+      const paragraphs = splitParagraphs(chapter.content).filter(p => p.trim() !== '');
       const initial = paragraphs.map((p, i) => ({
-        paragraphIndex: i,
+        paragraphIndex: paragraphIndexMap[i],
         originalText: p,
         errors: [],
         status: 'pending' as const,
       }));
       setResults(chapter.id, initial);
     }
-  }, [chapter?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chapter?.id, paragraphIndexMap, chapter, setResults, setStartLine]);
 
   const handleStartCheck = async () => {
     setChecking(true);
@@ -98,9 +129,36 @@ export function ProofreadPanel() {
     await checkSingleLine(lineIndex, setSingleCheckingLine);
   };
 
+  // 滚动到指定段落
+  const scrollToParagraph = useCallback((index: number) => {
+    const el = paragraphRefs.current[index];
+    const container = proofreadContentRef.current;
+    
+    if (!el || !container) {
+      console.log(`[ProofreadPanel] scrollToParagraph failed: el=${!!el}, container=${!!container}, index=${index}`);
+      return;
+    }
+
+    console.log(`[ProofreadPanel] scrollToParagraph: index=${index}`);
+    
+    // 强制滚动，不检查是否在可视区域内
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
+
+  // 监听 highlightedParagraph 变化，自动滚动到对应段落
+  useEffect(() => {
+    if (highlightedParagraph !== null) {
+      console.log(`[ProofreadPanel] highlightedParagraph changed: ${highlightedParagraph}`);
+      // 使用 setTimeout 确保 DOM 已经渲染完成
+      setTimeout(() => {
+        scrollToParagraph(highlightedParagraph);
+      }, 50);
+    }
+  }, [highlightedParagraph, scrollToParagraph]);
+
       /** 采纳单个错误：高亮旧文本 → 替换 → 高亮新文本 */
   const handleApply = useCallback(
-    (paraResult: (typeof chapterResults)[number], err: ProofreadError) => {
+    (paraResult: (typeof chapterResults)[number], err: ProofreadError, filteredIndex: number) => {
       // 动画互斥：上一个动画还没结束时禁止操作
       if (animatingRef.current) return;
 
@@ -118,7 +176,7 @@ export function ProofreadPanel() {
           // 撤销失败（原文已被修改），只翻转状态
           console.warn('[ProofreadPanel] 撤销替换失败，原文已不匹配');
         }
-        toggleErrorApplied(chapterId, paraIndex, err.id);
+        toggleErrorApplied(chapterId, filteredIndex, err.id);  // 使用过滤后的索引
         return;
       }
 
@@ -127,7 +185,7 @@ export function ProofreadPanel() {
       // 阶段 1：高亮旧文本（精确到错误位置）
       setApplyAnimation({
         chapterId,
-        paragraphIndex: paraIndex,
+        paragraphIndex: filteredIndex,  // 使用过滤后的索引，与阅读区保持一致
         phase: 'highlight-old',
         errorId: err.id,
         originalText: err.originalText,
@@ -135,13 +193,13 @@ export function ProofreadPanel() {
         startIndex: err.startIndex,
         endIndex: err.endIndex,
       });
-      setHighlightedParagraph(paraIndex);
+      setHighlightedParagraph(filteredIndex);
 
       setTimeout(() => {
         // 阶段 2：替换文本
         setApplyAnimation({
           chapterId,
-          paragraphIndex: paraIndex,
+          paragraphIndex: filteredIndex,  // 使用过滤后的索引，与阅读区保持一致
           phase: 'replacing',
           errorId: err.id,
           originalText: err.originalText,
@@ -151,7 +209,7 @@ export function ProofreadPanel() {
         });
 
                 const replaced = replaceParagraphText(chapterId, paraIndex, err.originalText, err.correctedText);
-        toggleErrorApplied(chapterId, paraIndex, err.id);
+        toggleErrorApplied(chapterId, filteredIndex, err.id);  // 使用过滤后的索引
 
         if (!replaced) {
           // AI 返回的文本在段落中找不到，替换静默失败
@@ -160,15 +218,19 @@ export function ProofreadPanel() {
 
         setTimeout(() => {
           // 阶段 3：高亮新文本（精确到替换后的位置）
+          // 替换后新文本的位置应该重新计算，因为新文本长度可能与原文本不同
+          const newStartIndex = err.startIndex;
+          const newEndIndex = err.startIndex + err.correctedText.length;
+          
           setApplyAnimation({
             chapterId,
-            paragraphIndex: paraIndex,
+            paragraphIndex: filteredIndex,  // 使用过滤后的索引，与阅读区保持一致
             phase: 'highlight-new',
             errorId: err.id,
             originalText: err.originalText,
             correctedText: err.correctedText,
-            startIndex: err.startIndex,
-            endIndex: err.endIndex,
+            startIndex: newStartIndex,
+            endIndex: newEndIndex,
           });
 
           setTimeout(() => {
@@ -190,10 +252,7 @@ export function ProofreadPanel() {
   if (!chapter) {
     return (
       <div className="proofread-panel empty">
-        <div className="empty-hint">
-          <span className="empty-icon">🔍</span>
-          <p>导入文件后可进行校对检测</p>
-        </div>
+        <EmptyState icon="🔍" message="导入文件后可进行校对检测" />
       </div>
     );
   }
@@ -257,23 +316,22 @@ export function ProofreadPanel() {
         </div>
       </div>
 
-            <div className="proofread-content">
+            <div className="proofread-content" ref={proofreadContentRef}>
         {displayResults.length === 0 ? (
-          <div className="empty-hint">
-            <p>点击"开始检测"对当前章节进行 AI 校对</p>
-          </div>
+          <EmptyState icon="🔍" message="点击「开始检测」对当前章节进行 AI 校对" />
         ) : (
-          displayResults.map((paraResult) => (
+          displayResults.map((paraResult, i) => (
                         <div
               key={paraResult.paragraphIndex}
+              ref={(el) => { paragraphRefs.current[i] = el; }}
               className={`proofread-paragraph ${
-                highlightedParagraph === paraResult.paragraphIndex ? 'highlighted' : ''
+                highlightedParagraph === i ? 'highlighted' : ''
               }`}
               onClick={() => {
-                setHighlightedParagraph(paraResult.paragraphIndex);
+                setHighlightedParagraph(i);
                 // 点击段落时自动切换起始行到该段落
                 if (!checking) {
-                  setStartLine(paraResult.paragraphIndex === 0 ? null : paraResult.paragraphIndex);
+                  setStartLine(i === 0 ? null : i);
                 }
               }}
             >
@@ -286,12 +344,12 @@ export function ProofreadPanel() {
                   className="btn-single-check"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleSingleLineCheck(paraResult.paragraphIndex);
+                    handleSingleLineCheck(i);
                   }}
                   disabled={checking || singleCheckingLine !== null || paraResult.status === 'checking'}
                   title="检测此行"
                 >
-                  {singleCheckingLine === paraResult.paragraphIndex ? '检测中…' : '🔍 检测'}
+                  {singleCheckingLine === i ? '检测中…' : '🔍 检测'}
                 </button>
               </div>
 
@@ -339,7 +397,7 @@ export function ProofreadPanel() {
                         className="btn-apply"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleApply(paraResult, err);
+                          handleApply(paraResult, err, i);
                         }}
                       >
                         {err.applied ? '撤销' : '采纳修改'}

@@ -12,6 +12,10 @@ export default defineConfig([
     'src-tauri/target',
     '.eslintcache',
     'node_modules',
+    '.DS_Store',
+    'Thumbs.db',
+    '*.log',
+    'npm-debug.log*',
   ]),
   {
     files: ['**/*.{ts,tsx}'],

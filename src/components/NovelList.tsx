@@ -4,9 +4,11 @@
 import { useAppStore } from '../stores/appStore';
 import { splitChapters } from '../utils/chapterSplit';
 import { decodeTextBuffer } from '../utils/decodeText';
+import { formatFileSize, formatDateTime } from '../utils/formatters';
+import { EmptyState } from './EmptyState';
 import type { Novel } from '../types';
 
-export function NovelList() {
+export function NovelList({ onNovelSelect }: { onNovelSelect?: () => void } = {}) {
   const novels = useAppStore((s) => s.novels);
   const currentNovelId = useAppStore((s) => s.currentNovelId);
   const addNovel = useAppStore((s) => s.addNovel);
@@ -44,23 +46,14 @@ export function NovelList() {
     selectNovel(novel.id);
     const chapters = splitChapters(novel.fullText);
     setChapters(chapters);
+    if (onNovelSelect) {
+      onNovelSelect();
+    }
   };
 
   const handleRemove = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     removeNovel(id);
-  };
-
-  const formatSize = (text: string) => {
-    const bytes = new TextEncoder().encode(text).length;
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const formatDate = (ts: number) => {
-    const d = new Date(ts);
-    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
   return (
@@ -73,10 +66,7 @@ export function NovelList() {
       </div>
       <div className="novel-list-items">
         {novels.length === 0 ? (
-          <div className="novel-list-empty">
-            <p>暂无小说</p>
-            <p className="hint">点击 + 导入 TXT 文件</p>
-          </div>
+          <EmptyState icon="📚" message="暂无小说" hint="点击 + 导入 TXT 文件" />
         ) : (
           novels.map((novel) => (
             <div
@@ -86,8 +76,8 @@ export function NovelList() {
             >
               <div className="novel-item-name">{novel.name}</div>
               <div className="novel-item-meta">
-                <span>{formatSize(novel.fullText)}</span>
-                <span>{formatDate(novel.importedAt)}</span>
+                <span>{formatFileSize(novel.fullText)}</span>
+                <span>{formatDateTime(novel.importedAt)}</span>
               </div>
               <button
                 className="novel-item-remove"

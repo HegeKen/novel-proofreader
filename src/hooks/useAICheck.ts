@@ -13,11 +13,6 @@ import {
 } from '../utils/aiClient';
 import type { ParagraphResult, ProofreadError, CheckGranularity } from '../types';
 
-/** 按行分割（单换行） */
-function splitLines(text: string): string[] {
-  return text.split('\n').filter((l) => l.trim().length > 0);
-}
-
 export function useAICheck() {
   const aiConfig = useAppStore((s) => s.aiConfig);
   const chapters = useAppStore((s) => s.chapters);
@@ -103,25 +98,33 @@ export function useAICheck() {
           });
         }
       } else {
-        // 按段落 或 按行 检测
-                const items = granularity === 'line' ? splitLines(text) : splitParagraphs(text);
+        // 按段落 或 按行检测（过滤掉空段落）
+        const allLines = splitParagraphs(text);
+        const filteredItems = allLines.filter(p => p.trim() !== '');
+        // 建立过滤后索引到原始索引的映射
+        const indexMap: number[] = [];
+        allLines.forEach((line, i) => {
+          if (line.trim() !== '') {
+            indexMap.push(i);
+          }
+        });
         // 从 startFrom 开始，之前的标记为已跳过
-        const initial: ParagraphResult[] = items.map((p, i) => ({
-          paragraphIndex: i,
+        const initial: ParagraphResult[] = filteredItems.map((p, i) => ({
+          paragraphIndex: indexMap[i],
           originalText: p,
           errors: [],
           status: (i < startFrom ? 'done' : 'pending') as 'done' | 'pending',
         }));
         setResults(chapter.id, initial);
 
-                // 逐项检测（从 startFrom 开始）
-        for (let i = startFrom; i < items.length; i++) {
+        // 逐项检测（从 startFrom 开始）
+        for (let i = startFrom; i < filteredItems.length; i++) {
           if (controller.signal.aborted) break;
 
           updateParagraphResult(chapter.id, i, { status: 'checking' });
 
           try {
-            const item = items[i];
+            const item = filteredItems[i];
             // 如果太短，跳过
             if (item.trim().length < 5) {
               updateParagraphResult(chapter.id, i, { status: 'done' });
@@ -189,7 +192,7 @@ export function useAICheck() {
 
       setSingleCheckingLine(lineIndex);
 
-      const lines = chapter.content.split('\n');
+      const lines = splitParagraphs(chapter.content).filter(p => p.trim() !== '');
       if (lineIndex >= lines.length) {
         setSingleCheckingLine(null);
         return;
