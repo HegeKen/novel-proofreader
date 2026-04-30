@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.3] - 2026-04-30
+
+### 🔧 改进优化
+
+**Android 图标尺寸规范化**
+- 按照 Tauri 官方文档调整 Android 应用图标尺寸
+- 修复 Android 项目生成问题，重新初始化 Android 项目
+- 适配多分辨率设备（mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi）
+
+### 🐛 Bug 修复
+
+**Android 构建错误修复**
+- 删除失效的 `gen/android` 目录，使用 `tauri android init` 重新生成
+- 修复 CI 环境中的 Android 构建路径问题
+
+---
+
 ## [0.5.2] - 2026-04-30
 
 ### 🔧 改进优化
