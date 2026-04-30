@@ -110,6 +110,13 @@ export default function App() {
     }
   };
 
+  /** 导出整本小说为 TXT */
+  const handleExportNovel = async () => {
+    const novel = novels.find((n) => n.id === currentNovelId);
+    if (!novel) return;
+    await exportToFile(novel.fullText, `${novel.name}_edited.txt`);
+  };
+
   // 移动端标签切换
   const handleMobileTabChange = (tab: MobileTab) => {
     setMobileTab(tab);
@@ -144,6 +151,11 @@ export default function App() {
           )}
         </div>
         <div className="header-right">
+          {isMobile && currentNovelId && (
+            <button className="btn-export-mobile" onClick={handleExportNovel} title="导出整本小说">
+              📤
+            </button>
+          )}
           {isMobile && currentNovelId && (
             <button className="btn-save-mobile" onClick={handleSaveToOriginal} title="保存到原文件">
               💾
@@ -182,22 +194,26 @@ export default function App() {
               <div className="mobile-reader-section">
                 <ReaderPanel showReadingModeToggle={true} />
               </div>
-              {/* 校对区切换按钮 - 阅读模式下隐藏 */}
-              {!readingMode && (
-                <button
-                  className="mobile-proofread-toggle"
-                  onClick={() => setMobileProofreadVisible(!mobileProofreadVisible)}
-                >
-                  {mobileProofreadVisible ? '🔍 收起校对' : '📝 显示校对'}
-                </button>
-              )}
-              {/* 校对区 - 阅读模式下隐藏 */}
               {!readingMode && mobileProofreadVisible && (
                 <div className="mobile-proofread-section">
+                  <button
+                    className="mobile-proofread-toggle"
+                    onClick={() => setMobileProofreadVisible(!mobileProofreadVisible)}
+                  >
+                    🔍 收起校对
+                  </button>
                   <div className="right-content">
                     <ProofreadPanel />
                   </div>
                 </div>
+              )}
+              {!readingMode && !mobileProofreadVisible && (
+                <button
+                  className="mobile-proofread-toggle"
+                  onClick={() => setMobileProofreadVisible(!mobileProofreadVisible)}
+                >
+                  📝 显示校对
+                </button>
               )}
             </div>
           )}
