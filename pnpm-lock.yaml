@@ -29,13 +29,13 @@ importers:
         version: 10.0.1(eslint@10.2.1(jiti@2.6.1))
       '@tailwindcss/vite':
         specifier: ^4.1.7
-        version: 4.2.4(vite@8.0.10(@types/node@24.12.2)(jiti@2.6.1))
+        version: 4.2.4(vite@8.0.10(@types/node@25.6.0)(jiti@2.6.1))
       '@tauri-apps/cli':
         specifier: ^2
         version: 2.10.1
       '@types/node':
-        specifier: ^24.12.2
-        version: 24.12.2
+        specifier: ^25.6.0
+        version: 25.6.0
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14
@@ -44,7 +44,7 @@ importers:
         version: 19.2.3(@types/react@19.2.14)
       '@vitejs/plugin-react':
         specifier: ^6.0.1
-        version: 6.0.1(vite@8.0.10(@types/node@24.12.2)(jiti@2.6.1))
+        version: 6.0.1(vite@8.0.10(@types/node@25.6.0)(jiti@2.6.1))
       eslint:
         specifier: ^10.2.1
         version: 10.2.1(jiti@2.6.1)
@@ -65,7 +65,7 @@ importers:
         version: 8.59.1(eslint@10.2.1(jiti@2.6.1))(typescript@6.0.3)
       vite:
         specifier: ^8.0.10
-        version: 8.0.10(@types/node@24.12.2)(jiti@2.6.1)
+        version: 8.0.10(@types/node@25.6.0)(jiti@2.6.1)
 
 packages:
 
@@ -515,8 +515,8 @@ packages:
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
-  '@types/node@24.12.2':
-    resolution: {integrity: sha512-A1sre26ke7HDIuY/M23nd9gfB+nrmhtYyMINbjI1zHJxYteKR6qSMX56FsmjMcDb3SMcjJg5BiRRgOCC/yBD0g==}
+  '@types/node@25.6.0':
+    resolution: {integrity: sha512-+qIYRKdNYJwY3vRCZMdJbPLJAtGjQBudzZzdzwQYkEPQd+PJGixUL5QfvCLDaULoLv+RhT3LDkwEfKaAkgSmNQ==}
 
   '@types/react-dom@19.2.3':
     resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
@@ -615,8 +615,8 @@ packages:
     resolution: {integrity: sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==}
     engines: {node: 18 || 20 || >=22}
 
-  baseline-browser-mapping@2.10.23:
-    resolution: {integrity: sha512-xwVXGqevyKPsiuQdLj+dZMVjidjJV508TBqexND5HrF89cGdCYCJFB3qhcxRHSeMctdCfbR1jrxBajhDy7o29g==}
+  baseline-browser-mapping@2.10.24:
+    resolution: {integrity: sha512-I2NkZOOrj2XuguvWCK6OVh9GavsNjZjK908Rq3mIBK25+GD8vPX5w2WdxVqnQ7xx3SrZJiCiZFu+/Oz50oSYSA==}
     engines: {node: '>=6.0.0'}
     hasBin: true
 
@@ -658,8 +658,8 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
-  electron-to-chromium@1.5.344:
-    resolution: {integrity: sha512-4MxfbmNDm+KPh066EZy+eUnkcDPcZ35wNmOWzFuh/ijvHsve6kbLTLURy88uCNK5FbpN+yk2nQY6BYh1GEt+wg==}
+  electron-to-chromium@1.5.345:
+    resolution: {integrity: sha512-F9JXQGiMrz6yVNPI2qOVPvB9HzjH5cGzhs8oJ6A28V5L/YnzN/0KsuiibqF+F1Fd9qxFzD1BUnYSd8JfULxTwg==}
 
   enhanced-resolve@5.21.0:
     resolution: {integrity: sha512-otxSQPw4lkOZWkHpB3zaEQs6gWYEsmX4xQF68ElXC/TWvGxGMSGOvoNbaLXm6/cS/fSfHtsEdw90y20PCd+sCA==}
@@ -1056,8 +1056,8 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
-  undici-types@7.16.0:
-    resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
+  undici-types@7.19.2:
+    resolution: {integrity: sha512-qYVnV5OEm2AW8cJMCpdV20CDyaN3g0AjDlOGf1OW4iaDEx8MwdtChUp4zu4H0VP3nDRF/8RKWH+IPp9uW0YGZg==}
 
   update-browserslist-db@1.2.3:
     resolution: {integrity: sha512-Js0m9cx+qOgDxo0eMiFGEueWztz+d4+M3rGlmKPT+T4IS/jP4ylw3Nwpu6cpTTP8R1MAC1kF4VbdLt3ARf209w==}
@@ -1133,8 +1133,8 @@ packages:
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
-  zod@4.3.6:
-    resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
+  zod@4.4.1:
+    resolution: {integrity: sha512-a6ENMBBGZBsnlSebQ/eKCguSBeGKSf4O7BPnqVPmYGtpBYI7VSqoVqw+QcB7kPRjbqPwhYTpFbVj/RqNz/CT0Q==}
 
   zustand@5.0.12:
     resolution: {integrity: sha512-i77ae3aZq4dhMlRhJVCYgMLKuSiZAaUPAct2AksxQ+gOtimhGMdXljRT21P5BNpeT4kXlLIckvkPM029OljD7g==}
@@ -1464,12 +1464,12 @@ snapshots:
       '@tailwindcss/oxide-win32-arm64-msvc': 4.2.4
       '@tailwindcss/oxide-win32-x64-msvc': 4.2.4
 
-  '@tailwindcss/vite@4.2.4(vite@8.0.10(@types/node@24.12.2)(jiti@2.6.1))':
+  '@tailwindcss/vite@4.2.4(vite@8.0.10(@types/node@25.6.0)(jiti@2.6.1))':
     dependencies:
       '@tailwindcss/node': 4.2.4
       '@tailwindcss/oxide': 4.2.4
       tailwindcss: 4.2.4
-      vite: 8.0.10(@types/node@24.12.2)(jiti@2.6.1)
+      vite: 8.0.10(@types/node@25.6.0)(jiti@2.6.1)
 
   '@tauri-apps/api@2.10.1': {}
 
@@ -1531,9 +1531,9 @@ snapshots:
 
   '@types/json-schema@7.0.15': {}
 
-  '@types/node@24.12.2':
+  '@types/node@25.6.0':
     dependencies:
-      undici-types: 7.16.0
+      undici-types: 7.19.2
 
   '@types/react-dom@19.2.3(@types/react@19.2.14)':
     dependencies:
@@ -1634,10 +1634,10 @@ snapshots:
       '@typescript-eslint/types': 8.59.1
       eslint-visitor-keys: 5.0.1
 
-  '@vitejs/plugin-react@6.0.1(vite@8.0.10(@types/node@24.12.2)(jiti@2.6.1))':
+  '@vitejs/plugin-react@6.0.1(vite@8.0.10(@types/node@25.6.0)(jiti@2.6.1))':
     dependencies:
       '@rolldown/pluginutils': 1.0.0-rc.7
-      vite: 8.0.10(@types/node@24.12.2)(jiti@2.6.1)
+      vite: 8.0.10(@types/node@25.6.0)(jiti@2.6.1)
 
   acorn-jsx@5.3.2(acorn@8.16.0):
     dependencies:
@@ -1654,7 +1654,7 @@ snapshots:
 
   balanced-match@4.0.4: {}
 
-  baseline-browser-mapping@2.10.23: {}
+  baseline-browser-mapping@2.10.24: {}
 
   brace-expansion@5.0.5:
     dependencies:
@@ -1662,9 +1662,9 @@ snapshots:
 
   browserslist@4.28.2:
     dependencies:
-      baseline-browser-mapping: 2.10.23
+      baseline-browser-mapping: 2.10.24
       caniuse-lite: 1.0.30001791
-      electron-to-chromium: 1.5.344
+      electron-to-chromium: 1.5.345
       node-releases: 2.0.38
       update-browserslist-db: 1.2.3(browserslist@4.28.2)
 
@@ -1688,7 +1688,7 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  electron-to-chromium@1.5.344: {}
+  electron-to-chromium@1.5.345: {}
 
   enhanced-resolve@5.21.0:
     dependencies:
@@ -1705,8 +1705,8 @@ snapshots:
       '@babel/parser': 7.29.2
       eslint: 10.2.1(jiti@2.6.1)
       hermes-parser: 0.25.1
-      zod: 4.3.6
-      zod-validation-error: 4.0.2(zod@4.3.6)
+      zod: 4.4.1
+      zod-validation-error: 4.0.2(zod@4.4.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -2045,7 +2045,7 @@ snapshots:
 
   typescript@6.0.3: {}
 
-  undici-types@7.16.0: {}
+  undici-types@7.19.2: {}
 
   update-browserslist-db@1.2.3(browserslist@4.28.2):
     dependencies:
@@ -2057,7 +2057,7 @@ snapshots:
     dependencies:
       punycode: 2.3.1
 
-  vite@8.0.10(@types/node@24.12.2)(jiti@2.6.1):
+  vite@8.0.10(@types/node@25.6.0)(jiti@2.6.1):
     dependencies:
       lightningcss: 1.32.0
       picomatch: 4.0.4
@@ -2065,7 +2065,7 @@ snapshots:
       rolldown: 1.0.0-rc.17
       tinyglobby: 0.2.16
     optionalDependencies:
-      '@types/node': 24.12.2
+      '@types/node': 25.6.0
       fsevents: 2.3.3
       jiti: 2.6.1
 
@@ -2079,11 +2079,11 @@ snapshots:
 
   yocto-queue@0.1.0: {}
 
-  zod-validation-error@4.0.2(zod@4.3.6):
+  zod-validation-error@4.0.2(zod@4.4.1):
     dependencies:
-      zod: 4.3.6
+      zod: 4.4.1
 
-  zod@4.3.6: {}
+  zod@4.4.1: {}
 
   zustand@5.0.12(@types/react@19.2.14)(react@19.2.5):
     optionalDependencies:
