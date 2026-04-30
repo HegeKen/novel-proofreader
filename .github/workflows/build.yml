@@ -199,7 +199,7 @@ jobs:
         run: find artifacts -type f -name "*.dmg" -o -name "*.exe" -o -name "*.msi" -o -name "*.apk" -o -name "*.aab" -o -name "*.deb" -o -name "*.AppImage"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v8
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           files: |
