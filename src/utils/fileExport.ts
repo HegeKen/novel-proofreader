@@ -10,7 +10,15 @@ function getNovelsSubDir(): string {
   return 'novels';
 }
 
+function isTauriEnvironment(): boolean {
+  return typeof window !== 'undefined' && !!(window as unknown as Record<string, unknown>).__TAURI__;
+}
+
 export async function ensureNovelsDirectory(): Promise<boolean> {
+  if (!isTauriEnvironment()) {
+    console.log('[fileExport] Not in Tauri environment, skipping directory creation');
+    return true;
+  }
   try {
     const baseDir = getBaseDir();
     const novelsPath = getNovelsSubDir();
@@ -27,6 +35,10 @@ export async function ensureNovelsDirectory(): Promise<boolean> {
 }
 
 export async function importNovelFromStorage(fileName: string): Promise<string | null> {
+  if (!isTauriEnvironment()) {
+    console.log('[fileExport] Not in Tauri environment, skipping import');
+    return null;
+  }
   try {
     await ensureNovelsDirectory();
     const novelsPath = getNovelsSubDir();
@@ -45,6 +57,10 @@ export async function importNovelFromStorage(fileName: string): Promise<string |
 }
 
 export async function saveNovelToStorage(fileName: string, content: string): Promise<boolean> {
+  if (!isTauriEnvironment()) {
+    console.log('[fileExport] Not in Tauri environment, skipping save');
+    return true;
+  }
   try {
     await ensureNovelsDirectory();
     const novelsPath = getNovelsSubDir();
@@ -62,6 +78,10 @@ export async function saveNovelToStorage(fileName: string, content: string): Pro
 }
 
 export async function deleteNovelFromStorage(fileName: string): Promise<boolean> {
+  if (!isTauriEnvironment()) {
+    console.log('[fileExport] Not in Tauri environment, skipping delete');
+    return true;
+  }
   try {
     const novelsPath = getNovelsSubDir();
     const fullPath = `${novelsPath}/${fileName}`;
@@ -78,6 +98,10 @@ export async function deleteNovelFromStorage(fileName: string): Promise<boolean>
 }
 
 export async function listNovelsInStorage(): Promise<string[]> {
+  if (!isTauriEnvironment()) {
+    console.log('[fileExport] Not in Tauri environment, returning empty list');
+    return [];
+  }
   try {
     await ensureNovelsDirectory();
     const novelsPath = getNovelsSubDir();
@@ -104,6 +128,18 @@ export async function exportToFile(content: string, suggestedName: string): Prom
       console.error('Export content is empty!');
       alert('导出失败：内容为空，请先导入或编辑小说内容');
       return 'cancelled';
+    }
+
+    if (!isTauriEnvironment()) {
+      console.log('[fileExport] Not in Tauri environment, using browser download fallback');
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = suggestedName;
+      a.click();
+      URL.revokeObjectURL(url);
+      return 'fallback';
     }
 
     let finalPath: string | null = null;

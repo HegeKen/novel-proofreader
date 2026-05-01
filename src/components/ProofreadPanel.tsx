@@ -24,6 +24,7 @@ export function ProofreadPanel() {
 	const chapters = useAppStore((s) => s.chapters);
 	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
 	const replaceParagraphText = useAppStore((s) => s.replaceParagraphText);
+	const saveToCache = useAppStore((s) => s.saveToCache);
 	const results = useProofreadStore((s) => s.results);
 	const highlightedParagraph = useProofreadStore((s) => s.highlightedParagraph);
 	const setHighlightedParagraph = useProofreadStore((s) => s.setHighlightedParagraph);
@@ -37,30 +38,42 @@ export function ProofreadPanel() {
 	const [granularity, setGranularity] = useState<CheckGranularity>("paragraph");
 	const [checking, setChecking] = useState(false);
 	const [singleCheckingLine, setSingleCheckingLine] = useState<number | null>(null);
+	const [applyingError, setApplyingError] = useState<{ id: string; originalApplied: boolean } | null>(null);
 	const animatingRef = useRef(false);
 	const proofreadContentRef = useRef<HTMLDivElement>(null);
 	const paragraphRefs = useRef<(HTMLDivElement | null)[]>([]);
 
 	const chapter = chapters[currentChapterIndex];
 	const chapterResults = useMemo(() => chapter ? (results[chapter.id] ?? []) : [], [chapter, results]);
+	// 建立原始索引到显示索引的映射
+	const originalToDisplayIndex = useMemo(() => {
+		const map: Record<number, number> = {};
+		chapterResults.forEach((result, i) => {
+			map[result.paragraphIndex] = i;
+		});
+		return map;
+	}, [chapterResults]);
 
 	const totalLines = useMemo(() => {
 		if (!chapter) return 0;
 		return splitParagraphs(chapter.content).filter((p) => p.trim() !== "").length;
-	}, [chapter]);
+	}, [chapter?.id]);
 
 	useEffect(() => {
 		if (!chapter) return;
 		setStartLine(null);
-		const paragraphs = splitParagraphs(chapter.content).filter((p) => p.trim() !== "");
-		setResults(chapter.id, paragraphs.map((p, i) => ({
-			paragraphIndex: i,
+		const allLines = splitParagraphs(chapter.content);
+		const filteredItems = allLines.filter((p) => p.trim() !== "");
+		const indexMap: number[] = [];
+		allLines.forEach((line, i) => { if (line.trim() !== "") indexMap.push(i); });
+		setResults(chapter.id, filteredItems.map((p, i) => ({
+			paragraphIndex: indexMap[i],
 			originalText: p,
 			errors: [],
 			status: "pending" as const,
 		})));
 		paragraphRefs.current = [];
-	}, [chapter, setResults, setStartLine]);
+	}, [chapter?.id, setResults, setStartLine]);
 
 	const handleStartCheck = async () => {
 		setChecking(true);
@@ -73,14 +86,17 @@ export function ProofreadPanel() {
 		await checkSingleLine(lineIndex, setSingleCheckingLine);
 	};
 
-	const scrollToParagraph = useCallback((index: number) => {
+	const scrollToParagraph = useCallback((originalIndex: number) => {
 		requestAnimationFrame(() => {
-			const el = paragraphRefs.current[index];
-			if (el && proofreadContentRef.current) {
-				el.scrollIntoView({ behavior: "smooth", block: "center" });
+			const displayIndex = originalToDisplayIndex[originalIndex];
+			if (displayIndex !== undefined) {
+				const el = paragraphRefs.current[displayIndex];
+				if (el && proofreadContentRef.current) {
+					el.scrollIntoView({ behavior: "smooth", block: "center" });
+				}
 			}
 		});
-	}, []);
+	}, [originalToDisplayIndex]);
 
 	useEffect(() => {
 		if (highlightedParagraph !== null) {
@@ -88,7 +104,7 @@ export function ProofreadPanel() {
 		}
 	}, [highlightedParagraph, scrollToParagraph]);
 
-	const handleApply = useCallback((paraResult: typeof chapterResults[number], err: ProofreadError, filteredIndex: number) => {
+	const handleApply = useCallback((paraResult: typeof chapterResults[number], err: ProofreadError) => {
 		if (animatingRef.current) return;
 		const state = useAppStore.getState();
 		const currentChapter = state.chapters[state.currentChapterIndex];
@@ -96,26 +112,39 @@ export function ProofreadPanel() {
 		const chapterId = currentChapter.id;
 		const paraIndex = paraResult.paragraphIndex;
 
+		setApplyingError({ id: err.id, originalApplied: err.applied });
+
 		if (err.applied) {
+			animatingRef.current = true;
+			setApplyAnimation({ chapterId, paragraphIndex: paraIndex, phase: "undo-highlight", errorId: err.id, originalText: err.originalText, correctedText: err.correctedText, startIndex: err.startIndex, endIndex: err.startIndex + err.correctedText.length, isUndo: true });
+			setHighlightedParagraph(paraIndex);
+
+			setTimeout(() => {
+			setApplyAnimation({ chapterId, paragraphIndex: paraIndex, phase: "undo-replace", errorId: err.id, originalText: err.originalText, correctedText: err.correctedText, startIndex: err.startIndex, endIndex: err.startIndex + err.originalText.length, isUndo: true });
 			replaceParagraphText(chapterId, paraIndex, err.correctedText, err.originalText);
-			toggleErrorApplied(chapterId, filteredIndex, err.id);
+			toggleErrorApplied(chapterId, paraIndex, err.id);
+			setTimeout(() => {
+				setApplyAnimation({ chapterId, paragraphIndex: paraIndex, phase: "undo-restore", errorId: err.id, originalText: err.originalText, correctedText: err.correctedText, startIndex: err.startIndex, endIndex: err.endIndex, isUndo: true });
+				setTimeout(() => { setApplyAnimation(null); setHighlightedParagraph(null); animatingRef.current = false; setApplyingError(null); setTimeout(() => saveToCache(), 0); }, 500);
+			}, 200);
+		}, 400);
 			return;
 		}
 
 		animatingRef.current = true;
-		setApplyAnimation({ chapterId, paragraphIndex: filteredIndex, phase: "highlight-old", errorId: err.id, originalText: err.originalText, correctedText: err.correctedText, startIndex: err.startIndex, endIndex: err.endIndex });
-		setHighlightedParagraph(filteredIndex);
+		setApplyAnimation({ chapterId, paragraphIndex: paraIndex, phase: "highlight-old", errorId: err.id, originalText: err.originalText, correctedText: err.correctedText, startIndex: err.startIndex, endIndex: err.endIndex });
+		setHighlightedParagraph(paraIndex);
 
 		setTimeout(() => {
-			setApplyAnimation({ chapterId, paragraphIndex: filteredIndex, phase: "replacing", errorId: err.id, originalText: err.originalText, correctedText: err.correctedText, startIndex: err.startIndex, endIndex: err.endIndex });
+			setApplyAnimation({ chapterId, paragraphIndex: paraIndex, phase: "replacing", errorId: err.id, originalText: err.originalText, correctedText: err.correctedText, startIndex: err.startIndex, endIndex: err.endIndex });
 			replaceParagraphText(chapterId, paraIndex, err.originalText, err.correctedText);
-			toggleErrorApplied(chapterId, filteredIndex, err.id);
+			toggleErrorApplied(chapterId, paraIndex, err.id);
 			setTimeout(() => {
-				setApplyAnimation({ chapterId, paragraphIndex: filteredIndex, phase: "highlight-new", errorId: err.id, originalText: err.originalText, correctedText: err.correctedText, startIndex: err.startIndex, endIndex: err.startIndex + err.correctedText.length });
-				setTimeout(() => { setApplyAnimation(null); animatingRef.current = false; }, 1200);
-			}, 300);
-		}, 600);
-	}, [replaceParagraphText, toggleErrorApplied, setApplyAnimation, setHighlightedParagraph]);
+				setApplyAnimation({ chapterId, paragraphIndex: paraIndex, phase: "highlight-new", errorId: err.id, originalText: err.originalText, correctedText: err.correctedText, startIndex: err.startIndex, endIndex: err.startIndex + err.correctedText.length });
+				setTimeout(() => { setApplyAnimation(null); setHighlightedParagraph(null); animatingRef.current = false; setTimeout(() => saveToCache(), 0); }, 500);
+			}, 200);
+		}, 400);
+	}, [replaceParagraphText, toggleErrorApplied, setApplyAnimation, setHighlightedParagraph, saveToCache]);
 
 	if (!chapter) {
 		return <div className="proofread-panel empty"><EmptyState icon="🔍" message="导入文件后可进行校对检测" /></div>;
@@ -158,8 +187,8 @@ export function ProofreadPanel() {
 						<div
 							key={paraResult.paragraphIndex}
 							ref={(el) => { paragraphRefs.current[i] = el; }}
-							className={`proofread-paragraph ${highlightedParagraph === i ? "highlighted" : ""}`}
-							onClick={() => { setHighlightedParagraph(i); if (!checking) setStartLine(i === 0 ? null : i); }}
+							className={`proofread-paragraph ${highlightedParagraph === paraResult.paragraphIndex ? "highlighted" : ""}`}
+							onClick={() => { setHighlightedParagraph(paraResult.paragraphIndex); if (!checking) setStartLine(paraResult.paragraphIndex === 0 ? null : paraResult.paragraphIndex); }}
 						>
 							<div className="para-original">
 								<span className="para-index">#{paraResult.paragraphIndex + 1}</span>
@@ -188,8 +217,8 @@ export function ProofreadPanel() {
 												<span className="error-suggestion">{err.correctedText}</span>
 											</div>
 											{err.suggestion && <div className="error-suggestion-note">💡 {err.suggestion}</div>}
-											<button className="btn-apply" onClick={(e) => { e.stopPropagation(); handleApply(paraResult, err, i); }}>
-												{err.applied ? "撤销" : "采纳修改"}
+										<button className="btn-apply" onClick={(e) => { e.stopPropagation(); handleApply(paraResult, err); }} disabled={applyingError?.id === err.id}>
+												{applyingError?.id === err.id ? (!applyingError.originalApplied ? "撤销" : "采纳修改") : (err.applied ? "撤销" : "采纳修改")}
 											</button>
 										</div>
 									))}

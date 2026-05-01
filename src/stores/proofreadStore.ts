@@ -7,12 +7,13 @@ import type { ParagraphResult, ProofreadError } from "../types";
 export interface ApplyAnimation {
 	chapterId: number;
 	paragraphIndex: number;
-	phase: "highlight-old" | "replacing" | "highlight-new";
+	phase: "highlight-old" | "replacing" | "highlight-new" | "undo-highlight" | "undo-replace" | "undo-restore";
 	errorId?: string;
 	originalText?: string;
 	correctedText?: string;
 	startIndex?: number;
 	endIndex?: number;
+	isUndo?: boolean;
 }
 
 interface ProofreadState {

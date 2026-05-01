@@ -361,13 +361,25 @@ export const useAppStore = create<AppState>()(
 						n.id === novelId ? { ...n, lastSavedAt: Date.now() } : n
 					),
 				}));
-				localStorage.setItem("novel-proofreader-chapters", JSON.stringify(state.chapters));
-				localStorage.setItem("novel-proofreader-current-chapter", String(state.currentChapterIndex));
+				try {
+					localStorage.setItem("novel-proofreader-chapters", JSON.stringify(state.chapters));
+					localStorage.setItem("novel-proofreader-current-chapter", String(state.currentChapterIndex));
+				} catch (error: unknown) {
+					console.error("Failed to save chapters to localStorage:", error);
+					if (error instanceof Error && error.name === "QuotaExceededError") {
+						try {
+							localStorage.removeItem("novel-proofreader-chapters");
+							console.log("Cleared chapters cache due to quota exceeded");
+						} catch (e) {
+							console.error("Failed to clear chapters cache:", e);
+						}
+					}
+				}
 			},
 		}),
 		{
 			name: "novel-proofreader-store",
-			// 持久化 aiConfig、fontSize、novels、currentNovelId、theme、chapters
+			// 持久化配置（不包含 chapters，避免大文本导致配额超限）
 			partialize: (state) => ({
 				aiConfig: state.aiConfig,
 				apiKeyMap: state.apiKeyMap,
@@ -375,7 +387,15 @@ export const useAppStore = create<AppState>()(
 				novels: state.novels,
 				currentNovelId: state.currentNovelId,
 				theme: state.theme,
-				chapters: state.chapters,
+				lineSpacing: state.lineSpacing,
+				paragraphIndent: state.paragraphIndent,
+				paragraphSpacing: state.paragraphSpacing,
+				readingBackground: state.readingBackground,
+				customTextColor: state.customTextColor,
+				customBgColor: state.customBgColor,
+				bgImageUrl: state.bgImageUrl,
+				readingMode: state.readingMode,
+				activeTab: state.activeTab,
 			}),
 			onRehydrateStorage: () => (state) => {
 				if (state) setLoggerEnabled(state.aiConfig.enableLogging);

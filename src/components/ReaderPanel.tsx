@@ -31,6 +31,7 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
 	const customTextColor = useAppStore((s) => s.customTextColor);
 	const customBgColor = useAppStore((s) => s.customBgColor);
 	const replaceLine = useAppStore((s) => s.replaceLine);
+	const saveToCache = useAppStore((s) => s.saveToCache);
 	const highlightedParagraph = useProofreadStore((s) => s.highlightedParagraph);
 	const setHighlightedParagraph = useProofreadStore((s) => s.setHighlightedParagraph);
 	const applyAnimation = useProofreadStore((s) => s.applyAnimation);
@@ -54,7 +55,26 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
 	const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
 	const chapter = chapters[currentChapterIndex];
-	const paragraphs = useMemo(() => chapter ? splitParagraphs(chapter.content).filter((p) => p.trim() !== "") : [], [chapter]);
+	const allParagraphs = useMemo(() => chapter ? splitParagraphs(chapter.content) : [], [chapter]);
+	const paragraphs = useMemo(() => allParagraphs.filter((p) => p.trim() !== ""), [allParagraphs]);
+	// 保存每个可见段落对应的原始索引
+	const paragraphToOriginalIndex = useMemo(() => {
+		const map: number[] = [];
+		allParagraphs.forEach((para, idx) => {
+			if (para.trim() !== "") {
+				map.push(idx);
+			}
+		});
+		return map;
+	}, [allParagraphs]);
+	// 保存原始索引到可见段落索引的反向映射
+	const originalToParagraphIndex = useMemo(() => {
+		const map: Record<number, number> = {};
+		paragraphToOriginalIndex.forEach((origIdx, displayIdx) => {
+			map[origIdx] = displayIdx;
+		});
+		return map;
+	}, [paragraphToOriginalIndex]);
 
 	const startEditing = useCallback((index: number, currentText: string) => {
 		setEditingIndex(index);
@@ -63,13 +83,12 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
 
 	const saveEditing = useCallback(() => {
 		if (editingIndex === null || !chapter) return;
-		const lines = chapter.content.split("\n");
-		const nonEmptyIndices = lines.map((l, i) => l.trim() !== "" ? i : -1).filter((i) => i >= 0);
 		if (editValue !== paragraphs[editingIndex]) {
-			replaceLine(chapter.id, nonEmptyIndices[editingIndex], editValue);
+			replaceLine(chapter.id, paragraphToOriginalIndex[editingIndex], editValue);
+			saveToCache();
 		}
 		setEditingIndex(null);
-	}, [editingIndex, editValue, chapter, paragraphs, replaceLine]);
+	}, [editingIndex, editValue, chapter, paragraphs, replaceLine, paragraphToOriginalIndex, saveToCache]);
 
 	const cancelEditing = useCallback(() => setEditingIndex(null), []);
 
@@ -95,12 +114,15 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
 		else if (e.key === "Escape") { e.preventDefault(); cancelEditing(); }
 	}, [saveEditing, cancelEditing]);
 
-	const scrollToParagraph = useCallback((index: number) => {
+	const scrollToParagraph = useCallback((originalIndex: number) => {
 		requestAnimationFrame(() => {
-			const el = paragraphRefs.current[index];
-			if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+			const displayIndex = originalToParagraphIndex[originalIndex];
+			if (displayIndex !== undefined) {
+				const el = paragraphRefs.current[displayIndex];
+				if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+			}
 		});
-	}, []);
+	}, [originalToParagraphIndex]);
 
 	useEffect(() => {
 		paragraphRefs.current = [];
@@ -122,14 +144,14 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
 		if (!query.trim()) { setSearchResults([]); return; }
 		const results: typeof searchResults = [];
 		const lowerQuery = query.toLowerCase();
-		paragraphs.forEach((para, paraIndex) => {
+		paragraphs.forEach((para, displayIndex) => {
 			let startIndex = 0;
 			const lowerPara = para.toLowerCase();
 			while (startIndex < lowerPara.length) {
 				const matchIndex = lowerPara.indexOf(lowerQuery, startIndex);
 				if (matchIndex === -1) break;
 				results.push({
-					paraIndex,
+					paraIndex: paragraphToOriginalIndex[displayIndex],
 					matchStart: matchIndex,
 					matchEnd: matchIndex + query.length,
 					text: para.slice(Math.max(0, matchIndex - 20), matchIndex) + "【" + para.slice(matchIndex, matchIndex + query.length) + "】" + para.slice(matchIndex + query.length, Math.min(para.length, matchIndex + query.length + 20)),
@@ -139,7 +161,7 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
 		});
 		setSearchResults(results);
 		setCurrentMatchIndex(results.length > 0 ? 0 : -1);
-	}, [paragraphs]);
+	}, [paragraphs, paragraphToOriginalIndex]);
 
 	const prevMatch = useCallback(() => {
 		if (searchResults.length === 0) return;
@@ -234,22 +256,23 @@ export function ReaderPanel({ showReadingModeToggle = false }: { showReadingMode
 				style={readingMode ? { lineHeight: lineSpacing, ...bgStyle, color: textColor, fontSize: `${fontSize}px`, ["--reader-line-spacing" as string]: lineSpacing, ["--reader-paragraph-spacing" as string]: `${paragraphSpacing}px` } : { fontSize: `${fontSize}px` }}
 			>
 				{paragraphs.map((para, i) => {
-					const isAnimTarget = !readingMode && applyAnimation?.chapterId === chapter.id && applyAnimation?.paragraphIndex === i;
+					const originalIndex = paragraphToOriginalIndex[i];
+					const isAnimTarget = !readingMode && applyAnimation?.chapterId === chapter.id && applyAnimation?.paragraphIndex === originalIndex;
 					const highlightInfo = isAnimTarget && applyAnimation?.startIndex !== undefined ? {
-						before: para.slice(0, applyAnimation!.startIndex),
-						highlight: para.slice(applyAnimation!.startIndex, applyAnimation!.endIndex),
-						after: para.slice(applyAnimation!.endIndex),
-						isOld: applyAnimation!.phase === "highlight-old" || applyAnimation!.phase === "replacing",
-					} : null;
+		before: para.slice(0, applyAnimation!.startIndex),
+		highlight: para.slice(applyAnimation!.startIndex, applyAnimation!.endIndex),
+		after: para.slice(applyAnimation!.endIndex),
+		isOld: true,
+	} : null;
 					const isEditing = editingIndex === i;
 					return (
 						<div key={i} ref={(el) => { paragraphRefs.current[i] = el; }}
-							className={`reader-paragraph${readingMode ? " reading-mode" : ""}${highlightedParagraph === i && !readingMode ? " highlighted" : ""}${isAnimTarget ? ` anim-${applyAnimation!.phase}` : ""}${isEditing ? " editing" : ""}`}
-							onClick={() => { if (!isEditing) setHighlightedParagraph(i); }}
+							className={`reader-paragraph${readingMode ? " reading-mode" : ""}${highlightedParagraph === originalIndex && !readingMode ? " highlighted" : ""}${isAnimTarget ? ` anim-${applyAnimation!.phase}` : ""}${isEditing ? " editing" : ""}`}
+							onClick={() => { if (!isEditing) setHighlightedParagraph(originalIndex); }}
 							onDoubleClick={() => { if (!isEditing && !readingMode) startEditing(i, para); }}
 						>
 							{!readingMode && (
-								<span className={`line-number${startLine === i ? " start-line" : ""}`} onClick={(e) => { e.stopPropagation(); setStartLine(startLine === i ? null : i); }} title={startLine === i ? "取消起始行" : "设为校对起始行"}>{i + 1}</span>
+								<span className={`line-number${startLine === originalIndex ? " start-line" : ""}`} onClick={(e) => { e.stopPropagation(); setStartLine(startLine === originalIndex ? null : originalIndex); }} title={startLine === originalIndex ? "取消起始行" : "设为校对起始行"}>{originalIndex + 1}</span>
 							)}
 							{isEditing ? (
 								<textarea ref={textareaRef} className="line-edit-textarea" value={editValue} onChange={handleTextareaInput} onKeyDown={handleTextareaKeyDown} onBlur={saveEditing} rows={1} style={{ fontSize: `${fontSize}px` }} />
