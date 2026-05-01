@@ -1,10 +1,9 @@
-// ============================================================
-// 最左侧小说列表
-// ============================================================
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
 import { splitChapters } from "../utils/chapterSplit";
 import { decodeTextBuffer } from "../utils/decodeText";
 import { formatFileSize, formatDateTime } from "../utils/formatters";
+import { exportToFile, saveNovelToStorage, deleteNovelFromStorage } from "../utils/fileExport";
 import { EmptyState } from "./EmptyState";
 import type { Novel } from "../types";
 
@@ -17,6 +16,14 @@ export function NovelList({
 	const removeNovel = useAppStore((s) => s.removeNovel);
 	const selectNovel = useAppStore((s) => s.selectNovel);
 	const setChapters = useAppStore((s) => s.setChapters);
+
+	const [contextMenu, setContextMenu] = useState<{
+		x: number;
+		y: number;
+		novel: Novel;
+	} | null>(null);
+	const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const longPressTriggered = useRef(false);
 
 	const handleImport = async () => {
 		const input = document.createElement("input");
@@ -33,11 +40,12 @@ export function NovelList({
 				name: file.name.replace(/\.txt$/i, ""),
 				fullText: text,
 				importedAt: Date.now(),
-				chapters: [], // 添加空的章节数组以满足类型定义
+				chapters: [],
 			};
 			addNovel(novel);
 
-			// 解析章节
+			await saveNovelToStorage(`${novel.name}.txt`, text);
+
 			const chapters = splitChapters(text);
 			setChapters(chapters);
 		};
@@ -45,6 +53,10 @@ export function NovelList({
 	};
 
 	const handleSelect = (novel: Novel) => {
+		if (longPressTriggered.current) {
+			longPressTriggered.current = false;
+			return;
+		}
 		selectNovel(novel.id);
 		const chapters = splitChapters(novel.fullText);
 		setChapters(chapters);
@@ -53,10 +65,51 @@ export function NovelList({
 		}
 	};
 
-	const handleRemove = (e: React.MouseEvent, id: string) => {
+	const handleRemove = async (e: React.MouseEvent, id: string) => {
 		e.stopPropagation();
+		const novel = novels.find(n => n.id === id);
+		if (novel) {
+			await deleteNovelFromStorage(`${novel.name}.txt`);
+		}
 		removeNovel(id);
 	};
+
+	const handleContextMenu = (e: React.MouseEvent, novel: Novel) => {
+		e.preventDefault();
+		e.stopPropagation();
+		setContextMenu({ x: e.clientX, y: e.clientY, novel });
+	};
+
+	const handleTouchStart = (novel: Novel) => {
+		longPressTriggered.current = false;
+		longPressTimer.current = setTimeout(() => {
+			longPressTriggered.current = true;
+			setContextMenu({ x: window.innerWidth / 2, y: window.innerHeight / 2, novel });
+		}, 500);
+	};
+
+	const handleTouchEnd = () => {
+		if (longPressTimer.current) {
+			clearTimeout(longPressTimer.current);
+			longPressTimer.current = null;
+		}
+	};
+
+	const handleExport = useCallback(async (novel: Novel) => {
+		setContextMenu(null);
+		await exportToFile(novel.fullText, `${novel.name}.txt`);
+	}, []);
+
+	const handleCloseContextMenu = useCallback(() => {
+		setContextMenu(null);
+	}, []);
+
+	useEffect(() => {
+		if (contextMenu) {
+			document.addEventListener("click", handleCloseContextMenu);
+			return () => document.removeEventListener("click", handleCloseContextMenu);
+		}
+	}, [contextMenu, handleCloseContextMenu]);
 
 	return (
 		<div className="novel-list">
@@ -83,11 +136,15 @@ export function NovelList({
 							key={novel.id}
 							className={`novel-item ${currentNovelId === novel.id ? "active" : ""}`}
 							onClick={() => handleSelect(novel)}
+							onContextMenu={(e) => handleContextMenu(e, novel)}
+							onTouchStart={() => handleTouchStart(novel)}
+							onTouchEnd={handleTouchEnd}
+							onTouchMove={handleTouchEnd}
 						>
 							<div className="novel-item-name">{novel.name}</div>
 							<div className="novel-item-meta">
 								<span>{formatFileSize(novel.fullText)}</span>
-								<span>{formatDateTime(novel.importedAt)}</span>
+								<span>{formatDateTime(novel.lastSavedAt ?? novel.importedAt)}</span>
 							</div>
 							<button
 								className="novel-item-remove"
@@ -100,6 +157,21 @@ export function NovelList({
 					))
 				)}
 			</div>
+
+			{contextMenu && (
+				<div
+					className="context-menu"
+					style={{ left: contextMenu.x, top: contextMenu.y }}
+					onClick={(e) => e.stopPropagation()}
+				>
+					<div
+						className="context-menu-item"
+						onClick={() => handleExport(contextMenu.novel)}
+					>
+						📤 导出
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

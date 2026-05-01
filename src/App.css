@@ -10,6 +10,15 @@
 	display: none !important;
 }
 
+/* ── 安全区域适配 (Safe Area) ── */
+/* iOS 和 Android 安全区域变量 */
+:root {
+	--safe-area-inset-top: env(safe-area-inset-top, 0px);
+	--safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+	--safe-area-inset-left: env(safe-area-inset-left, 0px);
+	--safe-area-inset-right: env(safe-area-inset-right, 0px);
+}
+
 /* ── Apple Liquid Glass Design Tokens ── */
 :root {
 	/* Liquid Glass Surface - 深色模式更柔和协调 */
@@ -303,7 +312,8 @@ select {
 	align-items: center;
 	justify-content: space-between;
 	padding: 0 24px;
-	height: 64px;
+	padding-top: var(--safe-area-inset-top);
+	min-height: calc(64px + var(--safe-area-inset-top));
 	background: var(--glass-bg);
 	backdrop-filter: blur(var(--glass-blur-strong));
 	-webkit-backdrop-filter: blur(var(--glass-blur-strong));
@@ -311,9 +321,6 @@ select {
 	flex-shrink: 0;
 	z-index: 100;
 	box-shadow: var(--shadow-inner);
-	/* Android 状态栏安全区域支持 */
-	padding-top: env(safe-area-inset-top, 0);
-	min-height: calc(64px + env(safe-area-inset-top, 0));
 	position: sticky;
 	top: 0;
 }
@@ -3208,9 +3215,7 @@ select {
 @media (max-width: 1024px) {
 	.app-header {
 		padding: 0 16px;
-		padding-top: env(safe-area-inset-top, 0);
-		min-height: calc(56px + env(safe-area-inset-top, 0));
-		height: auto;
+		padding-top: var(--safe-area-inset-top);
 	}
 
 	.header-left {
@@ -3255,9 +3260,7 @@ select {
 @media (max-width: 768px) {
 	.app-header {
 		padding: 0 12px;
-		padding-top: env(safe-area-inset-top, 0);
-		min-height: calc(52px + env(safe-area-inset-top, 0));
-		height: auto;
+		padding-top: var(--safe-area-inset-top);
 	}
 
 	.app-title {
@@ -3367,14 +3370,14 @@ select {
 		bottom: 0;
 		left: 0;
 		right: 0;
-		height: 64px;
+		min-height: calc(64px + var(--safe-area-inset-bottom));
 		background: var(--glass-bg-strong);
 		backdrop-filter: blur(var(--glass-blur-strong));
 		-webkit-backdrop-filter: blur(var(--glass-blur-strong));
 		border-top: 1px solid var(--border);
 		z-index: 1000;
 		padding: 0 8px;
-		padding-bottom: env(safe-area-inset-bottom, 8px);
+		padding-bottom: var(--safe-area-inset-bottom);
 	}
 
 	.mobile-tab-btn {
@@ -3407,10 +3410,9 @@ select {
 	/* Vertical Stack Layout */
 	.app-body {
 		flex-direction: column;
-		padding-bottom: 64px;
-		padding-bottom: calc(64px + env(safe-area-inset-bottom, 8px));
+		padding-bottom: calc(64px + var(--safe-area-inset-bottom));
 		height: calc(
-			100vh - env(safe-area-inset-top, 0) - env(safe-area-inset-bottom, 0)
+			100vh - var(--safe-area-inset-top) - var(--safe-area-inset-bottom)
 		);
 		overflow: hidden;
 	}
@@ -3798,4 +3800,71 @@ select {
 	.error-count {
 		font-size: 12px;
 	}
+}
+
+.context-menu {
+position: fixed;
+z-index: 1000;
+min-width: 120px;
+background: var(--glass-bg);
+border: 1px solid var(--border);
+border-radius: var(--r-md);
+backdrop-filter: blur(20px);
+-webkit-backdrop-filter: blur(20px);
+box-shadow: var(--shadow-lg);
+padding: 4px;
+transform: translate(-50%, 0);
+}
+
+.context-menu-item {
+padding: 10px 16px;
+font-size: 13px;
+color: var(--text-primary);
+border-radius: var(--r-sm);
+cursor: pointer;
+transition: all var(--duration);
+}
+
+.context-menu-item:hover {
+background: var(--border);
+}
+
+.btn-save-cache {
+padding: 10px 18px;
+border-radius: var(--r-lg);
+font-size: 14px;
+font-weight: 500;
+background: var(--glass-bg);
+color: var(--text-primary);
+border: 1px solid var(--border);
+backdrop-filter: blur(20px);
+-webkit-backdrop-filter: blur(20px);
+transition: all var(--duration) var(--ease);
+box-shadow: var(--shadow-sm);
+}
+.btn-save-cache:hover {
+background: var(--bg-hover);
+border-color: var(--border-strong);
+transform: translateY(-1px);
+box-shadow: var(--shadow-md);
+}
+
+@media (max-width: 480px) {
+.btn-save-cache {
+font-size: 0;
+padding: 6px;
+min-width: 36px;
+min-height: 36px;
+display: flex;
+align-items: center;
+justify-content: center;
+border-radius: 50%;
+}
+.btn-save-cache:hover {
+transform: none;
+}
+.btn-save-cache::after {
+font-size: 16px;
+content: "💾";
+}
 }

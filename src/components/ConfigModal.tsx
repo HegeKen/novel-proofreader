@@ -290,23 +290,18 @@ function ConfigModalContent({
 export function ConfigModal({ open, onClose }: Props) {
 	const aiConfig = useAppStore((s) => s.aiConfig);
 	const setAIConfig = useAppStore((s) => s.setAIConfig);
-	const apiKeyMap = useAppStore((s) => s.apiKeyMap);
-	const setApiKeyForProvider = useAppStore((s) => s.setApiKeyForProvider);
 
-	// 计算初始配置
 	const provider = detectProvider(aiConfig.baseURL);
 	const initialConfig: ConfigState = {
 		provider,
 		baseUrl: aiConfig.baseURL,
-		apiKey: apiKeyMap[provider] ?? aiConfig.apiKey,
+		apiKey: aiConfig.apiKey,
 		model: aiConfig.model,
 		enableLogging: aiConfig.enableLogging,
 	};
 
-	// 保存配置的回调
 	const handleSave = useCallback(
 		(config: ConfigState) => {
-			setApiKeyForProvider(config.provider, config.apiKey);
 			setAIConfig({
 				baseURL: config.baseUrl.replace(/\/+$/, ""),
 				apiKey: config.apiKey,
@@ -315,17 +310,16 @@ export function ConfigModal({ open, onClose }: Props) {
 			});
 			onClose();
 		},
-		[setApiKeyForProvider, setAIConfig, onClose],
+		[setAIConfig, onClose],
 	);
 
 	if (!open) return null;
 
-	// 使用 key 属性确保每次打开弹窗时重新挂载组件，从而重置状态
 	return (
 		<ConfigModalContent
 			key={open ? "open" : "closed"}
 			initialConfig={initialConfig}
-			apiKeyMap={apiKeyMap}
+			apiKeyMap={{}}
 			onSave={handleSave}
 			onClose={onClose}
 		/>

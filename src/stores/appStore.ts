@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Novel, Chapter, AIConfig, AIProvider, AppTab } from "../types";
 import { setLoggerEnabled } from "../utils/logger";
+import { saveNovelToStorage } from "../utils/fileExport";
 
 // 剧本改编结果类型
 interface ScriptResult {
@@ -72,6 +73,7 @@ interface AppState {
 	) => void;
 	setCustomColors: (textColor: string, bgColor: string) => void;
 	setBgImageUrl: (url: string) => void;
+	saveToCache: () => void;
 
 	// 剧本改编结果缓存（按章节存储）
 	scriptResults: Record<number, ScriptResult>;
@@ -270,10 +272,18 @@ export const useAppStore = create<AppState>()(
 
 					return { chapters, novels };
 				});
+				if (replaced) {
+					const state = get();
+					const novel = state.novels.find(n => n.id === state.currentNovelId);
+					console.log('[appStore] replaceParagraphText saving, novel:', novel?.name, 'fullText length:', novel?.fullText?.length);
+					if (novel) {
+						void saveNovelToStorage(`${novel.name}.txt`, novel.fullText);
+					}
+				}
 				return replaced;
 			},
 
-			replaceLine: (chapterId, lineIndex, newLine) =>
+			replaceLine: (chapterId, lineIndex, newLine) => {
 				set((state) => {
 					const chapters = state.chapters.map((ch) => {
 						if (ch.id !== chapterId) return ch;
@@ -294,7 +304,13 @@ export const useAppStore = create<AppState>()(
 					}
 
 					return { chapters, novels };
-				}),
+				});
+				const state = get();
+				const novel = state.novels.find(n => n.id === state.currentNovelId);
+				if (novel) {
+					void saveNovelToStorage(`${novel.name}.txt`, novel.fullText);
+				}
+			},
 
 			setAIConfig: (config) =>
 				set((state) => {
@@ -335,10 +351,23 @@ export const useAppStore = create<AppState>()(
 				set({ customTextColor: textColor, customBgColor: bgColor }),
 
 			setBgImageUrl: (url) => set({ bgImageUrl: url }),
+
+			saveToCache: () => {
+				const state = get();
+				const novelId = state.currentNovelId;
+				if (!novelId) return;
+				set((state) => ({
+					novels: state.novels.map((n) =>
+						n.id === novelId ? { ...n, lastSavedAt: Date.now() } : n
+					),
+				}));
+				localStorage.setItem("novel-proofreader-chapters", JSON.stringify(state.chapters));
+				localStorage.setItem("novel-proofreader-current-chapter", String(state.currentChapterIndex));
+			},
 		}),
 		{
 			name: "novel-proofreader-store",
-			// 持久化 aiConfig、fontSize、novels、currentNovelId、theme
+			// 持久化 aiConfig、fontSize、novels、currentNovelId、theme、chapters
 			partialize: (state) => ({
 				aiConfig: state.aiConfig,
 				apiKeyMap: state.apiKeyMap,
@@ -346,6 +375,7 @@ export const useAppStore = create<AppState>()(
 				novels: state.novels,
 				currentNovelId: state.currentNovelId,
 				theme: state.theme,
+				chapters: state.chapters,
 			}),
 			onRehydrateStorage: () => (state) => {
 				if (state) setLoggerEnabled(state.aiConfig.enableLogging);

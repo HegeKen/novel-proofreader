@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.6.5] - 2026-05-03
+
+### 🔧 改进优化
+
+**Android 状态栏适配**
+- 使用 CSS `env(safe-area-inset-*)` 变量适配 iOS 和 Android 状态栏
+- 更新 index.html 添加 `viewport-fit=cover` 支持边缘到边缘显示
+- 添加 `theme-color` 和 Apple 移动端相关 meta 标签
+- `.app-header` 添加顶部安全区域 padding
+- `.mobile-tab-bar` 添加底部安全区域 padding 和高度
+- `.app-body` 移动端布局正确计算安全区域
+
+**Android 文件存储路径优化**
+- 配置 Tauri fs 插件使用 `BaseDirectory.Document` 存储路径
+- 文件保存到 `Android/data/cn.helilab.proofreader/documents/novels/` 目录
+- 用户可通过文件管理器直接访问导出的小说文件
+- 更新 capabilities 配置，添加 `$DOCUMENT` 路径访问权限
+- 更新 file_paths.xml 扩展 FileProvider 路径配置
+
+**Android 构建配置**
+- `minSdkVersion` 设置为 24 (Android 7.0)
+- AndroidManifest.xml 配置存储权限
+
+**调试日志增强**
+- 添加文件保存操作的详细日志输出
+- 便于排查 Android 端文件同步问题
+
+---
+
 ## [0.6.1] - 2026-05-01
 
 ### 🔧 改进优化
