@@ -1638,8 +1638,44 @@ select {
 /* 精确高亮时的段落样式（不再整段高亮） */
 .reader-paragraph.anim-highlight-old .line-text,
 .reader-paragraph.anim-replacing .line-text,
-.reader-paragraph.anim-highlight-new .line-text {
+.reader-paragraph.anim-highlight-new .line-text,
+.reader-paragraph.anim-undo-highlight .line-text,
+.reader-paragraph.anim-undo-replace .line-text,
+.reader-paragraph.anim-undo-restore .line-text {
 	/* 段落本身保持默认背景 */
+}
+
+.reader-paragraph.anim-undo-highlight .text-highlight,
+.reader-paragraph.anim-undo-replace .text-highlight,
+.reader-paragraph.anim-undo-restore .text-highlight {
+	background: linear-gradient(
+		135deg,
+		rgba(247, 118, 142, 0.4) 0%,
+		rgba(247, 118, 142, 0.25) 100%
+	);
+	color: var(--red);
+	border: 1px solid rgba(247, 118, 142, 0.3);
+	animation: text-pulse-undo 0.6s var(--ease);
+}
+
+@keyframes text-pulse-undo {
+	0% {
+		background: rgba(158, 206, 106, 0.6);
+		transform: scale(1.02);
+		box-shadow: 0 0 20px rgba(158, 206, 106, 0.4);
+	}
+	50% {
+		background: rgba(158, 206, 106, 0.5);
+	}
+	100% {
+		background: linear-gradient(
+			135deg,
+			rgba(158, 206, 106, 0.4) 0%,
+			rgba(158, 206, 106, 0.25) 100%
+		);
+		transform: scale(1);
+		box-shadow: 0 2px 8px rgba(158, 206, 106, 0.2);
+	}
 }
 
 /* ============================================================
