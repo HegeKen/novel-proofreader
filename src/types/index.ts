@@ -9,6 +9,7 @@ export interface Novel {
 	author?: string; // 添加可选的作者字段
 	fullText: string;
 	importedAt: number; // timestamp
+	lastSavedAt?: number; // timestamp
 	chapters: Array<{
 		title: string;
 		content: string;
@@ -62,19 +63,6 @@ export interface ParagraphResult {
 /** 检测粒度 */
 export type CheckGranularity = "paragraph" | "chapter" | "line";
 
-/** 剧本转换任务状态 */
-export interface ScriptTask {
-	id: number;
-	chapterId: number;
-	chapterTitle: string;
-	status: "pending" | "running" | "done" | "error";
-	result?: string;
-	errorMessage?: string;
-}
-
-/** 应用标签页 */
-export type AppTab = "proofread" | "script";
-
 /** AI 模型提供商 */
 export type AIProvider =
 	| "openai"
@@ -83,3 +71,7 @@ export type AIProvider =
 	| "mimo"
 	| "lmstudio"
 	| "custom";
+
+
+/** App Tab */
+export type AppTab = "proofread" | "task";
