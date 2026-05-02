@@ -8,6 +8,7 @@ import { splitChapters } from "../utils/chapterSplit";
 import { decodeTextBuffer } from "../utils/decodeText";
 import { formatFileSize, formatDateTime } from "../utils/formatters";
 import { EmptyState } from "./EmptyState";
+import { Icons } from "./Icons";
 import type { Novel } from "../types";
 
 export function NovelList({
@@ -87,19 +88,22 @@ export function NovelList({
 	return (
 		<div className="novel-list">
 			<div className="novel-list-header">
-				<span className="novel-list-title">📚 小说库</span>
+				<span className="novel-list-title">
+					<Icons.library size={14} />
+					小说库
+				</span>
 				<button
 					className="btn-import-novel"
 					onClick={handleImport}
 					title="导入新小说"
 				>
-					+
+					<Icons.plus size={18} />
 				</button>
 			</div>
 			<div className="novel-list-items">
 				{novels.length === 0 ? (
 					<EmptyState
-						icon="📚"
+						icon={<Icons.library size={48} />}
 						message="暂无小说"
 						hint="点击 + 导入 TXT 文件"
 					/>
@@ -112,11 +116,15 @@ export function NovelList({
 						>
 							<div className="novel-item-name">{novel.name}</div>
 							<div className="novel-item-meta">
-								<span>{formatFileSize(novel.fullText)}</span>
-								<span>{formatDateTime(novel.importedAt)}</span>
+								<span className="meta-item">
+									<Icons.file size={12} /> {formatFileSize(novel.fullText)}
+								</span>
+								<span className="meta-item">
+									<Icons.calendar size={12} /> {formatDateTime(novel.importedAt)}
+								</span>
 								{novel.lastCacheSaveTime && (
 									<span className="cache-indicator" title="已保存缓存">
-										💿 {formatDateTime(novel.lastCacheSaveTime)}
+										<Icons.cache size={12} /> {formatDateTime(novel.lastCacheSaveTime)}
 									</span>
 								)}
 							</div>
@@ -125,7 +133,7 @@ export function NovelList({
 								onClick={(e) => handleRemove(e, novel.id)}
 								title="删除"
 							>
-								×
+								<Icons.close size={16} />
 							</button>
 						</div>
 					))

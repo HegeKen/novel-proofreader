@@ -12,6 +12,8 @@ import { useAppStore } from "./stores/appStore";
 import { splitChapters } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
 import { exportToFile } from "./utils/fileExport";
+import { parseURLParams, updateURLParams } from "./utils/urlParams";
+import { Icons } from "./components/Icons";
 
 type RightTab = "proofread" | "task";
 type MobileTab = "novels" | "chapters" | "reader" | "task" | "settings";
@@ -24,6 +26,12 @@ export default function App() {
 	const setTheme = useAppStore((s) => s.setTheme);
 	const saveCache = useAppStore((s) => s.saveCache);
 	const lastCacheSaveTime = useAppStore((s) => s.lastCacheSaveTime);
+	const chapters = useAppStore((s) => s.chapters);
+	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
+	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
+	const readingMode = useAppStore((s) => s.readingMode);
+	const setReadingMode = useAppStore((s) => s.setReadingMode);
+	const selectNovel = useAppStore((s) => s.selectNovel);
 	const [configOpen, setConfigOpen] = useState(false);
 	const [rightTab, setRightTab] = useState<RightTab>("proofread");
 	const [mobileTab, setMobileTab] = useState<MobileTab>("reader");
@@ -45,11 +53,64 @@ export default function App() {
 		document.documentElement.setAttribute("data-theme", theme);
 	}, [theme]);
 
-	// 移动端音量键翻页功能
-	const chapters = useAppStore((s) => s.chapters);
-	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
-	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
-	const readingMode = useAppStore((s) => s.readingMode);
+	// 初始化：从 URL 参数恢复状态
+	useEffect(() => {
+		const params = parseURLParams();
+		if (params.bookId === undefined) return;
+
+		const setChapters = useAppStore.getState().setChapters;
+		const trySelect = () => {
+			const novel = novels.find((n) => n.bookId === params.bookId);
+			if (novel) {
+				selectNovel(novel.id);
+				if (novel.fullText) {
+					const chapters = splitChapters(novel.fullText);
+					setChapters(chapters);
+				}
+				if (params.chapter !== undefined && params.chapter >= 0) {
+					setCurrentChapterIndex(params.chapter);
+				}
+				if (params.readingMode === "true") {
+					setReadingMode(true);
+				}
+				return true;
+			}
+			return false;
+		};
+
+		if (novels.length > 0) {
+			trySelect();
+		} else {
+			const checkInterval = setInterval(() => {
+				if (trySelect()) {
+					clearInterval(checkInterval);
+				}
+			}, 100);
+			setTimeout(() => clearInterval(checkInterval), 5000);
+		}
+	}, [novels, selectNovel, setCurrentChapterIndex, setReadingMode]);
+
+	// 状态变化时同步到 URL
+	useEffect(() => {
+		if (!currentNovelId) return;
+		const novel = novels.find((n) => n.id === currentNovelId);
+		if (!novel) return;
+
+		updateURLParams({
+			bookId: novel.bookId,
+			chapter: currentChapterIndex,
+			readingMode: readingMode ? "true" : "false",
+		});
+	}, [currentNovelId, currentChapterIndex, readingMode, novels]);
+
+		const handleTitleClick = useCallback((e: React.MouseEvent) => {
+		e.preventDefault();
+		window.history.pushState(null, "", "/");
+		selectNovel(null);
+		setChapters([]);
+		setReadingMode(false);
+		setCurrentChapterIndex(0);
+	}, [selectNovel, setChapters, setReadingMode, setCurrentChapterIndex]);
 
 	const handleVolumeKey = useCallback(
 		(e: KeyboardEvent) => {
@@ -152,31 +213,37 @@ export default function App() {
 			<header className="app-header">
 				<div className="header-left">
 					<h1 className="app-title">
-						<img src="/icons/icon.png" alt="" className="app-icon" />
-						校对助手
+						<a href="/" onClick={handleTitleClick} style={{ textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: "8px" }}>
+							<img src="/icons/icon.png" alt="" className="app-icon" />
+							校对助手
+						</a>
 					</h1>
 				</div>
 				<div className="header-center">
 					<button className="btn-import" onClick={handleImport}>
-						📂 导入 TXT 文件
+						<Icons.import size={16} />
+						导入 TXT 文件
 					</button>
 					{currentNovelId && (
 						<>
 							<button className="btn-export" onClick={handleExportAsNew}>
-								💾 导出修改版本
+								<Icons.save size={16} />
+								导出修改版本
 							</button>
 							<button
 								className="btn-save-original"
 								onClick={handleSaveToOriginal}
 							>
-								📝 保存到原文件
+								<Icons.saveOriginal size={16} />
+								保存到原文件
 							</button>
 							<button
 								className="btn-save-cache"
 								onClick={handleSaveCache}
 								title="手动保存当前进度到缓存"
 							>
-								💿 保存缓存
+								<Icons.cache size={16} />
+								保存缓存
 								{lastCacheSaveTime && (
 									<span className="cache-time">
 										(
@@ -198,7 +265,7 @@ export default function App() {
 							onClick={handleExportNovel}
 							title="导出整本小说"
 						>
-							📤
+							<Icons.download size={18} />
 						</button>
 					)}
 					{isMobile && currentNovelId && (
@@ -207,7 +274,7 @@ export default function App() {
 							onClick={handleSaveCache}
 							title="保存缓存"
 						>
-							💿
+							<Icons.cache size={18} />
 						</button>
 					)}
 					{isMobile && currentNovelId && (
@@ -216,7 +283,7 @@ export default function App() {
 							onClick={handleSaveToOriginal}
 							title="保存到原文件"
 						>
-							💾
+							<Icons.saveOriginal size={18} />
 						</button>
 					)}
 					<button
@@ -224,10 +291,12 @@ export default function App() {
 						onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
 						title={theme === "dark" ? "切换到亮色模式" : "切换到深色模式"}
 					>
-						{theme === "dark" ? "☀️" : "🌙"}
+						{theme === "dark" ? <Icons.sun size={18} /> : <Icons.moon size={18} />}
+						{!isMobile && (theme === "dark" ? "切换到亮色" : "切换到深色")}
 					</button>
 					<button className="btn-settings" onClick={() => setConfigOpen(true)}>
-						⚙️ 设置
+						<Icons.settings size={18} />
+						设置
 					</button>
 				</div>
 			</header>
@@ -270,7 +339,8 @@ export default function App() {
 											setMobileProofreadVisible(!mobileProofreadVisible)
 										}
 									>
-										🔍 收起校对
+										<Icons.search size={16} />
+										收起校对
 									</button>
 									<div className="right-content">
 										<ProofreadPanel />
@@ -284,7 +354,8 @@ export default function App() {
 										setMobileProofreadVisible(!mobileProofreadVisible)
 									}
 								>
-									📝 显示校对
+									<Icons.saveOriginal size={16} />
+									显示校对
 								</button>
 							)}
 						</div>
@@ -306,13 +377,15 @@ export default function App() {
 									className={`tab-btn ${rightTab === "proofread" ? "active" : ""}`}
 									onClick={() => setRightTab("proofread")}
 								>
-									🔍 校对检测
+									<Icons.search size={16} />
+									校对检测
 								</button>
 								<button
 									className={`tab-btn ${rightTab === "task" ? "active" : ""}`}
 									onClick={() => setRightTab("task")}
 								>
-									🎬 剧本改编
+									<Icons.script size={16} />
+									剧本改编
 								</button>
 							</div>
 							<div className="right-content">
@@ -331,28 +404,28 @@ export default function App() {
 							className={`mobile-tab-btn ${mobileTab === "novels" ? "active" : ""}`}
 							onClick={() => handleMobileTabChange("novels")}
 						>
-							📚
+							<Icons.library size={18} />
 							<span>小说</span>
 						</button>
 						<button
 							className={`mobile-tab-btn ${mobileTab === "chapters" ? "active" : ""}`}
 							onClick={() => handleMobileTabChange("chapters")}
 						>
-							📑
+							<Icons.list size={18} />
 							<span>章节</span>
 						</button>
 						<button
 							className={`mobile-tab-btn ${mobileTab === "reader" ? "active" : ""}`}
 							onClick={() => handleMobileTabChange("reader")}
 						>
-							📖
+							<Icons.book size={18} />
 							<span>阅读</span>
 						</button>
 						<button
 							className={`mobile-tab-btn ${mobileTab === "task" ? "active" : ""}`}
 							onClick={() => handleMobileTabChange("task")}
 						>
-							🎬
+							<Icons.script size={18} />
 							<span>剧本</span>
 						</button>
 					</div>

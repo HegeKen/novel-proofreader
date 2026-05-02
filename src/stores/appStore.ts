@@ -25,6 +25,8 @@ interface AppState {
 	// 当前小说的章节（从 fullText 解析）
 	chapters: Chapter[];
 	currentChapterIndex: number;
+	// 下一本新书的 bookId（按导入顺序分配）
+	nextBookId: number;
 
 	// AI 配置
 	aiConfig: AIConfig;
@@ -82,7 +84,7 @@ interface AppState {
 	// Actions — 小说管理
 	addNovel: (novel: Novel) => void;
 	removeNovel: (id: string) => void;
-	selectNovel: (id: string) => void;
+	selectNovel: (id: string | null) => void;
 
 	// Actions — 章节
 	setChapters: (chapters: Chapter[]) => void;
@@ -141,6 +143,7 @@ export const useAppStore = create<AppState>()(
 			currentNovelId: null,
 			chapters: [],
 			currentChapterIndex: 0,
+			nextBookId: 1,
 			aiConfig: DEFAULT_AI_CONFIG,
 			apiKeyMap: {},
 			activeTab: "proofread",
@@ -158,10 +161,15 @@ export const useAppStore = create<AppState>()(
 			lastCacheSaveTime: null,
 
 			addNovel: (novel) =>
-				set((state) => ({
-					novels: [...state.novels, novel],
-					currentNovelId: novel.id,
-				})),
+				set((state) => {
+					const bookId = state.nextBookId;
+					const novelWithBookId = { ...novel, bookId };
+					return {
+						novels: [...state.novels, novelWithBookId],
+						currentNovelId: novel.id,
+						nextBookId: state.nextBookId + 1,
+					};
+				}),
 
 			removeNovel: (id) =>
 				set((state) => {
@@ -378,8 +386,10 @@ export const useAppStore = create<AppState>()(
 				fontSize: state.fontSize,
 				novels: state.novels,
 				currentNovelId: state.currentNovelId,
+				currentChapterIndex: state.currentChapterIndex,
 				theme: state.theme,
 				scriptResults: state.scriptResults,
+				nextBookId: state.nextBookId,
 			}),
 			onRehydrateStorage: () => (state) => {
 				if (state) setLoggerEnabled(state.aiConfig.enableLogging);

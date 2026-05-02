@@ -3,6 +3,7 @@
 // ============================================================
 import { useAppStore } from "../stores/appStore";
 import { EmptyState } from "./EmptyState";
+import { Icons } from "./Icons";
 
 export function ChapterNav({
 	onChapterSelect,
@@ -15,9 +16,12 @@ export function ChapterNav({
 		return (
 			<div className="chapter-nav empty">
 				<div className="nav-header">
-					<h3>📑 章节</h3>
+					<h3>
+						<Icons.list size={16} />
+						章节
+					</h3>
 				</div>
-				<EmptyState icon="📑" message="导入 TXT 文件后" hint="章节将在此列出" />
+				<EmptyState icon={<Icons.list size={48} />} message="导入 TXT 文件后" hint="章节将在此列出" />
 			</div>
 		);
 	}
@@ -25,7 +29,10 @@ export function ChapterNav({
 	return (
 		<div className="chapter-nav">
 			<div className="nav-header">
-				<h3>📑 章节</h3>
+				<h3>
+					<Icons.list size={16} />
+					章节
+				</h3>
 				<span className="chapter-count">{chapters.length} 章</span>
 			</div>
 			<div className="chapter-list">

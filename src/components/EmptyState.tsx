@@ -1,5 +1,7 @@
+import type { ReactNode } from "react";
+
 interface EmptyStateProps {
-	icon: string;
+	icon: ReactNode;
 	message: string;
 	hint?: string;
 	className?: string;

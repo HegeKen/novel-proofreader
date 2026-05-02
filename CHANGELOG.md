@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.7.5] - 2026-05-03
+
+### ✨ 新功能
+
+**使用 lucide-react 统一图标系统**
+- 全面替换项目中的所有图标为 lucide-react 图标库
+- 新增自定义 Select 组件，使用 lucide-react 封装 select 选项
+- 新增 Icons.ts 组件支持多种新图标（plus、file、calendar、clock、close 等）
+
+### 🔧 改进优化
+
+**阅读区按钮布局优化**
+- 调整 floating-actions 按钮间距统一为 12px
+- TTS 面板和阅读设置面板位置调整至按钮组上方，保持统一间距
+- 移动端设置按钮只显示图标，完美居中显示
+
+**Select 组件优化**
+- 新增 Select 组件支持 ChevronDown 下拉箭头
+- 选中项显示 Check 图标
+- 选项文字居中显示
+- 支持点击外部关闭
+- 玻璃效果与整体风格一致
+
+**校对工具栏优化**
+- 桌面端与移动端文字大小统一为 12px
+- 按钮间距从 10px 减至 6px
+- granularity-select 和 start-line-select 间距从 4px 减至 2px
+- 标签和 Select 组件图标文字大小统一
+
+**小说列表 UI 优化**
+- novel-item-meta 图标文字并排显示
+- 文件大小、导入时间、缓存时间均使用 lucide-react 图标
+- novel-item-remove 使用 Icons.close 替换 ×
+- btn-import-novel 使用 Icons.plus 替换 +
+
+**UI 细节优化**
+- btn-theme-toggle 移动端隐藏文字，只显示图标
+- mobile-proofread-toggle 图标文字并排显示
+- right-tabs 标签图标文字并排显示
+- header-left 图标文字并排显示
+- app-title 链接点击可跳转到首页（无参状态）
+
+### 🐛 Bug 修复
+
+**ConfigModal 修复**
+- 修复 ConfigModal.tsx 语法错误，补齐缺失的闭合括号
+- API Key 输入框 toggle-visibility-btn 统一使用 Icons.eye 和 Icons.eyeOff
+
+**Select 组件修复**
+- 修复 Select 组件 width 问题，确保占据完整宽度
+- 修复 Select 组件 relative 元素居中显示
+
+---
+
 ## [0.7.1] - 2026-05-02
 
 ### ✨ 新功能

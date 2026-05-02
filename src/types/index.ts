@@ -5,6 +5,7 @@
 /** 已导入的小说 */
 export interface Novel {
 	id: string;
+	bookId?: number; // 按导入顺序分配的序号（1开始），由 store 自动分配
 	name: string;
 	author?: string; // 添加可选的作者字段
 	fullText: string;
