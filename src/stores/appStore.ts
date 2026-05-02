@@ -37,9 +37,8 @@ interface AppState {
 	fontSize: number;
 	theme: "light" | "dark";
 	readingMode: boolean;
-	lineSpacing: number; // 行间距（1.0-2.5）
+	lineSpacing: number; // 行间距（px，16-80）
 	paragraphIndent: number; // 首行缩进（0-4字符，整数）
-	paragraphSpacing: number; // 段间距（0-30px）
 	readingBackground:
 		| "white"
 		| "cream"
@@ -121,7 +120,6 @@ interface AppState {
 	setReadingMode: (enabled: boolean) => void;
 	setLineSpacing: (spacing: number) => void;
 	setParagraphIndent: (indent: number) => void;
-	setParagraphSpacing: (spacing: number) => void;
 
 	// Actions — 缓存管理
 	saveCache: () => void;
@@ -150,9 +148,8 @@ export const useAppStore = create<AppState>()(
 			fontSize: 16,
 			theme: "dark",
 			readingMode: false,
-			lineSpacing: 1.8,
+			lineSpacing: 32,
 			paragraphIndent: 2,
-			paragraphSpacing: 16,
 			readingBackground: "cream",
 			customTextColor: "#333333",
 			customBgColor: "#FDF6E3",
@@ -347,8 +344,6 @@ export const useAppStore = create<AppState>()(
 			setLineSpacing: (spacing) => set({ lineSpacing: spacing }),
 
 			setParagraphIndent: (indent) => set({ paragraphIndent: indent }),
-
-			setParagraphSpacing: (spacing) => set({ paragraphSpacing: spacing }),
 
 			setReadingBackground: (background) =>
 				set({ readingBackground: background }),

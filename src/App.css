@@ -1423,12 +1423,11 @@ select {
 	flex: 1;
 	overflow-y: auto;
 	padding: 28px 40px;
-	line-height: 1.85;
 }
 
 .reader-content.reading-mode {
-	line-height: 2;
 	padding: 32px 48px;
+	line-height: var(--line-height, 32px);
 }
 
 /* ── Paragraph Lines ── */
@@ -1446,10 +1445,12 @@ select {
 .reader-paragraph.reading-mode {
 	display: block;
 	gap: 0;
-	margin-bottom: 8px;
 	border-radius: 0;
 	border-left: none;
 	cursor: text;
+	margin-bottom: var(--paragraph-spacing, 16px);
+	text-indent: var(--text-indent, 2em);
+	color: var(--text-color, #333333);
 }
 
 .reader-paragraph:hover {
@@ -1501,6 +1502,7 @@ select {
 .line-text {
 	flex: 1;
 	min-width: 0;
+	font-size: var(--font-size, 16px);
 }
 
 /* ── Editing ── */
@@ -3527,13 +3529,12 @@ select {
 		padding: 12px;
 		overflow-y: auto;
 		font-size: 14px;
-		line-height: 1.6;
 	}
 
 	.reader-content.reading-mode {
-		line-height: 1.6;
 		padding: 12px;
 		font-size: 14px;
+		line-height: var(--line-height, 32px);
 	}
 
 	.reader-paragraph {
@@ -3543,10 +3544,12 @@ select {
 	.reader-paragraph.reading-mode {
 		display: block;
 		gap: 0;
-		margin-bottom: 4px;
 		border-radius: 0;
 		border-left: none;
 		cursor: text;
+		margin-bottom: var(--paragraph-spacing, 16px);
+		text-indent: var(--text-indent, 2em);
+		color: var(--text-color, #333333);
 	}
 
 	.reader-paragraph.reading-mode:hover {
