@@ -5,6 +5,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Novel, Chapter, AIConfig, AIProvider, AppTab } from "../types";
 import { setLoggerEnabled } from "../utils/logger";
+import { saveNovelToStorage } from "../utils/fileExport";
 
 // 剧本改编结果类型
 interface ScriptResult {
@@ -277,10 +278,18 @@ export const useAppStore = create<AppState>()(
 
 					return { chapters, novels };
 				});
+				if (replaced) {
+					const state = get();
+					const novel = state.novels.find(n => n.id === state.currentNovelId);
+					console.log('[appStore] replaceParagraphText saving, novel:', novel?.name, 'fullText length:', novel?.fullText?.length);
+					if (novel) {
+						void saveNovelToStorage(`${novel.name}.txt`, novel.fullText);
+					}
+				}
 				return replaced;
 			},
 
-			replaceLine: (chapterId, lineIndex, newLine) =>
+			replaceLine: (chapterId, lineIndex, newLine) => {
 				set((state) => {
 					const chapters = state.chapters.map((ch) => {
 						if (ch.id !== chapterId) return ch;
@@ -301,7 +310,13 @@ export const useAppStore = create<AppState>()(
 					}
 
 					return { chapters, novels };
-				}),
+				});
+				const state = get();
+				const novel = state.novels.find(n => n.id === state.currentNovelId);
+				if (novel) {
+					void saveNovelToStorage(`${novel.name}.txt`, novel.fullText);
+				}
+			},
 
 			setAIConfig: (config) =>
 				set((state) => {
@@ -362,7 +377,6 @@ export const useAppStore = create<AppState>()(
 		}),
 		{
 			name: "novel-proofreader-store",
-			// 持久化 aiConfig、fontSize、novels、currentNovelId、theme、scriptResults
 			partialize: (state) => ({
 				aiConfig: state.aiConfig,
 				apiKeyMap: state.apiKeyMap,

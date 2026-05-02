@@ -2,6 +2,8 @@
 // 最左侧小说列表
 // ============================================================
 import { useAppStore } from "../stores/appStore";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { saveNovelToStorage, deleteNovelFromStorage } from "../utils/fileExport";
 import { splitChapters } from "../utils/chapterSplit";
 import { decodeTextBuffer } from "../utils/decodeText";
 import { formatFileSize, formatDateTime } from "../utils/formatters";
@@ -17,7 +19,12 @@ export function NovelList({
 	const removeNovel = useAppStore((s) => s.removeNovel);
 	const selectNovel = useAppStore((s) => s.selectNovel);
 	const setChapters = useAppStore((s) => s.setChapters);
-
+	const [contextMenu, setContextMenu] = useState<{
+		x: number;
+		y: number;
+		novel: Novel;
+	} | null>(null);
+	const longPressTriggered = useRef(false);
 	const handleImport = async () => {
 		const input = document.createElement("input");
 		input.type = "file";
@@ -38,6 +45,7 @@ export function NovelList({
 			addNovel(novel);
 
 			// 解析章节
+			await saveNovelToStorage(`${novel.name}.txt`, text);
 			const chapters = splitChapters(text);
 			setChapters(chapters);
 		};
@@ -45,6 +53,10 @@ export function NovelList({
 	};
 
 	const handleSelect = (novel: Novel) => {
+		if (longPressTriggered.current) {
+			longPressTriggered.current = false;
+			return;
+		}
 		selectNovel(novel.id);
 		const chapters = splitChapters(novel.fullText);
 		setChapters(chapters);
@@ -53,11 +65,25 @@ export function NovelList({
 		}
 	};
 
-	const handleRemove = (e: React.MouseEvent, id: string) => {
+	const handleRemove = async (e: React.MouseEvent, id: string) => {
 		e.stopPropagation();
+		const novel = novels.find(n => n.id === id);
+		if (novel) {
+			await deleteNovelFromStorage(`${novel.name}.txt`);
+		}
 		removeNovel(id);
 	};
 
+	const handleCloseContextMenu = useCallback(() => {
+		setContextMenu(null);
+	}, []);
+
+	useEffect(() => {
+		if (contextMenu) {
+			document.addEventListener("click", handleCloseContextMenu);
+			return () => document.removeEventListener("click", handleCloseContextMenu);
+		}
+	}, [contextMenu, handleCloseContextMenu]);
 	return (
 		<div className="novel-list">
 			<div className="novel-list-header">

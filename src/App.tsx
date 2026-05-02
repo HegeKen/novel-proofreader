@@ -135,7 +135,7 @@ export default function App() {
 			minute: "2-digit",
 			second: "2-digit",
 		});
-		alert(`缓存已保存！\n保存时间：${timeStr}`);
+		console.log(`缓存已保存！\n保存时间：${timeStr}`);
 	};
 
 	// 移动端标签切换

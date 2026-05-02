@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.7.0] - 2026-05-02
+
+### 🔧 改进优化
+
+**移动端界面精简**
+- 移除移动端快捷操作栏（mobile-action-bar）
+- 调整移动端布局底部 padding，从 120px 缩减至 64px
+
+**剧本改编功能优化**
+- 移除"按行"粒度转换选项，仅保留"按段落"和"整章"
+- 简化剧本转换流程
+
+### 🐛 Bug 修复
+
+**TypeScript 编译错误修复**
+- 修复 fileExport.ts 缺少闭合括号导致的语法错误
+- 移除 NovelList.tsx 中未使用的函数和变量
+
+**localStorage 配额问题修复**
+- 将 chapters 从持久化存储中移除，避免小说内容过大导致 QuotaExceededError
+- 章节内容仅保留在内存中，选择小说时从文件系统重新加载
+
+**Tauri 版本同步**
+- 同步 Cargo.toml 与 package.json 的 Tauri 依赖版本至 2.11.0
+- 修复 tauri-plugin-fs 构建错误
+
+---
+
 ## [0.6.6] - 2026-05-02
 
 ### 🐛 Bug 修复
