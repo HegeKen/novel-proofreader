@@ -4,10 +4,14 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useProofreadStore } from "../stores/proofreadStore";
+import { useConfigStore } from "../stores/configStore";
 import { splitParagraphs } from "../utils/chapterSplit";
 import { buildParagraphIndexMap } from "../utils/formatters";
 import { scrollToElement, ScrollLock } from "../utils/scrollUtils";
+import { TTSPlayer, type TTSSentence } from "../utils/ttsService";
 import { EmptyState } from "./EmptyState";
+import { Icons } from "./Icons";
+import { Select } from "./Select";
 
 export function ReaderPanel({
 	showReadingModeToggle = false,
@@ -101,6 +105,15 @@ export function ReaderPanel({
 	const [searchResults, setSearchResults] = useState<{ paraIndex: number; matchStart: number; matchEnd: number; text: string }[]>([]);
 	const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
+	// TTS 功能状态
+	const [ttsPlaying, setTtsPlaying] = useState(false);
+	const [ttsHighlightedPara, setTtsHighlightedPara] = useState(-1);
+	const [showTTSPanel, setShowTTSPanel] = useState(false);
+	const [, setTtsSentences] = useState<TTSSentence[]>([]);
+	const ttsPlayerRef = useRef<TTSPlayer | null>(null);
+	const ttsConfig = useConfigStore((s) => s.ttsConfig);
+	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
+
 	const chapter = chapters[currentChapterIndex];
 	const paragraphs = useMemo(() => {
 		return chapter
@@ -136,7 +149,79 @@ export function ReaderPanel({
 		paragraphIndexMap,
 	]);
 
-	/** 取消编辑 */
+	/** TTS 控制 */
+	const handleTTSToggle = useCallback(() => {
+		if (ttsPlaying) {
+			if (ttsPlayerRef.current) {
+				ttsPlayerRef.current.pause();
+				setTtsPlaying(false);
+				setTtsHighlightedPara(-1);
+			}
+		} else {
+			if (!ttsPlayerRef.current) {
+				ttsPlayerRef.current = new TTSPlayer(ttsConfig);
+				ttsPlayerRef.current.setOnUpdate((sentences) => {
+					setTtsSentences(sentences);
+					if (ttsPlayerRef.current) {
+						const currentPara = ttsPlayerRef.current.getCurrentParagraphIndex();
+						setTtsHighlightedPara(currentPara);
+					}
+				});
+				ttsPlayerRef.current.setOnComplete(() => {
+					setTtsPlaying(false);
+					setTtsHighlightedPara(-1);
+				});
+			}
+
+			if (ttsPlayerRef.current) {
+				ttsPlayerRef.current.updateConfig(ttsConfig);
+				ttsPlayerRef.current.loadText(paragraphs);
+				ttsPlayerRef.current.play();
+				setTtsPlaying(true);
+			}
+		}
+	}, [ttsPlaying, ttsConfig, paragraphs]);
+
+	/** TTS 播放过程中实时更新配置（音色、语速、音量） */
+	useEffect(() => {
+		if (ttsPlaying && ttsPlayerRef.current) {
+			ttsPlayerRef.current.updateConfig(ttsConfig);
+		}
+	}, [ttsConfig, ttsPlaying]);
+
+	/** TTS 从指定段落开始播放 */
+	const startTTSFromParagraph = useCallback(
+		(startParaIndex: number) => {
+			if (!ttsPlayerRef.current) {
+				ttsPlayerRef.current = new TTSPlayer(ttsConfig);
+				ttsPlayerRef.current.setOnUpdate((sentences) => {
+					setTtsSentences(sentences);
+					if (ttsPlayerRef.current) {
+						const currentPara = ttsPlayerRef.current.getCurrentParagraphIndex();
+						setTtsHighlightedPara(currentPara);
+					}
+				});
+				ttsPlayerRef.current.setOnComplete(() => {
+					setTtsPlaying(false);
+					setTtsHighlightedPara(-1);
+				});
+			}
+
+			ttsPlayerRef.current.updateConfig(ttsConfig);
+			ttsPlayerRef.current.loadText(paragraphs);
+			const startIndex = ttsPlayerRef.current.findSentenceIndexByParagraph(startParaIndex);
+			if (startIndex >= 0) {
+				ttsPlayerRef.current.skipTo(startIndex);
+				ttsPlayerRef.current.play();
+			} else {
+				ttsPlayerRef.current.play();
+			}
+			setTtsPlaying(true);
+		},
+		[ttsConfig, paragraphs],
+	);
+
+	/** textarea 键盘事件：Ctrl+Enter 保存，Escape 取消 */
 	const cancelEditing = useCallback(() => {
 		setEditingIndex(null);
 	}, []);
@@ -380,7 +465,7 @@ export function ReaderPanel({
 	if (!chapter) {
 		return (
 			<div className="reader-panel empty">
-				<EmptyState icon="📖" message="请导入 TXT 小说文件开始阅读" />
+				<EmptyState icon={<Icons.book size={48} />} message="请导入 TXT 小说文件开始阅读" />
 			</div>
 		);
 	}
@@ -393,11 +478,14 @@ export function ReaderPanel({
 					onClick={() => setShowChapterList(true)}
 				>
 					{chapter.title || ""}
-					<span className="chapter-dropdown-icon">▼</span>
+					<Icons.chevronDown size={14} className="chapter-dropdown-icon" />
 				</span>
 				{showReadingModeToggle && (
 					<div className="reading-mode-toggle">
-						<span className="toggle-label">📖 阅读模式</span>
+						<span className="toggle-label">
+							<Icons.book size={14} />
+							阅读模式
+						</span>
 						<label className="toggle-switch">
 							<input
 								type="checkbox"
@@ -407,11 +495,6 @@ export function ReaderPanel({
 							<span className="toggle-slider"></span>
 						</label>
 					</div>
-				)}
-				{!readingMode && (
-					<button className="reader-search-btn" onClick={() => setShowSearch(true)} title="搜索">
-						🔍
-					</button>
 				)}
 			</div>
 			<div
@@ -498,15 +581,23 @@ export function ReaderPanel({
 						return null;
 					}
 
+					const isTTSHighlighted = readingMode && ttsHighlightedPara === i;
+
 					return (
 						<div
 							key={i}
 							ref={(el) => {
 								paragraphRefs.current[i] = el;
 							}}
-							className={`reader-paragraph${readingMode ? " reading-mode" : ""}${highlightedParagraph === i && !readingMode ? " highlighted" : ""}${animClass}${isEditing ? " editing" : ""}`}
+							className={`reader-paragraph${readingMode ? " reading-mode" : ""}${highlightedParagraph === i && !readingMode ? " highlighted" : ""}${isTTSHighlighted ? " tts-highlighted" : ""}${animClass}${isEditing ? " editing" : ""}`}
 							onClick={() => {
-								if (!isEditing) setHighlightedParagraph(i);
+								if (!isEditing) {
+									if (readingMode) {
+										startTTSFromParagraph(i);
+									} else {
+										setHighlightedParagraph(i);
+									}
+								}
 							}}
 							onDoubleClick={() => {
 								if (!isEditing && !readingMode) startEditing(i, para);
@@ -786,13 +877,117 @@ export function ReaderPanel({
 						</div>
 					)}
 
-					{/* 阅读设置悬浮按钮 */}
+					{/* TTS 面板 */}
+					{showTTSPanel && readingMode && (
+						<div className="tts-panel">
+							<div className="tts-panel-header">
+								<span>
+									<Icons.volume size={16} />
+									语音朗读设置
+								</span>
+								<button
+									className="tts-panel-close"
+									onClick={() => setShowTTSPanel(false)}
+								>
+									<Icons.close size={16} />
+								</button>
+							</div>
+							<div className="tts-panel-body">
+								<div className="tts-setting-item">
+									<label>音色</label>
+									<Select
+										value={ttsConfig.voice}
+										onChange={(value) => updateTTSConfig({ voice: value })}
+										options={[
+											{ value: '冰糖', label: '冰糖' },
+											{ value: '茉莉', label: '茉莉' },
+											{ value: '苏打', label: '苏打' },
+											{ value: '白桦', label: '白桦' },
+											{ value: 'Mia', label: 'Mia' },
+											{ value: 'Chloe', label: 'Chloe' },
+											{ value: 'Milo', label: 'Milo' },
+											{ value: 'Dean', label: 'Dean' },
+										]}
+									/>
+								</div>
+								<div className="tts-setting-item">
+									<label>语速</label>
+									<div className="tts-slider-group">
+										<input
+											type="range"
+											min="1"
+											max="10"
+											value={ttsConfig.speed}
+											onChange={(e) => updateTTSConfig({ speed: parseInt(e.target.value) })}
+										/>
+										<span className="tts-value">{ttsConfig.speed}</span>
+									</div>
+								</div>
+								<div className="tts-setting-item">
+									<label>音量</label>
+									<div className="tts-slider-group">
+										<input
+											type="range"
+											min="1"
+											max="10"
+											value={ttsConfig.volume}
+											onChange={(e) => updateTTSConfig({ volume: parseInt(e.target.value) })}
+										/>
+										<span className="tts-value">{ttsConfig.volume}</span>
+									</div>
+								</div>
+							</div>
+						</div>
+					)}
+
+					{/* 悬浮操作按钮 */}
+			<div className="reader-floating-actions">
+				{!readingMode && (
+					<button
+						className="reader-search-btn"
+						onClick={() => setShowSearch(true)}
+					>
+						<Icons.search size={18} />
+						<span>搜索</span>
+					</button>
+				)}
+				{readingMode && ttsPlaying && (
+					<button
+						className="reader-tts-btn playing"
+						onClick={handleTTSToggle}
+					>
+						<Icons.pause size={18} />
+						<span>暂停播放</span>
+					</button>
+				)}
+				{readingMode && !ttsPlaying && (
+					<button
+						className="reader-tts-btn"
+						onClick={handleTTSToggle}
+					>
+						<Icons.volume size={18} />
+						<span>开始朗读</span>
+					</button>
+				)}
+				{readingMode && (
+					<button
+						className={`reader-settings-btn${showTTSPanel ? " active" : ""}`}
+						onClick={() => setShowTTSPanel(!showTTSPanel)}
+					>
+						<Icons.settings size={18} />
+						<span>语音设置</span>
+					</button>
+				)}
+				{readingMode && (
 					<button
 						className="reading-settings-toggle"
 						onClick={() => setShowReadingSettings(!showReadingSettings)}
 					>
-						⚙️
+						<Icons.settings size={18} />
+						<span>阅读设置</span>
 					</button>
+				)}
+			</div>
 
 					{/* 章节列表弹窗 */}
 					{showChapterList && (
@@ -843,35 +1038,58 @@ export function ReaderPanel({
 					<div className="chapter-list-overlay" onClick={closeSearch} />
 					<div className="search-modal">
 						<div className="search-header">
-							<span>搜索</span>
-							<button className="chapter-list-close" onClick={closeSearch}>✕</button>
+							<div className="search-title-row">
+								<Icons.search size={16} />
+								<span>搜索</span>
+							</div>
+							<button className="search-close" onClick={closeSearch}>
+								<Icons.close size={16} />
+							</button>
 						</div>
 						<div className="search-input-row">
-							<input
-								type="text"
-								className="search-input"
-								placeholder="输入搜索内容..."
-								value={searchQuery}
-								onChange={(e) => {
-									setSearchQuery(e.target.value);
-									performSearch(e.target.value);
-								}}
-								onKeyDown={(e) => {
-									if (e.key === "Enter") {
-										nextMatch();
-									} else if (e.key === "Escape") {
-										closeSearch();
-									}
-								}}
-								autoFocus
-							/>
+							<div className="search-input-wrapper">
+								<Icons.search size={16} className="search-input-icon" />
+								<input
+									type="text"
+									className="search-input"
+									placeholder="输入搜索内容..."
+									value={searchQuery}
+									onChange={(e) => {
+										setSearchQuery(e.target.value);
+										performSearch(e.target.value);
+									}}
+									onKeyDown={(e) => {
+										if (e.key === "Enter") {
+											nextMatch();
+										} else if (e.key === "Escape") {
+											closeSearch();
+										}
+									}}
+									autoFocus
+								/>
+								{searchQuery && (
+									<button
+										className="search-clear-btn"
+										onClick={() => {
+											setSearchQuery("");
+											performSearch("");
+										}}
+									>
+										<Icons.close size={14} />
+									</button>
+								)}
+							</div>
 							<span className="search-count">
 								{searchResults.length > 0 ? `${currentMatchIndex + 1}/${searchResults.length}` : searchQuery ? "无匹配" : ""}
 							</span>
 						</div>
 						<div className="search-nav">
-							<button className="search-nav-btn" onClick={prevMatch} disabled={searchResults.length === 0}>▲</button>
-							<button className="search-nav-btn" onClick={nextMatch} disabled={searchResults.length === 0}>▼</button>
+							<button className="search-nav-btn" onClick={prevMatch} disabled={searchResults.length === 0} title="上一个">
+								<Icons.chevronUp size={16} />
+							</button>
+							<button className="search-nav-btn" onClick={nextMatch} disabled={searchResults.length === 0} title="下一个">
+								<Icons.chevronDown size={16} />
+							</button>
 						</div>
 						<div className="search-results-list">
 							{searchResults.map((result, index) => (

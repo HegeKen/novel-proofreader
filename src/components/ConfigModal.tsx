@@ -3,7 +3,10 @@
 // ============================================================
 import { useState, useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
+import { useConfigStore } from "../stores/configStore";
 import type { AIProvider } from "../types";
+import { Icons } from "./Icons";
+import { Select } from "./Select";
 
 const PROVIDERS: {
 	value: AIProvider;
@@ -85,6 +88,106 @@ const detectProvider = (url: string): AIProvider => {
 	return "custom";
 };
 
+function TTSConfigSection() {
+	const ttsConfig = useConfigStore((s) => s.ttsConfig);
+	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
+	const [showApiKey, setShowApiKey] = useState(false);
+
+	return (
+		<div className="config-section">
+			<div className="section-label">
+				<Icons.volume size={14} />
+				语音朗读 (TTS)
+			</div>
+			<p style={{ fontSize: "12px", color: "#666", marginBottom: "12px" }}>
+				使用 Xiaomi MiMo TTS API 将文本转换为语音。
+			</p>
+
+			<div className="form-field">
+				<label>MiMo API Key</label>
+				<div className="input-wrapper">
+					<input
+						type={showApiKey ? "text" : "password"}
+						value={ttsConfig.apiKey}
+						onChange={(e) => updateTTSConfig({ apiKey: e.target.value })}
+						placeholder="输入 MiMo API Key"
+						className="config-input"
+					/>
+					<button
+						className="toggle-visibility-btn"
+						onClick={() => setShowApiKey(!showApiKey)}
+						type="button"
+					>
+						{showApiKey ? <Icons.eyeOff size={16} /> : <Icons.eye size={16} />}
+					</button>
+				</div>
+			</div>
+
+			<div className="form-field">
+				<label>Base URL</label>
+				<input
+					type="text"
+					value={ttsConfig.baseUrl}
+					onChange={(e) => updateTTSConfig({ baseUrl: e.target.value })}
+					placeholder="https://api.mimo-v2.com/v1"
+					className="config-input"
+				/>
+			</div>
+
+			<div className="form-field">
+				<label>音色</label>
+				<Select
+					value={ttsConfig.voice}
+					onChange={(value) => updateTTSConfig({ voice: value })}
+					options={[
+						{ value: '冰糖', label: '冰糖' },
+						{ value: '茉莉', label: '茉莉' },
+						{ value: '苏打', label: '苏打' },
+						{ value: '白桦', label: '白桦' },
+						{ value: 'Mia', label: 'Mia' },
+						{ value: 'Chloe', label: 'Chloe' },
+						{ value: 'Milo', label: 'Milo' },
+						{ value: 'Dean', label: 'Dean' },
+					]}
+				/>
+			</div>
+
+			<div className="form-field">
+				<label>语速 ({ttsConfig.speed})</label>
+				<input
+					type="range"
+					min="1"
+					max="10"
+					value={ttsConfig.speed}
+					onChange={(e) => updateTTSConfig({ speed: parseInt(e.target.value) })}
+					className="config-range"
+				/>
+			</div>
+
+			<div className="form-field">
+				<label>音量 ({ttsConfig.volume})</label>
+				<input
+					type="range"
+					min="1"
+					max="10"
+					value={ttsConfig.volume}
+					onChange={(e) => updateTTSConfig({ volume: parseInt(e.target.value) })}
+					className="config-range"
+				/>
+			</div>
+
+			<a
+				href="https://platform.xiaomimimo.com/docs/zh-CN/usage-guide/speech-synthesis-v2.5"
+				target="_blank"
+				rel="noopener noreferrer"
+				style={{ fontSize: "12px", color: "var(--accent)" }}
+			>
+				获取 MiMo API Key →
+			</a>
+		</div>
+	);
+}
+
 // 内部组件，使用 key 重置状态
 function ConfigModalContent({
 	initialConfig,
@@ -122,7 +225,7 @@ function ConfigModalContent({
 			<div className="config-modal" onClick={(e) => e.stopPropagation()}>
 				<div className="config-header">
 					<div className="config-title">
-						<span className="title-icon">⚙️</span>
+						<span className="title-icon"><Icons.settings size={16} /></span>
 						<span>AI 模型配置</span>
 					</div>
 					<button className="close-btn" onClick={onClose}>
@@ -210,29 +313,7 @@ function ConfigModalContent({
 									onClick={() => setShowApiKey(!showApiKey)}
 									type="button"
 								>
-									{showApiKey ? (
-										<svg
-											width="16"
-											height="16"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="2"
-										>
-											<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-5.96 5.06M15 11a3 3 0 1 1-6 0 3 3 0 0 1 6 0" />
-										</svg>
-									) : (
-										<svg
-											width="16"
-											height="16"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="2"
-										>
-											<path d="M13.87 10.13a2 2 0 0 0-2.83 0l-.34.34a2 2 0 0 1-2.83 0l-2.82-2.82a2 2 0 0 1 0-2.83l.34-.34a2 2 0 0 0 0-2.83L4.13 3.13a2 2 0 0 0-2.83 0L.69 5.34a2 2 0 0 0 0 2.83l.34.34a2 2 0 0 1 0 2.83l-2.82 2.82a2 2 0 0 0 0 2.83l.34.34a2 2 0 0 1 0 2.83l2.12 2.12a2 2 0 0 0 2.83 0l.34-.34a2 2 0 0 1 2.83 0l2.82 2.82a2 2 0 0 0 2.83 0l.34-.34a2 2 0 0 1 2.83 0l2.12 2.12a2 2 0 0 0 2.83 0l.34-.34a2 2 0 0 0 0-2.83l-2.82-2.82a2 2 0 0 1 0-2.83l.34-.34a2 2 0 0 0 0-2.83L20.87 13a2 2 0 0 0-2.83 0l-.34.34a2 2 0 0 1-2.83 0l-2.82-2.82a2 2 0 0 0-2.83 0l-.34.34z" />
-										</svg>
-									)}
+									{showApiKey ? <Icons.eyeOff size={16} /> : <Icons.eye size={16} />}
 								</button>
 							</div>
 						</div>
@@ -272,6 +353,8 @@ function ConfigModalContent({
 							<span className="toggle-text">开启调试日志</span>
 						</label>
 					</div>
+
+					<TTSConfigSection />
 				</div>
 
 				<div className="config-footer">

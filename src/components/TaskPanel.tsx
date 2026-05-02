@@ -7,6 +7,7 @@ import { sendChatCompletion, buildScriptUserPrompt } from "../utils/aiClient";
 import { splitParagraphs } from "../utils/chapterSplit";
 import { exportToFile } from "../utils/fileExport";
 import { EmptyState } from "./EmptyState";
+import { Icons } from "./Icons";
 import type { ChatMessage } from "../utils/aiClient";
 import type { Chapter, AIConfig } from "../types";
 
@@ -167,7 +168,10 @@ function TaskPanelContent({
 	return (
 		<>
 			<div className="task-header">
-				<h3>🎬 剧本改编</h3>
+				<h3>
+					<Icons.script size={16} />
+					剧本改编
+				</h3>
 				<span className="task-chapter">{chapter?.title}</span>
 			</div>
 
@@ -240,7 +244,7 @@ function TaskPanelContent({
 					</button>
 				</div>
 
-				{error && <div className="task-error">❌ {error}</div>}
+				{error && <div className="task-error"><Icons.error size={14} /> {error}</div>}
 
 				{/* 结果区域 */}
 				<div className="task-result-wrapper">
@@ -255,7 +259,7 @@ function TaskPanelContent({
 								{result.map((seg, i) => (
 									<div key={i} className="result-segment">
 										<div className="segment-header">
-											<span className="segment-index">📝 段落 {i + 1}</span>
+											<span className="segment-index"><Icons.grammar size={12} /> 段落 {i + 1}</span>
 											<span className="segment-title">{seg.chapterTitle}</span>
 										</div>
 										<div className="segment-content">{seg.content}</div>
@@ -295,7 +299,7 @@ export function TaskPanel() {
 	if (!chapter) {
 		return (
 			<div className="task-panel empty">
-				<EmptyState icon="🎬" message="导入文件后可使用剧本改编功能" />
+				<EmptyState icon={<Icons.script size={48} />} message="导入文件后可使用剧本改编功能" />
 			</div>
 		);
 	}

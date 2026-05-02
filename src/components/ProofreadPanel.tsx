@@ -8,13 +8,15 @@ import { useAICheck } from "../hooks/useAICheck";
 import { splitParagraphs } from "../utils/chapterSplit";
 import { buildParagraphIndexMap } from "../utils/formatters";
 import { EmptyState } from "./EmptyState";
+import { Icons } from "./Icons";
+import { Select } from "./Select";
 import type { CheckGranularity, ProofreadError } from "../types";
 
-const ERROR_TYPE_LABELS: Record<string, string> = {
-	typo: "🔤 错别字",
-	format: "📐 排版",
-	grammar: "📝 病句",
-	punctuation: "📖 标点",
+const ERROR_TYPE_LABELS: Record<string, { icon: keyof typeof Icons; label: string }> = {
+	typo: { icon: "typo", label: "错别字" },
+	format: { icon: "grammar", label: "排版" },
+	grammar: { icon: "grammar", label: "病句" },
+	punctuation: { icon: "punctuation", label: "标点" },
 };
 
 const ERROR_TYPE_COLORS: Record<string, string> = {
@@ -287,7 +289,7 @@ export function ProofreadPanel() {
 	if (!chapter) {
 		return (
 			<div className="proofread-panel empty">
-				<EmptyState icon="🔍" message="导入文件后可进行校对检测" />
+				<EmptyState icon={<Icons.search size={48} />} message="导入文件后可进行校对检测" />
 			</div>
 		);
 	}
@@ -303,40 +305,41 @@ export function ProofreadPanel() {
 				<div className="toolbar-left">
 					<label className="granularity-select">
 						检测项：
-						<select
-							value={granularity}
-							onChange={(e) =>
-								setGranularity(e.target.value as CheckGranularity)
-							}
-							disabled={checking}
-						>
-							<option value="paragraph">按段落</option>
-							<option value="chapter">按章节</option>
-						</select>
+						<div className="w-32">
+							<Select
+								value={granularity}
+								onChange={(value) => setGranularity(value as CheckGranularity)}
+								options={[
+									{ value: 'paragraph', label: '按段落' },
+									{ value: 'chapter', label: '按章节' },
+								]}
+							/>
+						</div>
 					</label>
 					{granularity !== "chapter" && totalLines > 0 && (
 						<label className="start-line-select">
 							起始行：
-							<select
-								value={startLine ?? 0}
-								onChange={(e) => {
-									const v = Number(e.target.value);
-									setStartLine(v === 0 ? null : v);
-								}}
-								disabled={checking}
-							>
-								<option value={0}>从头开始</option>
-								{Array.from(
-									{ length: Math.min(totalLines, 500) },
-									(_, i) => i + 1,
-								)
-									.filter((n) => n < totalLines)
-									.map((n) => (
-										<option key={n} value={n}>
-											第 {n + 1} 行
-										</option>
-									))}
-							</select>
+							<div className="w-32">
+								<Select
+									value={String(startLine ?? 0)}
+									onChange={(value) => {
+										const v = Number(value);
+										setStartLine(v === 0 ? null : v);
+									}}
+									options={[
+										{ value: '0', label: '从头开始' },
+										...Array.from(
+											{ length: Math.min(totalLines, 500) },
+											(_, i) => i + 1,
+										)
+											.filter((n) => n < totalLines)
+											.map((n) => ({
+												value: String(n),
+												label: `第 ${n + 1} 行`,
+											})),
+									]}
+								/>
+							</div>
 						</label>
 					)}
 				</div>
@@ -361,7 +364,7 @@ export function ProofreadPanel() {
 			<div className="proofread-content" ref={proofreadContentRef}>
 				{displayResults.length === 0 ? (
 					<EmptyState
-						icon="🔍"
+						icon={<Icons.search size={48} />}
 						message="点击「开始检测」对当前章节进行 AI 校对"
 					/>
 				) : (
@@ -402,7 +405,7 @@ export function ProofreadPanel() {
 									}
 									title="检测此行"
 								>
-									{singleCheckingLine === i ? "检测中…" : "🔍 检测"}
+									{singleCheckingLine === i ? "检测中…" : <><Icons.search size={14} /> 检测</>}
 								</button>
 							</div>
 
@@ -413,61 +416,66 @@ export function ProofreadPanel() {
 							)}
 							{paraResult.status === "error" && (
 								<div className="para-status error">
-									❌ 检测失败：{paraResult.errorMessage}
+									<Icons.error size={14} /> 检测失败：{paraResult.errorMessage}
 								</div>
 							)}
 							{paraResult.status === "done" &&
 								paraResult.errors.length === 0 && (
-									<div className="para-status success">✅ 未发现问题</div>
+									<div className="para-status success"><Icons.check size={14} /> 未发现问题</div>
 								)}
 							{paraResult.errors.length > 0 && (
 								<div className="para-errors">
-									{paraResult.errors.map((err: ProofreadError) => (
-										<div
-											key={err.id}
-											className={`error-item ${err.applied ? "applied" : ""}`}
-										>
-											<div className="error-header">
-												<span
-													className="error-type-badge"
-													style={{
-														backgroundColor: ERROR_TYPE_COLORS[err.errorType],
+									{paraResult.errors.map((err: ProofreadError) => {
+										const typeInfo = ERROR_TYPE_LABELS[err.errorType];
+										const IconComponent = typeInfo ? Icons[typeInfo.icon] : null;
+										return (
+											<div
+												key={err.id}
+												className={`error-item ${err.applied ? "applied" : ""}`}
+											>
+												<div className="error-header">
+													<span
+														className="error-type-badge"
+														style={{
+															backgroundColor: ERROR_TYPE_COLORS[err.errorType],
+														}}
+													>
+														{IconComponent && <IconComponent size={12} />}
+														{typeInfo ? ` ${typeInfo.label}` : err.errorType}
+													</span>
+													<span className="error-location">
+														位置 {err.startIndex}–{err.endIndex}
+													</span>
+													{err.applied && (
+														<span className="applied-badge">已采纳</span>
+													)}
+												</div>
+												<div className="error-detail">
+													<span className="error-original">
+														「{err.originalText}」
+													</span>
+													<span className="error-arrow">→</span>
+													<span className="error-suggestion">
+														{err.correctedText}
+													</span>
+												</div>
+												{err.suggestion && (
+													<div className="error-suggestion-note">
+														<Icons.sparkle size={14} /> {err.suggestion}
+													</div>
+												)}
+												<button
+													className="btn-apply"
+													onClick={(e) => {
+														e.stopPropagation();
+														handleApply(paraResult, err, i);
 													}}
 												>
-													{ERROR_TYPE_LABELS[err.errorType] ?? err.errorType}
-												</span>
-												<span className="error-location">
-													位置 {err.startIndex}–{err.endIndex}
-												</span>
-												{err.applied && (
-													<span className="applied-badge">已采纳</span>
-												)}
+													{err.applied ? "撤销" : "采纳修改"}
+												</button>
 											</div>
-											<div className="error-detail">
-												<span className="error-original">
-													「{err.originalText}」
-												</span>
-												<span className="error-arrow">→</span>
-												<span className="error-suggestion">
-													{err.correctedText}
-												</span>
-											</div>
-											{err.suggestion && (
-												<div className="error-suggestion-note">
-													💡 {err.suggestion}
-												</div>
-											)}
-											<button
-												className="btn-apply"
-												onClick={(e) => {
-													e.stopPropagation();
-													handleApply(paraResult, err, i);
-												}}
-											>
-												{err.applied ? "撤销" : "采纳修改"}
-											</button>
-										</div>
-									))}
+										);
+									})}
 								</div>
 							)}
 						</div>
