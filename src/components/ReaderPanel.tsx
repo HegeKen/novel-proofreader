@@ -16,14 +16,14 @@ export function ReaderPanel({
 	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
 	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
 	const fontSize = useAppStore((s) => s.fontSize);
+	const setFontSize = useAppStore((s) => s.setFontSize);
 	const readingMode = useAppStore((s) => s.readingMode);
 	const setReadingMode = useAppStore((s) => s.setReadingMode);
 	const lineSpacing = useAppStore((s) => s.lineSpacing);
 	const setLineSpacing = useAppStore((s) => s.setLineSpacing);
+
 	const paragraphIndent = useAppStore((s) => s.paragraphIndent);
 	const setParagraphIndent = useAppStore((s) => s.setParagraphIndent);
-	const paragraphSpacing = useAppStore((s) => s.paragraphSpacing);
-	const setParagraphSpacing = useAppStore((s) => s.setParagraphSpacing);
 	const readingBackground = useAppStore((s) => s.readingBackground);
 	const setReadingBackground = useAppStore((s) => s.setReadingBackground);
 	const customTextColor = useAppStore((s) => s.customTextColor);
@@ -43,6 +43,41 @@ export function ReaderPanel({
 	const containerRef = useRef<HTMLDivElement>(null);
 	const paragraphRefs = useRef<(HTMLDivElement | null)[]>([]);
 	const scrollLock = useRef(new ScrollLock());
+	const scrollAnimationId = useRef<number | null>(null);
+
+	const readingTextColor = useMemo(() => {
+		if (!readingMode) return undefined;
+		switch (readingBackground) {
+			case "dark":
+				return "#E0E0E0";
+			case "mint":
+				return "#2E4A3E";
+			case "sky":
+				return "#1565C0";
+			case "lavender":
+				return "#6A1B9A";
+			case "peach":
+				return "#B71C1C";
+			case "sage":
+				return "#4E342E";
+			case "slate":
+				return "#37474F";
+			case "custom":
+				return customTextColor;
+			default:
+				return "#333333";
+		}
+	}, [readingMode, readingBackground, customTextColor]);
+
+	useEffect(() => {
+		const container = containerRef.current;
+		if (container && readingMode) {
+			container.style.setProperty('--line-height', `${lineSpacing}px`);
+			container.style.setProperty('--font-size', `${fontSize}px`);
+			container.style.setProperty('--text-indent', `${paragraphIndent}em`);
+			container.style.setProperty('--text-color', readingTextColor || '#333333');
+		}
+	}, [lineSpacing, fontSize, paragraphIndent, readingTextColor, readingMode]);
 
 	// 滑动翻页相关
 	const touchStartY = useRef(0);
@@ -233,6 +268,15 @@ export function ReaderPanel({
 		const container = containerRef.current;
 		if (!container) return;
 		container.scrollTop = 0;
+		paragraphRefs.current = [];
+
+		// 清理函数：组件卸载或章节切换时取消动画帧
+		return () => {
+			if (scrollAnimationId.current !== null) {
+				cancelAnimationFrame(scrollAnimationId.current);
+				scrollAnimationId.current = null;
+			}
+		};
 	}, [currentChapterIndex]);
 
 	const handleScroll = useCallback(() => {
@@ -240,18 +284,43 @@ export function ReaderPanel({
 		const container = containerRef.current;
 		if (!container) return;
 
-		const containerRect = container.getBoundingClientRect();
-		const midY = containerRect.top + containerRect.height / 2;
-
-		for (let i = 0; i < paragraphRefs.current.length; i++) {
-			const el = paragraphRefs.current[i];
-			if (!el) continue;
-			const rect = el.getBoundingClientRect();
-			if (rect.top <= midY && rect.bottom >= midY) {
-				setHighlightedParagraph(i);
-				break;
-			}
+		// 取消之前的动画帧，避免累积
+		if (scrollAnimationId.current !== null) {
+			cancelAnimationFrame(scrollAnimationId.current);
 		}
+
+		scrollAnimationId.current = requestAnimationFrame(() => {
+			if (scrollLock.current.isLocked()) return;
+			const containerEl = containerRef.current;
+			if (!containerEl) return;
+
+			const containerRect = containerEl.getBoundingClientRect();
+			const midY = containerRect.top + containerRect.height / 2;
+
+			const refs = paragraphRefs.current;
+			let low = 0;
+			let high = refs.length - 1;
+			let targetIndex = 0;
+
+			while (low <= high) {
+				const mid = (low + high) >> 1;
+				const el = refs[mid];
+				if (!el) break;
+				const rect = el.getBoundingClientRect();
+				if (rect.top <= midY && rect.bottom >= midY) {
+					targetIndex = mid;
+					break;
+				} else if (rect.top < midY) {
+					low = mid + 1;
+				} else {
+					high = mid - 1;
+					targetIndex = mid;
+				}
+			}
+
+			setHighlightedParagraph(targetIndex);
+			scrollAnimationId.current = null;
+		});
 	}, [setHighlightedParagraph]);
 
 	// 滑动翻页功能
@@ -365,7 +434,6 @@ export function ReaderPanel({
 				}}
 				style={{
 					...(readingMode && {
-						lineHeight: lineSpacing,
 						backgroundColor:
 							readingBackground === "white"
 								? "#FFFFFF"
@@ -437,33 +505,6 @@ export function ReaderPanel({
 								paragraphRefs.current[i] = el;
 							}}
 							className={`reader-paragraph${readingMode ? " reading-mode" : ""}${highlightedParagraph === i && !readingMode ? " highlighted" : ""}${animClass}${isEditing ? " editing" : ""}`}
-							style={{
-								fontSize: `${fontSize}px`,
-								marginBottom: readingMode
-									? `${Math.max(4, paragraphSpacing * 0.5)}px`
-									: `${paragraphSpacing}px`,
-								...(readingMode && {
-									textIndent: `${paragraphIndent}em`,
-									color:
-										readingBackground === "dark"
-											? "#E0E0E0"
-											: readingBackground === "mint"
-												? "#2E4A3E"
-												: readingBackground === "sky"
-													? "#1565C0"
-													: readingBackground === "lavender"
-														? "#6A1B9A"
-														: readingBackground === "peach"
-															? "#B71C1C"
-															: readingBackground === "sage"
-																? "#4E342E"
-																: readingBackground === "slate"
-																	? "#37474F"
-																	: readingBackground === "custom"
-																		? customTextColor
-																		: "#333333",
-								}),
-							}}
 							onClick={() => {
 								if (!isEditing) setHighlightedParagraph(i);
 							}}
@@ -529,13 +570,29 @@ export function ReaderPanel({
 								<div className="setting-control">
 									<input
 										type="range"
-										min="1.0"
-										max="4.0"
-										step="0.1"
+										min="12"
+										max="40"
+										step="1"
 										value={lineSpacing}
-										onChange={(e) => setLineSpacing(parseFloat(e.target.value))}
+										onChange={(e) => setLineSpacing(parseInt(e.target.value))}
 									/>
-									<span className="setting-value">{lineSpacing}x</span>
+									<span className="setting-value">{lineSpacing}px</span>
+								</div>
+							</div>
+
+							{/* 字体大小设置 */}
+							<div className="setting-item">
+								<span className="setting-label">字体大小</span>
+								<div className="setting-control">
+									<input
+										type="range"
+										min="12"
+										max="28"
+										step="1"
+										value={fontSize}
+										onChange={(e) => setFontSize(parseInt(e.target.value))}
+									/>
+									<span className="setting-value">{fontSize}px</span>
 								</div>
 							</div>
 
@@ -554,24 +611,6 @@ export function ReaderPanel({
 										}
 									/>
 									<span className="setting-value">{paragraphIndent}字符</span>
-								</div>
-							</div>
-
-							{/* 段间距设置 */}
-							<div className="setting-item">
-								<span className="setting-label">段间距</span>
-								<div className="setting-control">
-									<input
-										type="range"
-										min="0"
-										max="80"
-										step="2"
-										value={paragraphSpacing}
-										onChange={(e) =>
-											setParagraphSpacing(parseInt(e.target.value))
-										}
-									/>
-									<span className="setting-value">{paragraphSpacing}px</span>
 								</div>
 							</div>
 
