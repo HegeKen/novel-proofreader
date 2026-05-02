@@ -11,7 +11,7 @@ export function formatFileSize(text: string): string {
 
 export function formatDateTime(timestamp: number): string {
 	const d = new Date(timestamp);
-	return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+	return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 export function buildParagraphIndexMap(content: string): number[] {

@@ -5,7 +5,6 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Novel, Chapter, AIConfig, AIProvider, AppTab } from "../types";
 import { setLoggerEnabled } from "../utils/logger";
-import { saveNovelToStorage } from "../utils/fileExport";
 
 // 剧本改编结果类型
 interface ScriptResult {
@@ -73,10 +72,12 @@ interface AppState {
 	) => void;
 	setCustomColors: (textColor: string, bgColor: string) => void;
 	setBgImageUrl: (url: string) => void;
-	saveToCache: () => void;
 
 	// 剧本改编结果缓存（按章节存储）
 	scriptResults: Record<number, ScriptResult>;
+
+	// 手动缓存保存时间戳
+	lastCacheSaveTime: number | null;
 
 	// Actions — 小说管理
 	addNovel: (novel: Novel) => void;
@@ -120,6 +121,9 @@ interface AppState {
 	setLineSpacing: (spacing: number) => void;
 	setParagraphIndent: (indent: number) => void;
 	setParagraphSpacing: (spacing: number) => void;
+
+	// Actions — 缓存管理
+	saveCache: () => void;
 }
 
 const DEFAULT_AI_CONFIG: AIConfig = {
@@ -153,6 +157,7 @@ export const useAppStore = create<AppState>()(
 			customBgColor: "#FDF6E3",
 			bgImageUrl: "",
 			scriptResults: {},
+			lastCacheSaveTime: null,
 
 			addNovel: (novel) =>
 				set((state) => ({
@@ -272,18 +277,10 @@ export const useAppStore = create<AppState>()(
 
 					return { chapters, novels };
 				});
-				if (replaced) {
-					const state = get();
-					const novel = state.novels.find(n => n.id === state.currentNovelId);
-					console.log('[appStore] replaceParagraphText saving, novel:', novel?.name, 'fullText length:', novel?.fullText?.length);
-					if (novel) {
-						void saveNovelToStorage(`${novel.name}.txt`, novel.fullText);
-					}
-				}
 				return replaced;
 			},
 
-			replaceLine: (chapterId, lineIndex, newLine) => {
+			replaceLine: (chapterId, lineIndex, newLine) =>
 				set((state) => {
 					const chapters = state.chapters.map((ch) => {
 						if (ch.id !== chapterId) return ch;
@@ -304,13 +301,7 @@ export const useAppStore = create<AppState>()(
 					}
 
 					return { chapters, novels };
-				});
-				const state = get();
-				const novel = state.novels.find(n => n.id === state.currentNovelId);
-				if (novel) {
-					void saveNovelToStorage(`${novel.name}.txt`, novel.fullText);
-				}
-			},
+				}),
 
 			setAIConfig: (config) =>
 				set((state) => {
@@ -352,34 +343,26 @@ export const useAppStore = create<AppState>()(
 
 			setBgImageUrl: (url) => set({ bgImageUrl: url }),
 
-			saveToCache: () => {
-				const state = get();
-				const novelId = state.currentNovelId;
-				if (!novelId) return;
-				set((state) => ({
-					novels: state.novels.map((n) =>
-						n.id === novelId ? { ...n, lastSavedAt: Date.now() } : n
-					),
-				}));
-				try {
-					localStorage.setItem("novel-proofreader-chapters", JSON.stringify(state.chapters));
-					localStorage.setItem("novel-proofreader-current-chapter", String(state.currentChapterIndex));
-				} catch (error: unknown) {
-					console.error("Failed to save chapters to localStorage:", error);
-					if (error instanceof Error && error.name === "QuotaExceededError") {
-						try {
-							localStorage.removeItem("novel-proofreader-chapters");
-							console.log("Cleared chapters cache due to quota exceeded");
-						} catch (e) {
-							console.error("Failed to clear chapters cache:", e);
+			saveCache: () => {
+				const now = Date.now();
+				set((state) => {
+					// 更新当前小说的 lastCacheSaveTime
+					const novels = state.novels.map((n) => {
+						if (n.id === state.currentNovelId) {
+							return { ...n, lastCacheSaveTime: now };
 						}
-					}
-				}
+						return n;
+					});
+					return {
+						novels,
+						lastCacheSaveTime: now,
+					};
+				});
 			},
 		}),
 		{
 			name: "novel-proofreader-store",
-			// 持久化配置（不包含 chapters，避免大文本导致配额超限）
+			// 持久化 aiConfig、fontSize、novels、currentNovelId、theme、scriptResults
 			partialize: (state) => ({
 				aiConfig: state.aiConfig,
 				apiKeyMap: state.apiKeyMap,
@@ -387,15 +370,7 @@ export const useAppStore = create<AppState>()(
 				novels: state.novels,
 				currentNovelId: state.currentNovelId,
 				theme: state.theme,
-				lineSpacing: state.lineSpacing,
-				paragraphIndent: state.paragraphIndent,
-				paragraphSpacing: state.paragraphSpacing,
-				readingBackground: state.readingBackground,
-				customTextColor: state.customTextColor,
-				customBgColor: state.customBgColor,
-				bgImageUrl: state.bgImageUrl,
-				readingMode: state.readingMode,
-				activeTab: state.activeTab,
+				scriptResults: state.scriptResults,
 			}),
 			onRehydrateStorage: () => (state) => {
 				if (state) setLoggerEnabled(state.aiConfig.enableLogging);
