@@ -965,25 +965,39 @@ export function ReaderPanel({
 						className="reader-tts-btn"
 						onClick={handleTTSToggle}
 					>
-						<Icons.volume size={18} />
+						<Icons.bookHeadphones size={18} />
 						<span>开始朗读</span>
 					</button>
 				)}
 				{readingMode && (
 					<button
 						className={`reader-settings-btn${showTTSPanel ? " active" : ""}`}
-						onClick={() => setShowTTSPanel(!showTTSPanel)}
+						onClick={() => {
+							if (showTTSPanel) {
+								setShowTTSPanel(false);
+							} else {
+								setShowTTSPanel(true);
+								setShowReadingSettings(false);
+							}
+						}}
 					>
-						<Icons.settings size={18} />
+						<Icons.bookAudio size={18} />
 						<span>语音设置</span>
 					</button>
 				)}
 				{readingMode && (
 					<button
 						className="reading-settings-toggle"
-						onClick={() => setShowReadingSettings(!showReadingSettings)}
+						onClick={() => {
+							if (showReadingSettings) {
+								setShowReadingSettings(false);
+							} else {
+								setShowReadingSettings(true);
+								setShowTTSPanel(false);
+							}
+						}}
 					>
-						<Icons.settings size={18} />
+						<Icons.lineStyle size={18} />
 						<span>阅读设置</span>
 					</button>
 				)}
