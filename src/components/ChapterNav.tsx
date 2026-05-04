@@ -4,6 +4,46 @@
 import { useAppStore } from "../stores/appStore";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
+import { useSwipeGesture } from "../hooks/useSwipeGesture";
+
+function ChapterItem({
+	chapter,
+	index,
+	isActive,
+	onSelect,
+}: {
+	chapter: { id: number; title: string };
+	index: number;
+	isActive: boolean;
+	onSelect: () => void;
+}) {
+	const proofreadStatus = useAppStore((s) => s.proofreadStatus);
+	const toggleProofreadStatus = useAppStore((s) => s.toggleProofreadStatus);
+	const isProofread = proofreadStatus[chapter.id] ?? false;
+
+	const swipeHandlers = useSwipeGesture({
+		onSwipeLeft: () => toggleProofreadStatus(chapter.id),
+		onSwipeRight: () => toggleProofreadStatus(chapter.id),
+		threshold: 60,
+	});
+
+	return (
+		<button
+			className={`chapter-item ${isActive ? "active" : ""} ${isProofread ? "proofread" : ""}`}
+			onClick={onSelect}
+			onTouchStart={swipeHandlers.onTouchStart}
+			onTouchMove={swipeHandlers.onTouchMove}
+			onTouchEnd={swipeHandlers.onTouchEnd}
+			title={`${chapter.title}${isProofread ? " (已校对)" : ""}`}
+		>
+			<span className="chapter-number">{index + 1}</span>
+			<span className="chapter-title">{chapter.title}</span>
+			{isProofread && (
+				<Icons.circleCheckBig size={16} className="proofread-icon" />
+			)}
+		</button>
+	);
+}
 
 export function ChapterNav({
 	onChapterSelect,
@@ -37,20 +77,18 @@ export function ChapterNav({
 			</div>
 			<div className="chapter-list">
 				{chapters.map((ch, i) => (
-					<button
+					<ChapterItem
 						key={ch.id}
-						className={`chapter-item ${i === currentChapterIndex ? "active" : ""}`}
-						onClick={() => {
+						chapter={ch}
+						index={i}
+						isActive={i === currentChapterIndex}
+						onSelect={() => {
 							setCurrentChapterIndex(i);
 							if (onChapterSelect) {
 								onChapterSelect();
 							}
 						}}
-						title={ch.title}
-					>
-						<span className="chapter-number">{i + 1}</span>
-						<span className="chapter-title">{ch.title}</span>
-					</button>
+					/>
 				))}
 			</div>
 		</div>

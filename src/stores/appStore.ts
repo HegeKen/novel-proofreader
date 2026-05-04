@@ -28,6 +28,9 @@ interface AppState {
 	// 下一本新书的 bookId（按导入顺序分配）
 	nextBookId: number;
 
+	// 已校对状态记录（chapterId -> 是否已校对）
+	proofreadStatus: Record<number, boolean>;
+
 	// AI 配置
 	aiConfig: AIConfig;
 	// 按提供商分别存储的 API Key
@@ -122,6 +125,7 @@ interface AppState {
 	setReadingMode: (enabled: boolean) => void;
 	setLineSpacing: (spacing: number) => void;
 	setParagraphIndent: (indent: number) => void;
+	toggleProofreadStatus: (chapterId: number) => void;
 
 	// Actions — 缓存管理
 	saveCache: () => void;
@@ -159,6 +163,7 @@ export const useAppStore = create<AppState>()(
 			bgImageUrl: "",
 			scriptResults: {},
 			lastCacheSaveTime: null,
+			proofreadStatus: {},
 
 			addNovel: (novel) =>
 				set((state) => {
@@ -188,7 +193,7 @@ export const useAppStore = create<AppState>()(
 			setChapters: (chapters) => set({ chapters, currentChapterIndex: 0 }),
 
 			clearFile: () =>
-				set({ chapters: [], currentChapterIndex: 0, scriptResults: {} }),
+				set({ chapters: [], currentChapterIndex: 0, scriptResults: {}, proofreadStatus: {} }),
 
 			// 剧本改编结果操作
 			setScriptResult: (
@@ -361,6 +366,14 @@ export const useAppStore = create<AppState>()(
 
 			setBgImageUrl: (url) => set({ bgImageUrl: url }),
 
+			toggleProofreadStatus: (chapterId) =>
+				set((state) => ({
+					proofreadStatus: {
+						...state.proofreadStatus,
+						[chapterId]: !state.proofreadStatus[chapterId],
+					},
+				})),
+
 			saveCache: () => {
 				const now = Date.now();
 				set((state) => {
@@ -390,6 +403,7 @@ export const useAppStore = create<AppState>()(
 				theme: state.theme,
 				scriptResults: state.scriptResults,
 				nextBookId: state.nextBookId,
+				proofreadStatus: state.proofreadStatus,
 			}),
 			onRehydrateStorage: () => (state) => {
 				if (state) setLoggerEnabled(state.aiConfig.enableLogging);

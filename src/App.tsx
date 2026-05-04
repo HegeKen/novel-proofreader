@@ -110,7 +110,11 @@ export default function App() {
 		setChapters([]);
 		setReadingMode(false);
 		setCurrentChapterIndex(0);
-	}, [selectNovel, setChapters, setReadingMode, setCurrentChapterIndex]);
+		// 移动端点击标题时切换到小说标签
+		if (isMobile) {
+			setMobileTab("novels");
+		}
+	}, [selectNovel, setChapters, setReadingMode, setCurrentChapterIndex, isMobile, setMobileTab]);
 
 	const handleVolumeKey = useCallback(
 		(e: KeyboardEvent) => {
@@ -295,8 +299,8 @@ export default function App() {
 						{!isMobile && (theme === "dark" ? "切换到亮色" : "切换到深色")}
 					</button>
 					<button className="btn-settings" onClick={() => setConfigOpen(true)}>
-						<Icons.settings size={18} />
-						设置
+						<Icons.bolt size={18} />
+						{!isMobile && "设置"}
 					</button>
 				</div>
 			</header>

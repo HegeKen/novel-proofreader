@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.8.0] - 2026-05-04
+
+### ✨ 新功能
+
+**移动端章节校对状态标记**
+- 新增章节左滑标记为"已校对"功能
+- 新增章节右滑取消"已校对"标记
+- 章节列表右侧显示校对状态图标（lucide-circle-check-big）
+- 新增 useSwipeGesture 自定义 Hook 支持触摸滑动手势检测
+
+**阅读面板互斥逻辑**
+- TTS 面板与阅读设置面板互斥，同时只能开启一个
+- 点击打开一个面板时自动关闭另一个面板
+
+### 🔧 改进优化
+
+**按钮图标更新**
+- 设置按钮（btn-settings）图标更换为 Bolt
+- 语音设置按钮（reader-settings-btn）图标更换为 BookAudio
+- 阅读设置按钮（reading-settings-toggle）图标更换为 LineStyle
+- TTS 按钮（reader-tts-btn）图标更换为 BookHeadphones
+
+**移动端浮动按钮优化**
+- reader-floating-actions 按钮改为横排布局
+- 按钮形状统一为正圆形（36px × 36px）
+- 按钮图标完美居中显示
+- 样式与 header-right 按钮保持一致
+
+**面板样式优化**
+- reading-settings-panel 添加模糊背景效果（backdrop-filter: blur(20px)）
+- TTS 面板与阅读设置面板样式统一
+- 移动端面板位置调整至浮动按钮上方（bottom: 180px）
+
+**UI 细节优化**
+- 自定义颜色标签颜色跟随深色/亮色模式变更（var(--text-secondary)）
+- 移动端点击标题自动切换到小说标签页
+
+---
+
 ## [0.7.5] - 2026-05-03
 
 ### ✨ 新功能

@@ -19,6 +19,7 @@ import {
 	RefreshCw,
 	X,
 	CheckCircle,
+	CircleCheckBig,
 	Type,
 	FileText,
 	ChevronDown,
@@ -36,6 +37,10 @@ import {
 	Clock,
 	File as FileIcon,
 	Plus,
+	Bolt,
+	BookAudio,
+	LineStyle,
+	BookHeadphones,
 } from "lucide-react";
 
 export const Icons = {
@@ -62,6 +67,7 @@ export const Icons = {
 	refresh: RefreshCw,
 	close: X,
 	check: CheckCircle,
+	circleCheckBig: CircleCheckBig,
 	typo: Type,
 	grammar: PenLine,
 	punctuation: FileText,
@@ -76,6 +82,10 @@ export const Icons = {
 	calendar: Clock,
 	file: FileIcon,
 	plus: Plus,
+	bolt: Bolt,
+	bookAudio: BookAudio,
+	lineStyle: LineStyle,
+	bookHeadphones: BookHeadphones,
 };
 
 export type IconName = keyof typeof Icons;
