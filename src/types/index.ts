@@ -50,6 +50,7 @@ export interface ProofreadError {
 	/** AI 建议的修正文本（用于替换） */
 	correctedText: string;
 	applied: boolean;
+	skipped: boolean;
 }
 
 /** 段落检测结果 */

@@ -42,6 +42,11 @@ interface ProofreadState {
 		paragraphIndex: number,
 		errorId: string,
 	) => void;
+	toggleErrorSkipped: (
+		chapterId: number,
+		paragraphIndex: number,
+		errorId: string,
+	) => void;
 	clearResults: (chapterId: number) => void;
 	clearAllResults: () => void;
 	setHighlightedParagraph: (index: number | null) => void;
@@ -88,6 +93,22 @@ export const useProofreadStore = create<ProofreadState>((set) => ({
 					...para,
 					errors: para.errors.map((e: ProofreadError) =>
 						e.id === errorId ? { ...e, applied: !e.applied } : e,
+					),
+				};
+			}
+			return { results: { ...state.results, [chapterId]: updated } };
+		}),
+
+	toggleErrorSkipped: (chapterId, paragraphIndex, errorId) =>
+		set((state) => {
+			const chapterResults = state.results[chapterId] ?? [];
+			const updated = [...chapterResults];
+			const para = updated[paragraphIndex];
+			if (para) {
+				updated[paragraphIndex] = {
+					...para,
+					errors: para.errors.map((e: ProofreadError) =>
+						e.id === errorId ? { ...e, skipped: !e.skipped } : e,
 					),
 				};
 			}

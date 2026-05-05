@@ -11,6 +11,11 @@ import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import type { CheckGranularity, ProofreadError } from "../types";
+import {
+	initNotificationService,
+	updateProofreadProgress,
+	sendProofreadCompleteNotification,
+} from "../utils/notificationService";
 
 const ERROR_TYPE_LABELS: Record<string, { icon: keyof typeof Icons; label: string }> = {
 	typo: { icon: "typo", label: "错别字" },
@@ -42,6 +47,7 @@ export function ProofreadPanel() {
 		(s) => s.setHighlightedParagraph,
 	);
 	const toggleErrorApplied = useProofreadStore((s) => s.toggleErrorApplied);
+	const toggleErrorSkipped = useProofreadStore((s) => s.toggleErrorSkipped);
 	const setApplyAnimation = useProofreadStore((s) => s.setApplyAnimation);
 
 	const startLine = useProofreadStore((s) => s.startLine);
@@ -53,6 +59,7 @@ export function ProofreadPanel() {
 	const [singleCheckingLine, setSingleCheckingLine] = useState<number | null>(
 		null,
 	);
+	const [notificationInit, setNotificationInit] = useState(false);
 	// 动画互斥：防止快速连续点击"采纳"
 	const animatingRef = useRef(false);
 	// 滚动容器 ref
@@ -135,10 +142,47 @@ export function ProofreadPanel() {
 		}
 	}, [chapter?.id, paragraphIndexMap, chapter, setResults, setStartLine]);
 
+	useEffect(() => {
+		if (!checking || !chapter) return;
+		const chapterId = chapter.id;
+		const chapterTitle = chapter.title;
+		const interval = setInterval(async () => {
+			const currentResults = useProofreadStore.getState().results[chapterId] ?? [];
+			const totalErrors = currentResults.reduce((sum, r) => sum + r.errors.length, 0);
+			const remainingErrors = currentResults.reduce(
+				(sum, r) => sum + r.errors.filter((e) => !e.applied && !e.skipped).length,
+				0,
+			);
+			const processedCount = totalErrors - remainingErrors;
+			if (totalErrors > 0) {
+				await updateProofreadProgress({
+					chapterTitle,
+					totalErrors,
+					remainingErrors,
+					processedCount,
+				});
+			}
+		}, 5000);
+		return () => clearInterval(interval);
+	}, [checking, chapter]);
+
 	const handleStartCheck = async () => {
+		if (!notificationInit) {
+			await initNotificationService();
+			setNotificationInit(true);
+		}
 		setChecking(true);
 		await checkChapter(granularity, startLine ?? 0);
 		setChecking(false);
+		if (chapter) {
+			const finalResults = useProofreadStore.getState().results[chapter.id] ?? [];
+			const finalTotal = finalResults.reduce((sum, r) => sum + r.errors.length, 0);
+			const finalProcessed = finalResults.reduce(
+				(sum, r) => sum + r.errors.filter((e) => e.applied || e.skipped).length,
+				0,
+			);
+			await sendProofreadCompleteNotification(chapter.title, finalTotal, finalProcessed);
+		}
 	};
 
 	const handleSingleLineCheck = async (lineIndex: number) => {
@@ -298,6 +342,11 @@ export function ProofreadPanel() {
 		(sum, r) => sum + r.errors.length,
 		0,
 	);
+	const remainingErrors = chapterResults.reduce(
+		(sum, r) =>
+			sum + r.errors.filter((e) => !e.applied && !e.skipped).length,
+		0,
+	);
 
 	return (
 		<div className="proofread-panel">
@@ -347,6 +396,11 @@ export function ProofreadPanel() {
 					{totalErrors > 0 && (
 						<span className="error-count">
 							发现 <strong>{totalErrors}</strong> 个问题
+							{remainingErrors < totalErrors && (
+								<span className="remaining-count">
+									，剩余 <strong>{remainingErrors}</strong> 个未处理
+								</span>
+							)}
 						</span>
 					)}
 					{checking ? (
@@ -431,7 +485,7 @@ export function ProofreadPanel() {
 										return (
 											<div
 												key={err.id}
-												className={`error-item ${err.applied ? "applied" : ""}`}
+												className={`error-item ${err.applied ? "applied" : ""} ${err.skipped ? "skipped" : ""}`}
 											>
 												<div className="error-header">
 													<span
@@ -448,6 +502,9 @@ export function ProofreadPanel() {
 													</span>
 													{err.applied && (
 														<span className="applied-badge">已采纳</span>
+													)}
+													{err.skipped && (
+														<span className="skipped-badge">已跳过</span>
 													)}
 												</div>
 												<div className="error-detail">
@@ -472,6 +529,19 @@ export function ProofreadPanel() {
 													}}
 												>
 													{err.applied ? "撤销" : "采纳修改"}
+												</button>
+												<button
+													className="btn-skip"
+													onClick={(e) => {
+														e.stopPropagation();
+														const state = useAppStore.getState();
+														const currentChapter = state.chapters[state.currentChapterIndex];
+														if (currentChapter) {
+															toggleErrorSkipped(currentChapter.id, i, err.id);
+														}
+													}}
+												>
+													{err.skipped ? "取消跳过" : "跳过"}
 												</button>
 											</div>
 										);
