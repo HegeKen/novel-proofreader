@@ -30,3 +30,5 @@ src-tauri/target/aarch64-linux-android
 src-tauri/target/armv7-linux-androideabi
 src-tauri/target/i686-linux-android
 src-tauri/target/x86_64-linux-android
+src-tauri/gen/android/buildSrc/.kotlin/sessions/kotlin-compiler-7218005615267854515.salive
+src-tauri/target/.rustc_info.json

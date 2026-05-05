@@ -2413,11 +2413,13 @@ select {
 	margin-top: 6px;
 	font-size: 12px;
 	color: var(--text-muted);
-	line-height: 1.5;
 	padding: 6px 8px;
 	background: var(--bg-surface);
 	border-radius: var(--r-sm);
 	border: 1px solid var(--border);
+	display: flex;
+	align-items: center;
+	gap: 6px;
 }
 
 .btn-apply {
@@ -2435,6 +2437,43 @@ select {
 	background: var(--accent);
 	color: #fff;
 	box-shadow: 0 2px 8px rgba(122, 162, 247, 0.25);
+}
+
+.btn-skip {
+	margin-top: 8px;
+	margin-left: 8px;
+	padding: 5px 14px;
+	border-radius: var(--r-sm);
+	font-size: 12px;
+	font-weight: 500;
+	background: var(--bg-surface);
+	color: var(--text-muted);
+	border: 1px solid var(--border);
+	transition: all var(--duration) var(--ease);
+}
+.btn-skip:hover {
+	background: var(--bg-hover);
+	border-color: var(--border-strong);
+	color: var(--text);
+}
+
+.remaining-count {
+	color: var(--text-muted);
+	font-size: 13px;
+}
+
+.skipped-badge {
+	margin-left: 8px;
+	padding: 2px 6px;
+	border-radius: 3px;
+	font-size: 11px;
+	background: var(--bg-surface);
+	color: var(--text-muted);
+	border: 1px solid var(--border);
+}
+
+.error-item.skipped {
+	opacity: 0.5;
 }
 
 /* 单行检测按钮 */
@@ -4251,10 +4290,10 @@ select {
 	}
 
 	.proofread-toolbar {
-		flex-direction: row;
-		align-items: center;
+		flex-direction: column;
+		align-items: stretch;
 		flex-wrap: nowrap;
-		gap: 6px;
+		gap: 8px;
 		flex-shrink: 0;
 		position: sticky;
 		top: 0;
@@ -4263,7 +4302,7 @@ select {
 		-webkit-backdrop-filter: blur(var(--glass-blur-strong));
 		border-bottom: 1px solid var(--glass-border);
 		z-index: 10;
-		padding: 6px 8px;
+		padding: 10px 12px;
 		overflow-x: auto;
 	}
 
@@ -4271,8 +4310,13 @@ select {
 	.toolbar-right {
 		display: flex;
 		align-items: center;
-		gap: 4px;
+		gap: 6px;
 		flex-shrink: 0;
+		flex-wrap: wrap;
+	}
+
+	.toolbar-right {
+		justify-content: space-between;
 	}
 
 	.granularity-select,

@@ -100,6 +100,7 @@ export function useAICheck() {
 								originalText: orig,
 								correctedText: corr,
 								applied: false,
+								skipped: false,
 							});
 						}
 						globalOffset += chunk.length;
@@ -194,6 +195,7 @@ export function useAICheck() {
 								originalText: orig,
 								correctedText: corr,
 								applied: false,
+								skipped: false,
 							});
 						}
 
@@ -302,6 +304,7 @@ export function useAICheck() {
 						originalText: orig,
 						correctedText: corr,
 						applied: false,
+						skipped: false,
 					});
 				}
 
