@@ -1932,6 +1932,10 @@ select {
 	border-left-color: var(--yellow);
 }
 
+.reader-paragraph.highlighted.editing {
+	font-size: 13px;
+}
+
 .line-edit-textarea {
 	flex: 1;
 	min-width: 0;
