@@ -29,6 +29,8 @@ interface ProofreadState {
 	scriptTasks: ScriptTask[];
 	// 剧本转换进度
 	scriptRunning: boolean;
+	// 忽略单词列表（按章节存储）
+	ignoredWords: Record<number, string[]>;
 
 	// Actions
 	setResults: (chapterId: number, results: ParagraphResult[]) => void;
@@ -53,6 +55,12 @@ interface ProofreadState {
 	setStartLine: (line: number | null) => void;
 	setApplyAnimation: (anim: ApplyAnimation | null) => void;
 
+	// Ignored words actions
+	addIgnoredWord: (chapterId: number, word: string) => void;
+	removeIgnoredWord: (chapterId: number, word: string) => void;
+	getIgnoredWords: (chapterId: number) => string[];
+	clearIgnoredWords: (chapterId: number) => void;
+
 	// Script actions
 	addScriptTask: (task: ScriptTask) => void;
 	updateScriptTask: (taskId: number, update: Partial<ScriptTask>) => void;
@@ -60,13 +68,14 @@ interface ProofreadState {
 	setScriptRunning: (running: boolean) => void;
 }
 
-export const useProofreadStore = create<ProofreadState>((set) => ({
+export const useProofreadStore = create<ProofreadState>((set, get) => ({
 	results: {},
 	highlightedParagraph: null,
 	startLine: null,
 	applyAnimation: null,
 	scriptTasks: [],
 	scriptRunning: false,
+	ignoredWords: {},
 
 	setResults: (chapterId, results) =>
 		set((state) => ({
@@ -129,6 +138,44 @@ export const useProofreadStore = create<ProofreadState>((set) => ({
 	setStartLine: (line) => set({ startLine: line }),
 
 	setApplyAnimation: (anim) => set({ applyAnimation: anim }),
+
+	addIgnoredWord: (chapterId, word) =>
+		set((state) => {
+			const currentWords = state.ignoredWords[chapterId] ?? [];
+			// 避免重复添加
+			if (currentWords.includes(word)) {
+				return state;
+			}
+			return {
+				ignoredWords: {
+					...state.ignoredWords,
+					[chapterId]: [...currentWords, word],
+				},
+			};
+		}),
+
+	removeIgnoredWord: (chapterId, word) =>
+		set((state) => {
+			const currentWords = state.ignoredWords[chapterId] ?? [];
+			return {
+				ignoredWords: {
+					...state.ignoredWords,
+					[chapterId]: currentWords.filter((w) => w !== word),
+				},
+			};
+		}),
+
+	getIgnoredWords: (chapterId) => {
+		const state = get();
+		return state.ignoredWords[chapterId] ?? [];
+	},
+
+	clearIgnoredWords: (chapterId) =>
+		set((state) => {
+			const newIgnoredWords = { ...state.ignoredWords };
+			delete newIgnoredWords[chapterId];
+			return { ignoredWords: newIgnoredWords };
+		}),
 
 	addScriptTask: (task) =>
 		set((state) => ({ scriptTasks: [...state.scriptTasks, task] })),

@@ -10,6 +10,7 @@ import { buildParagraphIndexMap } from "../utils/formatters";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
+import { IgnoredWordsManager } from "./IgnoredWordsManager";
 import type { CheckGranularity, ProofreadError } from "../types";
 import {
 	initNotificationService,
@@ -60,6 +61,7 @@ export function ProofreadPanel() {
 		null,
 	);
 	const [notificationInit, setNotificationInit] = useState(false);
+	const [showIgnoredWordsModal, setShowIgnoredWordsModal] = useState(false);
 	// 动画互斥：防止快速连续点击"采纳"
 	const animatingRef = useRef(false);
 	// 滚动容器 ref
@@ -403,6 +405,13 @@ export function ProofreadPanel() {
 							)}
 						</span>
 					)}
+					<button
+						className="btn-ignored-words"
+						onClick={() => setShowIgnoredWordsModal(true)}
+						title="管理忽略单词"
+					>
+						<Icons.settings size={16} />
+					</button>
 					{checking ? (
 						<button className="btn-cancel" onClick={cancelCheck}>
 							取消检测
@@ -414,6 +423,11 @@ export function ProofreadPanel() {
 					)}
 				</div>
 			</div>
+
+			{/* 忽略单词管理弹窗 */}
+			{showIgnoredWordsModal && (
+				<IgnoredWordsManager onClose={() => setShowIgnoredWordsModal(false)} />
+			)}
 
 			<div className="proofread-content" ref={proofreadContentRef}>
 				{displayResults.length === 0 ? (

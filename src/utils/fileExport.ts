@@ -10,6 +10,10 @@ function getNovelsSubDir(): string {
 }
 
 export async function ensureNovelsDirectory(): Promise<boolean> {
+  if (!isTauri()) {
+    console.warn('[fileExport] Not in Tauri environment, skipping directory creation');
+    return false;
+  }
   try {
     const baseDir = getBaseDir();
     const novelsPath = getNovelsSubDir();
@@ -26,6 +30,7 @@ export async function ensureNovelsDirectory(): Promise<boolean> {
 }
 
 export async function importNovelFromStorage(fileName: string): Promise<string | null> {
+  if (!isTauri()) return null;
   try {
     await ensureNovelsDirectory();
     const novelsPath = getNovelsSubDir();
@@ -44,6 +49,7 @@ export async function importNovelFromStorage(fileName: string): Promise<string |
 }
 
 export async function saveNovelToStorage(fileName: string, content: string): Promise<boolean> {
+  if (!isTauri()) return false;
   try {
     await ensureNovelsDirectory();
     const novelsPath = getNovelsSubDir();
@@ -61,6 +67,7 @@ export async function saveNovelToStorage(fileName: string, content: string): Pro
 }
 
 export async function deleteNovelFromStorage(fileName: string): Promise<boolean> {
+  if (!isTauri()) return false;
   try {
     const novelsPath = getNovelsSubDir();
     const fullPath = `${novelsPath}/${fileName}`;

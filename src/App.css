@@ -67,7 +67,8 @@
 	--r-md: 14px;
 	--r-lg: 20px;
 	--r-xl: 28px;
-	--r-xxl: 40px;
+		--r-xxl: 40px;
+	--r-full: 9999px;
 
 	/* Liquid Glass */
 	--glass-bg: rgba(30, 40, 60, 0.6);
@@ -938,7 +939,6 @@ select {
 	display: block;
 	width: 18px;
 	height: 18px;
-	vertical-align: middle;
 }
 
 .reader-search-btn:hover,
@@ -1042,6 +1042,7 @@ select {
 	transition: all var(--duration) var(--ease);
 	appearance: none;
 	-webkit-appearance: none;
+	-moz-appearance: none;
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
 	background-repeat: no-repeat;
 	background-position: right 10px center;
@@ -1075,7 +1076,9 @@ select {
 	height: 4px;
 	border-radius: 2px;
 	background: var(--border);
+	appearance: none;
 	-webkit-appearance: none;
+	-moz-appearance: none;
 }
 
 .tts-slider-group input[type="range"]::-webkit-slider-thumb {
@@ -1199,6 +1202,7 @@ select {
 	transition: all var(--duration) var(--ease);
 	appearance: none;
 	-webkit-appearance: none;
+	-moz-appearance: none;
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
 	background-repeat: no-repeat;
 	background-position: right 10px center;
@@ -1227,7 +1231,9 @@ select {
 	border-radius: 3px;
 	background: var(--border);
 	outline: none;
+	appearance: none;
 	-webkit-appearance: none;
+	-moz-appearance: none;
 }
 
 .setting-control input[type="range"]::-webkit-slider-thumb {
@@ -1956,18 +1962,6 @@ select {
 	box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
-/* ── Apply Animation ── */
-.reader-paragraph.anim-highlight-old {
-	/* 整段高亮已禁用，精确高亮在 .text-highlight 中 */
-}
-
-.reader-paragraph.anim-replacing {
-	/* 整段高亮已禁用，精确高亮在 .text-highlight 中 */
-}
-
-.reader-paragraph.anim-highlight-new {
-	/* 整段高亮已禁用，精确高亮在 .text-highlight 中 */
-}
 
 @keyframes pulse-old {
 	0%,
@@ -2070,12 +2064,6 @@ select {
 	}
 }
 
-/* 精确高亮时的段落样式（不再整段高亮） */
-.reader-paragraph.anim-highlight-old .line-text,
-.reader-paragraph.anim-replacing .line-text,
-.reader-paragraph.anim-highlight-new .line-text {
-	/* 段落本身保持默认背景 */
-}
 
 /* ============================================================
    Right Panel — Tabs + Content
@@ -2242,10 +2230,36 @@ select {
 	padding: 6px 14px;
 	border-radius: var(--r-md);
 	font-size: 13px;
-	background: var(--red);
-	color: #fff;
+	font-weight: 500;
+	background: var(--bg-hover);
+	color: var(--text-primary);
+	border: 1px solid var(--border);
 	transition: all var(--duration) var(--ease);
 }
+
+.btn-ignored-words {
+	padding: 6px 10px;
+	border-radius: var(--r-md);
+	font-size: 13px;
+	font-weight: 500;
+	background: var(--bg-hover);
+	color: var(--text-secondary);
+	border: 1px solid var(--border);
+	transition: all var(--duration) var(--ease);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+}
+
+.btn-ignored-words:hover {
+	background: var(--bg-active);
+	color: var(--accent);
+	border-color: var(--accent);
+	transform: translateY(-1px);
+	box-shadow: 0 2px 8px rgba(94, 184, 255, 0.2);
+}
+
 .btn-cancel:hover {
 	opacity: 0.85;
 }
@@ -3002,8 +3016,6 @@ select {
 	position: fixed;
 	inset: 0;
 	background: rgba(0, 0, 0, 0.5);
-	backdrop-filter: blur(8px);
-	-webkit-backdrop-filter: blur(8px);
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -3120,7 +3132,9 @@ select {
 	border-radius: 3px;
 	background: #eee;
 	outline: none;
+	appearance: none;
 	-webkit-appearance: none;
+	-moz-appearance: none;
 }
 
 .config-range::-webkit-slider-thumb {
@@ -3441,7 +3455,7 @@ select {
 	width: 540px;
 	max-height: 85vh;
 	background: var(--glass-bg-strong);
-	backdrop-filter: blur(var(--glass-blur-strong));
+	backdrop-filter: blur(var(--glass-blur-strong)) !important;
 	-webkit-backdrop-filter: blur(var(--glass-blur-strong));
 	border: 1px solid var(--glass-border);
 	border-radius: var(--r-xxl);
@@ -3623,6 +3637,7 @@ select {
 	transition: all var(--duration) var(--ease);
 	appearance: none;
 	-webkit-appearance: none;
+	-moz-appearance: none;
 	position: relative;
 }
 .form-group input[type="checkbox"]:checked {
@@ -4435,3 +4450,272 @@ select {
 		width: 280px;
 	}
 }
+
+/* ============================================================
+   Ignored Words Manager Modal
+   ============================================================ */
+.ignored-words-modal {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 9999;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	animation: fadeIn 0.2s ease-out;
+}
+
+.ignored-words-modal .modal-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.5);
+	z-index: 1;
+}
+
+.ignored-words-modal .modal-content {
+	position: relative;
+	z-index: 2;
+	background: var(--bg-surface);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+	border: 1px solid var(--border);
+	border-radius: var(--r-xl);
+	box-shadow: var(--shadow-xl);
+	width: 90%;
+	max-width: 500px;
+	max-height: 80vh;
+	display: flex;
+	flex-direction: column;
+	animation: slideUp 0.3s ease-out;
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+}
+
+@keyframes slideUp {
+	from {
+		opacity: 0;
+		transform: translateY(20px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.modal-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 16px 20px;
+	border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 16px;
+	font-weight: 600;
+	color: var(--text-primary);
+	margin: 0;
+}
+
+.modal-close {
+	padding: 6px;
+	border-radius: var(--r-md);
+	background: transparent;
+	border: none;
+	color: var(--text-secondary);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+}
+
+.modal-close:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+}
+
+.modal-body {
+	padding: 20px;
+	overflow-y: auto;
+	flex: 1;
+}
+
+.modal-description {
+	font-size: 13px;
+	color: var(--text-secondary);
+	margin: 0 0 16px 0;
+	line-height: 1.6;
+}
+
+.add-word-form {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 20px;
+}
+
+.word-input {
+	flex: 1;
+	padding: 10px 14px;
+	border-radius: var(--r-md);
+	border: 1px solid var(--border);
+	background: var(--bg-raised);
+	color: var(--text-primary);
+	font-size: 14px;
+	outline: none;
+	transition: all var(--duration) var(--ease);
+}
+
+.word-input:focus {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.word-input::placeholder {
+	color: var(--text-muted);
+}
+
+.btn-add-word {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 10px 16px;
+	border-radius: var(--r-md);
+	background: var(--accent-gradient);
+	color: white;
+	border: none;
+	font-size: 14px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+	white-space: nowrap;
+}
+
+.btn-add-word:hover:not(:disabled) {
+	transform: translateY(-1px);
+	box-shadow: var(--shadow-md);
+}
+
+.btn-add-word:active:not(:disabled) {
+	transform: translateY(0);
+}
+
+.btn-add-word:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.ignored-words-list {
+	margin-top: 16px;
+}
+
+.list-header {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--text-secondary);
+	margin-bottom: 12px;
+}
+
+.words-grid {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.word-tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 6px 5px 12px;
+	border-radius: var(--r-full);
+	background: var(--accent-dim);
+	border: 1px solid var(--accent);
+	color: var(--accent);
+	font-size: 13px;
+	transition: all var(--duration) var(--ease);
+}
+
+.word-tag:hover {
+	background: var(--accent);
+	color: white;
+}
+
+.word-text {
+	user-select: none;
+}
+
+.word-remove {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+	background: transparent;
+	border: none;
+	color: currentColor;
+	cursor: pointer;
+	opacity: 0.7;
+	transition: all var(--duration) var(--ease);
+}
+
+.word-remove:hover {
+	opacity: 1;
+	background: rgba(255, 255, 255, 0.2);
+}
+
+.empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 40px 20px;
+	text-align: center;
+	color: var(--text-muted);
+}
+
+.empty-state svg {
+	margin-bottom: 12px;
+	opacity: 0.5;
+}
+
+.empty-state p {
+	margin: 4px 0;
+	font-size: 14px;
+}
+
+.empty-state .hint {
+	font-size: 12px;
+	color: var(--text-muted);
+	opacity: 0.7;
+}
+
+/* Mobile responsive for ignored words modal */
+@media (max-width: 768px) {
+	.modal-content {
+		width: 95%;
+		max-height: 70vh;
+	}
+
+	.modal-header {
+		padding: 14px 16px;
+	}
+
+	.modal-body {
+		padding: 16px;
+	}
+
+	.add-word-form {
+		flex-direction: column;
+	}
+
+	.btn-add-word {
+		justify-content: center;
+	}
+}
+
