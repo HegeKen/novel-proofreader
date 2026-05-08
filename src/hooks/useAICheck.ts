@@ -25,6 +25,7 @@ export function useAICheck() {
 	const updateParagraphResult = useProofreadStore(
 		(s) => s.updateParagraphResult,
 	);
+	const getIgnoredWords = useProofreadStore((s) => s.getIgnoredWords);
 	const abortRef = useRef<AbortController | null>(null);
 
 	const checkChapter = useCallback(
@@ -38,6 +39,8 @@ export function useAICheck() {
 			abortRef.current = controller;
 
 			const text = chapter.content;
+			// 获取当前章节的忽略单词列表
+			const ignoredWords = getIgnoredWords(chapter.id);
 
 			if (granularity === "chapter") {
 				// 整章发送
@@ -62,7 +65,7 @@ export function useAICheck() {
 							{ role: "system" as const, content: PROOFREAD_SYSTEM_PROMPT },
 							{
 								role: "user" as const,
-								content: buildProofreadUserPrompt(chunk),
+								content: buildProofreadUserPrompt(chunk, ignoredWords),
 							},
 						];
 						const reply = await sendChatCompletion(
@@ -156,7 +159,7 @@ export function useAICheck() {
 							{ role: "system" as const, content: PROOFREAD_SYSTEM_PROMPT },
 							{
 								role: "user" as const,
-								content: buildProofreadUserPrompt(item),
+								content: buildProofreadUserPrompt(item, ignoredWords),
 							},
 						];
 						const reply = await sendChatCompletion(
@@ -221,6 +224,7 @@ export function useAICheck() {
 			aiConfig,
 			setResults,
 			updateParagraphResult,
+			getIgnoredWords,
 		],
 	);
 
@@ -247,6 +251,8 @@ export function useAICheck() {
 			}
 
 			const lineText = lines[lineIndex];
+			// 获取当前章节的忽略单词列表
+			const ignoredWords = getIgnoredWords(chapter.id);
 
 			// 如果该行还没有结果，先初始化
 			const existing = useProofreadStore.getState().results[chapter.id];
@@ -271,7 +277,7 @@ export function useAICheck() {
 					{ role: "system" as const, content: PROOFREAD_SYSTEM_PROMPT },
 					{
 						role: "user" as const,
-						content: buildProofreadUserPrompt(lineText),
+						content: buildProofreadUserPrompt(lineText, ignoredWords),
 					},
 				];
 				const reply = await sendChatCompletion(messages, aiConfig);
@@ -328,6 +334,7 @@ export function useAICheck() {
 			aiConfig,
 			setResults,
 			updateParagraphResult,
+			getIgnoredWords,
 		],
 	);
 
