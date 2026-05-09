@@ -238,7 +238,7 @@ export default function App() {
 								className="btn-save-original"
 								onClick={handleSaveToOriginal}
 							>
-								<Icons.saveOriginal size={16} />
+								<Icons.fileOutput size={16} />
 								保存到原文件
 							</button>
 							<button
@@ -287,7 +287,7 @@ export default function App() {
 							onClick={handleSaveToOriginal}
 							title="保存到原文件"
 						>
-							<Icons.saveOriginal size={18} />
+							<Icons.fileOutput size={18} />
 						</button>
 					)}
 					<button
@@ -343,7 +343,7 @@ export default function App() {
 											setMobileProofreadVisible(!mobileProofreadVisible)
 										}
 									>
-										<Icons.search size={16} />
+										<Icons.chevronDown size={16} />
 										收起校对
 									</button>
 									<div className="right-content">
@@ -358,7 +358,7 @@ export default function App() {
 										setMobileProofreadVisible(!mobileProofreadVisible)
 									}
 								>
-									<Icons.saveOriginal size={16} />
+									<Icons.chevronUp size={16} />
 									显示校对
 								</button>
 							)}

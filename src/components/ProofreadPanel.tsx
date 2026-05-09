@@ -5,12 +5,14 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useProofreadStore } from "../stores/proofreadStore";
 import { useAICheck } from "../hooks/useAICheck";
-import { splitParagraphs } from "../utils/chapterSplit";
 import { buildParagraphIndexMap } from "../utils/formatters";
 import { EmptyState } from "./EmptyState";
+import { splitParagraphs } from "../utils/chapterSplit";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { IgnoredWordsManager } from "./IgnoredWordsManager";
+import { ToastContainer } from "./Toast";
+import type { ToastMessage } from "./Toast";
 import type { CheckGranularity, ProofreadError } from "../types";
 import {
 	initNotificationService,
@@ -41,6 +43,7 @@ export function ProofreadPanel() {
 	const chapters = useAppStore((s) => s.chapters);
 	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
 	const replaceParagraphText = useAppStore((s) => s.replaceParagraphText);
+	const replaceParagraphTextBatch = useAppStore((s) => s.replaceParagraphTextBatch);
 	const results = useProofreadStore((s) => s.results);
 	const setResults = useProofreadStore((s) => s.setResults);
 	const highlightedParagraph = useProofreadStore((s) => s.highlightedParagraph);
@@ -48,6 +51,7 @@ export function ProofreadPanel() {
 		(s) => s.setHighlightedParagraph,
 	);
 	const toggleErrorApplied = useProofreadStore((s) => s.toggleErrorApplied);
+	const applyAllErrors = useProofreadStore((s) => s.applyAllErrors);
 	const toggleErrorSkipped = useProofreadStore((s) => s.toggleErrorSkipped);
 	const setApplyAnimation = useProofreadStore((s) => s.setApplyAnimation);
 
@@ -62,10 +66,20 @@ export function ProofreadPanel() {
 	);
 	const [notificationInit, setNotificationInit] = useState(false);
 	const [showIgnoredWordsModal, setShowIgnoredWordsModal] = useState(false);
+	const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
 	// 动画互斥：防止快速连续点击"采纳"
 	const animatingRef = useRef(false);
 	// 滚动容器 ref
 	const proofreadContentRef = useRef<HTMLDivElement>(null);
+
+	const addToast = useCallback((type: ToastMessage["type"], message: string) => {
+		const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		setToastMessages((prev) => [...prev, { id, type, message }]);
+	}, []);
+
+	const removeToast = useCallback((id: string) => {
+		setToastMessages((prev) => prev.filter((msg) => msg.id !== id));
+	}, []);
 	const paragraphRefs = useRef<(HTMLDivElement | null)[]>([]);
 
 	const chapter = chapters[currentChapterIndex];
@@ -90,31 +104,32 @@ export function ProofreadPanel() {
 			(p) => p.trim() !== "",
 		);
 
-		// 如果有结果，合并结果数据
-		if (chapterResults.length > 0) {
-			return paragraphs.map((p, i) => {
-				const existing = chapterResults.find(
-					(r) => r.paragraphIndex === paragraphIndexMap[i],
-				);
-				if (existing) {
-					return existing;
-				}
-				return {
-					paragraphIndex: paragraphIndexMap[i],
-					originalText: p,
-					errors: [],
-					status: "pending" as const,
-				};
-			});
-		}
+		// 关键修复：基于 paragraphIndexMap 构建显示结果
+		// 确保每个段落的 paragraphIndex 都是原始索引
+		return paragraphs.map((p, filteredIndex) => {
+			const originalIndex = paragraphIndexMap[filteredIndex];
 
-		// 如果没有结果，生成空的段落列表
-		return paragraphs.map((p, i) => ({
-			paragraphIndex: paragraphIndexMap[i],
-			originalText: p,
-			errors: [],
-			status: "pending" as const,
-		}));
+			// 从 chapterResults 中查找对应的结果（使用原始索引匹配）
+			const existing = chapterResults.find(
+				(r) => r.paragraphIndex === originalIndex,
+			);
+
+			if (existing) {
+				// 使用已有的结果，但更新文本为最新内容
+				return {
+					...existing,
+					originalText: p,
+				};
+			}
+
+			// 如果没有已有结果，创建新的 pending 状态
+			return {
+				paragraphIndex: originalIndex,
+				originalText: p,
+				errors: [],
+				status: "pending" as const,
+			};
+		});
 	}, [chapter, chapterResults, paragraphIndexMap]);
 
 	// 切换章节时，自动把段落列表以"待校对"状态渲染出来（如果没有已有结果）
@@ -134,8 +149,8 @@ export function ProofreadPanel() {
 			const paragraphs = splitParagraphs(chapter.content).filter(
 				(p) => p.trim() !== "",
 			);
-			const initial = paragraphs.map((p, i) => ({
-				paragraphIndex: paragraphIndexMap[i],
+			const initial = paragraphs.map((p, filteredIndex) => ({
+				paragraphIndex: paragraphIndexMap[filteredIndex],
 				originalText: p,
 				errors: [],
 				status: "pending" as const,
@@ -187,9 +202,10 @@ export function ProofreadPanel() {
 		}
 	};
 
-	const handleSingleLineCheck = async (lineIndex: number) => {
+	const handleSingleLineCheck = async (originalIndex: number, filteredIndex: number) => {
 		if (checking || singleCheckingLine !== null) return;
-		await checkSingleLine(lineIndex, setSingleCheckingLine);
+		setSingleCheckingLine(filteredIndex);
+		await checkSingleLine(originalIndex, () => setSingleCheckingLine(null));
 	};
 
 	// 滚动到指定段落
@@ -228,7 +244,6 @@ export function ProofreadPanel() {
 		(
 			paraResult: (typeof chapterResults)[number],
 			err: ProofreadError,
-			filteredIndex: number,
 		) => {
 			// 动画互斥：上一个动画还没结束时禁止操作
 			if (animatingRef.current) return;
@@ -248,11 +263,13 @@ export function ProofreadPanel() {
 					err.correctedText,
 					err.originalText,
 				);
+				toggleErrorApplied(chapterId, paraIndex, err.id); // 使用原始段落索引
 				if (!ok) {
-					// 撤销失败（原文已被修改），只翻转状态
-					console.warn("[ProofreadPanel] 撤销替换失败，原文已不匹配");
+					// 撤销失败（原文已被修改），显示错误提示
+					addToast("error", "撤销失败：原文已被修改");
+				} else {
+					addToast("success", "已撤销修改");
 				}
-				toggleErrorApplied(chapterId, filteredIndex, err.id); // 使用过滤后的索引
 				return;
 			}
 
@@ -261,7 +278,7 @@ export function ProofreadPanel() {
 			// 阶段 1：高亮旧文本（精确到错误位置）
 			setApplyAnimation({
 				chapterId,
-				paragraphIndex: filteredIndex, // 使用过滤后的索引，与阅读区保持一致
+				paragraphIndex: paraIndex, // 使用原始段落索引，与阅读区保持一致
 				phase: "highlight-old",
 				errorId: err.id,
 				originalText: err.originalText,
@@ -269,13 +286,13 @@ export function ProofreadPanel() {
 				startIndex: err.startIndex,
 				endIndex: err.endIndex,
 			});
-			setHighlightedParagraph(filteredIndex);
+			setHighlightedParagraph(paraIndex);
 
 			setTimeout(() => {
 				// 阶段 2：替换文本
 				setApplyAnimation({
 					chapterId,
-					paragraphIndex: filteredIndex, // 使用过滤后的索引，与阅读区保持一致
+					paragraphIndex: paraIndex, // 使用原始段落索引，与阅读区保持一致
 					phase: "replacing",
 					errorId: err.id,
 					originalText: err.originalText,
@@ -289,14 +306,16 @@ export function ProofreadPanel() {
 					paraIndex,
 					err.originalText,
 					err.correctedText,
+					err.startIndex,
+					err.endIndex,
 				);
-				toggleErrorApplied(chapterId, filteredIndex, err.id); // 使用过滤后的索引
+				toggleErrorApplied(chapterId, paraIndex, err.id); // 使用原始段落索引
 
 				if (!replaced) {
-					// AI 返回的文本在段落中找不到，替换静默失败
-					console.warn(
-						`[ProofreadPanel] 文本匹配失败: "${err.originalText}" 不在段落 ${paraIndex} 中`,
-					);
+					// AI 返回的文本在段落中找不到，显示错误提示
+					addToast("error", `采纳失败："${err.originalText}" 不在当前段落中`);
+				} else {
+					addToast("success", "已采纳修改");
 				}
 
 				setTimeout(() => {
@@ -307,7 +326,7 @@ export function ProofreadPanel() {
 
 					setApplyAnimation({
 						chapterId,
-						paragraphIndex: filteredIndex, // 使用过滤后的索引，与阅读区保持一致
+						paragraphIndex: paraIndex, // 使用原始段落索引，与阅读区保持一致
 						phase: "highlight-new",
 						errorId: err.id,
 						originalText: err.originalText,
@@ -329,9 +348,83 @@ export function ProofreadPanel() {
 			toggleErrorApplied,
 			setApplyAnimation,
 			setHighlightedParagraph,
+			addToast,
 		],
 	);
 
+	/** 批量采纳当前段落的所有错误（从后往前处理避免位置偏移） */
+	const handleApplyAll = useCallback(
+		(paraResult: (typeof chapterResults)[number]) => {
+			// 动画互斥
+			if (animatingRef.current) return;
+
+			const state = useAppStore.getState();
+			const currentChapter = state.chapters[state.currentChapterIndex];
+			if (!currentChapter) return;
+			const chapterId = currentChapter.id;
+			const paraIndex = paraResult.paragraphIndex;
+
+			// 过滤出未采纳且未跳过的错误
+			const pendingErrors = paraResult.errors.filter(
+				(e) => !e.applied && !e.skipped,
+			);
+			if (pendingErrors.length === 0) {
+				addToast("info", "没有可采纳的错误");
+				return;
+			}
+
+			animatingRef.current = true;
+
+			// 批量替换（内部已按位置从后往前排序）
+			const errorsToReplace = pendingErrors.map((e) => ({
+				oldText: e.originalText,
+				newText: e.correctedText,
+				startIndex: e.startIndex,
+				endIndex: e.endIndex,
+			}));
+
+			const replacedCount = replaceParagraphTextBatch(
+				chapterId,
+				paraIndex,
+				errorsToReplace,
+			);
+
+			// 更新所有错误状态为已采纳（使用原始段落索引）
+			applyAllErrors(chapterId, paraIndex);
+
+			if (replacedCount === pendingErrors.length) {
+				addToast("success", `已采纳全部 ${replacedCount} 处错误`);
+			} else if (replacedCount > 0) {
+				addToast("warning", `部分采纳：成功 ${replacedCount}/${pendingErrors.length} 处`);
+			} else {
+				addToast("error", "批量采纳失败：所有错误均无法匹配");
+			}
+
+			animatingRef.current = false;
+		},
+		[replaceParagraphTextBatch, applyAllErrors, addToast],
+	);
+
+	/** 跳过/取消跳过单个错误 */
+	const handleSkip = useCallback(
+		(paraResult: (typeof chapterResults)[number], err: ProofreadError) => {
+			const state = useAppStore.getState();
+			const currentChapter = state.chapters[state.currentChapterIndex];
+			if (!currentChapter) {
+				addToast("error", "无法跳过：未找到当前章节");
+				return;
+			}
+
+			toggleErrorSkipped(currentChapter.id, paraResult.paragraphIndex, err.id);
+
+			if (err.skipped) {
+				addToast("success", "已取消跳过");
+			} else {
+				addToast("info", "已跳过此错误");
+			}
+		},
+		[toggleErrorSkipped, addToast],
+	);
 	if (!chapter) {
 		return (
 			<div className="proofread-panel empty">
@@ -442,14 +535,13 @@ export function ProofreadPanel() {
 							ref={(el) => {
 								paragraphRefs.current[i] = el;
 							}}
-							className={`proofread-paragraph ${
-								highlightedParagraph === i ? "highlighted" : ""
-							}`}
+							className={`proofread-paragraph ${highlightedParagraph === paraResult.paragraphIndex ? "highlighted" : ""
+								}`}
 							onClick={() => {
-								setHighlightedParagraph(i);
+								setHighlightedParagraph(paraResult.paragraphIndex);
 								// 点击段落时自动切换起始行到该段落
 								if (!checking) {
-									setStartLine(i === 0 ? null : i);
+									setStartLine(paraResult.paragraphIndex === 0 ? null : paraResult.paragraphIndex);
 								}
 							}}
 						>
@@ -464,7 +556,7 @@ export function ProofreadPanel() {
 									className="btn-single-check"
 									onClick={(e) => {
 										e.stopPropagation();
-										handleSingleLineCheck(i);
+										handleSingleLineCheck(paraResult.paragraphIndex, i);
 									}}
 									disabled={
 										checking ||
@@ -493,6 +585,17 @@ export function ProofreadPanel() {
 								)}
 							{paraResult.errors.length > 0 && (
 								<div className="para-errors">
+									{/* 批量采纳按钮 */}
+									<button
+										className="btn-apply-all"
+										onClick={(e) => {
+											e.stopPropagation();
+											handleApplyAll(paraResult);
+										}}
+									>
+										<Icons.checkAll size={14} />
+										采纳全部 ({paraResult.errors.filter(e => !e.applied && !e.skipped).length})
+									</button>
 									{paraResult.errors.map((err: ProofreadError) => {
 										const typeInfo = ERROR_TYPE_LABELS[err.errorType];
 										const IconComponent = typeInfo ? Icons[typeInfo.icon] : null;
@@ -539,7 +642,7 @@ export function ProofreadPanel() {
 													className="btn-apply"
 													onClick={(e) => {
 														e.stopPropagation();
-														handleApply(paraResult, err, i);
+														handleApply(paraResult, err);
 													}}
 												>
 													{err.applied ? "撤销" : "采纳修改"}
@@ -548,11 +651,7 @@ export function ProofreadPanel() {
 													className="btn-skip"
 													onClick={(e) => {
 														e.stopPropagation();
-														const state = useAppStore.getState();
-														const currentChapter = state.chapters[state.currentChapterIndex];
-														if (currentChapter) {
-															toggleErrorSkipped(currentChapter.id, i, err.id);
-														}
+														handleSkip(paraResult, err);
 													}}
 												>
 													{err.skipped ? "取消跳过" : "跳过"}
@@ -566,6 +665,9 @@ export function ProofreadPanel() {
 					))
 				)}
 			</div>
+
+			{/* Toast 消息提示 */}
+			<ToastContainer messages={toastMessages} onClose={removeToast} />
 		</div>
 	);
 }

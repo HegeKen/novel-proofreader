@@ -329,7 +329,7 @@ export function ReaderPanel({
 			setHighlightedParagraph(searchResults[newIndex].paraIndex);
 			return newIndex;
 		});
-	}, [searchResults]);
+	}, [searchResults, setHighlightedParagraph]);
 
 	/** 搜索导航：下一个 */
 	const nextMatch = useCallback(() => {
@@ -339,7 +339,7 @@ export function ReaderPanel({
 			setHighlightedParagraph(searchResults[newIndex].paraIndex);
 			return newIndex;
 		});
-	}, [searchResults]);
+	}, [searchResults, setHighlightedParagraph]);
 
 	/** 关闭搜索 */
 	const closeSearch = useCallback(() => {
@@ -549,15 +549,18 @@ export function ReaderPanel({
 					}),
 				}}
 			>
-				{paragraphs.map((para, i) => {
+				{paragraphs.map((para, filteredIndex) => {
+					// 获取原始段落索引（与校对区一致）
+					const originalIndex = paragraphIndexMap[filteredIndex];
+					
 					const isAnimTarget =
 						!readingMode &&
 						applyAnimation?.chapterId === chapter.id &&
-						applyAnimation?.paragraphIndex === i;
+						applyAnimation?.paragraphIndex === originalIndex;
 					const animClass = isAnimTarget
 						? ` anim-${applyAnimation!.phase}`
 						: "";
-					const isEditing = editingIndex === i;
+					const isEditing = editingIndex === filteredIndex;
 
 					// 如果是动画目标，提取需要高亮的文本片段
 					const highlightInfo =
@@ -581,38 +584,38 @@ export function ReaderPanel({
 						return null;
 					}
 
-					const isTTSHighlighted = readingMode && ttsHighlightedPara === i;
+					const isTTSHighlighted = readingMode && ttsHighlightedPara === originalIndex;
 
 					return (
 						<div
-							key={i}
+							key={originalIndex}
 							ref={(el) => {
-								paragraphRefs.current[i] = el;
+								paragraphRefs.current[filteredIndex] = el;
 							}}
-							className={`reader-paragraph${readingMode ? " reading-mode" : ""}${highlightedParagraph === i && !readingMode ? " highlighted" : ""}${isTTSHighlighted ? " tts-highlighted" : ""}${animClass}${isEditing ? " editing" : ""}`}
+							className={`reader-paragraph${readingMode ? " reading-mode" : ""}${highlightedParagraph === originalIndex && !readingMode ? " highlighted" : ""}${isTTSHighlighted ? " tts-highlighted" : ""}${animClass}${isEditing ? " editing" : ""}`}
 							onClick={() => {
 								if (!isEditing) {
 									if (readingMode) {
-										startTTSFromParagraph(i);
+										startTTSFromParagraph(originalIndex);
 									} else {
-										setHighlightedParagraph(i);
+										setHighlightedParagraph(originalIndex);
 									}
 								}
 							}}
 							onDoubleClick={() => {
-								if (!isEditing && !readingMode) startEditing(i, para);
+								if (!isEditing && !readingMode) startEditing(filteredIndex, para);
 							}}
 						>
 							{!readingMode && (
 								<span
-									className={`line-number${startLine === i ? " start-line" : ""}`}
+									className={`line-number${startLine === originalIndex ? " start-line" : ""}`}
 									onClick={(e) => {
 										e.stopPropagation();
-										setStartLine(startLine === i ? null : i);
+										setStartLine(startLine === originalIndex ? null : originalIndex);
 									}}
-									title={startLine === i ? "取消起始行" : "设为校对起始行"}
+									title={startLine === originalIndex ? "取消起始行" : "设为校对起始行"}
 								>
-									{i + 1}
+									{originalIndex + 1}
 								</span>
 							)}
 							{isEditing ? (
@@ -624,7 +627,6 @@ export function ReaderPanel({
 									onKeyDown={handleTextareaKeyDown}
 									onBlur={saveEditing}
 									rows={1}
-									style={{ fontSize: `${fontSize}px` }}
 								/>
 							) : highlightInfo ? (
 								<span className="line-text">

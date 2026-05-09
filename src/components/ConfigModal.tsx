@@ -205,13 +205,20 @@ function ConfigModalContent({
 
 	const handleProviderChange = useCallback(
 		(p: AIProvider) => {
-			setConfig((prev) => ({
-				...prev,
-				provider: p,
-				baseUrl: PRESETS[p].baseUrl,
-				model: PRESETS[p].model,
-				apiKey: apiKeyMap[p] ?? "",
-			}));
+			setConfig((prev) => {
+				// 如果切换到相同的提供商，保留当前的 baseUrl 和 model
+				if (prev.provider === p) {
+					return prev;
+				}
+				// 切换到不同的提供商时，使用新提供商的预设值
+				return {
+					...prev,
+					provider: p,
+					baseUrl: PRESETS[p].baseUrl,
+					model: PRESETS[p].model,
+					apiKey: apiKeyMap[p] ?? "",
+				};
+			});
 		},
 		[apiKeyMap],
 	);

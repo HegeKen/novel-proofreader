@@ -29,8 +29,8 @@ interface ProofreadState {
 	scriptTasks: ScriptTask[];
 	// 剧本转换进度
 	scriptRunning: boolean;
-	// 忽略单词列表（按章节存储）
-	ignoredWords: Record<number, string[]>;
+	// 忽略单词列表（按小说存储）
+	ignoredWords: Record<string, string[]>;
 
 	// Actions
 	setResults: (chapterId: number, results: ParagraphResult[]) => void;
@@ -49,17 +49,18 @@ interface ProofreadState {
 		paragraphIndex: number,
 		errorId: string,
 	) => void;
+	applyAllErrors: (chapterId: number, paragraphIndex: number) => void;
 	clearResults: (chapterId: number) => void;
 	clearAllResults: () => void;
 	setHighlightedParagraph: (index: number | null) => void;
 	setStartLine: (line: number | null) => void;
 	setApplyAnimation: (anim: ApplyAnimation | null) => void;
 
-	// Ignored words actions
-	addIgnoredWord: (chapterId: number, word: string) => void;
-	removeIgnoredWord: (chapterId: number, word: string) => void;
-	getIgnoredWords: (chapterId: number) => string[];
-	clearIgnoredWords: (chapterId: number) => void;
+	// Ignored words actions (novel-level)
+	addIgnoredWord: (novelId: string, word: string) => void;
+	removeIgnoredWord: (novelId: string, word: string) => void;
+	getIgnoredWords: (novelId: string) => string[];
+	clearIgnoredWords: (novelId: string) => void;
 
 	// Script actions
 	addScriptTask: (task: ScriptTask) => void;
@@ -86,8 +87,23 @@ export const useProofreadStore = create<ProofreadState>((set, get) => ({
 		set((state) => {
 			const chapterResults = state.results[chapterId] ?? [];
 			const updated = [...chapterResults];
+			// 确保数组长度足够，处理索引超出当前长度的情况
+			while (updated.length <= paragraphIndex) {
+				const newIndex = updated.length;
+				updated.push({
+					paragraphIndex: newIndex, // 这里应该使用实际的段落索引，而不是数组索引
+					originalText: "",
+					errors: [],
+					status: "pending" as const,
+				});
+			}
 			if (updated[paragraphIndex]) {
-				updated[paragraphIndex] = { ...updated[paragraphIndex], ...result };
+				// 关键修复：确保 paragraphIndex 字段与实际索引一致
+				updated[paragraphIndex] = {
+					...updated[paragraphIndex],
+					...result,
+					paragraphIndex: paragraphIndex // 强制使用正确的段落索引
+				};
 			}
 			return { results: { ...state.results, [chapterId]: updated } };
 		}),
@@ -96,13 +112,43 @@ export const useProofreadStore = create<ProofreadState>((set, get) => ({
 		set((state) => {
 			const chapterResults = state.results[chapterId] ?? [];
 			const updated = [...chapterResults];
+			// 确保数组长度足够
+			while (updated.length <= paragraphIndex) {
+				const newIndex = updated.length;
+				updated.push({
+					paragraphIndex: newIndex,
+					originalText: "",
+					errors: [],
+					status: "pending" as const,
+				});
+			}
 			const para = updated[paragraphIndex];
 			if (para) {
 				updated[paragraphIndex] = {
 					...para,
+					paragraphIndex: paragraphIndex, // 确保索引正确
 					errors: para.errors.map((e: ProofreadError) =>
 						e.id === errorId ? { ...e, applied: !e.applied } : e,
 					),
+				};
+			}
+			return { results: { ...state.results, [chapterId]: updated } };
+		}),
+
+	applyAllErrors: (chapterId: number, paragraphIndex: number) =>
+		set((state) => {
+			const chapterResults = state.results[chapterId] ?? [];
+			const updated = [...chapterResults];
+			const para = updated[paragraphIndex];
+			if (para) {
+				updated[paragraphIndex] = {
+					...para,
+					paragraphIndex: paragraphIndex, // 确保索引正确
+					errors: para.errors.map((e: ProofreadError) => ({
+						...e,
+						applied: true,
+						skipped: false,
+					})),
 				};
 			}
 			return { results: { ...state.results, [chapterId]: updated } };
@@ -116,6 +162,7 @@ export const useProofreadStore = create<ProofreadState>((set, get) => ({
 			if (para) {
 				updated[paragraphIndex] = {
 					...para,
+					paragraphIndex: paragraphIndex, // 确保索引正确
 					errors: para.errors.map((e: ProofreadError) =>
 						e.id === errorId ? { ...e, skipped: !e.skipped } : e,
 					),

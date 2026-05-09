@@ -41,6 +41,8 @@ import {
 	BookAudio,
 	LineStyle,
 	BookHeadphones,
+	CheckSquare,
+	FileOutput,
 } from "lucide-react";
 
 export const Icons = {
@@ -86,6 +88,8 @@ export const Icons = {
 	bookAudio: BookAudio,
 	lineStyle: LineStyle,
 	bookHeadphones: BookHeadphones,
+	checkAll: CheckSquare,
+	fileOutput: FileOutput,
 };
 
 export type IconName = keyof typeof Icons;

@@ -8,24 +8,24 @@ interface IgnoredWordsManagerProps {
 }
 
 export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
-	const chapters = useAppStore((s) => s.chapters);
-	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
-		const addIgnoredWord = useProofreadStore((s) => s.addIgnoredWord);
+	const currentNovelId = useAppStore((s) => s.currentNovelId);
+	const novels = useAppStore((s) => s.novels);
+	const addIgnoredWord = useProofreadStore((s) => s.addIgnoredWord);
 	const removeIgnoredWord = useProofreadStore((s) => s.removeIgnoredWord);
 	const ignoredWordsMap = useProofreadStore((s) => s.ignoredWords);
 
 	const [newWord, setNewWord] = useState("");
 	const inputRef = useRef<HTMLInputElement>(null);
 
-	const chapter = chapters[currentChapterIndex];
-	if (!chapter) return null;
+	if (!currentNovelId) return null;
 
-	const ignoredWords = ignoredWordsMap[chapter.id] ?? [];
+	const novel = novels.find((n) => n.id === currentNovelId);
+	const ignoredWords = ignoredWordsMap[currentNovelId] ?? [];
 
 	const handleAddWord = () => {
 		const word = newWord.trim();
 		if (word && !ignoredWords.includes(word)) {
-			addIgnoredWord(chapter.id, word);
+			addIgnoredWord(currentNovelId, word);
 			setNewWord("");
 			inputRef.current?.focus();
 		}
@@ -53,7 +53,7 @@ export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 
 				<div className="modal-body">
 					<p className="modal-description">
-						添加需要在校对时忽略的单词（如人名、地名、特殊术语等）。AI将不会把这些词标记为错误。
+						管理小说《{novel?.name ?? "未知"}》的忽略单词列表。AI 校对时将跳过这些词。
 					</p>
 
 					<div className="add-word-form">
@@ -87,7 +87,7 @@ export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 										<span className="word-text">{word}</span>
 										<button
 											className="word-remove"
-											onClick={() => removeIgnoredWord(chapter.id, word)}
+											onClick={() => removeIgnoredWord(currentNovelId, word)}
 											title="移除"
 										>
 											<Icons.close size={14} />
@@ -100,7 +100,7 @@ export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 						<div className="empty-state">
 							<Icons.search size={32} />
 							<p>暂无忽略的单词</p>
-							<p className="hint">添加一些单词，让 AI 在校对时跳过它们</p>
+							<p className="hint">添加一些单词，让 AI 在校对整本小说时跳过它们</p>
 						</div>
 					)}
 				</div>
