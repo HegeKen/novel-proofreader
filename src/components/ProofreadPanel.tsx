@@ -14,11 +14,7 @@ import { IgnoredWordsManager } from "./IgnoredWordsManager";
 import { ToastContainer } from "./Toast";
 import type { ToastMessage } from "./Toast";
 import type { CheckGranularity, ProofreadError } from "../types";
-import {
-	initNotificationService,
-	updateProofreadProgress,
-	sendProofreadCompleteNotification,
-} from "../utils/notificationService";
+
 
 const ERROR_TYPE_LABELS: Record<string, { icon: keyof typeof Icons; label: string }> = {
 	typo: { icon: "typo", label: "错别字" },
@@ -64,7 +60,6 @@ export function ProofreadPanel() {
 	const [singleCheckingLine, setSingleCheckingLine] = useState<number | null>(
 		null,
 	);
-	const [notificationInit, setNotificationInit] = useState(false);
 	const [showIgnoredWordsModal, setShowIgnoredWordsModal] = useState(false);
 	const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
 	// 动画互斥：防止快速连续点击"采纳"
@@ -159,47 +154,12 @@ export function ProofreadPanel() {
 		}
 	}, [chapter?.id, paragraphIndexMap, chapter, setResults, setStartLine]);
 
-	useEffect(() => {
-		if (!checking || !chapter) return;
-		const chapterId = chapter.id;
-		const chapterTitle = chapter.title;
-		const interval = setInterval(async () => {
-			const currentResults = useProofreadStore.getState().results[chapterId] ?? [];
-			const totalErrors = currentResults.reduce((sum, r) => sum + r.errors.length, 0);
-			const remainingErrors = currentResults.reduce(
-				(sum, r) => sum + r.errors.filter((e) => !e.applied && !e.skipped).length,
-				0,
-			);
-			const processedCount = totalErrors - remainingErrors;
-			if (totalErrors > 0) {
-				await updateProofreadProgress({
-					chapterTitle,
-					totalErrors,
-					remainingErrors,
-					processedCount,
-				});
-			}
-		}, 5000);
-		return () => clearInterval(interval);
-	}, [checking, chapter]);
+
 
 	const handleStartCheck = async () => {
-		if (!notificationInit) {
-			await initNotificationService();
-			setNotificationInit(true);
-		}
 		setChecking(true);
 		await checkChapter(granularity, startLine ?? 0);
 		setChecking(false);
-		if (chapter) {
-			const finalResults = useProofreadStore.getState().results[chapter.id] ?? [];
-			const finalTotal = finalResults.reduce((sum, r) => sum + r.errors.length, 0);
-			const finalProcessed = finalResults.reduce(
-				(sum, r) => sum + r.errors.filter((e) => e.applied || e.skipped).length,
-				0,
-			);
-			await sendProofreadCompleteNotification(chapter.title, finalTotal, finalProcessed);
-		}
 	};
 
 	const handleSingleLineCheck = async (originalIndex: number, filteredIndex: number) => {

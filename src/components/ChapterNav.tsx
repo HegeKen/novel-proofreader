@@ -1,6 +1,7 @@
 // ============================================================
 // 章节导航侧栏
 // ============================================================
+import { useState } from "react";
 import { useAppStore } from "../stores/appStore";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
@@ -51,6 +52,10 @@ export function ChapterNav({
 	const chapters = useAppStore((s) => s.chapters);
 	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
 	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
+	const proofreadStatus = useAppStore((s) => s.proofreadStatus);
+	const [hideProofread, setHideProofread] = useState(false);
+
+	const proofreadCount = Object.values(proofreadStatus).filter(Boolean).length;
 
 	if (chapters.length === 0) {
 		return (
@@ -66,6 +71,10 @@ export function ChapterNav({
 		);
 	}
 
+	const displayedChapters = hideProofread
+		? chapters.filter((ch) => !proofreadStatus[ch.id])
+		: chapters;
+
 	return (
 		<div className="chapter-nav">
 			<div className="nav-header">
@@ -73,23 +82,38 @@ export function ChapterNav({
 					<Icons.list size={16} />
 					章节
 				</h3>
-				<span className="chapter-count">{chapters.length} 章</span>
+				<div className="nav-header-actions">
+					<span className="chapter-count">{displayedChapters.length}/{chapters.length} 章</span>
+					{proofreadCount > 0 && (
+						<button
+							className={`btn-hide-proofread ${hideProofread ? "active" : ""}`}
+							onClick={() => setHideProofread(!hideProofread)}
+							title={hideProofread ? "显示已校对章节" : "隐藏已校对章节"}
+						>
+							<Icons.circleCheckBig size={14} />
+							{hideProofread ? "显示" : "隐藏"}已校对
+						</button>
+					)}
+				</div>
 			</div>
 			<div className="chapter-list">
-				{chapters.map((ch, i) => (
-					<ChapterItem
-						key={ch.id}
-						chapter={ch}
-						index={i}
-						isActive={i === currentChapterIndex}
-						onSelect={() => {
-							setCurrentChapterIndex(i);
-							if (onChapterSelect) {
-								onChapterSelect();
-							}
-						}}
-					/>
-				))}
+				{displayedChapters.map((ch) => {
+					const originalIndex = chapters.indexOf(ch);
+					return (
+						<ChapterItem
+							key={ch.id}
+							chapter={ch}
+							index={originalIndex}
+							isActive={originalIndex === currentChapterIndex}
+							onSelect={() => {
+								setCurrentChapterIndex(originalIndex);
+								if (onChapterSelect) {
+									onChapterSelect();
+								}
+							}}
+						/>
+					);
+				})}
 			</div>
 		</div>
 	);

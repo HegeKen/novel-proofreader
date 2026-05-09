@@ -45,140 +45,180 @@ export function useAICheck() {
 			const ignoredWords = getIgnoredWords(currentNovelId ?? "");
 
 			if (granularity === "chapter") {
-				// 整章发送（使用行号作为key，按行号返回）
+				// 分批次发送（每批字符数不超过550，防止请求过大导致失败）
 				// 重要：保留原始段落索引（包含空段落），与阅读区保持一致
 				const paragraphs = splitParagraphs(text);
+				const MAX_CHARS_PER_BATCH = 450;
 
 				// 初始化每个段落的结果（保留原始索引）
 				const initial: ParagraphResult[] = paragraphs.map((p, i) => ({
 					paragraphIndex: i,
 					originalText: p,
 					errors: [],
-					status: p.trim() === "" ? "done" : "checking", // 空段落直接标记为完成
+					status: p.trim() === "" ? "done" : "pending", // 空段落直接标记为完成
 				}));
 				setResults(chapter.id, initial);
 
-				try {
-					// 构建行号->段落的JSON映射（只包含非空段落，但保留原始索引）
-					const textByLine: Record<number, string> = {};
-					paragraphs.forEach((p, i) => {
-						if (p.trim() !== "") {
-							textByLine[i] = p;
+				// 将段落分成多个批次（基于字符数而非段落数）
+				const batches: { start: number; end: number }[] = [];
+				let batchStart = 0;
+				let currentCharCount = 0;
+
+				for (let i = 0; i < paragraphs.length; i++) {
+					const para = paragraphs[i];
+					// 跳过空段落，不计入字符数
+					if (para.trim() === "") continue;
+
+					currentCharCount += para.length;
+
+					// 如果超过限制，从当前位置切分
+					if (currentCharCount > MAX_CHARS_PER_BATCH && batchStart < i) {
+						batches.push({ start: batchStart, end: i });
+						batchStart = i;
+						currentCharCount = para.length;
+					}
+				}
+
+				// 处理最后一批
+				if (batchStart < paragraphs.length) {
+					batches.push({ start: batchStart, end: paragraphs.length });
+				}
+
+				// 逐批处理
+				for (const batch of batches) {
+					if (controller.signal.aborted) break;
+
+					// 更新该批次段落的状态为 checking
+					for (let i = batch.start; i < batch.end; i++) {
+						if (paragraphs[i].trim() !== "") {
+							updateParagraphResult(chapter.id, i, { status: "checking" });
 						}
-					});
+					}
 
-					const messages = [
-						{ role: "system" as const, content: PROOFREAD_SYSTEM_PROMPT_CHAPTER },
-						{
-							role: "user" as const,
-							content: buildProofreadUserPrompt(JSON.stringify(textByLine), ignoredWords),
-						},
-					];
-
-					const reply = await sendChatCompletion(
-						messages,
-						aiConfig,
-						controller.signal,
-					);
-					const raw = extractJSON(reply);
-
-					// 收集所有错误，按原始行号分组
-					const errorsByLine: ProofreadError[][] = paragraphs.map(() => []);
-
-					for (const item of raw) {
-						if (typeof item !== "object" || item === null) continue;
-						const obj = item as Record<string, unknown>;
-
-						// 获取行号（核心字段）- 使用原始段落索引
-						let lineNumber = obj.lineNumber !== undefined ? Number(obj.lineNumber) : -1;
-						const orig = String(obj.original ?? obj.original_text ?? "");
-						const corr = String(obj.corrected ?? obj.corrected_text ?? "");
-						const errType = String(obj.type ?? obj.error_type ?? "");
-						const suggest = String(obj.reason ?? obj.suggestion ?? "");
-						const aiStart = obj.start !== undefined ? Number(obj.start) : -1;
-						const aiEnd = obj.end !== undefined ? Number(obj.end) : -1;
-
-						if (!orig) continue;
-
-						// 校验：original 和 corrected 必须不同
-						if (orig === corr || orig.replace(/\s/g, '') === corr.replace(/\s/g, '')) continue;
-
-						// 关键修复：如果没有 lineNumber，尝试通过文本匹配找到对应的段落
-						if (lineNumber < 0 || lineNumber >= paragraphs.length) {
-							// 在所有段落中查找包含原文的段落
-							const foundLine = paragraphs.findIndex((p) => p.includes(orig));
-							if (foundLine < 0) {
-								console.warn(`[useAICheck] 无法找到包含 "${orig}" 的段落`);
-								continue;
+					try {
+						// 构建该批次的 textByLine（只包含非空段落，但保留原始索引）
+						const textByLine: Record<number, string> = {};
+						for (let i = batch.start; i < batch.end; i++) {
+							if (paragraphs[i].trim() !== "") {
+								textByLine[i] = paragraphs[i];
 							}
-							lineNumber = foundLine;
 						}
 
-						// 确定错误在段落内的位置
-						let startIdx: number;
-						let endIdx: number;
-						const targetPara = paragraphs[lineNumber];
+						const messages = [
+							{ role: "system" as const, content: PROOFREAD_SYSTEM_PROMPT_CHAPTER },
+							{
+								role: "user" as const,
+								content: buildProofreadUserPrompt(JSON.stringify(textByLine), ignoredWords),
+							},
+						];
 
-						// 如果 AI 返回了 start/end，验证它们是否有效
-						if (aiStart >= 0 && aiEnd > aiStart && aiEnd <= targetPara.length) {
-							// 验证位置处的文本是否与 original 匹配
-							const actualText = targetPara.slice(aiStart, aiEnd);
-							if (actualText === orig) {
-								startIdx = aiStart;
-								endIdx = aiEnd;
+						const reply = await sendChatCompletion(
+							messages,
+							aiConfig,
+							controller.signal,
+						);
+						const raw = extractJSON(reply);
+
+						// 收集该批次所有错误，按原始行号分组
+						const errorsByLine: ProofreadError[][] = paragraphs.map(() => []);
+						// 只处理该批次内的错误
+						for (const item of raw) {
+							if (typeof item !== "object" || item === null) continue;
+							const obj = item as Record<string, unknown>;
+
+							// 获取行号（核心字段）- 使用原始段落索引
+							let lineNumber = obj.lineNumber !== undefined ? Number(obj.lineNumber) : -1;
+							const orig = String(obj.original ?? obj.original_text ?? "");
+							const corr = String(obj.corrected ?? obj.corrected_text ?? "");
+							const errType = String(obj.type ?? obj.error_type ?? "");
+							const suggest = String(obj.reason ?? obj.suggestion ?? "");
+							const aiStart = obj.start !== undefined ? Number(obj.start) : -1;
+							const aiEnd = obj.end !== undefined ? Number(obj.end) : -1;
+
+							if (!orig) continue;
+
+							// 校验：original 和 corrected 必须不同
+							if (orig === corr || orig.replace(/\s/g, '') === corr.replace(/\s/g, '')) continue;
+
+							// 检查行号是否在该批次范围内
+							if (lineNumber < batch.start || lineNumber >= batch.end) {
+								// 行号不在该批次，可能是全局行号或其他原因，尝试查找该批次内是否包含
+								const foundLine = paragraphs.findIndex((p, idx) => 
+									idx >= batch.start && idx < batch.end && p.includes(orig)
+								);
+								if (foundLine < 0) {
+									console.warn(`[useAICheck] 批次 ${batch.start}-${batch.end} 中无法找到包含 "${orig}" 的段落`);
+									continue;
+								}
+								lineNumber = foundLine;
+							}
+
+							// 确定错误在段落内的位置
+							let startIdx: number;
+							let endIdx: number;
+							const targetPara = paragraphs[lineNumber];
+
+							// 如果 AI 返回了 start/end，验证它们是否有效
+							if (aiStart >= 0 && aiEnd > aiStart && aiEnd <= targetPara.length) {
+								// 验证位置处的文本是否与 original 匹配
+								const actualText = targetPara.slice(aiStart, aiEnd);
+								if (actualText === orig) {
+									startIdx = aiStart;
+									endIdx = aiEnd;
+								} else {
+									// 位置不匹配，降级使用 indexOf
+									const idx = targetPara.indexOf(orig);
+									if (idx < 0) {
+										console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${orig}"`);
+										continue;
+									}
+									startIdx = idx;
+									endIdx = startIdx + orig.length;
+								}
 							} else {
-								// 位置不匹配，降级使用 indexOf
-								const idx = targetPara.indexOf(orig);
-								if (idx < 0) {
+								// 没有有效的位置信息，使用 indexOf 查找
+								if (!targetPara.includes(orig)) {
 									console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${orig}"`);
 									continue;
 								}
+								const idx = targetPara.indexOf(orig);
 								startIdx = idx;
 								endIdx = startIdx + orig.length;
 							}
-						} else {
-							// 没有有效的位置信息，使用 indexOf 查找
-							if (!targetPara.includes(orig)) {
-								console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${orig}"`);
-								continue;
-							}
-							const idx = targetPara.indexOf(orig);
-							startIdx = idx;
-							endIdx = startIdx + orig.length;
+
+							errorsByLine[lineNumber].push({
+								id: `err-${chapter.id}-${lineNumber}-${errorsByLine[lineNumber].length}`,
+								startIndex: startIdx,
+								endIndex: endIdx,
+								errorType: (errType as ProofreadError["errorType"]) || "typo",
+								suggestion: suggest,
+								originalText: orig,
+								correctedText: corr,
+								applied: false,
+								skipped: false,
+							});
 						}
 
-						errorsByLine[lineNumber].push({
-							id: `err-${chapter.id}-${lineNumber}-${errorsByLine[lineNumber].length}`,
-							startIndex: startIdx,
-							endIndex: endIdx,
-							errorType: (errType as ProofreadError["errorType"]) || "typo",
-							suggestion: suggest,
-							originalText: orig,
-							correctedText: corr,
-							applied: false,
-							skipped: false,
-						});
+						// 更新该批次每个段落的结果（基于原始索引）
+						for (let lineIdx = batch.start; lineIdx < batch.end; lineIdx++) {
+							if (paragraphs[lineIdx].trim() === "") continue; // 跳过空段落
+							updateParagraphResult(chapter.id, lineIdx, {
+								errors: errorsByLine[lineIdx],
+								status: "done",
+							});
+						}
+					} catch (err: unknown) {
+						if (err instanceof DOMException && err.name === "AbortError") break;
+						const msg = err instanceof Error ? err.message : String(err);
+						// 更新该批次非空段落为错误状态
+						for (let lineIdx = batch.start; lineIdx < batch.end; lineIdx++) {
+							if (paragraphs[lineIdx].trim() === "") continue; // 跳过空段落
+							updateParagraphResult(chapter.id, lineIdx, {
+								status: "error",
+								errorMessage: msg,
+							});
+						}
 					}
-
-					// 更新每个段落的结果（基于原始索引）
-					errorsByLine.forEach((errors, lineIdx) => {
-						if (paragraphs[lineIdx].trim() === "") return; // 跳过空段落
-						updateParagraphResult(chapter.id, lineIdx, {
-							errors,
-							status: "done",
-						});
-					});
-				} catch (err: unknown) {
-					if (err instanceof DOMException && err.name === "AbortError") return;
-					const msg = err instanceof Error ? err.message : String(err);
-					// 更新所有非空段落为错误状态
-					paragraphs.forEach((p, lineIdx) => {
-						if (p.trim() === "") return; // 跳过空段落
-						updateParagraphResult(chapter.id, lineIdx, {
-							status: "error",
-							errorMessage: msg,
-						});
-					});
 				}
 			} else {
 				// 按段落 或 按行检测（过滤掉空段落）
