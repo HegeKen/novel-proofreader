@@ -239,7 +239,7 @@ function TaskPanelContent({
 								</span>
 							</>
 						) : (
-							"🚀 开始转换"
+							<><Icons.play size={16} /> 开始转换</>
 						)}
 					</button>
 				</div>

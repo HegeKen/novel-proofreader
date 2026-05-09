@@ -97,7 +97,7 @@ export function NovelList({
 					onClick={handleImport}
 					title="导入新小说"
 				>
-					<Icons.plus size={18} />
+					<Icons.import size={18} />
 				</button>
 			</div>
 			<div className="novel-list-items">

@@ -1951,6 +1951,7 @@ select {
 	background: var(--bg-surface);
 	color: var(--text-primary);
 	font-family: inherit;
+	font-size: inherit;
 	line-height: inherit;
 	resize: none;
 	overflow: hidden;
@@ -2552,6 +2553,9 @@ select {
 	flex-shrink: 0;
 }
 .task-header h3 {
+	display: flex;
+	align-items: center;
+	gap: 6px;
 	font-size: 14px;
 	font-weight: 600;
 }
@@ -2779,6 +2783,10 @@ select {
 
 .btn-generate {
 	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
 	padding: 10px 18px;
 	border-radius: var(--r-lg);
 	font-size: 14px;
@@ -3711,6 +3719,71 @@ select {
 	gap: 10px;
 	padding: 16px 22px;
 	border-top: 1px solid var(--border);
+}
+
+/* ============================================================
+   Toast Messages
+   ============================================================ */
+.toast-container {
+	position: fixed;
+	top: 80px;
+	right: 20px;
+	z-index: 2000;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	max-width: 360px;
+}
+
+.toast-item {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 12px 16px;
+	background: var(--bg-raised);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	box-shadow: var(--shadow-md);
+	animation: toast-in 0.3s var(--ease-bounce);
+	color: var(--text-primary);
+}
+
+@keyframes toast-in {
+	from {
+		opacity: 0;
+		transform: translateX(100%);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
+}
+
+.toast-item svg:first-child {
+	color: var(--toast-color);
+	flex-shrink: 0;
+}
+
+.toast-message {
+	flex: 1;
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+.toast-close {
+	padding: 4px;
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	border-radius: 6px;
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+	flex-shrink: 0;
+}
+
+.toast-close:hover {
+	background: var(--bg-overlay);
+	color: var(--text-primary);
 }
 
 /* ============================================================

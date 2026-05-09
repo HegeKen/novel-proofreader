@@ -100,7 +100,21 @@ interface AppState {
 		paragraphIndex: number,
 		oldText: string,
 		newText: string,
+		startIndex?: number,
+		endIndex?: number,
 	) => boolean;
+
+	// Actions — 批量文本替换（采纳修改），返回替换成功数量
+	replaceParagraphTextBatch: (
+		chapterId: number,
+		paragraphIndex: number,
+		errors: Array<{
+			oldText: string;
+			newText: string;
+			startIndex: number;
+			endIndex: number;
+		}>,
+	) => number;
 
 	// Actions — 直接替换整行（双击编辑）
 	replaceLine: (chapterId: number, lineIndex: number, newLine: string) => void;
@@ -218,7 +232,7 @@ export const useAppStore = create<AppState>()(
 
 			setCurrentChapterIndex: (index) => set({ currentChapterIndex: index }),
 
-			replaceParagraphText: (chapterId, paragraphIndex, oldText, newText) => {
+			replaceParagraphText: (chapterId, paragraphIndex, oldText, newText, startIndex?: number, endIndex?: number) => {
 				let replaced = false;
 				set((state) => {
 					// 更新章节内容（分割逻辑与 splitParagraphs 保持一致）
@@ -232,11 +246,25 @@ export const useAppStore = create<AppState>()(
 							let para = paragraphs[paragraphIndex];
 							const original = para;
 
-							// 1. 精确匹配
-							if (para.includes(oldText)) {
+							// 1. 优先使用位置参数进行精确替换
+							if (startIndex !== undefined && endIndex !== undefined && 
+								startIndex >= 0 && endIndex > startIndex && 
+								endIndex <= para.length) {
+								// 验证位置处的文本是否匹配 oldText
+								const actualText = para.slice(startIndex, endIndex);
+								if (actualText === oldText) {
+									para = para.slice(0, startIndex) + newText + para.slice(endIndex);
+								} else {
+									// 位置不匹配，降级到文本匹配
+									console.warn(`[appStore] 位置不匹配，降级到文本匹配: 期望 "${oldText}"，实际 "${actualText}"`);
+								}
+							}
+
+							// 2. 文本匹配替换（如果位置替换未成功）
+							if (para === original && para.includes(oldText)) {
 								para = para.replace(oldText, newText);
-							} else {
-								// 2. 容错匹配：去除所有空白字符后模糊查找
+							} else if (para === original) {
+								// 3. 容错匹配：去除所有空白字符后模糊查找
 								const normalize = (s: string) => s.replace(/\s+/g, "");
 								const normPara = normalize(para);
 								const normOld = normalize(oldText);
@@ -262,7 +290,7 @@ export const useAppStore = create<AppState>()(
 											para.slice(0, realStart) + newText + para.slice(realEnd);
 									}
 								}
-								// 3. 都找不到 → 不替换，保持原样
+								// 4. 都找不到 → 不替换，保持原样
 							}
 
 							if (para !== original) {
@@ -297,6 +325,72 @@ export const useAppStore = create<AppState>()(
 					}
 				}
 				return replaced;
+			},
+
+			/** 批量替换段落中的多个错误（从后往前处理，避免位置偏移） */
+			replaceParagraphTextBatch: (chapterId: number, paragraphIndex: number, errors: Array<{
+				oldText: string;
+				newText: string;
+				startIndex: number;
+				endIndex: number;
+			}>) => {
+				let replacedCount = 0;
+				set((state) => {
+					// 更新章节内容
+					const chapters = state.chapters.map((ch) => {
+						if (ch.id !== chapterId) return ch;
+
+						const paragraphs = ch.content.split("\n");
+						if (paragraphIndex >= paragraphs.length) return ch;
+
+						let para = paragraphs[paragraphIndex];
+						const original = para;
+
+						// 关键优化：从后往前排序错误，避免替换后位置偏移
+						const sortedErrors = [...errors].sort((a, b) => b.startIndex - a.startIndex);
+
+						for (const err of sortedErrors) {
+							// 验证位置有效性
+							if (err.startIndex >= 0 && err.endIndex > err.startIndex && 
+								err.endIndex <= para.length) {
+								const actualText = para.slice(err.startIndex, err.endIndex);
+								if (actualText === err.oldText) {
+									para = para.slice(0, err.startIndex) + err.newText + para.slice(err.endIndex);
+									replacedCount++;
+								} else {
+									console.warn(`[appStore] 批量替换位置不匹配: 期望 "${err.oldText}"，实际 "${actualText}"`);
+								}
+							}
+						}
+
+						if (para !== original) {
+							paragraphs[paragraphIndex] = para;
+						}
+						return { ...ch, content: paragraphs.join("\n") };
+					});
+
+					// 同步更新 novels 中的 fullText
+					const novelId = state.currentNovelId;
+					let novels = state.novels;
+					if (novelId) {
+						novels = novels.map((n) => {
+							if (n.id !== novelId) return n;
+							const fullText = chapters.map((ch) => ch.content).join("");
+							return { ...n, fullText };
+						});
+					}
+
+					return { chapters, novels };
+				});
+				if (replacedCount > 0) {
+					const state = get();
+					const novel = state.novels.find(n => n.id === state.currentNovelId);
+					console.log('[appStore] replaceParagraphTextBatch saving, replaced:', replacedCount, 'novel:', novel?.name);
+					if (novel) {
+						void saveNovelToStorage(`${novel.name}.txt`, novel.fullText);
+					}
+				}
+				return replacedCount;
 			},
 
 			replaceLine: (chapterId, lineIndex, newLine) => {
