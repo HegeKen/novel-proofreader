@@ -702,6 +702,12 @@ select {
 	color: var(--text-muted);
 }
 
+.nav-header-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
 .chapter-count {
 	font-size: 11px;
 	color: var(--text-muted);
@@ -710,6 +716,30 @@ select {
 	border-radius: 20px;
 	border: 1px solid var(--border);
 	backdrop-filter: blur(20px);
+}
+
+.btn-hide-proofread {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 11px;
+	color: var(--accent);
+	background: var(--bg-overlay);
+	padding: 4px 10px;
+	border-radius: 20px;
+	border: 1px solid var(--border);
+	backdrop-filter: blur(20px);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+}
+
+.btn-hide-proofread:hover {
+	background: var(--bg-hover);
+	border-color: var(--border-strong);
+}
+
+.btn-hide-proofread.active {
+	color: var(--text-muted);
 }
 
 .chapter-list {
