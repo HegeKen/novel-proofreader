@@ -3,7 +3,7 @@
 // ============================================================
 
 /**
- * 滚动到指定元素并使其居中
+ * 滚动到指定元素并使其在容器中居中
  * @param containerRef - 滚动容器的 ref
  * @param elementRefs - 元素 refs 数组
  * @param index - 要滚动到的元素索引
@@ -21,15 +21,24 @@ export function scrollToElement(
 	const containerRect = container.getBoundingClientRect();
 	const elRect = el.getBoundingClientRect();
 
-	// 如果元素已在可视区域内，不需要滚动
-	if (
-		elRect.top >= containerRect.top &&
-		elRect.bottom <= containerRect.bottom
-	) {
-		return;
-	}
-
-	el.scrollIntoView({ behavior: "smooth", block: "center" });
+	// 计算元素相对于容器顶部的偏移量
+	// 使用 getBoundingClientRect 来获取精确的相对位置
+	const elementRelativeTop = elRect.top - containerRect.top;
+	
+	// 计算目标滚动位置，使元素在容器中垂直居中
+	// scrollTop = 当前滚动位置 + 元素相对位置 - 容器高度的一半 + 元素高度的一半
+	const targetScrollTop = container.scrollTop + elementRelativeTop - container.offsetHeight / 2 + el.offsetHeight / 2;
+	
+	// 限制滚动范围，避免滚动到无效位置
+	const minScroll = 0;
+	const maxScroll = container.scrollHeight - container.offsetHeight;
+	const clampedScrollTop = Math.max(minScroll, Math.min(targetScrollTop, maxScroll));
+	
+	// 使用平滑滚动
+	container.scrollTo({
+		top: clampedScrollTop,
+		behavior: "smooth"
+	});
 }
 
 /**

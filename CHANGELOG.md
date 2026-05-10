@@ -1,5 +1,72 @@
 # Changelog
 
+## v0.8.8 (2026-05-10)
+
+### 🐛 Bug 修复
+
+**校对区段落索引错位问题**
+- 修复点击 btn-check 后校对区第一、第二行无法显示检测状态和结果的问题
+- 问题根因：当 `granularity !== "chapter"` 时，初始化结果数组只包含非空段落，但后续调用 `updateParagraphResult` 时使用原始段落索引（包含空段落），导致数组索引与段落索引不匹配
+- 修复方案：修改 `useAICheck.ts` 中 `checkChapter` 函数，在非章节模式下也初始化所有段落（包括空段落），确保数组索引与原始段落索引一致
+
+**采纳修改时高亮位置错误问题**
+- 修复段落中有多个相同字符时，采纳修改会错误地高亮第一个匹配项而非正确位置的问题
+- 问题根因：`ReaderPanel.tsx` 的 `getHighlightInfo` 函数在 `highlight-new` 阶段使用 `para.indexOf(newText)` 查找位置，当文本中有多个相同字符时会返回第一个匹配项
+- 修复方案：优先使用精确位置，验证位置处文本是否与新文本匹配，只有位置不匹配时才降级使用 `indexOf`
+
+**移动端滑动误触发点击问题**
+- 修复在移动端滑动页面时意外选中高亮段落的问题
+- 问题根因：滑动结束后会触发 `onClick` 事件，导致用户只是滚动页面却意外选中了段落
+- 修复方案：在 `ReaderPanel.tsx` 中添加滑动检测逻辑（`isScrolling`），在 `touchMove` 时检测移动距离超过阈值则标记为滚动操作，点击时不触发选中
+
+**移动端点击同步滚动定位偏差问题**
+- 修复在移动端点击校对区后阅读区滚动定位不准确的问题
+- 问题根因：`scrollToElement` 函数使用 `el.offsetTop` 计算滚动位置，在有工具栏的布局中会不准确
+- 修复方案：使用 `getBoundingClientRect()` 获取容器和元素的精确位置，计算元素相对于容器顶部的偏移量来计算目标滚动位置
+
+**ReaderPanel 滚动行为与 ProofreadPanel 不一致问题**
+- 修复阅读区点击后校对区无法正确居中显示对应段落的问题
+- 修复阅读区和校对区滚动同步逻辑过于复杂的问题
+- 问题根因：ReaderPanel 和 ProofreadPanel 的 ref 索引逻辑不一致；ReaderPanel 使用了不必要的滚动同步逻辑
+- 修复方案：统一 ReaderPanel 的 ref 索引逻辑使用 `originalIndex`；简化滚动逻辑移除不必要的同步滚动，保留点击选中后的同步滚动功能
+
+### ✨ 新功能
+
+**error-count 点击跳转功能**
+- 新增点击错误计数快速跳转到第一个未处理错误所在段落的功能
+- 当有未处理错误时，error-count 区域显示为可点击状态（鼠标悬停显示手型和颜色变化）
+- 点击后自动选中并滚动到第一个包含未处理错误（未采纳且未跳过）的段落
+
+### 🔧 改进优化
+
+**proofread-toolbar 固定显示**
+- 修改校对区工具栏为固定显示，不再跟随滑动消失
+- 使用 `position: sticky` 配合背景色实现固定效果
+- 修复了因 `overflow: hidden` 阻止 sticky 生效的问题
+
+**TaskPanel 样式优化**
+- 优化 `segment-index` 和 `segment-title` 的布局对齐
+- 添加 `display: inline-flex` 和 `align-items: baseline` 使图标和文字并排显示并与标题持平
+
+**同步滚动功能移除**
+- 移除了阅读区和校对区滑动时的同步滚动功能
+- 保留点击选中某行后另一个区域滚动到对应段落的功能
+
+**AI Prompt 模板优化**
+- 更新了 PROOFREAD_SYSTEM_PROMPT（段落校对提示词）
+- 更新了 PROOFREAD_SYSTEM_PROMPT_CHAPTER（章节校对提示词）
+- 更新了 SCRIPT_SYSTEM_PROMPT（剧本改编提示词）
+- 更新了 DEFAULT_PROMPT（默认提示词，指向 SCRIPT_SYSTEM_PROMPT）
+- 优化了校对和剧本转换的 AI 提示词，提升输出质量
+
+**ReaderPanel 高亮滚动逻辑重构**
+- 简化 `scrollToParagraph` 函数，与 ProofreadPanel 保持一致的实现方式
+- 使用 `el.scrollIntoView({ behavior: "smooth", block: "center" })` 实现居中滚动
+- 添加 `setTimeout(50ms)` 确保 DOM 渲染完成后再滚动
+- 移除不再需要的 `scrollLock` 机制
+
+---
+
 ## v0.8.7 (2026-05-10)
 
 ### 🐛 Bug 修复

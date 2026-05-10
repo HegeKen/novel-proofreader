@@ -50,6 +50,7 @@ export function ProofreadPanel() {
 	const applyAllErrors = useProofreadStore((s) => s.applyAllErrors);
 	const toggleErrorSkipped = useProofreadStore((s) => s.toggleErrorSkipped);
 	const setApplyAnimation = useProofreadStore((s) => s.setApplyAnimation);
+	const updateErrorIndices = useProofreadStore((s) => s.updateErrorIndices);
 
 	const startLine = useProofreadStore((s) => s.startLine);
 	const setStartLine = useProofreadStore((s) => s.setStartLine);
@@ -222,6 +223,8 @@ export function ProofreadPanel() {
 					paraIndex,
 					err.correctedText,
 					err.originalText,
+					err.startIndex,
+					err.endIndex,
 				);
 				toggleErrorApplied(chapterId, paraIndex, err.id); // 使用原始段落索引
 				if (!ok) {
@@ -266,9 +269,17 @@ export function ProofreadPanel() {
 					paraIndex,
 					err.originalText,
 					err.correctedText,
+					err.startIndex,
+					err.endIndex,
 				);
 				console.log(`[ProofreadPanel] 采纳修改: chapterId=${chapterId}, paraIndex=${paraIndex}, original="${err.originalText}", corrected="${err.correctedText}", success=${replaced}`);
 				toggleErrorApplied(chapterId, paraIndex, err.id); // 使用原始段落索引
+
+				// 更新同段落中剩余错误的索引（每次替换后都要更新，确保位置准确）
+				if (replaced) {
+					const lengthDiff = err.correctedText.length - err.originalText.length;
+					updateErrorIndices(chapterId, paraIndex, err.startIndex, lengthDiff);
+				}
 
 				if (!replaced) {
 					// AI 返回的文本在段落中找不到，显示错误提示
@@ -384,6 +395,29 @@ export function ProofreadPanel() {
 		},
 		[toggleErrorSkipped, addToast],
 	);
+
+	// 查找第一个未处理错误所在的段落索引
+	const findFirstUnhandledErrorParagraph = useCallback(() => {
+		if (!chapter) return null;
+		for (const result of chapterResults) {
+			const hasUnhandledError = result.errors.some(
+				(e) => !e.applied && !e.skipped,
+			);
+			if (hasUnhandledError) {
+				return result.paragraphIndex;
+			}
+		}
+		return null;
+	}, [chapter, chapterResults]);
+
+	// 点击错误计数时跳转到第一个未处理错误的段落
+	const handleErrorCountClick = useCallback(() => {
+		const firstUnhandledIndex = findFirstUnhandledErrorParagraph();
+		if (firstUnhandledIndex !== null) {
+			setHighlightedParagraph(firstUnhandledIndex);
+		}
+	}, [findFirstUnhandledErrorParagraph, setHighlightedParagraph]);
+
 	if (!chapter) {
 		return (
 			<div className="proofread-panel empty">
@@ -448,7 +482,10 @@ export function ProofreadPanel() {
 				</div>
 				<div className="toolbar-right">
 					{totalErrors > 0 && (
-						<span className="error-count">
+						<span
+							className={`error-count${remainingErrors > 0 ? " clickable" : ""}`}
+							onClick={handleErrorCountClick}
+						>
 							发现 <strong>{totalErrors}</strong> 个问题
 							{remainingErrors < totalErrors && (
 								<span className="remaining-count">

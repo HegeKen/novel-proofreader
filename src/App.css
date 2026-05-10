@@ -2236,6 +2236,12 @@ select {
 	color: var(--yellow);
 	font-variant-numeric: tabular-nums;
 }
+.error-count.clickable {
+	cursor: pointer;
+}
+.error-count.clickable:hover {
+	color: var(--yellow-light);
+}
 .error-count strong {
 	font-weight: 600;
 }
@@ -2926,6 +2932,9 @@ select {
 }
 
 .segment-index {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 4px;
 	font-size: 12px;
 	font-weight: 600;
 	color: var(--accent);
@@ -2935,8 +2944,10 @@ select {
 }
 
 .segment-title {
+	display: inline;
 	font-size: 13px;
 	color: var(--text-secondary);
+	vertical-align: baseline;
 }
 
 .segment-content {

@@ -8,6 +8,7 @@ import { splitParagraphs } from "../utils/chapterSplit";
 import { exportToFile } from "../utils/fileExport";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
+import { SCRIPT_SYSTEM_PROMPT } from "../utils/aiClient";
 import type { ChatMessage } from "../utils/aiClient";
 import type { Chapter, AIConfig } from "../types";
 
@@ -19,8 +20,7 @@ interface ScriptSegment {
 
 type ConvertGranularity = "paragraph" | "chapter";
 
-const DEFAULT_PROMPT =
-	"你是一位专业的编剧。请将以下小说片段改编为剧本格式：\n\n1. 为每个场景标注【场景】（室内/室外、时间、地点）\n2. 角色对白使用「角色名：对白内容」格式\n3. 动作和神态用括号标注为舞台指示\n4. 保留原文核心情节和冲突，精简环境描写\n5. 如有旁白需要，用【旁白】标注\n\n请直接输出剧本内容，不要额外解释。";
+const DEFAULT_PROMPT = SCRIPT_SYSTEM_PROMPT;
 
 // 内部组件，使用 key 重置状态
 function TaskPanelContent({
