@@ -1,12 +1,22 @@
+import type { Novel } from '../types';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile, writeTextFile, exists, readTextFile, mkdir, readDir, remove } from '@tauri-apps/plugin-fs';
 import { BaseDirectory } from '@tauri-apps/plugin-fs';
+
 function getBaseDir(): BaseDirectory {
-  return BaseDirectory.Document;
+  return BaseDirectory.AppData;
 }
 
 function getNovelsSubDir(): string {
   return 'novels';
+}
+
+function getStoragePath(fileName: string): string {
+  return `${getNovelsSubDir()}/${fileName}`;
+}
+
+function getFsOptions(baseDir: BaseDirectory) {
+  return { dir: baseDir, baseDir } as any;
 }
 
 export async function ensureNovelsDirectory(): Promise<boolean> {
@@ -14,13 +24,13 @@ export async function ensureNovelsDirectory(): Promise<boolean> {
     console.warn('[fileExport] Not in Tauri environment, skipping directory creation');
     return false;
   }
+
   try {
     const baseDir = getBaseDir();
     const novelsPath = getNovelsSubDir();
-    const fullPath = `${novelsPath}`;
-    const dirExists = await exists(fullPath, { baseDir });
+    const dirExists = await exists(novelsPath, getFsOptions(baseDir));
     if (!dirExists) {
-      await mkdir(fullPath, { baseDir, recursive: true });
+      await mkdir(novelsPath, { ...getFsOptions(baseDir), recursive: true });
     }
     return true;
   } catch (e) {
@@ -33,12 +43,11 @@ export async function importNovelFromStorage(fileName: string): Promise<string |
   if (!isTauri()) return null;
   try {
     await ensureNovelsDirectory();
-    const novelsPath = getNovelsSubDir();
-    const fullPath = `${novelsPath}/${fileName}`;
+    const fullPath = getStoragePath(fileName);
     const baseDir = getBaseDir();
-    const fileExists = await exists(fullPath, { baseDir });
+    const fileExists = await exists(fullPath, getFsOptions(baseDir));
     if (fileExists) {
-      const content = await readTextFile(fullPath, { baseDir });
+      const content = await readTextFile(fullPath, getFsOptions(baseDir));
       return content;
     }
     return null;
@@ -52,12 +61,11 @@ export async function saveNovelToStorage(fileName: string, content: string): Pro
   if (!isTauri()) return false;
   try {
     await ensureNovelsDirectory();
-    const novelsPath = getNovelsSubDir();
-    const fullPath = `${novelsPath}/${fileName}`;
+    const fullPath = getStoragePath(fileName);
     const baseDir = getBaseDir();
     console.log('[fileExport] Saving to:', fullPath, 'baseDir:', baseDir);
     console.log('[fileExport] Content length:', content.length);
-    await writeTextFile(fullPath, content, { baseDir });
+    await writeTextFile(fullPath, content, { ...getFsOptions(baseDir), recursive: true });
     console.log('[fileExport] Save successful');
     return true;
   } catch (e) {
@@ -69,12 +77,11 @@ export async function saveNovelToStorage(fileName: string, content: string): Pro
 export async function deleteNovelFromStorage(fileName: string): Promise<boolean> {
   if (!isTauri()) return false;
   try {
-    const novelsPath = getNovelsSubDir();
-    const fullPath = `${novelsPath}/${fileName}`;
+    const fullPath = getStoragePath(fileName);
     const baseDir = getBaseDir();
-    const fileExists = await exists(fullPath, { baseDir });
+    const fileExists = await exists(fullPath, getFsOptions(baseDir));
     if (fileExists) {
-      await remove(fullPath, { baseDir });
+      await remove(fullPath, getFsOptions(baseDir));
     }
     return true;
   } catch (e) {
@@ -88,15 +95,46 @@ export async function listNovelsInStorage(): Promise<string[]> {
     await ensureNovelsDirectory();
     const novelsPath = getNovelsSubDir();
     const baseDir = getBaseDir();
-    const entries = await readDir(novelsPath, { baseDir });
+    const entries = await readDir(novelsPath, getFsOptions(baseDir));
     return entries
-      .filter(entry => entry.name?.endsWith('.txt'))
-      .map(entry => entry.name as string);
+      .filter((entry) => entry.name?.endsWith('.txt'))
+      .map((entry) => entry.name as string);
   } catch (e) {
     console.error('Failed to list novels in storage:', e);
     return [];
   }
-}// 检测是否在 Tauri 环境中
+}
+
+export async function loadNovelsFromStorage(): Promise<Novel[]> {
+  if (!isTauri()) return [];
+  try {
+    await ensureNovelsDirectory();
+    const novelsPath = getNovelsSubDir();
+    const baseDir = getBaseDir();
+    const entries = await readDir(novelsPath, getFsOptions(baseDir));
+
+    const novels: Novel[] = [];
+    for (const entry of entries) {
+      if (!entry.name || !entry.name.toLowerCase().endsWith('.txt')) continue;
+      const filePath = `${novelsPath}/${entry.name}`;
+      const content = await readTextFile(filePath, getFsOptions(baseDir));
+      novels.push({
+        id: `novel-${Date.now()}-${entry.name}`,
+        name: entry.name.replace(/\.txt$/i, ''),
+        fullText: content,
+        importedAt: Date.now(),
+        lastCacheSaveTime: undefined,
+        chapters: [],
+      });
+    }
+    return novels;
+  } catch (e) {
+    console.error('Failed to load novels from storage:', e);
+    return [];
+  }
+}
+
+// 检测是否在 Tauri 环境中
 function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI__' in window;
 }
@@ -191,7 +229,7 @@ export async function exportToFile(content: string, suggestedName: string): Prom
 
 export async function saveToAppData(content: string, fileName: string): Promise<boolean> {
   try {
-    await writeTextFile(fileName, content, { baseDir: BaseDirectory.AppData });
+    await writeTextFile(fileName, content, getFsOptions(BaseDirectory.AppData));
     return true;
   } catch (e) {
     console.error('Save to AppData failed:', e);
@@ -201,7 +239,7 @@ export async function saveToAppData(content: string, fileName: string): Promise<
 
 export async function readFromAppData(fileName: string): Promise<string | null> {
   try {
-    const content = await readTextFile(fileName, { baseDir: BaseDirectory.AppData });
+    const content = await readTextFile(fileName, getFsOptions(BaseDirectory.AppData));
     return content;
   } catch (e) {
     console.error('Read from AppData failed:', e);
