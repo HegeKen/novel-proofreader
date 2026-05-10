@@ -11,7 +11,7 @@ import { ConfigModal } from "./components/ConfigModal";
 import { useAppStore } from "./stores/appStore";
 import { splitChapters } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
-import { exportToFile } from "./utils/fileExport";
+import { exportToFile, loadNovelsFromStorage } from "./utils/fileExport";
 import { parseURLParams, updateURLParams } from "./utils/urlParams";
 import { Icons } from "./components/Icons";
 
@@ -52,6 +52,20 @@ export default function App() {
 	useEffect(() => {
 		document.documentElement.setAttribute("data-theme", theme);
 	}, [theme]);
+
+	// 加载保存的小说（如果本地存储中没有）
+	useEffect(() => {
+		if (novels.length === 0) {
+			loadNovelsFromStorage().then((storedNovels) => {
+				if (storedNovels.length > 0) {
+					useAppStore.setState({
+						novels: storedNovels,
+						currentNovelId: storedNovels[0].id,
+					});
+				}
+			});
+		}
+	}, [novels.length]);
 
 	// 初始化：从 URL 参数恢复状态
 	useEffect(() => {
