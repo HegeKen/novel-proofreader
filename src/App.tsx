@@ -11,7 +11,7 @@ import { ConfigModal } from "./components/ConfigModal";
 import { useAppStore } from "./stores/appStore";
 import { splitChapters } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
-import { exportToFile, loadNovelsFromStorage } from "./utils/fileExport";
+import { exportToFile, loadNovelsFromStorage, saveNovelToStorage, ensureTxtFilename } from "./utils/fileExport";
 import { parseURLParams, updateURLParams } from "./utils/urlParams";
 import { Icons } from "./components/Icons";
 
@@ -205,8 +205,12 @@ export default function App() {
 	};
 
 	/** 手动保存缓存 */
-	const handleSaveCache = () => {
+	const handleSaveCache = async () => {
 		saveCache();
+		const novel = novels.find((n) => n.id === currentNovelId);
+		if (novel?.fullText) {
+			await saveNovelToStorage(ensureTxtFilename(novel.name), novel.fullText);
+		}
 		// 显示保存成功的提示
 		const now = new Date();
 		const timeStr = now.toLocaleTimeString("zh-CN", {

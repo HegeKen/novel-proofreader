@@ -3,8 +3,12 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile, writeTextFile, exists, readTextFile, mkdir, readDir, remove } from '@tauri-apps/plugin-fs';
 import { BaseDirectory } from '@tauri-apps/plugin-fs';
 
+function isAndroid(): boolean {
+  return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+}
+
 function getBaseDir(): BaseDirectory {
-  return BaseDirectory.AppData;
+  return isAndroid() ? BaseDirectory.Document : BaseDirectory.AppData;
 }
 
 function getNovelsSubDir(): string {
@@ -13,6 +17,10 @@ function getNovelsSubDir(): string {
 
 function getStoragePath(fileName: string): string {
   return `${getNovelsSubDir()}/${fileName}`;
+}
+
+export function ensureTxtFilename(fileName: string): string {
+  return fileName.toLowerCase().endsWith('.txt') ? fileName : `${fileName}.txt`;
 }
 
 function getFsOptions(baseDir: BaseDirectory) {

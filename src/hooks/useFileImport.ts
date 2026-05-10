@@ -5,6 +5,7 @@ import { useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import { splitChapters } from "../utils/chapterSplit";
 import { decodeTextBuffer } from "../utils/decodeText";
+import { saveNovelToStorage, ensureTxtFilename } from "../utils/fileExport";
 import type { Novel } from "../types";
 
 /**
@@ -41,6 +42,7 @@ export function useFileImport() {
 				};
 
 				addNovel(novel);
+				await saveNovelToStorage(ensureTxtFilename(novel.name), novel.fullText);
 				resolve();
 			};
 			input.click();
