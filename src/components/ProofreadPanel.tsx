@@ -266,9 +266,8 @@ export function ProofreadPanel() {
 					paraIndex,
 					err.originalText,
 					err.correctedText,
-					err.startIndex,
-					err.endIndex,
 				);
+				console.log(`[ProofreadPanel] 采纳修改: chapterId=${chapterId}, paraIndex=${paraIndex}, original="${err.originalText}", corrected="${err.correctedText}", success=${replaced}`);
 				toggleErrorApplied(chapterId, paraIndex, err.id); // 使用原始段落索引
 
 				if (!replaced) {
@@ -493,7 +492,7 @@ export function ProofreadPanel() {
 						<div
 							key={paraResult.paragraphIndex}
 							ref={(el) => {
-								paragraphRefs.current[i] = el;
+								paragraphRefs.current[paraResult.paragraphIndex] = el;
 							}}
 							className={`proofread-paragraph ${highlightedParagraph === paraResult.paragraphIndex ? "highlighted" : ""
 								}`}

@@ -563,20 +563,62 @@ export function ReaderPanel({
 					const isEditing = editingIndex === filteredIndex;
 
 					// 如果是动画目标，提取需要高亮的文本片段
-					const highlightInfo =
-						isAnimTarget && applyAnimation!.startIndex !== undefined
-							? {
-									before: para.slice(0, applyAnimation!.startIndex),
-									highlight: para.slice(
-										applyAnimation!.startIndex,
-										applyAnimation!.endIndex,
-									),
-									after: para.slice(applyAnimation!.endIndex),
-									isOld:
-										applyAnimation!.phase === "highlight-old" ||
-										applyAnimation!.phase === "replacing",
-								}
-							: null;
+					const getHighlightInfo = () => {
+						if (!isAnimTarget || applyAnimation!.startIndex === undefined) {
+							return null;
+						}
+
+						const isOldPhase =
+							applyAnimation!.phase === "highlight-old" ||
+							applyAnimation!.phase === "replacing";
+
+						// 旧文本高亮：使用原始索引
+						if (isOldPhase) {
+							return {
+								before: para.slice(0, applyAnimation!.startIndex),
+								highlight: para.slice(
+									applyAnimation!.startIndex,
+									applyAnimation!.endIndex,
+								),
+								after: para.slice(applyAnimation!.endIndex),
+								isOld: true,
+							};
+						}
+
+						// 新文本高亮：由于新文本长度可能与原文本不同，需要重新查找位置
+						const newText = applyAnimation!.correctedText;
+						if (!newText) {
+							console.warn("[ReaderPanel] correctedText is undefined");
+							return null;
+						}
+
+						const newStartIdx = para.indexOf(newText);
+
+						if (newStartIdx >= 0) {
+							// 在当前段落中找到了新文本，使用实际位置
+							return {
+								before: para.slice(0, newStartIdx),
+								highlight: newText,
+								after: para.slice(newStartIdx + newText.length),
+								isOld: false,
+							};
+						} else {
+							// 降级：使用原始索引（可能有偏差，但至少能显示高亮）
+							console.warn(
+								`[ReaderPanel] 新文本 "${newText}" 未在段落中找到，使用原始索引`,
+							);
+							return {
+								before: para.slice(0, applyAnimation!.startIndex),
+								highlight: para.slice(
+									applyAnimation!.startIndex,
+									applyAnimation!.startIndex + newText.length,
+								),
+								after: para.slice(applyAnimation!.startIndex + newText.length),
+								isOld: false,
+							};
+						}
+					};
+					const highlightInfo = getHighlightInfo();
 
 					// 检测空段落（连续换行），直接跳过不渲染
 					const isEmptyParagraph = para.trim() === "";
