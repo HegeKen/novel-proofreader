@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.8.7 (2026-05-10)
+
+### 🐛 Bug 修复
+
+**动画高亮定位偏差问题**
+- 修复 `anim-highlight-old` 和 `anim-highlight-new` 高亮定位存在偏差的问题
+- 问题根因：新文本高亮时直接使用原始索引，但 `correctedText` 与 `originalText` 长度可能不同
+- 修复方案：在 `ReaderPanel.tsx` 中，新文本高亮阶段使用 `para.indexOf(newText)` 动态查找新文本在实际段落中的位置，而非使用固定索引
+- 旧文本高亮（`highlight-old` / `replacing` 阶段）继续使用原始索引，因为此时段落内容尚未改变
+- 添加降级处理：如果新文本在段落中找不到，则使用原始索引作为备选方案
+
+---
+
 ## v0.8.6 (2026-05-09)
 
 ### ✨ 新功能

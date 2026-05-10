@@ -2159,7 +2159,7 @@ select {
 	flex: 1;
 	display: flex;
 	flex-direction: column;
-	overflow: hidden;
+	overflow: visible;
 }
 
 .proofread-panel.empty {
@@ -2176,6 +2176,10 @@ select {
 	flex-shrink: 0;
 	flex-wrap: wrap;
 	gap: 8px;
+	position: sticky;
+	top: 0;
+	background: var(--bg-surface);
+	z-index: 10;
 }
 
 .toolbar-left,
@@ -2377,6 +2381,26 @@ select {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
+}
+
+.btn-apply-all {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 6px 10px;
+	background: var(--bg-surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	font-size: 12px;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+}
+
+.btn-apply-all:hover {
+	background: var(--bg-hover);
+	border-color: var(--border-strong);
+	color: var(--text);
 }
 
 .error-item {

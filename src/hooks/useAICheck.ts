@@ -135,6 +135,8 @@ export function useAICheck() {
 							const aiStart = obj.start !== undefined ? Number(obj.start) : -1;
 							const aiEnd = obj.end !== undefined ? Number(obj.end) : -1;
 
+							console.log(`[useAICheck] 解析错误: orig="${orig}", corr="${corr}", lineNumber=${lineNumber}, aiStart=${aiStart}, aiEnd=${aiEnd}`);
+
 							if (!orig) continue;
 
 							// 校验：original 和 corrected 必须不同
@@ -146,6 +148,7 @@ export function useAICheck() {
 								const foundLine = paragraphs.findIndex((p, idx) => 
 									idx >= batch.start && idx < batch.end && p.includes(orig)
 								);
+								console.log(`[useAICheck] 行号检查: lineNumber=${lineNumber}, batch=${batch.start}-${batch.end}, foundLine=${foundLine}`);
 								if (foundLine < 0) {
 									console.warn(`[useAICheck] 批次 ${batch.start}-${batch.end} 中无法找到包含 "${orig}" 的段落`);
 									continue;
@@ -158,15 +161,60 @@ export function useAICheck() {
 							let endIdx: number;
 							const targetPara = paragraphs[lineNumber];
 
-							// 如果 AI 返回了 start/end，验证它们是否有效
-							if (aiStart >= 0 && aiEnd > aiStart && aiEnd <= targetPara.length) {
-								// 验证位置处的文本是否与 original 匹配
-								const actualText = targetPara.slice(aiStart, aiEnd);
-								if (actualText === orig) {
-									startIdx = aiStart;
-									endIdx = aiEnd;
+							// 如果 AI 返回了 start/end（全局字符索引），需要转换为段落内索引
+							if (aiStart >= 0 && aiEnd > aiStart) {
+								// 先尝试将全局索引转换为段落索引和段落内索引
+								let charCount = 0;
+								let foundParaIdx = -1;
+								let paraStartIdx = -1;
+								
+								for (let i = 0; i < paragraphs.length; i++) {
+									const para = paragraphs[i];
+									// 检查全局索引是否在当前段落范围内
+									if (charCount <= aiStart && aiStart < charCount + para.length) {
+										foundParaIdx = i;
+										paraStartIdx = aiStart - charCount;
+										break;
+									}
+									charCount += para.length;
+								}
+								
+								console.log(`[useAICheck] 全局索引转换: aiStart=${aiStart}, aiEnd=${aiEnd}, foundParaIdx=${foundParaIdx}, paraStartIdx=${paraStartIdx}`);
+								
+								// 如果找到对应的段落且与当前行号匹配
+								if (foundParaIdx === lineNumber && paraStartIdx >= 0) {
+									const paraEndIdx = paraStartIdx + (aiEnd - aiStart);
+									// 验证位置处的文本是否与 original 匹配
+									if (paraEndIdx <= targetPara.length) {
+										const actualText = targetPara.slice(paraStartIdx, paraEndIdx);
+										if (actualText === orig) {
+											startIdx = paraStartIdx;
+											endIdx = paraEndIdx;
+										} else {
+											// 位置不匹配，降级使用 indexOf
+											console.log(`[useAICheck] 全局索引位置不匹配: 期望 "${orig}"，实际 "${actualText}"，降级使用 indexOf`);
+											const idx = targetPara.indexOf(orig);
+											if (idx < 0) {
+												console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${orig}"`);
+												continue;
+											}
+											startIdx = idx;
+											endIdx = startIdx + orig.length;
+										}
+									} else {
+										// 位置超出段落范围，降级使用 indexOf
+										console.log(`[useAICheck] 全局索引超出段落范围: paraEndIdx=${paraEndIdx}, paraLength=${targetPara.length}`);
+										const idx = targetPara.indexOf(orig);
+										if (idx < 0) {
+											console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${orig}"`);
+											continue;
+										}
+										startIdx = idx;
+										endIdx = startIdx + orig.length;
+									}
 								} else {
-									// 位置不匹配，降级使用 indexOf
+									// 全局索引转换失败或段落不匹配，降级使用 indexOf
+									console.log(`[useAICheck] 全局索引转换失败: foundParaIdx=${foundParaIdx}, lineNumber=${lineNumber}`);
 									const idx = targetPara.indexOf(orig);
 									if (idx < 0) {
 										console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${orig}"`);
@@ -221,7 +269,7 @@ export function useAICheck() {
 					}
 				}
 			} else {
-				// 按段落 或 按行检测（过滤掉空段落）
+				// 按段落 或 按行检测
 				const allLines = splitParagraphs(text);
 				const filteredItems = allLines.filter((p) => p.trim() !== "");
 				// 建立过滤后索引到原始索引的映射
@@ -231,13 +279,36 @@ export function useAICheck() {
 						indexMap.push(i);
 					}
 				});
-				// 从 startFrom 开始，之前的标记为已跳过
-				const initial: ParagraphResult[] = filteredItems.map((p, i) => ({
-					paragraphIndex: indexMap[i],
-					originalText: p,
-					errors: [],
-					status: (i < startFrom ? "done" : "pending") as "done" | "pending",
-				}));
+				// 关键修复：初始化所有段落（包括空段落），确保数组索引与原始段落索引一致
+				const initial: ParagraphResult[] = allLines.map((p, originalIndex) => {
+					// 找到该段落在过滤后的索引
+					const filteredIndex = indexMap.indexOf(originalIndex);
+					// 如果是有效段落且在 startFrom 之前，标记为已跳过
+					if (filteredIndex >= 0 && filteredIndex < startFrom) {
+						return {
+							paragraphIndex: originalIndex,
+							originalText: p,
+							errors: [],
+							status: "done" as const,
+						};
+					}
+					// 空段落直接标记为完成
+					if (p.trim() === "") {
+						return {
+							paragraphIndex: originalIndex,
+							originalText: p,
+							errors: [],
+							status: "done" as const,
+						};
+					}
+					// 其他情况标记为待检测
+					return {
+						paragraphIndex: originalIndex,
+						originalText: p,
+						errors: [],
+						status: "pending" as const,
+					};
+				});
 				setResults(chapter.id, initial);
 
 				// 逐项检测（从 startFrom 开始）
