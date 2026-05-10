@@ -5,7 +5,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Novel, Chapter, AIConfig, AIProvider, AppTab } from "../types";
 import { setLoggerEnabled } from "../utils/logger";
-import { saveNovelToStorage } from "../utils/fileExport";
+import { saveNovelToStorage, loadNovelsFromStorage } from "../utils/fileExport";
 
 // 剧本改编结果类型
 interface ScriptResult {
@@ -534,12 +534,28 @@ export const useAppStore = create<AppState>()(
 				currentNovelId: state.currentNovelId,
 				currentChapterIndex: state.currentChapterIndex,
 				theme: state.theme,
+				lastCacheSaveTime: state.lastCacheSaveTime,
 				scriptResults: state.scriptResults,
 				nextBookId: state.nextBookId,
 				proofreadStatus: state.proofreadStatus,
 			}),
 			onRehydrateStorage: () => (state) => {
-				if (state) setLoggerEnabled(state.aiConfig.enableLogging);
+				if (state) {
+					setLoggerEnabled(state.aiConfig.enableLogging);
+					if (state.novels && state.novels.length > 0) {
+						return;
+					}
+				}
+
+				(void async function loadSavedNovels() {
+						const storedNovels = await loadNovelsFromStorage();
+						if (storedNovels.length > 0) {
+							set({
+								novels: storedNovels,
+								currentNovelId: storedNovels[0].id,
+							});
+						}
+					})();
 			},
 		},
 	),
