@@ -7,7 +7,7 @@ import { useProofreadStore } from "../stores/proofreadStore";
 import { useConfigStore } from "../stores/configStore";
 import { splitParagraphs } from "../utils/chapterSplit";
 import { buildParagraphIndexMap } from "../utils/formatters";
-import { scrollToElement, ScrollLock } from "../utils/scrollUtils";
+
 import { TTSPlayer, type TTSSentence } from "../utils/ttsService";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
@@ -46,8 +46,6 @@ export function ReaderPanel({
 
 	const containerRef = useRef<HTMLDivElement>(null);
 	const paragraphRefs = useRef<(HTMLDivElement | null)[]>([]);
-	const scrollLock = useRef(new ScrollLock());
-	const scrollAnimationId = useRef<number | null>(null);
 
 	const readingTextColor = useMemo(() => {
 		if (!readingMode) return undefined;
@@ -85,8 +83,10 @@ export function ReaderPanel({
 
 	// 滑动翻页相关
 	const touchStartY = useRef(0);
+	const touchStartX = useRef(0);
 	const touchStartScrollTop = useRef(0);
 	const isDragging = useRef(false);
+	const isScrolling = useRef(false);
 
 	// 双击编辑状态：正在编辑的行索引
 	const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -263,15 +263,33 @@ export function ReaderPanel({
 		[saveEditing, cancelEditing],
 	);
 
-	/** 程序化滚动到指定段落（带锁） */
+	/** 程序化滚动到指定段落 */
 	const scrollToParagraph = useCallback((index: number) => {
-		if (!scrollLock.current.acquire()) return;
-		scrollToElement(containerRef, paragraphRefs, index);
+		const el = paragraphRefs.current[index];
+		const container = containerRef.current;
+
+		if (!el || !container) {
+			console.log(
+				`[ReaderPanel] scrollToParagraph failed: el=${!!el}, container=${!!container}, index=${index}`,
+			);
+			return;
+		}
+
+		console.log(`[ReaderPanel] scrollToParagraph: index=${index}`);
+
+		// 强制滚动，不检查是否在可视区域内
+		el.scrollIntoView({ behavior: "smooth", block: "center" });
 	}, []);
 
 	useEffect(() => {
 		if (highlightedParagraph !== null) {
-			scrollToParagraph(highlightedParagraph);
+			console.log(
+				`[ReaderPanel] highlightedParagraph changed: ${highlightedParagraph}`,
+			);
+			// 使用 setTimeout 确保 DOM 已经渲染完成
+			setTimeout(() => {
+				scrollToParagraph(highlightedParagraph);
+			}, 50);
 		}
 	}, [highlightedParagraph, scrollToParagraph]);
 
@@ -354,68 +372,18 @@ export function ReaderPanel({
 		if (!container) return;
 		container.scrollTop = 0;
 		paragraphRefs.current = [];
-
-		// 清理函数：组件卸载或章节切换时取消动画帧
-		return () => {
-			if (scrollAnimationId.current !== null) {
-				cancelAnimationFrame(scrollAnimationId.current);
-				scrollAnimationId.current = null;
-			}
-		};
 	}, [currentChapterIndex]);
-
-	const handleScroll = useCallback(() => {
-		if (scrollLock.current.isLocked()) return;
-		const container = containerRef.current;
-		if (!container) return;
-
-		// 取消之前的动画帧，避免累积
-		if (scrollAnimationId.current !== null) {
-			cancelAnimationFrame(scrollAnimationId.current);
-		}
-
-		scrollAnimationId.current = requestAnimationFrame(() => {
-			if (scrollLock.current.isLocked()) return;
-			const containerEl = containerRef.current;
-			if (!containerEl) return;
-
-			const containerRect = containerEl.getBoundingClientRect();
-			const midY = containerRect.top + containerRect.height / 2;
-
-			const refs = paragraphRefs.current;
-			let low = 0;
-			let high = refs.length - 1;
-			let targetIndex = 0;
-
-			while (low <= high) {
-				const mid = (low + high) >> 1;
-				const el = refs[mid];
-				if (!el) break;
-				const rect = el.getBoundingClientRect();
-				if (rect.top <= midY && rect.bottom >= midY) {
-					targetIndex = mid;
-					break;
-				} else if (rect.top < midY) {
-					low = mid + 1;
-				} else {
-					high = mid - 1;
-					targetIndex = mid;
-				}
-			}
-
-			setHighlightedParagraph(targetIndex);
-			scrollAnimationId.current = null;
-		});
-	}, [setHighlightedParagraph]);
 
 	// 滑动翻页功能
 	const handleTouchStart = useCallback((e: React.TouchEvent) => {
 		touchStartY.current = e.touches[0].clientY;
+		touchStartX.current = e.touches[0].clientX;
 		const container = containerRef.current;
 		if (container) {
 			touchStartScrollTop.current = container.scrollTop;
 		}
 		isDragging.current = true;
+		isScrolling.current = false;
 	}, []);
 
 	const handleTouchMove = useCallback(
@@ -426,7 +394,14 @@ export function ReaderPanel({
 			if (!container) return;
 
 			const currentY = e.touches[0].clientY;
+			const currentX = e.touches[0].clientX;
 			const deltaY = currentY - touchStartY.current;
+			const deltaX = currentX - touchStartX.current;
+			
+			// 如果移动超过一定阈值，认为是滚动操作，不是点击
+			if (!isScrolling.current && (Math.abs(deltaY) > 10 || Math.abs(deltaX) > 10)) {
+				isScrolling.current = true;
+			}
 
 			// 检测是否到达顶部或底部
 			const isAtTop = touchStartScrollTop.current === 0;
@@ -500,7 +475,6 @@ export function ReaderPanel({
 			<div
 				className={`reader-content${readingMode ? " reading-mode" : ""}`}
 				ref={containerRef}
-				onScroll={handleScroll}
 				onTouchStart={handleTouchStart}
 				onTouchMove={handleTouchMove}
 				onTouchEnd={handleTouchEnd}
@@ -574,48 +548,97 @@ export function ReaderPanel({
 
 						// 旧文本高亮：使用原始索引
 						if (isOldPhase) {
+							const highlight = para.slice(
+								applyAnimation!.startIndex,
+								applyAnimation!.endIndex,
+							);
+							console.log(
+								`[ReaderPanel] anim-highlight-old:`,
+								`\n  phase: ${applyAnimation!.phase}`,
+								`\n  paragraphIndex: ${applyAnimation!.paragraphIndex}`,
+								`\n  startIndex: ${applyAnimation!.startIndex}`,
+								`\n  endIndex: ${applyAnimation!.endIndex}`,
+								`\n  originalText: "${applyAnimation!.originalText}"`,
+								`\n  correctedText: "${applyAnimation!.correctedText}"`,
+								`\n  paragraph snippet: "${para.slice(Math.max(0, applyAnimation!.startIndex - 5), Math.min(para.length, (applyAnimation!.endIndex ?? applyAnimation!.startIndex + (applyAnimation!.originalText?.length ?? 0)) + 5))}"`,
+								`\n  highlight: "${highlight}"`,
+							);
 							return {
 								before: para.slice(0, applyAnimation!.startIndex),
-								highlight: para.slice(
-									applyAnimation!.startIndex,
-									applyAnimation!.endIndex,
-								),
+								highlight: highlight,
 								after: para.slice(applyAnimation!.endIndex),
 								isOld: true,
 							};
 						}
 
-						// 新文本高亮：由于新文本长度可能与原文本不同，需要重新查找位置
+						// 新文本高亮：使用精确的起始位置和新文本长度
 						const newText = applyAnimation!.correctedText;
 						if (!newText) {
 							console.warn("[ReaderPanel] correctedText is undefined");
 							return null;
 						}
 
-						const newStartIdx = para.indexOf(newText);
+						// 使用精确的起始位置，避免在多个相同字符中找错位置
+						// 替换后新文本的起始位置与原始位置相同
+						const startIdx = applyAnimation!.startIndex;
+						const endIdx = startIdx + newText.length;
 
-						if (newStartIdx >= 0) {
-							// 在当前段落中找到了新文本，使用实际位置
+						// 验证位置处的文本是否与新文本匹配
+						const actualText = para.slice(startIdx, endIdx);
+						console.log(
+							`[ReaderPanel] anim-highlight-new:`,
+							`\n  phase: ${applyAnimation!.phase}`,
+							`\n  paragraphIndex: ${applyAnimation!.paragraphIndex}`,
+							`\n  startIndex: ${applyAnimation!.startIndex}`,
+							`\n  endIndex (original): ${applyAnimation!.endIndex}`,
+							`\n  originalText: "${applyAnimation!.originalText}"`,
+							`\n  correctedText: "${newText}"`,
+							`\n  newText.length: ${newText.length}`,
+							`\n  calculated endIdx: ${endIdx}`,
+							`\n  actualText at position: "${actualText}"`,
+							`\n  paragraph snippet: "${para.slice(Math.max(0, startIdx - 5), Math.min(para.length, endIdx + 5))}"`,
+						);
+
+						if (actualText === newText) {
+							// 位置匹配，使用精确位置
+							console.log(`[ReaderPanel] anim-highlight-new: 位置匹配，使用精确位置`);
 							return {
-								before: para.slice(0, newStartIdx),
+								before: para.slice(0, startIdx),
 								highlight: newText,
-								after: para.slice(newStartIdx + newText.length),
+								after: para.slice(endIdx),
 								isOld: false,
 							};
 						} else {
-							// 降级：使用原始索引（可能有偏差，但至少能显示高亮）
-							console.warn(
-								`[ReaderPanel] 新文本 "${newText}" 未在段落中找到，使用原始索引`,
-							);
-							return {
-								before: para.slice(0, applyAnimation!.startIndex),
-								highlight: para.slice(
-									applyAnimation!.startIndex,
-									applyAnimation!.startIndex + newText.length,
-								),
-								after: para.slice(applyAnimation!.startIndex + newText.length),
-								isOld: false,
-							};
+							// 降级：只在预期位置附近搜索（避免错误地匹配到段落中其他相同的文本）
+							let foundIdx = -1;
+							// 在预期位置前后各5个字符范围内搜索
+							const searchStart = Math.max(0, startIdx - 5);
+							const searchEnd = Math.min(para.length, startIdx + newText.length + 5);
+							const searchRange = para.slice(searchStart, searchEnd);
+							const relativeIdx = searchRange.indexOf(newText);
+							if (relativeIdx >= 0) {
+								foundIdx = searchStart + relativeIdx;
+							}
+							
+							console.log(`[ReaderPanel] anim-highlight-new: 位置不匹配，在预期位置附近搜索，foundIdx: ${foundIdx}`);
+							if (foundIdx >= 0) {
+								return {
+									before: para.slice(0, foundIdx),
+									highlight: newText,
+									after: para.slice(foundIdx + newText.length),
+									isOld: false,
+								};
+							} else {
+								console.warn(
+									`[ReaderPanel] 新文本 "${newText}" 未在段落中找到，使用原始索引`,
+								);
+								return {
+									before: para.slice(0, startIdx),
+									highlight: para.slice(startIdx, endIdx),
+									after: para.slice(endIdx),
+									isOld: false,
+								};
+							}
 						}
 					};
 					const highlightInfo = getHighlightInfo();
@@ -632,10 +655,12 @@ export function ReaderPanel({
 						<div
 							key={originalIndex}
 							ref={(el) => {
-								paragraphRefs.current[filteredIndex] = el;
+								paragraphRefs.current[originalIndex] = el;
 							}}
 							className={`reader-paragraph${readingMode ? " reading-mode" : ""}${highlightedParagraph === originalIndex && !readingMode ? " highlighted" : ""}${isTTSHighlighted ? " tts-highlighted" : ""}${animClass}${isEditing ? " editing" : ""}`}
 							onClick={() => {
+								// 如果是滚动操作，不触发点击事件
+								if (isScrolling.current) return;
 								if (!isEditing) {
 									if (readingMode) {
 										startTTSFromParagraph(originalIndex);

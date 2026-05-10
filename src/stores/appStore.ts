@@ -100,6 +100,8 @@ interface AppState {
 		paragraphIndex: number,
 		oldText: string,
 		newText: string,
+		startIndex?: number,
+		endIndex?: number,
 	) => boolean;
 
 	// Actions — 批量文本替换（采纳修改），返回替换成功数量
@@ -230,7 +232,7 @@ export const useAppStore = create<AppState>()(
 
 			setCurrentChapterIndex: (index) => set({ currentChapterIndex: index }),
 
-			replaceParagraphText: (chapterId, paragraphIndex, oldText, newText) => {
+			replaceParagraphText: (chapterId, paragraphIndex, oldText, newText, startIndex?: number, endIndex?: number) => {
 				let replaced = false;
 				set((state) => {
 					// 更新章节内容（分割逻辑与 splitParagraphs 保持一致）
@@ -250,48 +252,53 @@ export const useAppStore = create<AppState>()(
 								return ch;
 							}
 
-							// 1. 重新在当前段落中查找 oldText 的准确位置
-							// 这样可以避免因 AI 返回位置不准确导致的替换失败
-							const foundIdx = para.indexOf(oldText);
-							console.log(`[appStore] replaceParagraphText: paragraphIndex=${paragraphIndex}, oldText="${oldText}", newText="${newText}", foundIdx=${foundIdx}, para length=${para.length}`);
-							console.log(`[appStore] replaceParagraphText: para snippet="${para.slice(Math.max(0, foundIdx - 10), Math.min(para.length, foundIdx + oldText.length + 10))}"`);
-							if (foundIdx >= 0) {
-								const before = para.slice(0, foundIdx);
-								const after = para.slice(foundIdx + oldText.length);
-								const newPara = before + newText + after;
-								console.log(`[appStore] replaceParagraphText: before="${before.slice(-20)}", after="${after.slice(0, 20)}", newPara length=${newPara.length}`);
-								para = newPara;
-								replaced = true;
-							} else {
-								// 2. 容错匹配：去除所有空白字符后模糊查找
-								const normalize = (s: string) => s.replace(/\s+/g, "");
-								const normPara = normalize(para);
-								const normOld = normalize(oldText);
-
-								const fuzzyIdx = normPara.indexOf(normOld);
-								if (fuzzyIdx >= 0) {
-									// 反向定位：在原文中找到第 fuzzyIdx 个非空白字符的位置
-									let charCount = 0;
-									let realStart = -1;
-									let realEnd = -1;
-									for (let j = 0; j < para.length; j++) {
-										if (!/\s/.test(para[j])) {
-											if (charCount === fuzzyIdx) realStart = j;
-											if (charCount === fuzzyIdx + normOld.length - 1) {
-												realEnd = j + 1;
-												break;
-											}
-											charCount++;
-										}
-									}
-									if (realStart >= 0 && realEnd > realStart) {
-										para = para.slice(0, realStart) + newText + para.slice(realEnd);
-										replaced = true;
-									} else {
-										console.log(`[appStore] replaceParagraphText fuzzy match failed: oldText="${oldText}", newText="${newText}", chapterId=${chapterId}, paragraphIndex=${paragraphIndex}`);
-									}
+							// 1. 优先使用精确位置替换（如果提供了有效位置）
+							if (startIndex !== undefined && endIndex !== undefined && startIndex >= 0 && endIndex > startIndex && endIndex <= para.length) {
+								// 验证位置处的文本是否与 oldText 匹配
+								const actualText = para.slice(startIndex, endIndex);
+								if (actualText === oldText) {
+									const before = para.slice(0, startIndex);
+									const after = para.slice(endIndex);
+									const newPara = before + newText + after;
+									console.log(`[appStore] replaceParagraphText (exact position): paragraphIndex=${paragraphIndex}, startIndex=${startIndex}, endIndex=${endIndex}, oldText="${oldText}", newText="${newText}"`);
+									para = newPara;
+									replaced = true;
 								} else {
-									console.log(`[appStore] replaceParagraphText not found: oldText="${oldText}", newText="${newText}", chapterId=${chapterId}, paragraphIndex=${paragraphIndex}`);
+									console.log(`[appStore] replaceParagraphText position mismatch: expected "${oldText}", actual "${actualText}"`);
+									// 位置不匹配，降级使用 indexOf 查找
+								}
+							}
+
+							// 2. 如果没有精确位置或位置不匹配，使用智能查找
+							if (!replaced) {
+								let foundIdx = -1;
+								
+								// 优先在预期位置附近搜索（考虑到前面的修改可能影响位置）
+								if (startIndex !== undefined) {
+									// 在预期位置前后各5个字符范围内搜索
+									const searchStart = Math.max(0, startIndex - 5);
+									const searchEnd = Math.min(para.length, startIndex + oldText.length + 5);
+									const searchRange = para.slice(searchStart, searchEnd);
+									const relativeIdx = searchRange.indexOf(oldText);
+									if (relativeIdx >= 0) {
+										foundIdx = searchStart + relativeIdx;
+									}
+								}
+								
+								// 【重要】如果预期位置附近找不到，不使用全局indexOf
+								// 避免错误地匹配到段落中其他相同的文本
+								console.log(`[appStore] replaceParagraphText: paragraphIndex=${paragraphIndex}, oldText="${oldText}", newText="${newText}", foundIdx=${foundIdx}, expectedStart=${startIndex}, para length=${para.length}`);
+								if (foundIdx >= 0) {
+									const before = para.slice(0, foundIdx);
+									const after = para.slice(foundIdx + oldText.length);
+									const newPara = before + newText + after;
+									console.log(`[appStore] replaceParagraphText: before="${before.slice(-20)}", after="${after.slice(0, 20)}", newPara length=${newPara.length}`);
+									para = newPara;
+									replaced = true;
+								} else {
+									// 如果预期位置附近找不到，不进行替换
+									// 避免错误地匹配到段落中其他相同的文本
+									console.log(`[appStore] replaceParagraphText not found near expected position: oldText="${oldText}", newText="${newText}", chapterId=${chapterId}, paragraphIndex=${paragraphIndex}, expectedStart=${startIndex}`);
 								}
 							}
 

@@ -55,6 +55,7 @@ interface ProofreadState {
 	setHighlightedParagraph: (index: number | null) => void;
 	setStartLine: (line: number | null) => void;
 	setApplyAnimation: (anim: ApplyAnimation | null) => void;
+	updateErrorIndices: (chapterId: number, paragraphIndex: number, startIndex: number, lengthDiff: number) => void;
 
 	// Ignored words actions (novel-level)
 	addIgnoredWord: (novelId: string, word: string) => void;
@@ -185,6 +186,31 @@ export const useProofreadStore = create<ProofreadState>((set, get) => ({
 	setStartLine: (line) => set({ startLine: line }),
 
 	setApplyAnimation: (anim) => set({ applyAnimation: anim }),
+
+	/** 更新段落中剩余错误的索引（当文本被修改后） */
+	updateErrorIndices: (chapterId: number, paragraphIndex: number, startIndex: number, lengthDiff: number) =>
+		set((state) => {
+			const chapterResults = state.results[chapterId] ?? [];
+			const updated = [...chapterResults];
+			const para = updated[paragraphIndex];
+			if (para) {
+				updated[paragraphIndex] = {
+					...para,
+					errors: para.errors.map((e: ProofreadError) => {
+						// 如果错误的位置在修改位置之后，需要调整索引
+						if (e.startIndex > startIndex) {
+							return {
+								...e,
+								startIndex: e.startIndex + lengthDiff,
+								endIndex: e.endIndex + lengthDiff,
+							};
+						}
+						return e;
+					}),
+				};
+			}
+			return { results: { ...state.results, [chapterId]: updated } };
+		}),
 
 	addIgnoredWord: (chapterId, word) =>
 		set((state) => {

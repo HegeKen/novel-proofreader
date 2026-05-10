@@ -127,30 +127,47 @@ export function useAICheck() {
 							const obj = item as Record<string, unknown>;
 
 							// 获取行号（核心字段）- 使用原始段落索引
-							let lineNumber = obj.lineNumber !== undefined ? Number(obj.lineNumber) : -1;
+							// 支持新格式的 line 字段和旧格式的 lineNumber 字段
+							let lineNumber = obj.line !== undefined ? Number(obj.line) : 
+								(obj.lineNumber !== undefined ? Number(obj.lineNumber) : -1);
+							
+							// 支持新格式：find/replace
+							const find = String(obj.find ?? "");
+							const replace = String(obj.replace ?? "");
+							
+							// 兼容旧格式：original/corrected
 							const orig = String(obj.original ?? obj.original_text ?? "");
 							const corr = String(obj.corrected ?? obj.corrected_text ?? "");
+							
 							const errType = String(obj.type ?? obj.error_type ?? "");
 							const suggest = String(obj.reason ?? obj.suggestion ?? "");
 							const aiStart = obj.start !== undefined ? Number(obj.start) : -1;
 							const aiEnd = obj.end !== undefined ? Number(obj.end) : -1;
 
-							console.log(`[useAICheck] 解析错误: orig="${orig}", corr="${corr}", lineNumber=${lineNumber}, aiStart=${aiStart}, aiEnd=${aiEnd}`);
+							// 优先使用新格式的 find/replace，其次使用旧格式的 original/corrected
+							const matchText = find || orig;
+							const correctText = replace || corr;
 
-							if (!orig) continue;
+							console.log(`[useAICheck] 解析错误: matchText="${matchText}", correctText="${correctText}", lineNumber=${lineNumber}, aiStart=${aiStart}, aiEnd=${aiEnd}`);
 
-							// 校验：original 和 corrected 必须不同
-							if (orig === corr || orig.replace(/\s/g, '') === corr.replace(/\s/g, '')) continue;
+							if (!matchText) continue;
+
+							// 校验：对于 typo/grammar/format 类型，matchText 和 correctText 必须不同
+							// 但 punctuation 类型可能只是提示标点问题，不一定需要替换
+							const needsReplacement = errType === "typo" || errType === "grammar" || errType === "format";
+							if (needsReplacement && (matchText === correctText || matchText.replace(/\s/g, '') === correctText.replace(/\s/g, ''))) {
+								continue;
+							}
 
 							// 检查行号是否在该批次范围内
 							if (lineNumber < batch.start || lineNumber >= batch.end) {
 								// 行号不在该批次，可能是全局行号或其他原因，尝试查找该批次内是否包含
 								const foundLine = paragraphs.findIndex((p, idx) => 
-									idx >= batch.start && idx < batch.end && p.includes(orig)
+									idx >= batch.start && idx < batch.end && p.includes(matchText)
 								);
 								console.log(`[useAICheck] 行号检查: lineNumber=${lineNumber}, batch=${batch.start}-${batch.end}, foundLine=${foundLine}`);
 								if (foundLine < 0) {
-									console.warn(`[useAICheck] 批次 ${batch.start}-${batch.end} 中无法找到包含 "${orig}" 的段落`);
+									console.warn(`[useAICheck] 批次 ${batch.start}-${batch.end} 中无法找到包含 "${matchText}" 的段落`);
 									continue;
 								}
 								lineNumber = foundLine;
@@ -184,54 +201,54 @@ export function useAICheck() {
 								// 如果找到对应的段落且与当前行号匹配
 								if (foundParaIdx === lineNumber && paraStartIdx >= 0) {
 									const paraEndIdx = paraStartIdx + (aiEnd - aiStart);
-									// 验证位置处的文本是否与 original 匹配
+									// 验证位置处的文本是否与 matchText 匹配
 									if (paraEndIdx <= targetPara.length) {
 										const actualText = targetPara.slice(paraStartIdx, paraEndIdx);
-										if (actualText === orig) {
+										if (actualText === matchText) {
 											startIdx = paraStartIdx;
 											endIdx = paraEndIdx;
 										} else {
 											// 位置不匹配，降级使用 indexOf
-											console.log(`[useAICheck] 全局索引位置不匹配: 期望 "${orig}"，实际 "${actualText}"，降级使用 indexOf`);
-											const idx = targetPara.indexOf(orig);
+											console.log(`[useAICheck] 全局索引位置不匹配: 期望 "${matchText}"，实际 "${actualText}"，降级使用 indexOf`);
+											const idx = targetPara.indexOf(matchText);
 											if (idx < 0) {
-												console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${orig}"`);
+												console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${matchText}"`);
 												continue;
 											}
 											startIdx = idx;
-											endIdx = startIdx + orig.length;
+											endIdx = startIdx + matchText.length;
 										}
 									} else {
 										// 位置超出段落范围，降级使用 indexOf
 										console.log(`[useAICheck] 全局索引超出段落范围: paraEndIdx=${paraEndIdx}, paraLength=${targetPara.length}`);
-										const idx = targetPara.indexOf(orig);
+										const idx = targetPara.indexOf(matchText);
 										if (idx < 0) {
-											console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${orig}"`);
+											console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${matchText}"`);
 											continue;
 										}
 										startIdx = idx;
-										endIdx = startIdx + orig.length;
+										endIdx = startIdx + matchText.length;
 									}
 								} else {
 									// 全局索引转换失败或段落不匹配，降级使用 indexOf
 									console.log(`[useAICheck] 全局索引转换失败: foundParaIdx=${foundParaIdx}, lineNumber=${lineNumber}`);
-									const idx = targetPara.indexOf(orig);
+									const idx = targetPara.indexOf(matchText);
 									if (idx < 0) {
-										console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${orig}"`);
+										console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${matchText}"`);
 										continue;
 									}
 									startIdx = idx;
-									endIdx = startIdx + orig.length;
+									endIdx = startIdx + matchText.length;
 								}
 							} else {
 								// 没有有效的位置信息，使用 indexOf 查找
-								if (!targetPara.includes(orig)) {
-									console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${orig}"`);
+								if (!targetPara.includes(matchText)) {
+									console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${matchText}"`);
 									continue;
 								}
-								const idx = targetPara.indexOf(orig);
+								const idx = targetPara.indexOf(matchText);
 								startIdx = idx;
-								endIdx = startIdx + orig.length;
+								endIdx = startIdx + matchText.length;
 							}
 
 							errorsByLine[lineNumber].push({
@@ -240,8 +257,8 @@ export function useAICheck() {
 								endIndex: endIdx,
 								errorType: (errType as ProofreadError["errorType"]) || "typo",
 								suggestion: suggest,
-								originalText: orig,
-								correctedText: corr,
+								originalText: matchText,
+								correctedText: correctText,
 								applied: false,
 								skipped: false,
 							});
@@ -347,18 +364,27 @@ export function useAICheck() {
 							if (typeof obj !== "object" || obj === null) continue;
 							const o = obj as Record<string, unknown>;
 
-							// 兼容新旧两种字段格式
+							// 支持新格式：find/replace
+							const find = String(o.find ?? "");
+							const replace = String(o.replace ?? "");
+							
+							// 兼容旧格式：original/corrected
 							const orig = String(o.original ?? o.original_text ?? "");
 							const corr = String(o.corrected ?? o.corrected_text ?? "");
+							
 							const errType = String(o.type ?? o.error_type ?? "");
 							const suggest = String(o.reason ?? o.suggestion ?? "");
 							const aiStart = o.start !== undefined ? Number(o.start) : -1;
 							const aiEnd = o.end !== undefined ? Number(o.end) : -1;
 
-							if (!orig) continue;
+							// 优先使用新格式的 find/replace，其次使用旧格式的 original/corrected
+							const matchText = find || orig;
+							const correctText = replace || corr;
 
-							// 校验：original 和 corrected 必须不同（去除空白字符后也不能相同）
-							if (orig === corr || orig.replace(/\s/g, '') === corr.replace(/\s/g, '')) continue;
+							if (!matchText) continue;
+
+							// 校验：matchText 和 correctText 必须不同（去除空白字符后也不能相同）
+							if (matchText === correctText || matchText.replace(/\s/g, '') === correctText.replace(/\s/g, '')) continue;
 
 							// 优先使用AI返回的位置，否则用indexOf查找
 							let startIdx: number;
@@ -370,10 +396,10 @@ export function useAICheck() {
 								endIdx = aiEnd;
 							} else {
 								// 降级使用indexOf查找
-								if (!item.includes(orig)) continue;
-								const idx = item.indexOf(orig);
+								if (!item.includes(matchText)) continue;
+								const idx = item.indexOf(matchText);
 								startIdx = idx;
-								endIdx = startIdx + orig.length;
+								endIdx = startIdx + matchText.length;
 							}
 
 							errors.push({
@@ -383,8 +409,8 @@ export function useAICheck() {
 								errorType:
 									(errType as ProofreadError["errorType"]) || "typo",
 								suggestion: suggest,
-								originalText: orig,
-								correctedText: corr,
+								originalText: matchText,
+								correctedText: correctText,
 								applied: false,
 								skipped: false,
 							});
@@ -494,16 +520,29 @@ export function useAICheck() {
 					if (typeof obj !== "object" || obj === null) continue;
 					const o = obj as Record<string, unknown>;
 
-					// 兼容新旧两种字段格式
+					// 支持新格式：find/replace
+					const find = String(o.find ?? "");
+					const replace = String(o.replace ?? "");
+					
+					// 兼容旧格式：original/corrected
 					const orig = String(o.original ?? o.original_text ?? "");
 					const corr = String(o.corrected ?? o.corrected_text ?? "");
+					
 					const errType = String(o.type ?? o.error_type ?? "");
 					const suggest = String(o.reason ?? o.suggestion ?? "");
 					const aiStart = o.start !== undefined ? Number(o.start) : -1;
 					const aiEnd = o.end !== undefined ? Number(o.end) : -1;
 
-					if (!orig) continue;
-					if (orig === corr) continue;
+					// 优先使用新格式的 find/replace，其次使用旧格式的 original/corrected
+					const matchText = find || orig;
+					const correctText = replace || corr;
+
+					if (!matchText) continue;
+					
+					// 校验：对于 typo/grammar/format 类型，matchText 和 correctText 必须不同
+					// 但 punctuation 类型可能只是提示标点问题，不一定需要替换
+					const needsReplacement = errType === "typo" || errType === "grammar" || errType === "format";
+					if (needsReplacement && matchText === correctText) continue;
 
 					// 优先使用AI返回的位置，否则用indexOf查找
 					let startIdx: number;
@@ -513,10 +552,10 @@ export function useAICheck() {
 						startIdx = aiStart;
 						endIdx = aiEnd;
 					} else {
-						if (!lineText.includes(orig)) continue;
-						const idx = lineText.indexOf(orig);
+						if (!lineText.includes(matchText)) continue;
+						const idx = lineText.indexOf(matchText);
 						startIdx = idx;
-						endIdx = startIdx + orig.length;
+						endIdx = startIdx + matchText.length;
 					}
 
 					errors.push({
@@ -525,8 +564,8 @@ export function useAICheck() {
 						endIndex: endIdx,
 						errorType: (errType as ProofreadError["errorType"]) || "typo",
 						suggestion: suggest,
-						originalText: orig,
-						correctedText: corr,
+						originalText: matchText,
+						correctedText: correctText,
 						applied: false,
 						skipped: false,
 					});
