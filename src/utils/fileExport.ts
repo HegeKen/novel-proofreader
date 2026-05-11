@@ -3,12 +3,8 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile, writeTextFile, exists, readTextFile, mkdir, readDir, remove } from '@tauri-apps/plugin-fs';
 import { BaseDirectory } from '@tauri-apps/plugin-fs';
 
-function isAndroid(): boolean {
-  return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
-}
-
 function getBaseDir(): BaseDirectory {
-  return isAndroid() ? BaseDirectory.Document : BaseDirectory.AppData;
+  return BaseDirectory.Document;
 }
 
 function getNovelsSubDir(): string {
@@ -23,22 +19,13 @@ export function ensureTxtFilename(fileName: string): string {
   return fileName.toLowerCase().endsWith('.txt') ? fileName : `${fileName}.txt`;
 }
 
-function getFsOptions(baseDir: BaseDirectory) {
-  return { dir: baseDir, baseDir } as any;
-}
-
 export async function ensureNovelsDirectory(): Promise<boolean> {
-  if (!isTauri()) {
-    console.warn('[fileExport] Not in Tauri environment, skipping directory creation');
-    return false;
-  }
-
   try {
     const baseDir = getBaseDir();
     const novelsPath = getNovelsSubDir();
-    const dirExists = await exists(novelsPath, getFsOptions(baseDir));
+    const dirExists = await exists(novelsPath, { baseDir });
     if (!dirExists) {
-      await mkdir(novelsPath, { ...getFsOptions(baseDir), recursive: true });
+      await mkdir(novelsPath, { baseDir, recursive: true });
     }
     return true;
   } catch (e) {
@@ -48,14 +35,13 @@ export async function ensureNovelsDirectory(): Promise<boolean> {
 }
 
 export async function importNovelFromStorage(fileName: string): Promise<string | null> {
-  if (!isTauri()) return null;
   try {
     await ensureNovelsDirectory();
     const fullPath = getStoragePath(fileName);
     const baseDir = getBaseDir();
-    const fileExists = await exists(fullPath, getFsOptions(baseDir));
+    const fileExists = await exists(fullPath, { baseDir });
     if (fileExists) {
-      const content = await readTextFile(fullPath, getFsOptions(baseDir));
+      const content = await readTextFile(fullPath, { baseDir });
       return content;
     }
     return null;
@@ -66,14 +52,13 @@ export async function importNovelFromStorage(fileName: string): Promise<string |
 }
 
 export async function saveNovelToStorage(fileName: string, content: string): Promise<boolean> {
-  if (!isTauri()) return false;
   try {
     await ensureNovelsDirectory();
     const fullPath = getStoragePath(fileName);
     const baseDir = getBaseDir();
     console.log('[fileExport] Saving to:', fullPath, 'baseDir:', baseDir);
     console.log('[fileExport] Content length:', content.length);
-    await writeTextFile(fullPath, content, { ...getFsOptions(baseDir), recursive: true });
+    await writeTextFile(fullPath, content, { baseDir });
     console.log('[fileExport] Save successful');
     return true;
   } catch (e) {
@@ -83,13 +68,12 @@ export async function saveNovelToStorage(fileName: string, content: string): Pro
 }
 
 export async function deleteNovelFromStorage(fileName: string): Promise<boolean> {
-  if (!isTauri()) return false;
   try {
     const fullPath = getStoragePath(fileName);
     const baseDir = getBaseDir();
-    const fileExists = await exists(fullPath, getFsOptions(baseDir));
+    const fileExists = await exists(fullPath, { baseDir });
     if (fileExists) {
-      await remove(fullPath, getFsOptions(baseDir));
+      await remove(fullPath, { baseDir });
     }
     return true;
   } catch (e) {
@@ -103,7 +87,7 @@ export async function listNovelsInStorage(): Promise<string[]> {
     await ensureNovelsDirectory();
     const novelsPath = getNovelsSubDir();
     const baseDir = getBaseDir();
-    const entries = await readDir(novelsPath, getFsOptions(baseDir));
+    const entries = await readDir(novelsPath, { baseDir });
     return entries
       .filter((entry) => entry.name?.endsWith('.txt'))
       .map((entry) => entry.name as string);
@@ -114,18 +98,17 @@ export async function listNovelsInStorage(): Promise<string[]> {
 }
 
 export async function loadNovelsFromStorage(): Promise<Novel[]> {
-  if (!isTauri()) return [];
   try {
     await ensureNovelsDirectory();
     const novelsPath = getNovelsSubDir();
     const baseDir = getBaseDir();
-    const entries = await readDir(novelsPath, getFsOptions(baseDir));
+    const entries = await readDir(novelsPath, { baseDir });
 
     const novels: Novel[] = [];
     for (const entry of entries) {
       if (!entry.name || !entry.name.toLowerCase().endsWith('.txt')) continue;
       const filePath = `${novelsPath}/${entry.name}`;
-      const content = await readTextFile(filePath, getFsOptions(baseDir));
+      const content = await readTextFile(filePath, { baseDir });
       novels.push({
         id: `novel-${Date.now()}-${entry.name}`,
         name: entry.name.replace(/\.txt$/i, ''),
@@ -237,7 +220,7 @@ export async function exportToFile(content: string, suggestedName: string): Prom
 
 export async function saveToAppData(content: string, fileName: string): Promise<boolean> {
   try {
-    await writeTextFile(fileName, content, getFsOptions(BaseDirectory.AppData));
+    await writeTextFile(fileName, content, { baseDir: BaseDirectory.AppData });
     return true;
   } catch (e) {
     console.error('Save to AppData failed:', e);
@@ -247,7 +230,7 @@ export async function saveToAppData(content: string, fileName: string): Promise<
 
 export async function readFromAppData(fileName: string): Promise<string | null> {
   try {
-    const content = await readTextFile(fileName, getFsOptions(BaseDirectory.AppData));
+    const content = await readTextFile(fileName, { baseDir: BaseDirectory.AppData });
     return content;
   } catch (e) {
     console.error('Read from AppData failed:', e);
