@@ -12,6 +12,7 @@ import {
 	buildProofreadUserPrompt,
 	extractJSON,
 } from "../utils/aiClient";
+import { logger } from "../utils/logger";
 import type {
 	ParagraphResult,
 	ProofreadError,
@@ -35,6 +36,8 @@ export function useAICheck() {
 			const chapter = chapters[currentChapterIndex];
 			if (!chapter) return;
 
+			logger.proofread(`开始校对第 ${currentChapterIndex + 1} 章, 粒度: ${granularity}, 从第 ${startFrom + 1} 段开始`);
+
 			// 取消之前的请求
 			abortRef.current?.abort();
 			const controller = new AbortController();
@@ -43,6 +46,7 @@ export function useAICheck() {
 			const text = chapter.content;
 			// 获取当前小说的忽略单词列表
 			const ignoredWords = getIgnoredWords(currentNovelId ?? "");
+			logger.proofread(`忽略单词列表: ${ignoredWords.join(", ") || "无"}`);
 
 			if (granularity === "chapter") {
 				// 分批次发送（每批字符数不超过550，防止请求过大导致失败）
@@ -83,6 +87,8 @@ export function useAICheck() {
 				if (batchStart < paragraphs.length) {
 					batches.push({ start: batchStart, end: paragraphs.length });
 				}
+
+				logger.proofread(`共分为 ${batches.length} 批处理`);
 
 				// 逐批处理
 				for (const batch of batches) {

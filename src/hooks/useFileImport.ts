@@ -6,6 +6,7 @@ import { useAppStore } from "../stores/appStore";
 import { splitChapters } from "../utils/chapterSplit";
 import { decodeTextBuffer } from "../utils/decodeText";
 import { saveNovelToStorage, ensureTxtFilename } from "../utils/fileExport";
+import { logger } from "../utils/logger";
 import type { Novel } from "../types";
 
 /**
@@ -27,9 +28,12 @@ export function useFileImport() {
 					resolve();
 					return;
 				}
+				logger.file(`开始导入文件: ${file.name}, 大小: ${(file.size / 1024).toFixed(1)} KB`);
 				const buffer = await file.arrayBuffer();
 				const text = decodeTextBuffer(buffer);
+				logger.file(`文件解码完成, 字符数: ${text.length}`);
 				const chapters = splitChapters(text);
+				logger.file(`章节分割完成, 共 ${chapters.length} 章`);
 
 				// 创建 Novel 对象并添加到 store
 				const novel: Novel = {
@@ -43,6 +47,7 @@ export function useFileImport() {
 
 				addNovel(novel);
 				await saveNovelToStorage(ensureTxtFilename(novel.name), novel.fullText);
+				logger.file(`文件导入完成: ${novel.name}`);
 				resolve();
 			};
 			input.click();

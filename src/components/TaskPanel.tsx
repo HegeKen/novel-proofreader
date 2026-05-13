@@ -4,7 +4,6 @@
 import { useState, useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import { sendChatCompletion, buildScriptUserPrompt } from "../utils/aiClient";
-import { splitParagraphs } from "../utils/chapterSplit";
 import { exportToFile } from "../utils/fileExport";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
@@ -18,20 +17,16 @@ interface ScriptSegment {
 	originalText: string;
 }
 
-type ConvertGranularity = "paragraph" | "chapter";
-
 const DEFAULT_PROMPT = SCRIPT_SYSTEM_PROMPT;
 
 // 内部组件，使用 key 重置状态
 function TaskPanelContent({
 	chapter,
-	totalLines,
 	aiConfig,
 	setScriptResult,
 	getScriptResult,
 }: {
 	chapter: Chapter | undefined;
-	totalLines: number;
 	aiConfig: AIConfig;
 	setScriptResult: (chapterId: number, segments: ScriptSegment[]) => void;
 	getScriptResult: (
@@ -40,18 +35,12 @@ function TaskPanelContent({
 }) {
 	const [prompt, setPrompt] = useState("");
 	const [processing, setProcessing] = useState(false);
-	const [progress, setProgress] = useState({ current: 0, total: 0 });
 	const [result, setResult] = useState<ScriptSegment[]>(() => {
 		if (!chapter) return [];
 		const cached = getScriptResult(chapter.id);
 		return cached?.segments ?? [];
 	});
 	const [error, setError] = useState("");
-
-	// 添加转换粒度选择
-	const [granularity, setGranularity] =
-		useState<ConvertGranularity>("paragraph");
-	const [startLine, setStartLine] = useState<number | null>(null);
 
 	const handleGenerate = useCallback(async () => {
 		if (!chapter) return;
@@ -66,39 +55,13 @@ function TaskPanelContent({
 		setError("");
 		setResult([]);
 
-		let paragraphs: string[];
-		let totalCount: number;
-		let allParagraphs: string[];
-		let paraNum: number;
+		const chapterText = chapter.content.trim();
 
-		// 根据粒度选择处理文本
-		switch (granularity) {
-			case "chapter":
-				paragraphs = [chapter.content.trim()];
-				totalCount = 1;
-				break;
-			default: // paragraph
-				allParagraphs = splitParagraphs(chapter.content).filter(
-					(p) => p.trim().length > 0,
-				);
-				if (startLine !== null && startLine < allParagraphs.length) {
-					paragraphs = allParagraphs.slice(startLine);
-				} else {
-					paragraphs = allParagraphs;
-				}
-				totalCount = paragraphs.length;
-				break;
-		}
-
-		if (paragraphs.length === 0) {
-			setError("当前选择范围内没有可转换的内容");
+		if (!chapterText) {
+			setError("当前章节没有可转换的内容");
 			setProcessing(false);
 			return;
 		}
-
-		setProgress({ current: 0, total: totalCount });
-
-		const segments: ScriptSegment[] = [];
 
 		try {
 			const scriptAiConfig = {
@@ -110,41 +73,21 @@ function TaskPanelContent({
 				enableLogging: aiConfig.enableLogging,
 			};
 
-			for (let i = 0; i < paragraphs.length; i++) {
-				setProgress({ current: i + 1, total: totalCount });
+			const messages: ChatMessage[] = [
+				{ role: "system", content: effectivePrompt },
+				{ role: "user", content: buildScriptUserPrompt(chapterText) },
+			];
 
-				const systemPrompt = effectivePrompt;
-				const paragraphText = paragraphs[i];
+			const segmentContent = await sendChatCompletion(
+				messages,
+				scriptAiConfig,
+			);
 
-				if (!paragraphText || paragraphText.trim().length === 0) {
-					continue;
-				}
-
-				const messages: ChatMessage[] = [
-					{ role: "system", content: systemPrompt },
-					{ role: "user", content: buildScriptUserPrompt(paragraphText) },
-				];
-
-				const segmentContent = await sendChatCompletion(
-					messages,
-					scriptAiConfig,
-				);
-
-				// 根据粒度设置不同的标题
-				let segmentTitle: string;
-				if (granularity === "chapter") {
-					segmentTitle = chapter.title;
-				} else {
-					paraNum = (startLine ?? 0) + i + 1;
-					segmentTitle = `${chapter.title} - 段落 ${paraNum}`;
-				}
-
-				segments.push({
-					chapterTitle: segmentTitle,
-					content: segmentContent,
-					originalText: paragraphText,
-				});
-			}
+			const segments: ScriptSegment[] = [{
+				chapterTitle: chapter.title,
+				content: segmentContent,
+				originalText: chapterText,
+			}];
 
 			setResult(segments);
 			setScriptResult(chapter.id, segments);
@@ -153,7 +96,7 @@ function TaskPanelContent({
 		} finally {
 			setProcessing(false);
 		}
-	}, [chapter, prompt, aiConfig, granularity, startLine, setScriptResult]);
+	}, [chapter, prompt, aiConfig, setScriptResult]);
 
 	const handleExport = useCallback(async () => {
 		if (result.length === 0) return;
@@ -177,44 +120,6 @@ function TaskPanelContent({
 
 			<div className="task-body">
 				<div className="task-section">
-					<div className="section-label">转换粒度</div>
-					<div className="granularity-options">
-						<button
-							className={`granularity-btn ${granularity === "paragraph" ? "active" : ""}`}
-							onClick={() => setGranularity("paragraph")}
-						>
-							按段落
-						</button>
-						<button
-							className={`granularity-btn ${granularity === "chapter" ? "active" : ""}`}
-							onClick={() => setGranularity("chapter")}
-						>
-							整章
-						</button>
-					</div>
-				</div>
-
-				{granularity === "paragraph" && (
-					<div className="task-section">
-						<div className="section-label">起始位置</div>
-						<div className="start-line-input">
-							<input
-								type="number"
-								min="0"
-								max={totalLines}
-								value={startLine ?? ""}
-								onChange={(e) =>
-									setStartLine(e.target.value ? parseInt(e.target.value) : null)
-								}
-								placeholder="从第 0 行开始"
-								className="config-input"
-							/>
-							<span className="line-hint">共 {totalLines} 行</span>
-						</div>
-					</div>
-				)}
-
-				<div className="task-section">
 					<div className="section-label">自定义提示词（可选）</div>
 					<textarea
 						value={prompt}
@@ -234,12 +139,10 @@ function TaskPanelContent({
 						{processing ? (
 							<>
 								<span className="spinner"></span>
-								<span>
-									转换中... {progress.current}/{progress.total}
-								</span>
+								<span>转换中...</span>
 							</>
 						) : (
-							<><Icons.play size={16} /> 开始转换</>
+							<><Icons.play size={16} /> 按章节转换</>
 						)}
 					</button>
 				</div>
@@ -253,14 +156,13 @@ function TaskPanelContent({
 							<div className="result-content">
 								<div className="result-summary">
 									<span className="summary-count">
-										共 {result.length} 段内容
+										章节转换完成
 									</span>
 								</div>
 								{result.map((seg, i) => (
 									<div key={i} className="result-segment">
 										<div className="segment-header">
-											<span className="segment-index"><Icons.grammar size={12} /> 段落 {i + 1}</span>
-											<span className="segment-title">{seg.chapterTitle}</span>
+											<span className="segment-index"><Icons.grammar size={12} /> {seg.chapterTitle}</span>
 										</div>
 										<div className="segment-content">{seg.content}</div>
 									</div>
@@ -276,7 +178,7 @@ function TaskPanelContent({
 					) : (
 						<EmptyState
 							icon="📄"
-							message="点击「开始转换」按钮，将当前章节内容转换为剧本格式"
+							message="点击「按章节转换」按钮，将当前章节内容转换为剧本格式"
 						/>
 					)}
 				</div>
@@ -294,7 +196,6 @@ export function TaskPanel() {
 	const getScriptResult = useAppStore((s) => s.getScriptResult);
 
 	const chapter = chapters[currentChapterIndex];
-	const totalLines = chapter ? chapter.content.split("\n").length : 0;
 
 	if (!chapter) {
 		return (
@@ -310,7 +211,6 @@ export function TaskPanel() {
 			<TaskPanelContent
 				key={chapter.id}
 				chapter={chapter}
-				totalLines={totalLines}
 				aiConfig={aiConfig}
 				setScriptResult={setScriptResult}
 				getScriptResult={getScriptResult}

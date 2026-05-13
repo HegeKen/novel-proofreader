@@ -12,6 +12,7 @@ import { TTSPlayer, type TTSSentence } from "../utils/ttsService";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
+import { logger } from "../utils/logger";
 
 export function ReaderPanel({
 	showReadingModeToggle = false,
@@ -152,12 +153,14 @@ export function ReaderPanel({
 	/** TTS 控制 */
 	const handleTTSToggle = useCallback(() => {
 		if (ttsPlaying) {
+			logger.tts("暂停播放");
 			if (ttsPlayerRef.current) {
 				ttsPlayerRef.current.pause();
 				setTtsPlaying(false);
 				setTtsHighlightedPara(-1);
 			}
 		} else {
+			logger.tts("开始播放, 段落数: " + paragraphs.length);
 			if (!ttsPlayerRef.current) {
 				ttsPlayerRef.current = new TTSPlayer(ttsConfig);
 				ttsPlayerRef.current.setOnUpdate((sentences) => {
@@ -168,6 +171,7 @@ export function ReaderPanel({
 					}
 				});
 				ttsPlayerRef.current.setOnComplete(() => {
+					logger.tts("播放完成");
 					setTtsPlaying(false);
 					setTtsHighlightedPara(-1);
 				});
@@ -305,16 +309,19 @@ export function ReaderPanel({
 			setSearchResults([]);
 			return;
 		}
+		logger.search(`搜索: "${query}"`);
 		const results: typeof searchResults = [];
 		const lowerQuery = query.toLowerCase();
-		paragraphs.forEach((para, paraIndex) => {
+		paragraphs.forEach((para, filteredIndex) => {
+			// 获取原始段落索引（用于行号显示和滚动定位）
+			const originalIndex = paragraphIndexMap[filteredIndex];
 			let startIndex = 0;
 			const lowerPara = para.toLowerCase();
 			while (startIndex < lowerPara.length) {
 				const matchIndex = lowerPara.indexOf(lowerQuery, startIndex);
 				if (matchIndex === -1) break;
 				results.push({
-					paraIndex,
+					paraIndex: originalIndex,
 					matchStart: matchIndex,
 					matchEnd: matchIndex + query.length,
 					text: para.slice(Math.max(0, matchIndex - 20), matchIndex) + "【" + para.slice(matchIndex, matchIndex + query.length) + "】" + para.slice(matchIndex + query.length, Math.min(para.length, matchIndex + query.length + 20)),
@@ -324,7 +331,8 @@ export function ReaderPanel({
 		});
 		setSearchResults(results);
 		setCurrentMatchIndex(results.length > 0 ? 0 : -1);
-	}, [paragraphs]);
+		logger.search(`搜索完成, 找到 ${results.length} 个匹配`);
+	}, [paragraphs, paragraphIndexMap]);
 
 	/** 点击搜索结果：跳转并关闭 */
 	const handleSearchResultClick = useCallback((index: number) => {
@@ -471,6 +479,13 @@ export function ReaderPanel({
 						</label>
 					</div>
 				)}
+				<button
+					className="reader-search-btn"
+					onClick={() => setShowSearch(true)}
+				>
+					<Icons.search size={18} />
+					<span>搜索</span>
+				</button>
 			</div>
 			<div
 				className={`reader-content${readingMode ? " reading-mode" : ""}`}
@@ -1011,15 +1026,6 @@ export function ReaderPanel({
 
 					{/* 悬浮操作按钮 */}
 			<div className="reader-floating-actions">
-				{!readingMode && (
-					<button
-						className="reader-search-btn"
-						onClick={() => setShowSearch(true)}
-					>
-						<Icons.search size={18} />
-						<span>搜索</span>
-					</button>
-				)}
 				{readingMode && ttsPlaying && (
 					<button
 						className="reader-tts-btn playing"

@@ -237,7 +237,7 @@ export default function App() {
 					<h1 className="app-title">
 						<a href="/" onClick={handleTitleClick} style={{ textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: "8px" }}>
 							<img src="/icons/icon.png" alt="" className="app-icon" />
-							校对助手
+							AI排版校对助手
 						</a>
 					</h1>
 				</div>
