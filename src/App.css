@@ -668,7 +668,7 @@ select {
    Chapter Nav - Liquid Glass
    ============================================================ */
 .app-sidebar {
-	width: 220px;
+	min-width: 220px;
 	background: var(--glass-bg);
 	border-right: 1px solid var(--border);
 	backdrop-filter: blur(var(--glass-blur));
@@ -690,8 +690,9 @@ select {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 18px 18px 14px;
+	padding: 16px 20px 12px;
 	flex-shrink: 0;
+	gap: 16px;
 }
 
 .nav-header h3 {
@@ -705,7 +706,7 @@ select {
 .nav-header-actions {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: 12px;
 }
 
 .chapter-count {
