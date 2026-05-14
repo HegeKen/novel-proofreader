@@ -1,6 +1,5 @@
 import { useState, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
-import { useProofreadStore } from "../stores/proofreadStore";
 import { Icons } from "./Icons";
 
 interface IgnoredWordsManagerProps {
@@ -10,9 +9,9 @@ interface IgnoredWordsManagerProps {
 export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 	const currentNovelId = useAppStore((s) => s.currentNovelId);
 	const novels = useAppStore((s) => s.novels);
-	const addIgnoredWord = useProofreadStore((s) => s.addIgnoredWord);
-	const removeIgnoredWord = useProofreadStore((s) => s.removeIgnoredWord);
-	const ignoredWordsMap = useProofreadStore((s) => s.ignoredWords);
+	const addIgnoredWord = useAppStore((s) => s.addIgnoredWord);
+	const removeIgnoredWord = useAppStore((s) => s.removeIgnoredWord);
+	const ignoredWordsMap = useAppStore((s) => s.ignoredWords);
 
 	const [newWord, setNewWord] = useState("");
 	const inputRef = useRef<HTMLInputElement>(null);

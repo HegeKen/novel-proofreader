@@ -12,6 +12,7 @@ import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { IgnoredWordsManager } from "./IgnoredWordsManager";
 import { ToastContainer } from "./Toast";
+import { ProofreadQueuePanel } from "./ProofreadQueuePanel";
 import type { ToastMessage } from "./Toast";
 import type { CheckGranularity, ProofreadError } from "../types";
 
@@ -62,6 +63,7 @@ export function ProofreadPanel() {
 		null,
 	);
 	const [showIgnoredWordsModal, setShowIgnoredWordsModal] = useState(false);
+	const [showQueuePanel, setShowQueuePanel] = useState(false);
 	const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
 	// 动画互斥：防止快速连续点击"采纳"
 	const animatingRef = useRef(false);
@@ -319,6 +321,7 @@ export function ProofreadPanel() {
 			setApplyAnimation,
 			setHighlightedParagraph,
 			addToast,
+			updateErrorIndices,
 		],
 	);
 
@@ -495,6 +498,13 @@ export function ProofreadPanel() {
 						</span>
 					)}
 					<button
+						className="btn-queue"
+						onClick={() => setShowQueuePanel(!showQueuePanel)}
+						title="批量校对队列"
+					>
+						<Icons.listTodo size={16} />
+					</button>
+					<button
 						className="btn-ignored-words"
 						onClick={() => setShowIgnoredWordsModal(true)}
 						title="管理忽略单词"
@@ -516,6 +526,27 @@ export function ProofreadPanel() {
 			{/* 忽略单词管理弹窗 */}
 			{showIgnoredWordsModal && (
 				<IgnoredWordsManager onClose={() => setShowIgnoredWordsModal(false)} />
+			)}
+
+			{/* 批量校对队列面板 */}
+			{showQueuePanel && (
+				<div className="queue-panel-overlay" onClick={() => setShowQueuePanel(false)}>
+					<div className="queue-panel" onClick={(e) => e.stopPropagation()}>
+						<div className="config-header">
+							<div className="config-title">
+								<Icons.listTodo size={18} />
+								<span>批量校对队列</span>
+							</div>
+							<button
+								className="config-close"
+								onClick={() => setShowQueuePanel(false)}
+							>
+								<Icons.x size={18} />
+							</button>
+						</div>
+						<ProofreadQueuePanel />
+					</div>
+				</div>
 			)}
 
 			<div className="proofread-content" ref={proofreadContentRef}>

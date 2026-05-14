@@ -19,6 +19,7 @@ export function ReaderPanel({
 }: { showReadingModeToggle?: boolean } = {}) {
 	const chapters = useAppStore((s) => s.chapters);
 	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
+	const currentNovelId = useAppStore((s) => s.currentNovelId);
 	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
 	const fontSize = useAppStore((s) => s.fontSize);
 	const setFontSize = useAppStore((s) => s.setFontSize);
@@ -115,12 +116,68 @@ export function ReaderPanel({
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
 	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
 
+	// 阅读进度状态
+	const [currentParagraphIndex, setCurrentParagraphIndex] = useState(0);
+	const [readingTimeElapsed, setReadingTimeElapsed] = useState(0);
+	const [showReadingReminder, setShowReadingReminder] = useState(false);
+	const readingStartTimeRef = useRef<number>(0);
+	const readingTimerRef = useRef<number | null>(null);
+
+	// 初始化阅读开始时间
+	useEffect(() => {
+		readingStartTimeRef.current = Date.now();
+	}, []);
+
+	const saveReadingProgress = useAppStore((s) => s.saveReadingProgress);
+	const readingReminderEnabled = useAppStore((s) => s.readingReminderEnabled);
+	const readingReminderMinutes = useAppStore((s) => s.readingReminderMinutes);
+
 	const chapter = chapters[currentChapterIndex];
 	const paragraphs = useMemo(() => {
 		return chapter
 			? splitParagraphs(chapter.content).filter((p) => p.trim() !== "")
 			: [];
 	}, [chapter]);
+
+	// 计算全书总段落数
+	const totalParagraphs = useMemo(() => {
+		return chapters.reduce((acc, ch) => {
+			if (!ch) return acc;
+			return acc + splitParagraphs(ch.content).filter((p) => p.trim() !== "").length;
+		}, 0);
+	}, [chapters]);
+
+	// 计算当前阅读位置（全书范围）
+	const currentGlobalPosition = useMemo(() => {
+		let pos = currentParagraphIndex;
+		for (let i = 0; i < currentChapterIndex; i++) {
+			const chapter = chapters[i];
+			if (chapter) {
+				pos += splitParagraphs(chapter.content).filter((p) => p.trim() !== "").length;
+			}
+		}
+		return pos;
+	}, [currentChapterIndex, currentParagraphIndex, chapters]);
+
+	// 当前章节段落数
+	const currentChapterParagraphs = useMemo(() => {
+		if (!chapter) return 0;
+		return splitParagraphs(chapter.content).filter((p) => p.trim() !== "").length;
+	}, [chapter]);
+
+	// 当前章节阅读进度百分比
+	const readingProgressPercent = useMemo(() => {
+		if (currentChapterParagraphs === 0) return 0;
+		return Math.round((currentParagraphIndex / currentChapterParagraphs) * 100);
+	}, [currentParagraphIndex, currentChapterParagraphs]);
+
+	// 预计剩余时间（分钟）
+	const estimatedRemainingMinutes = useMemo(() => {
+		if (readingTimeElapsed === 0 || currentGlobalPosition === 0) return 0;
+		const paragraphsPerSecond = currentGlobalPosition / (readingTimeElapsed / 1000);
+		const remainingParagraphs = totalParagraphs - currentGlobalPosition;
+		return Math.round((remainingParagraphs / paragraphsPerSecond) / 60);
+	}, [readingTimeElapsed, currentGlobalPosition, totalParagraphs]);
 
 	// 建立过滤后索引到原始索引的映射
 	const paragraphIndexMap = useMemo(() => {
@@ -241,6 +298,33 @@ export function ReaderPanel({
 			ta.style.height = ta.scrollHeight + "px";
 		}
 	}, [editingIndex]);
+
+	// 阅读计时器
+	useEffect(() => {
+		if (readingMode) {
+			readingStartTimeRef.current = Date.now();
+			readingTimerRef.current = window.setInterval(() => {
+				setReadingTimeElapsed((prev) => {
+					const newElapsed = prev + 1000;
+					// 检查阅读时长提醒
+					if (readingReminderEnabled) {
+						const minutesElapsed = Math.floor(newElapsed / 60000);
+						if (minutesElapsed > 0 && minutesElapsed % readingReminderMinutes === 0) {
+							setShowReadingReminder(true);
+						}
+					}
+					return newElapsed;
+				});
+			}, 1000);
+		}
+
+		return () => {
+			if (readingTimerRef.current) {
+				clearInterval(readingTimerRef.current);
+				readingTimerRef.current = null;
+			}
+		};
+	}, [readingMode, readingReminderEnabled, readingReminderMinutes]);
 
 	/** textarea 内容变化时自动撑高 */
 	const handleTextareaInput = useCallback(
@@ -381,6 +465,52 @@ export function ReaderPanel({
 		container.scrollTop = 0;
 		paragraphRefs.current = [];
 	}, [currentChapterIndex]);
+
+	// 阅读模式下，监听滚动自动更新阅读进度
+	useEffect(() => {
+		if (!readingMode) return;
+
+		const container = containerRef.current;
+		if (!container) return;
+
+		// 创建 Intersection Observer，检测进入视口的段落
+		const observer = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (entry.isIntersecting) {
+						const paragraphEl = entry.target as HTMLElement;
+						// 获取段落索引（从元素的 data 属性）
+						const originalIndex = parseInt(paragraphEl.getAttribute('data-original-index') || '-1');
+						if (originalIndex >= 0) {
+							// 找到对应的过滤后索引
+							const filteredIndex = paragraphIndexMap.indexOf(originalIndex);
+							if (filteredIndex >= 0) {
+								setCurrentParagraphIndex(filteredIndex);
+							}
+						}
+					}
+				}
+			},
+			{
+				root: container,
+				rootMargin: '0px 0px -50% 0px',
+				threshold: 0.3,
+			}
+		);
+
+		// 等待 DOM 更新后再观察段落
+		const observerTimer = setTimeout(() => {
+			const paragraphEls = container.querySelectorAll('.reader-paragraph');
+			paragraphEls.forEach((el) => {
+				observer.observe(el);
+			});
+		}, 100);
+
+		return () => {
+			clearTimeout(observerTimer);
+			observer.disconnect();
+		};
+	}, [readingMode, currentChapterIndex, paragraphIndexMap]);
 
 	// 滑动翻页功能
 	const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -669,6 +799,7 @@ export function ReaderPanel({
 					return (
 						<div
 							key={originalIndex}
+							data-original-index={originalIndex}
 							ref={(el) => {
 								paragraphRefs.current[originalIndex] = el;
 							}}
@@ -682,6 +813,11 @@ export function ReaderPanel({
 									} else {
 										setHighlightedParagraph(originalIndex);
 									}
+								}
+								// 更新阅读进度
+								setCurrentParagraphIndex(filteredIndex);
+								if (currentNovelId) {
+									saveReadingProgress(currentNovelId, currentChapterIndex, filteredIndex);
 								}
 							}}
 							onDoubleClick={() => {
@@ -1026,6 +1162,21 @@ export function ReaderPanel({
 
 					{/* 悬浮操作按钮 */}
 			<div className="reader-floating-actions">
+				{readingMode && (
+					<div className="reading-progress">
+						<div className="progress-info">
+							<span className="progress-label">阅读进度</span>
+							<span className="progress-value">{readingProgressPercent}%</span>
+						</div>
+						<div className="progress-bar">
+							<div className="progress-fill" style={{ width: `${readingProgressPercent}%` }}></div>
+						</div>
+						<div className="time-info">
+							<span className="time-label">预计剩余</span>
+							<span className="time-value">{estimatedRemainingMinutes > 0 ? `${estimatedRemainingMinutes} 分钟` : '--'}</span>
+						</div>
+					</div>
+				)}
 				{readingMode && ttsPlaying && (
 					<button
 						className="reader-tts-btn playing"
@@ -1089,13 +1240,16 @@ export function ReaderPanel({
 								}}
 							/>
 							<div className="chapter-list-modal">
-								<div className="chapter-list-header">
-									<span>目录</span>
+								<div className="config-header">
+									<div className="config-title">
+										<Icons.list size={18} />
+										<span>目录</span>
+									</div>
 									<button
-										className="chapter-list-close"
+										className="config-close"
 										onClick={() => setShowChapterList(false)}
 									>
-										✕
+										<Icons.x size={18} />
 									</button>
 								</div>
 								<div className="chapter-list-content">
@@ -1123,16 +1277,15 @@ export function ReaderPanel({
 
 			{/* 搜索弹窗 */}
 			{showSearch && (
-				<>
-					<div className="chapter-list-overlay" onClick={closeSearch} />
-					<div className="search-modal">
-						<div className="search-header">
-							<div className="search-title-row">
-								<Icons.search size={16} />
+				<div className="chapter-list-overlay" onClick={closeSearch}>
+					<div className="config-modal" onClick={(e) => e.stopPropagation()}>
+						<div className="config-header">
+							<div className="config-title">
+								<Icons.search size={18} />
 								<span>搜索</span>
 							</div>
-							<button className="search-close" onClick={closeSearch}>
-								<Icons.close size={16} />
+							<button className="config-close" onClick={closeSearch}>
+								<Icons.x size={18} />
 							</button>
 						</div>
 						<div className="search-input-row">
@@ -1190,6 +1343,33 @@ export function ReaderPanel({
 									{result.text}
 								</div>
 							))}
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* 阅读时长提醒弹窗 */}
+			{showReadingReminder && (
+				<>
+					<div className="chapter-list-overlay" onClick={() => setShowReadingReminder(false)} />
+					<div className="reading-reminder-modal">
+						<div className="reading-reminder-icon">
+							<Icons.eye size={48} />
+						</div>
+						<div className="reading-reminder-title">温馨提醒</div>
+						<div className="reading-reminder-message">
+							您已阅读 {Math.floor(readingTimeElapsed / 60000)} 分钟，请注意休息，保护眼睛！
+						</div>
+						<div className="reading-reminder-actions">
+							<button className="reading-reminder-btn primary" onClick={() => setShowReadingReminder(false)}>
+								继续阅读
+							</button>
+							<button className="reading-reminder-btn secondary" onClick={() => {
+								setShowReadingReminder(false);
+								setReadingMode(false);
+							}}>
+								退出阅读模式
+							</button>
 						</div>
 					</div>
 				</>

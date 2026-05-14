@@ -8,10 +8,11 @@ import { ReaderPanel } from "./components/ReaderPanel";
 import { ProofreadPanel } from "./components/ProofreadPanel";
 import { TaskPanel } from "./components/TaskPanel";
 import { ConfigModal } from "./components/ConfigModal";
+import { GlobalSearch } from "./components/GlobalSearch";
 import { useAppStore } from "./stores/appStore";
 import { splitChapters } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
-import { exportToFile, loadNovelsFromStorage, saveNovelToStorage, ensureTxtFilename } from "./utils/fileExport";
+import { exportToFile, loadNovelsFromStorage, saveNovelToStorage, ensureTxtFilename, exportAllData } from "./utils/fileExport";
 import { parseURLParams, updateURLParams } from "./utils/urlParams";
 import { Icons } from "./components/Icons";
 
@@ -221,6 +222,25 @@ export default function App() {
 		console.log(`缓存已保存！\n保存时间：${timeStr}`);
 	};
 
+	/** 导出所有数据 */
+	const handleExportAllData = async () => {
+		const state = useAppStore.getState();
+		await exportAllData({
+			novels: state.novels,
+			aiConfig: {
+				...state.aiConfig,
+				apiKey: "[REDACTED]", // 不导出敏感信息
+			},
+			apiUsage: state.apiUsage,
+			novelCategories: state.novelCategories,
+			readingProgress: state.readingProgress,
+			proofreadProgress: state.proofreadProgress,
+			ignoredWords: state.ignoredWords,
+			exportTime: Date.now(),
+			version: "0.9.0",
+		});
+	};
+
 	// 移动端标签切换
 	const handleMobileTabChange = (tab: MobileTab) => {
 		setMobileTab(tab);
@@ -277,6 +297,14 @@ export default function App() {
 									</span>
 								)}
 							</button>
+							<button
+								className="btn-export-all"
+								onClick={handleExportAllData}
+								title="导出所有设置和校对结果"
+							>
+								<Icons.downloadCloud size={16} />
+								导出全部数据
+							</button>
 						</>
 					)}
 				</div>
@@ -316,6 +344,7 @@ export default function App() {
 						{theme === "dark" ? <Icons.sun size={18} /> : <Icons.moon size={18} />}
 						{!isMobile && (theme === "dark" ? "切换到亮色" : "切换到深色")}
 					</button>
+					<GlobalSearch />
 					<button className="btn-settings" onClick={() => setConfigOpen(true)}>
 						<Icons.bolt size={18} />
 						{!isMobile && "设置"}

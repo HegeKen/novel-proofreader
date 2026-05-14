@@ -45,6 +45,18 @@ const PROVIDERS: {
 		color: "#0ea561",
 	},
 	{
+		value: "ollama",
+		label: "Ollama",
+		logo: "https://ollama.com/public/ollama.png",
+		color: "#0ea561",
+	},
+	{
+		value: "vllm",
+		label: "VLLM",
+		logo: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%236b7280" stroke-width="2"%3E%3Cpath d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/%3E%3C/svg%3E',
+		color: "#0ea561",
+	},
+	{
 		value: "custom",
 		label: "自定义",
 		logo: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="%236b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"%3E%3Cpath d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"%3E%3C/path%3E%3Ccircle cx="12" cy="12" r="3"%3E%3C/circle%3E%3C/svg%3E',
@@ -61,6 +73,8 @@ const PRESETS: Record<AIProvider, { baseUrl: string; model: string }> = {
 	},
 	mimo: { baseUrl: "https://api.xiaomimimo.com/v1", model: "mimo-v2-flash" },
 	lmstudio: { baseUrl: "http://localhost:1234/v1", model: "" },
+	ollama: { baseUrl: "http://localhost:11434/v1", model: "llama3.1" },
+	vllm: { baseUrl: "http://localhost:8000/v1", model: "" },
 	custom: { baseUrl: "", model: "" },
 };
 
@@ -85,8 +99,180 @@ const detectProvider = (url: string): AIProvider => {
 	if (url.includes("xiaomimimo")) return "mimo";
 	if (url.includes("localhost:1234") || url.includes("127.0.0.1:1234"))
 		return "lmstudio";
+	if (url.includes("localhost:11434") || url.includes("127.0.0.1:11434"))
+		return "ollama";
+	if (url.includes("localhost:8000") || url.includes("127.0.0.1:8000"))
+		return "vllm";
 	return "custom";
 };
+
+// API 使用统计组件
+function APIUsageSection() {
+	const apiUsage = useAppStore((s) => s.apiUsage);
+	const resetAPIUsage = useAppStore((s) => s.resetAPIUsage);
+
+	const successRate = apiUsage.totalRequests > 0
+		? Math.round((apiUsage.successfulRequests / apiUsage.totalRequests) * 100)
+		: 0;
+
+	const errorRate = apiUsage.totalRequests > 0
+		? Math.round((apiUsage.failedRequests / apiUsage.totalRequests) * 100)
+		: 0;
+
+	return (
+		<div className="config-section">
+			<div className="section-label">
+				<Icons.barChart3 size={14} />
+				API 使用统计
+			</div>
+
+			<div className="usage-stats">
+				<div className="usage-stat-card total">
+					<div className="usage-stat-header">
+						<div className="usage-stat-icon">
+							<Icons.barChart3 size={16} />
+						</div>
+					</div>
+					<div className="usage-stat-value">{apiUsage.totalRequests}</div>
+					<div className="usage-stat-label">总请求数</div>
+				</div>
+
+				<div className="usage-stat-card success">
+					<div className="usage-stat-header">
+						<div className="usage-stat-icon">
+							<Icons.checkCircle size={16} />
+						</div>
+					</div>
+					<div className="usage-stat-value">{apiUsage.successfulRequests}</div>
+					<div className="usage-stat-label">成功请求</div>
+				</div>
+
+				<div className="usage-stat-card failed">
+					<div className="usage-stat-header">
+						<div className="usage-stat-icon">
+							<Icons.alertCircle size={16} />
+						</div>
+					</div>
+					<div className="usage-stat-value">{apiUsage.failedRequests}</div>
+					<div className="usage-stat-label">失败请求</div>
+				</div>
+
+				<div className="usage-stat-card rate">
+					<div className="usage-stat-header">
+						<div className="usage-stat-icon">
+							<Icons.loader2 size={16} />
+						</div>
+					</div>
+					<div className="usage-stat-value">{successRate}%</div>
+					<div className="usage-stat-label">成功率</div>
+				</div>
+			</div>
+
+			<div className="usage-progress">
+				<div className="usage-progress-header">
+					<span className="usage-progress-label">成功率</span>
+					<span className="usage-progress-value">{successRate}%</span>
+				</div>
+				<div className="usage-progress-bar">
+					<div
+						className="usage-progress-fill success"
+						style={{ width: `${successRate}%` }}
+					/>
+				</div>
+			</div>
+
+			<div className="usage-progress">
+				<div className="usage-progress-header">
+					<span className="usage-progress-label">失败率</span>
+					<span className="usage-progress-value">{errorRate}%</span>
+				</div>
+				<div className="usage-progress-bar">
+					<div
+						className="usage-progress-fill error"
+						style={{ width: `${errorRate}%` }}
+					/>
+				</div>
+			</div>
+
+			{Object.keys(apiUsage.providerStats).length > 0 && (
+				<div className="provider-stats">
+					<div className="provider-stats-header">
+						<Icons.cache size={12} />
+						按提供商统计
+					</div>
+					{Object.entries(apiUsage.providerStats).map(([provider, stats], index) => (
+						<div key={provider} className="provider-stat-item">
+							<div className="provider-stat-info">
+								<div className="provider-stat-icon">
+									{index + 1}
+								</div>
+								<span className="provider-stat-name">{provider}</span>
+							</div>
+							<div className="provider-stat-details">
+								<span className="provider-stat-requests">{stats.requests} 请求</span>
+								<span className="provider-stat-success">
+									<Icons.check size={12} />
+									{stats.success} 成功
+								</span>
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+
+			<button className="btn-reset-usage" onClick={resetAPIUsage}>
+				<Icons.refresh size={14} />
+				重置统计
+			</button>
+		</div>
+	);
+}
+
+// 阅读设置组件
+function ReadingSettingsSection() {
+	const readingReminderEnabled = useAppStore((s) => s.readingReminderEnabled);
+	const readingReminderMinutes = useAppStore((s) => s.readingReminderMinutes);
+	const setReadingReminderEnabled = useAppStore((s) => s.setReadingReminderEnabled);
+	const setReadingReminderMinutes = useAppStore((s) => s.setReadingReminderMinutes);
+
+	return (
+		<div className="config-section">
+			<div className="section-label">
+				<Icons.book size={14} />
+				阅读设置
+			</div>
+
+			<label className="toggle-label">
+				<div className="toggle-switch">
+					<input
+						type="checkbox"
+						checked={readingReminderEnabled}
+						onChange={(e) => setReadingReminderEnabled(e.target.checked)}
+					/>
+					<span className="toggle-slider"></span>
+				</div>
+				<span className="toggle-text">启用阅读时长提醒</span>
+			</label>
+
+			{readingReminderEnabled && (
+				<div className="form-field">
+					<label>提醒间隔（分钟）</label>
+					<div className="input-wrapper">
+						<input
+							type="number"
+							min="5"
+							max="120"
+							step="5"
+							value={readingReminderMinutes}
+							onChange={(e) => setReadingReminderMinutes(parseInt(e.target.value) || 30)}
+							className="config-input"
+						/>
+					</div>
+				</div>
+			)}
+		</div>
+	);
+}
 
 function TTSConfigSection() {
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
@@ -360,6 +546,10 @@ function ConfigModalContent({
 							<span className="toggle-text">开启调试日志</span>
 						</label>
 					</div>
+
+					<APIUsageSection />
+
+					<ReadingSettingsSection />
 
 					<TTSConfigSection />
 				</div>

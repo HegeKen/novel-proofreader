@@ -237,3 +237,123 @@ export async function readFromAppData(fileName: string): Promise<string | null> 
     return null;
   }
 }
+
+// 导出所有数据为 JSON 文件
+export interface ExportData {
+  novels: Novel[];
+  aiConfig: unknown;
+  apiUsage: unknown;
+  novelCategories: Record<string, string>;
+  readingProgress: Record<string, unknown>;
+  proofreadProgress: Record<string, Record<number, unknown>>;
+  ignoredWords: Record<string, string[]>;
+  exportTime: number;
+  version: string;
+}
+
+// 设置项导出数据
+export interface ExportSettingsData {
+  aiConfig: unknown;
+  apiUsage: unknown;
+  novelCategories: Record<string, string>;
+  ignoredWords: Record<string, string[]>;
+  exportTime: number;
+  version: string;
+}
+
+// 单个小说导出数据
+export interface ExportNovelData {
+  novel: Novel;
+  readingProgress: Record<string, unknown>;
+  proofreadProgress: Record<number, unknown>;
+  exportTime: number;
+  version: string;
+}
+
+function getTimestamp(): string {
+  const timestamp = new Date();
+  return `${timestamp.getFullYear()}${String(timestamp.getMonth() + 1).padStart(2, '0')}${String(timestamp.getDate()).padStart(2, '0')}_${String(timestamp.getHours()).padStart(2, '0')}${String(timestamp.getMinutes()).padStart(2, '0')}${String(timestamp.getSeconds()).padStart(2, '0')}`;
+}
+
+function sanitizeFileName(name: string): string {
+  return name.replace(/[/\\:*?"<>|]/g, '_').substring(0, 50);
+}
+
+// 导出设置项
+async function exportSettings(settingsData: ExportSettingsData): Promise<void> {
+  const content = JSON.stringify(settingsData, null, 2);
+  const timeStr = getTimestamp();
+  const fileName = `settings_${timeStr}.json`;
+
+  if (!isTauri()) {
+    browserDownload(content, fileName);
+    return;
+  }
+
+  try {
+    const filePath = await save({
+      defaultPath: fileName,
+      filters: [{ name: 'JSON 文件', extensions: ['json'] }],
+    });
+
+    if (filePath) {
+      await writeTextFile(filePath, content);
+    }
+  } catch (e) {
+    console.error('Export settings failed:', e);
+    browserDownload(content, fileName);
+  }
+}
+
+// 导出单个小说
+async function exportSingleNovel(novelData: ExportNovelData): Promise<void> {
+  const content = JSON.stringify(novelData, null, 2);
+  const timeStr = getTimestamp();
+  const safeName = sanitizeFileName(novelData.novel.name);
+  const fileName = `novel_${safeName}_${timeStr}.json`;
+
+  if (!isTauri()) {
+    browserDownload(content, fileName);
+    return;
+  }
+
+  try {
+    const filePath = await save({
+      defaultPath: fileName,
+      filters: [{ name: 'JSON 文件', extensions: ['json'] }],
+    });
+
+    if (filePath) {
+      await writeTextFile(filePath, content);
+    }
+  } catch (e) {
+    console.error('Export novel failed:', e);
+    browserDownload(content, fileName);
+  }
+}
+
+// 导出所有数据为多个 JSON 文件（设置项 + 每个小说单独文件）
+export async function exportAllData(data: ExportData): Promise<void> {
+  // 1. 导出设置项
+  const settingsData: ExportSettingsData = {
+    aiConfig: data.aiConfig,
+    apiUsage: data.apiUsage,
+    novelCategories: data.novelCategories,
+    ignoredWords: data.ignoredWords,
+    exportTime: data.exportTime,
+    version: data.version,
+  };
+  await exportSettings(settingsData);
+
+  // 2. 导出每个小说
+  for (const novel of data.novels) {
+    const novelData: ExportNovelData = {
+      novel: novel,
+      readingProgress: data.readingProgress[novel.id] as Record<string, unknown> || {},
+      proofreadProgress: data.proofreadProgress[novel.id] || {},
+      exportTime: data.exportTime,
+      version: data.version,
+    };
+    await exportSingleNovel(novelData);
+  }
+}
