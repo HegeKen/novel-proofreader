@@ -24,11 +24,12 @@ export function useAICheck() {
 	const chapters = useAppStore((s) => s.chapters);
 	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
 	const currentNovelId = useAppStore((s) => s.currentNovelId);
+	const getIgnoredWords = useAppStore((s) => s.getIgnoredWords);
+	const saveProofreadProgress = useAppStore((s) => s.saveProofreadProgress);
 	const setResults = useProofreadStore((s) => s.setResults);
 	const updateParagraphResult = useProofreadStore(
 		(s) => s.updateParagraphResult,
 	);
-	const getIgnoredWords = useProofreadStore((s) => s.getIgnoredWords);
 	const abortRef = useRef<AbortController | null>(null);
 
 	const checkChapter = useCallback(
@@ -426,6 +427,11 @@ export function useAICheck() {
 							errors,
 							status: "done",
 						});
+
+						// 保存校对进度
+						if (currentNovelId) {
+							saveProofreadProgress(currentNovelId, chapter.id, i, false);
+						}
 					} catch (err: unknown) {
 						if (err instanceof DOMException && err.name === "AbortError")
 							return;
@@ -435,6 +441,11 @@ export function useAICheck() {
 							errorMessage: msg,
 						});
 					}
+				}
+
+				// 章节校对完成，标记为完成
+				if (currentNovelId) {
+					saveProofreadProgress(currentNovelId, chapter.id, filteredItems.length, true);
 				}
 			}
 		},
@@ -446,6 +457,7 @@ export function useAICheck() {
 			setResults,
 			updateParagraphResult,
 			getIgnoredWords,
+			saveProofreadProgress,
 		],
 	);
 

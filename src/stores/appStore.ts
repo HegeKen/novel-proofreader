@@ -3,7 +3,7 @@
 // ============================================================
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Novel, Chapter, AIConfig, AIProvider, AppTab } from "../types";
+import type { Novel, Chapter, AIConfig, AIProvider, AppTab, ProofreadQueueItem, ProofreadProgress, APIUsage, NovelCategory } from "../types";
 import { setLoggerEnabled } from "../utils/logger";
 import { saveNovelToStorage } from "../utils/fileExport";
 
@@ -84,6 +84,49 @@ interface AppState {
 	// 手动缓存保存时间戳
 	lastCacheSaveTime: number | null;
 
+	// 忽略单词列表（按小说存储）
+	ignoredWords: Record<string, string[]>;
+
+	// 校对任务队列
+	proofreadQueue: ProofreadQueueItem[];
+	// 当前正在执行的任务ID
+	currentProofreadingTaskId: string | null;
+
+	// 校对进度记录（按小说存储）
+	proofreadProgress: Record<string, Record<number, ProofreadProgress>>;
+
+	// API 使用统计
+	apiUsage: APIUsage;
+
+	// 小说分类（按小说ID存储）
+	novelCategories: Record<string, NovelCategory>;
+
+	// 阅读进度记录（按小说ID存储）
+	readingProgress: Record<string, {
+		currentChapterIndex: number;
+		currentParagraphIndex: number;
+		readingStartTime: number;
+		totalReadingTime: number;
+	}>;
+
+	// 阅读时长提醒设置
+	readingReminderEnabled: boolean;
+	readingReminderMinutes: number;
+
+	// Actions — 阅读进度
+	saveReadingProgress: (novelId: string, chapterIndex: number, paragraphIndex: number) => void;
+	getReadingProgress: (novelId: string) => {
+		currentChapterIndex: number;
+		currentParagraphIndex: number;
+		readingStartTime: number;
+		totalReadingTime: number;
+	} | undefined;
+	updateReadingTime: (novelId: string, elapsedTime: number) => void;
+
+	// Actions — 阅读时长提醒
+	setReadingReminderEnabled: (enabled: boolean) => void;
+	setReadingReminderMinutes: (minutes: number) => void;
+
 	// Actions — 小说管理
 	addNovel: (novel: Novel) => void;
 	removeNovel: (id: string) => void;
@@ -126,6 +169,32 @@ interface AppState {
 	) => void;
 	getScriptResult: (chapterId: number) => ScriptResult | undefined;
 	clearScriptResults: () => void;
+
+	// Actions — 忽略单词
+	addIgnoredWord: (novelId: string, word: string) => void;
+	removeIgnoredWord: (novelId: string, word: string) => void;
+	getIgnoredWords: (novelId: string) => string[];
+	clearIgnoredWords: (novelId: string) => void;
+
+	// Actions — 校对队列
+	addToProofreadQueue: (items: Omit<ProofreadQueueItem, "id" | "status" | "startTime" | "endTime">[]) => void;
+	removeFromProofreadQueue: (itemId: string) => void;
+	updateQueueItemStatus: (itemId: string, status: ProofreadQueueItem["status"], errorMessage?: string) => void;
+	clearProofreadQueue: () => void;
+	setCurrentProofreadingTaskId: (taskId: string | null) => void;
+
+	// Actions — 校对进度
+	saveProofreadProgress: (novelId: string, chapterId: number, lastParagraphIndex: number, completed: boolean) => void;
+	getProofreadProgress: (novelId: string, chapterId: number) => ProofreadProgress | undefined;
+	clearProofreadProgress: (novelId: string, chapterId?: number) => void;
+
+	// Actions — API 使用统计
+	incrementAPIUsage: (provider: string, success: boolean, tokens?: number) => void;
+	resetAPIUsage: () => void;
+
+	// Actions — 小说分类
+	setNovelCategory: (novelId: string, category: NovelCategory) => void;
+	getNovelCategory: (novelId: string) => NovelCategory | undefined;
 
 	// Actions — 其他
 	clearFile: () => void;
@@ -178,6 +247,22 @@ export const useAppStore = create<AppState>()(
 			scriptResults: {},
 			lastCacheSaveTime: null,
 			proofreadStatus: {},
+			ignoredWords: {},
+			proofreadQueue: [],
+			currentProofreadingTaskId: null,
+			proofreadProgress: {},
+			apiUsage: {
+				totalRequests: 0,
+				successfulRequests: 0,
+				failedRequests: 0,
+				totalTokens: 0,
+				lastReset: Date.now(),
+				providerStats: {},
+			},
+			novelCategories: {},
+			readingProgress: {},
+			readingReminderEnabled: true,
+			readingReminderMinutes: 30,
 
 			addNovel: (novel) =>
 				set((state) => {
@@ -227,6 +312,197 @@ export const useAppStore = create<AppState>()(
 			},
 
 			clearScriptResults: () => set({ scriptResults: {} }),
+
+			// 忽略单词操作
+			addIgnoredWord: (novelId, word) =>
+				set((state) => {
+					const currentWords = state.ignoredWords[novelId] ?? [];
+					if (currentWords.includes(word)) {
+						return state;
+					}
+					return {
+						ignoredWords: {
+							...state.ignoredWords,
+							[novelId]: [...currentWords, word],
+						},
+					};
+				}),
+
+			removeIgnoredWord: (novelId, word) =>
+				set((state) => {
+					const currentWords = state.ignoredWords[novelId] ?? [];
+					return {
+						ignoredWords: {
+							...state.ignoredWords,
+							[novelId]: currentWords.filter((w) => w !== word),
+						},
+					};
+				}),
+
+			getIgnoredWords: (novelId) => {
+				return get().ignoredWords[novelId] ?? [];
+			},
+
+			clearIgnoredWords: (novelId) =>
+				set((state) => {
+					const newIgnoredWords = { ...state.ignoredWords };
+					delete newIgnoredWords[novelId];
+					return { ignoredWords: newIgnoredWords };
+				}),
+
+			// 校对队列操作
+			addToProofreadQueue: (items) =>
+				set((state) => {
+					const newItems: ProofreadQueueItem[] = items.map((item) => ({
+						...item,
+						id: `${item.novelId}-${item.chapterId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+						status: "pending",
+					}));
+					return {
+						proofreadQueue: [...state.proofreadQueue, ...newItems],
+					};
+				}),
+
+			removeFromProofreadQueue: (itemId) =>
+				set((state) => ({
+					proofreadQueue: state.proofreadQueue.filter((item) => item.id !== itemId),
+				})),
+
+			updateQueueItemStatus: (itemId, status, errorMessage) =>
+				set((state) => ({
+					proofreadQueue: state.proofreadQueue.map((item) => {
+						if (item.id !== itemId) return item;
+						return {
+							...item,
+							status,
+							errorMessage,
+							startTime: status === "running" ? Date.now() : item.startTime,
+							endTime: status === "done" || status === "error" ? Date.now() : item.endTime,
+						};
+					}),
+				})),
+
+			clearProofreadQueue: () => set({ proofreadQueue: [] }),
+
+			setCurrentProofreadingTaskId: (taskId) => set({ currentProofreadingTaskId: taskId }),
+
+			// 校对进度操作
+			saveProofreadProgress: (novelId, chapterId, lastParagraphIndex, completed) =>
+				set((state) => ({
+					proofreadProgress: {
+						...state.proofreadProgress,
+						[novelId]: {
+							...state.proofreadProgress[novelId],
+							[chapterId]: {
+								novelId,
+								chapterId,
+								lastParagraphIndex,
+								completed,
+								updatedAt: Date.now(),
+							},
+						},
+					},
+				})),
+
+			getProofreadProgress: (novelId, chapterId) => {
+				const state = get();
+				return state.proofreadProgress[novelId]?.[chapterId];
+			},
+
+			clearProofreadProgress: (novelId, chapterId) =>
+				set((state) => {
+					const newProgress = { ...state.proofreadProgress };
+					if (chapterId !== undefined) {
+						if (newProgress[novelId]) {
+							delete newProgress[novelId][chapterId];
+						}
+					} else {
+						delete newProgress[novelId];
+					}
+					return { proofreadProgress: newProgress };
+				}),
+
+			// API 使用统计
+			incrementAPIUsage: (provider, success, tokens = 0) =>
+				set((state) => {
+					const providerStats = { ...state.apiUsage.providerStats };
+					providerStats[provider] = {
+						requests: (providerStats[provider]?.requests || 0) + 1,
+						success: (providerStats[provider]?.success || 0) + (success ? 1 : 0),
+						failure: (providerStats[provider]?.failure || 0) + (success ? 0 : 1),
+						tokens: (providerStats[provider]?.tokens || 0) + tokens,
+					};
+					return {
+						apiUsage: {
+							...state.apiUsage,
+							totalRequests: state.apiUsage.totalRequests + 1,
+							successfulRequests: state.apiUsage.successfulRequests + (success ? 1 : 0),
+							failedRequests: state.apiUsage.failedRequests + (success ? 0 : 1),
+							totalTokens: state.apiUsage.totalTokens + tokens,
+							providerStats,
+						},
+					};
+				}),
+
+			resetAPIUsage: () =>
+				set({
+					apiUsage: {
+						totalRequests: 0,
+						successfulRequests: 0,
+						failedRequests: 0,
+						totalTokens: 0,
+						lastReset: Date.now(),
+						providerStats: {},
+					},
+				}),
+
+			// 小说分类操作
+			setNovelCategory: (novelId, category) =>
+				set((state) => ({
+					novelCategories: {
+						...state.novelCategories,
+						[novelId]: category,
+					},
+				})),
+
+			getNovelCategory: (novelId) => {
+				const state = get();
+				return state.novelCategories[novelId];
+			},
+
+			// 阅读进度操作
+			saveReadingProgress: (novelId, chapterIndex, paragraphIndex) =>
+				set((state) => ({
+					readingProgress: {
+						...state.readingProgress,
+						[novelId]: {
+							...state.readingProgress[novelId],
+							currentChapterIndex: chapterIndex,
+							currentParagraphIndex: paragraphIndex,
+							readingStartTime: Date.now(),
+						},
+					},
+				})),
+
+			getReadingProgress: (novelId) => {
+				const state = get();
+				return state.readingProgress[novelId];
+			},
+
+			updateReadingTime: (novelId, elapsedTime) =>
+				set((state) => ({
+					readingProgress: {
+						...state.readingProgress,
+						[novelId]: {
+							...state.readingProgress[novelId],
+							totalReadingTime: (state.readingProgress[novelId]?.totalReadingTime || 0) + elapsedTime,
+						},
+					},
+				})),
+
+			// 阅读时长提醒设置
+			setReadingReminderEnabled: (enabled) => set({ readingReminderEnabled: enabled }),
+			setReadingReminderMinutes: (minutes) => set({ readingReminderMinutes: minutes }),
 
 			setCurrentChapter: (index) => set({ currentChapterIndex: index }),
 
@@ -538,6 +814,10 @@ export const useAppStore = create<AppState>()(
 				scriptResults: state.scriptResults,
 				nextBookId: state.nextBookId,
 				proofreadStatus: state.proofreadStatus,
+				ignoredWords: state.ignoredWords,
+				proofreadProgress: state.proofreadProgress,
+				apiUsage: state.apiUsage,
+				novelCategories: state.novelCategories,
 			}),
 			onRehydrateStorage: () => (state) => {
 				if (state) {

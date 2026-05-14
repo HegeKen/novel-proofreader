@@ -1,4 +1,41 @@
-# Changelog
+# Proof Reader Changelog
+
+## v0.9.0 (2026-05-14)
+
+### 🐛 Bug 修复
+
+**阅读区搜索按钮搜索弹窗样式修复**
+- 修复 search-modal 与 config-modal 设计不一致的问题
+- 统一了头部、关闭按钮和内容区域等结构和样式
+
+### 🔧 改进优化
+
+**阅读进度组件重新设计**
+- reading-progress 现在显示当前章节的阅读进度百分比
+- 新增进度条可视化，直观展示阅读进度
+- 新增基于当前阅读速度的预计剩余时间显示
+- 阅读进度随页面滚动自动更新（Intersection Observer）
+- 不再依赖段落点击来更新进度
+
+**全局搜索弹窗优化**
+- global-search-modal 现在像 config-modal 一样居中显示
+- 统一了 modal-overlay 结构和样式
+- 优化移动端显示，修复挤压问题
+
+**校对队列面板可视化升级**
+- queue-stats 现在采用类似 usage-stats 的卡片式设计
+- 不同状态使用不同颜色：pending（默认）、running（加载中）、done（成功）、failed（失败）
+- 优化 queue-section 和 queue-actions 的可视化效果
+
+**导出功能优化**
+- ExportData 函数现在导出到单独的文件
+- 设置导出为单个文件
+- 每部小说数据分别导出为单独文件
+- 更便于管理和查看导出数据
+
+**遮罩层样式统一**
+- modal-overlay、global-search-overlay、queue-panel-overlay、chapter-list-overlay 全部统一
+- 使用 React Portal 在 document.body 层级渲染，解决 z-index 和定位问题
 
 ## v0.8.9 (2026-05-13)
 

@@ -43,6 +43,13 @@ import {
 	BookHeadphones,
 	CheckSquare,
 	FileOutput,
+	DownloadCloud,
+	BarChart3,
+	ListTodo,
+	Trash2,
+	Loader2,
+	Circle,
+	AlertTriangle,
 } from "lucide-react";
 
 export const Icons = {
@@ -68,7 +75,9 @@ export const Icons = {
 	eyeOff: EyeOffAlt,
 	refresh: RefreshCw,
 	close: X,
+	x: X,
 	check: CheckCircle,
+	checkCircle: CheckCircle,
 	circleCheckBig: CircleCheckBig,
 	typo: Type,
 	grammar: PenLine,
@@ -76,12 +85,16 @@ export const Icons = {
 	chevronDown: ChevronDown,
 	chevronUp: ChevronUp,
 	download: Download,
+	downloadCloud: DownloadCloud,
 	upload: Upload,
 	reset: RotateCcw,
 	error: AlertCircle,
+	alertCircle: AlertCircle,
+	alertTriangle: AlertTriangle,
 	sparkle: Sparkles,
 	user: User,
 	calendar: Clock,
+	clock: Clock,
 	file: FileIcon,
 	plus: Plus,
 	bolt: Bolt,
@@ -90,6 +103,11 @@ export const Icons = {
 	bookHeadphones: BookHeadphones,
 	checkAll: CheckSquare,
 	fileOutput: FileOutput,
+	barChart3: BarChart3,
+	listTodo: ListTodo,
+	trash2: Trash2,
+	loader2: Loader2,
+	circle: Circle,
 };
 
 export type IconName = keyof typeof Icons;

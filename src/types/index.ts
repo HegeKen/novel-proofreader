@@ -85,4 +85,85 @@ export type AIProvider =
 	| "siliconflow"
 	| "mimo"
 	| "lmstudio"
+	| "ollama"
+	| "vllm"
+	| "custom";
+
+/** 校对任务队列项 */
+export interface ProofreadQueueItem {
+	id: string;
+	chapterId: number;
+	chapterTitle: string;
+	novelId: string;
+	status: "pending" | "running" | "done" | "error";
+	errorMessage?: string;
+	startTime?: number;
+	endTime?: number;
+}
+
+/** 校对进度记录 */
+export interface ProofreadProgress {
+	novelId: string;
+	chapterId: number;
+	lastParagraphIndex: number; // 上次校对到的段落索引
+	completed: boolean; // 是否已完成
+	updatedAt: number;
+}
+
+/** API 使用统计 */
+export interface APIUsage {
+	totalRequests: number;
+	successfulRequests: number;
+	failedRequests: number;
+	totalTokens: number;
+	lastReset: number;
+	providerStats: Record<string, {
+		requests: number;
+		success: number;
+		failure: number;
+		tokens: number;
+	}>;
+}
+
+/** 小说分类类型 */
+export type NovelCategory =
+	| "xuanhuan" // 玄幻
+	| "dushi" // 都市
+	| "kehuan" // 科幻
+	| "wuxia" // 武侠
+	| "xianxia" // 仙侠
+	| "lishi" // 历史
+	| "love" // 言情
+	| "shentan" // 悬疑
+	| "dongman" // 动漫
+	| "qita"; // 其他
+
+/** 小说分类信息 */
+export interface NovelCategoryInfo {
+	id: NovelCategory;
+	name: string;
+	icon: string;
+}
+
+/** 阅读进度记录 */
+export interface ReadingProgress {
+	novelId: string;
+	currentChapterIndex: number;
+	currentParagraphIndex: number;
+	readingStartTime: number;
+	totalReadingTime: number; // 累计阅读时长（毫秒）
+}
+
+/** 阅读背景类型 */
+export type ReadingBackground =
+	| "white"
+	| "cream"
+	| "sepia"
+	| "mint"
+	| "sky"
+	| "lavender"
+	| "peach"
+	| "sage"
+	| "slate"
+	| "dark"
 	| "custom";
