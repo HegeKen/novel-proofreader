@@ -19,6 +19,7 @@ export interface TTSConfig {
 	volume: number;
 	apiKey: string;
 	baseUrl: string;
+	characterVoices: Record<string, string>;
 }
 
 interface ConfigState {
@@ -44,6 +45,7 @@ const DEFAULT_TTS_CONFIG: TTSConfig = {
 	volume: 5,
 	apiKey: "",
 	baseUrl: "https://api.xiaomimimo.com/v1",
+	characterVoices: {},
 };
 
 export const useConfigStore = create<ConfigState>()(
@@ -54,9 +56,9 @@ export const useConfigStore = create<ConfigState>()(
 			setConfig: (config) => set({ config }),
 			updateConfig: (patch) =>
 				set((state) => ({ config: { ...state.config, ...patch } })),
-			setTTSConfig: (config) => set({ ttsConfig: config }),
+			setTTSConfig: (config) => set({ ttsConfig: { ...DEFAULT_TTS_CONFIG, ...config } }),
 			updateTTSConfig: (patch) =>
-				set((state) => ({ ttsConfig: { ...state.ttsConfig, ...patch } })),
+				set((state) => ({ ttsConfig: { ...DEFAULT_TTS_CONFIG, ...state.ttsConfig, ...patch } })),
 		}),
 		{
 			name: "novel-proofreader-ai-config",

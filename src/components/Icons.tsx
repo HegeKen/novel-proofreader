@@ -50,6 +50,8 @@ import {
 	Loader2,
 	Circle,
 	AlertTriangle,
+	Edit,
+	Save as SaveIcon,
 } from "lucide-react";
 
 export const Icons = {
@@ -108,6 +110,8 @@ export const Icons = {
 	trash2: Trash2,
 	loader2: Loader2,
 	circle: Circle,
+	edit: Edit,
+	saveIcon: SaveIcon,
 };
 
 export type IconName = keyof typeof Icons;

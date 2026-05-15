@@ -157,14 +157,14 @@ function APIUsageSection() {
 					<div className="usage-stat-label">失败请求</div>
 				</div>
 
-				<div className="usage-stat-card rate">
+				<div className="usage-stat-card tokens">
 					<div className="usage-stat-header">
 						<div className="usage-stat-icon">
-							<Icons.loader2 size={16} />
+							<Icons.barChart3 size={16} />
 						</div>
 					</div>
-					<div className="usage-stat-value">{successRate}%</div>
-					<div className="usage-stat-label">成功率</div>
+					<div className="usage-stat-value">{apiUsage.totalTokens.toLocaleString()}</div>
+					<div className="usage-stat-label">Token 使用量</div>
 				</div>
 			</div>
 
@@ -279,6 +279,10 @@ function TTSConfigSection() {
 	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
 	const [showApiKey, setShowApiKey] = useState(false);
 
+	const handleSubmit = (e: React.FormEvent) => {
+		e.preventDefault();
+	};
+
 	return (
 		<div className="config-section">
 			<div className="section-label">
@@ -289,25 +293,28 @@ function TTSConfigSection() {
 				使用 Xiaomi MiMo TTS API 将文本转换为语音。
 			</p>
 
-			<div className="form-field">
-				<label>MiMo API Key</label>
-				<div className="input-wrapper">
-					<input
-						type={showApiKey ? "text" : "password"}
-						value={ttsConfig.apiKey}
-						onChange={(e) => updateTTSConfig({ apiKey: e.target.value })}
-						placeholder="输入 MiMo API Key"
-						className="config-input"
-					/>
-					<button
-						className="toggle-visibility-btn"
-						onClick={() => setShowApiKey(!showApiKey)}
-						type="button"
-					>
-						{showApiKey ? <Icons.eyeOff size={16} /> : <Icons.eye size={16} />}
-					</button>
+			<form onSubmit={handleSubmit}>
+				<div className="form-field">
+					<label>MiMo API Key</label>
+					<div className="input-wrapper">
+						<input
+							type={showApiKey ? "text" : "password"}
+							value={ttsConfig.apiKey}
+							onChange={(e) => updateTTSConfig({ apiKey: e.target.value })}
+							placeholder="输入 MiMo API Key"
+							className="config-input"
+							autoComplete="new-password"
+						/>
+						<button
+							className="toggle-visibility-btn"
+							onClick={() => setShowApiKey(!showApiKey)}
+							type="button"
+						>
+							{showApiKey ? <Icons.eyeOff size={16} /> : <Icons.eye size={16} />}
+						</button>
+					</div>
 				</div>
-			</div>
+			</form>
 
 			<div className="form-field">
 				<label>Base URL</label>
@@ -489,27 +496,30 @@ function ConfigModalContent({
 							</div>
 						</div>
 
-						<div className="form-field">
-							<label>API Key</label>
-							<div className="input-wrapper">
-								<input
-									type={showApiKey ? "text" : "password"}
-									value={config.apiKey}
-									onChange={(e) =>
-										setConfig((prev) => ({ ...prev, apiKey: e.target.value }))
-									}
-									placeholder="sk-..."
-									className="config-input"
-								/>
-								<button
-									className="toggle-visibility-btn"
-									onClick={() => setShowApiKey(!showApiKey)}
-									type="button"
-								>
-									{showApiKey ? <Icons.eyeOff size={16} /> : <Icons.eye size={16} />}
-								</button>
+						<form onSubmit={(e) => e.preventDefault()}>
+							<div className="form-field">
+								<label>API Key</label>
+								<div className="input-wrapper">
+									<input
+										type={showApiKey ? "text" : "password"}
+										value={config.apiKey}
+										onChange={(e) =>
+											setConfig((prev) => ({ ...prev, apiKey: e.target.value }))
+										}
+										placeholder="sk-..."
+										className="config-input"
+										autoComplete="new-password"
+									/>
+									<button
+										className="toggle-visibility-btn"
+										onClick={() => setShowApiKey(!showApiKey)}
+										type="button"
+									>
+										{showApiKey ? <Icons.eyeOff size={16} /> : <Icons.eye size={16} />}
+									</button>
+								</div>
 							</div>
-						</div>
+						</form>
 
 						<div className="form-field">
 							<label>模型名称</label>

@@ -154,6 +154,17 @@ export interface ReadingProgress {
 	totalReadingTime: number; // 累计阅读时长（毫秒）
 }
 
+/** 角色信息 */
+export interface CharacterInfo {
+	id: string;
+	name: string;
+	gender: "male" | "female" | "other";
+	notes?: string;
+	voice?: string; // 为该角色指定的音色
+	aliases?: string[]; // 别称列表，如"我"、"主角"等
+	relationTerms?: string[]; // 关系代称列表，如"老婆"、"老公"等
+}
+
 /** 阅读背景类型 */
 export type ReadingBackground =
 	| "white"

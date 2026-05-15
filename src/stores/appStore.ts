@@ -3,7 +3,7 @@
 // ============================================================
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Novel, Chapter, AIConfig, AIProvider, AppTab, ProofreadQueueItem, ProofreadProgress, APIUsage, NovelCategory } from "../types";
+import type { Novel, Chapter, AIConfig, AIProvider, AppTab, ProofreadQueueItem, ProofreadProgress, APIUsage, NovelCategory, CharacterInfo } from "../types";
 import { setLoggerEnabled } from "../utils/logger";
 import { saveNovelToStorage } from "../utils/fileExport";
 
@@ -39,6 +39,7 @@ interface AppState {
 	// UI
 	activeTab: AppTab;
 	configModalOpen: boolean;
+	showCharacterSettings: string | null; // 当前显示角色设置的小说ID
 	fontSize: number;
 	theme: "light" | "dark";
 	readingMode: boolean;
@@ -203,12 +204,22 @@ interface AppState {
 	getApiKeyForProvider: (provider: AIProvider) => string;
 	setActiveTab: (tab: AppTab) => void;
 	setConfigModalOpen: (open: boolean) => void;
+	setShowCharacterSettings: (novelId: string | null) => void;
 	setFontSize: (size: number) => void;
 	setTheme: (theme: "light" | "dark") => void;
 	setReadingMode: (enabled: boolean) => void;
 	setLineSpacing: (spacing: number) => void;
 	setParagraphIndent: (indent: number) => void;
 	toggleProofreadStatus: (chapterId: number) => void;
+
+	// 角色信息（按小说ID存储）
+	novelCharacters: Record<string, CharacterInfo[]>;
+
+	// Actions — 角色管理
+	addCharacter: (novelId: string, character: Omit<CharacterInfo, "id">) => void;
+	updateCharacter: (novelId: string, characterId: string, character: Partial<Omit<CharacterInfo, "id">>) => void;
+	removeCharacter: (novelId: string, characterId: string) => void;
+	getCharacters: (novelId: string) => CharacterInfo[];
 
 	// Actions — 缓存管理
 	saveCache: () => void;
@@ -235,6 +246,7 @@ export const useAppStore = create<AppState>()(
 			apiKeyMap: {},
 			activeTab: "proofread",
 			configModalOpen: false,
+			showCharacterSettings: null,
 			fontSize: 16,
 			theme: "dark",
 			readingMode: false,
@@ -260,6 +272,7 @@ export const useAppStore = create<AppState>()(
 				providerStats: {},
 			},
 			novelCategories: {},
+			novelCharacters: {},
 			readingProgress: {},
 			readingReminderEnabled: true,
 			readingReminderMinutes: 30,
@@ -757,6 +770,8 @@ export const useAppStore = create<AppState>()(
 
 			setConfigModalOpen: (open) => set({ configModalOpen: open }),
 
+			setShowCharacterSettings: (novelId) => set({ showCharacterSettings: novelId }),
+
 			setFontSize: (size) => set({ fontSize: size }),
 
 			setTheme: (theme) => set({ theme }),
@@ -782,6 +797,38 @@ export const useAppStore = create<AppState>()(
 						[chapterId]: !state.proofreadStatus[chapterId],
 					},
 				})),
+
+			// 角色管理
+			addCharacter: (novelId, character) =>
+				set((state) => ({
+					novelCharacters: {
+						...state.novelCharacters,
+						[novelId]: [
+							...(state.novelCharacters[novelId] ?? []),
+							{ ...character, id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` }
+						]
+					}
+				})),
+
+			updateCharacter: (novelId, characterId, character) =>
+				set((state) => ({
+					novelCharacters: {
+						...state.novelCharacters,
+						[novelId]: (state.novelCharacters[novelId] ?? []).map((ch) =>
+							ch.id === characterId ? { ...ch, ...character } : ch
+						)
+					}
+				})),
+
+			removeCharacter: (novelId, characterId) =>
+				set((state) => ({
+					novelCharacters: {
+						...state.novelCharacters,
+						[novelId]: (state.novelCharacters[novelId] ?? []).filter((ch) => ch.id !== characterId)
+					}
+				})),
+
+			getCharacters: (novelId) => get().novelCharacters[novelId] ?? [],
 
 			saveCache: () => {
 				const now = Date.now();
@@ -818,6 +865,7 @@ export const useAppStore = create<AppState>()(
 				proofreadProgress: state.proofreadProgress,
 				apiUsage: state.apiUsage,
 				novelCategories: state.novelCategories,
+				novelCharacters: state.novelCharacters,
 			}),
 			onRehydrateStorage: () => (state) => {
 				if (state) {

@@ -8,6 +8,7 @@ import { ReaderPanel } from "./components/ReaderPanel";
 import { ProofreadPanel } from "./components/ProofreadPanel";
 import { TaskPanel } from "./components/TaskPanel";
 import { ConfigModal } from "./components/ConfigModal";
+import { CharacterSettings } from "./components/CharacterSettings";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { useAppStore } from "./stores/appStore";
 import { splitChapters } from "./utils/chapterSplit";
@@ -33,6 +34,8 @@ export default function App() {
 	const readingMode = useAppStore((s) => s.readingMode);
 	const setReadingMode = useAppStore((s) => s.setReadingMode);
 	const selectNovel = useAppStore((s) => s.selectNovel);
+	const showCharacterSettings = useAppStore((s) => s.showCharacterSettings);
+	const setShowCharacterSettings = useAppStore((s) => s.setShowCharacterSettings);
 	const [configOpen, setConfigOpen] = useState(false);
 	const [rightTab, setRightTab] = useState<RightTab>("proofread");
 	const [mobileTab, setMobileTab] = useState<MobileTab>("reader");
@@ -353,7 +356,7 @@ export default function App() {
 			</header>
 
 			{/* 主体布局 - 响应式 */}
-			<div className="app-body">
+			<div className={`app-body ${isMobile && readingMode ? "app-body-reading-mode" : ""}`}>
 				{/* 最左：小说列表 - 桌面端阅读模式隐藏 */}
 				<aside
 					className={`app-novel-list ${isMobile && mobileTab === "novels" ? "mobile-active" : ""} ${!isMobile && readingMode ? "hidden-panel" : ""}`}
@@ -380,7 +383,7 @@ export default function App() {
 					{isMobile && mobileTab === "reader" && (
 						<div className="mobile-reader-proofread">
 							<div className="mobile-reader-section">
-								<ReaderPanel showReadingModeToggle={true} />
+								<ReaderPanel showReadingModeToggle={true} isMobile={isMobile} />
 							</div>
 							{!readingMode && mobileProofreadVisible && (
 								<div className="mobile-proofread-section">
@@ -412,7 +415,7 @@ export default function App() {
 						</div>
 					)}
 					{/* 桌面端：仅显示阅读区 */}
-					{!isMobile && <ReaderPanel showReadingModeToggle={true} />}
+					{!isMobile && <ReaderPanel showReadingModeToggle={true} isMobile={isMobile} />}
 				</main>
 
 				{/* 右侧：校对 / 任务（桌面端）- 桌面端阅读模式隐藏 */}
@@ -486,6 +489,13 @@ export default function App() {
 
 			{/* 设置弹窗 */}
 			<ConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
+			{/* 角色设置弹窗 */}
+			{showCharacterSettings && (
+				<CharacterSettings
+					novelId={showCharacterSettings}
+					onClose={() => setShowCharacterSettings(null)}
+				/>
+			)}
 		</div>
 	);
 }
