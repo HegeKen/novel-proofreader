@@ -20,6 +20,7 @@ export function NovelList({
 	const removeNovel = useAppStore((s) => s.removeNovel);
 	const selectNovel = useAppStore((s) => s.selectNovel);
 	const setChapters = useAppStore((s) => s.setChapters);
+	const setShowCharacterSettings = useAppStore((s) => s.setShowCharacterSettings);
 	const [contextMenu, setContextMenu] = useState<{
 		x: number;
 		y: number;
@@ -114,27 +115,42 @@ export function NovelList({
 							className={`novel-item ${currentNovelId === novel.id ? "active" : ""}`}
 							onClick={() => handleSelect(novel)}
 						>
-							<div className="novel-item-name">{novel.name}</div>
-							<div className="novel-item-meta">
-								<span className="meta-item">
-									<Icons.file size={12} /> {formatFileSize(novel.fullText)}
-								</span>
-								<span className="meta-item">
-									<Icons.calendar size={12} /> {formatDateTime(novel.importedAt)}
-								</span>
-								{novel.lastCacheSaveTime && (
-									<span className="cache-indicator" title="已保存缓存">
-										<Icons.cache size={12} /> {formatDateTime(novel.lastCacheSaveTime)}
+							<div className="novel-item-content">
+								<div className="novel-item-name">{novel.name}</div>
+								<div className="novel-item-meta">
+									<span className="meta-item">
+										<Icons.file size={12} /> {formatFileSize(novel.fullText)}
 									</span>
-								)}
+									<span className="meta-item">
+										<Icons.calendar size={12} /> {formatDateTime(novel.importedAt)}
+									</span>
+									{novel.lastCacheSaveTime && (
+										<span className="cache-indicator" title="已保存缓存">
+											<Icons.cache size={12} /> {formatDateTime(novel.lastCacheSaveTime)}
+										</span>
+									)}
+								</div>
 							</div>
-							<button
-								className="novel-item-remove"
-								onClick={(e) => handleRemove(e, novel.id)}
-								title="删除"
-							>
-								<Icons.close size={16} />
-							</button>
+							<div className="novel-item-actions">
+								<button
+									className="novel-item-btn novel-item-btn-characters"
+									onClick={(e) => {
+										e.stopPropagation();
+										e.preventDefault();
+										setShowCharacterSettings(novel.id);
+									}}
+									title="角色设置"
+								>
+									<Icons.settings size={16} />
+								</button>
+								<button
+									className="novel-item-btn novel-item-btn-remove"
+									onClick={(e) => handleRemove(e, novel.id)}
+									title="删除"
+								>
+									<Icons.close size={16} />
+								</button>
+							</div>
 						</div>
 					))
 				)}

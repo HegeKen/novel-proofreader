@@ -6,20 +6,25 @@ import { useAppStore } from "../stores/appStore";
 import { useProofreadStore } from "../stores/proofreadStore";
 import { useConfigStore } from "../stores/configStore";
 import { splitParagraphs } from "../utils/chapterSplit";
-import { buildParagraphIndexMap } from "../utils/formatters";
+import { buildParagraphIndexMap, buildOriginalToFilteredMap } from "../utils/formatters";
 
-import { TTSPlayer, type TTSSentence } from "../utils/ttsService";
+import { TTSPlayer, ScriptTTSPlayer, parseScriptContent, type TTSSentence } from "../utils/ttsService";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { logger } from "../utils/logger";
+import { sendChatCompletion, cleanEnhancedScript, type ChatMessage } from "../utils/aiClient";
+import { NOVEL_TTS_ENHANCE_SYSTEM_PROMPT, buildNovelTTSEnhanceUserPrompt } from "../utils/aiClient";
+import type { CharacterInfo } from "../types";
 
 export function ReaderPanel({
 	showReadingModeToggle = false,
-}: { showReadingModeToggle?: boolean } = {}) {
+	isMobile = false,
+}: { showReadingModeToggle?: boolean; isMobile?: boolean } = {}) {
 	const chapters = useAppStore((s) => s.chapters);
 	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
 	const currentNovelId = useAppStore((s) => s.currentNovelId);
+	const getCharacters = useAppStore((s) => s.getCharacters);
 	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
 	const fontSize = useAppStore((s) => s.fontSize);
 	const setFontSize = useAppStore((s) => s.setFontSize);
@@ -115,6 +120,10 @@ export function ReaderPanel({
 	const ttsPlayerRef = useRef<TTSPlayer | null>(null);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
 	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
+	
+	// 整章TTS增强功能
+	const [enhancedTTSPreparing, setEnhancedTTSPreparing] = useState(false);
+	const aiConfig = useAppStore((s) => s.aiConfig);
 
 	// 阅读进度状态
 	const [currentParagraphIndex, setCurrentParagraphIndex] = useState(0);
@@ -184,6 +193,11 @@ export function ReaderPanel({
 		return chapter ? buildParagraphIndexMap(chapter.content) : [];
 	}, [chapter]);
 
+	// 建立原始索引到过滤后索引的反向映射
+	const originalToFilteredMap = useMemo(() => {
+		return chapter ? buildOriginalToFilteredMap(chapter.content) : {};
+	}, [chapter]);
+
 	/** 进入编辑模式 */
 	const startEditing = useCallback((index: number, currentText: string) => {
 		setEditingIndex(index);
@@ -214,7 +228,6 @@ export function ReaderPanel({
 			if (ttsPlayerRef.current) {
 				ttsPlayerRef.current.pause();
 				setTtsPlaying(false);
-				setTtsHighlightedPara(-1);
 			}
 		} else {
 			logger.tts("开始播放, 段落数: " + paragraphs.length);
@@ -232,9 +245,15 @@ export function ReaderPanel({
 					setTtsPlaying(false);
 					setTtsHighlightedPara(-1);
 				});
-			}
-
-			if (ttsPlayerRef.current) {
+				ttsPlayerRef.current.loadText(paragraphs);
+				ttsPlayerRef.current.play();
+				setTtsPlaying(true);
+			} else if (ttsPlayerRef.current.getPaused()) {
+				// 如果是暂停状态，恢复播放
+				ttsPlayerRef.current.resume();
+				setTtsPlaying(true);
+			} else {
+				// 重新开始播放
 				ttsPlayerRef.current.updateConfig(ttsConfig);
 				ttsPlayerRef.current.loadText(paragraphs);
 				ttsPlayerRef.current.play();
@@ -249,6 +268,20 @@ export function ReaderPanel({
 			ttsPlayerRef.current.updateConfig(ttsConfig);
 		}
 	}, [ttsConfig, ttsPlaying]);
+
+	/** TTS 上一条 */
+	const handleTTSPrev = useCallback(() => {
+		if (ttsPlayerRef.current) {
+			ttsPlayerRef.current.skipToPrev();
+		}
+	}, []);
+
+	/** TTS 下一条 */
+	const handleTTSNext = useCallback(() => {
+		if (ttsPlayerRef.current) {
+			ttsPlayerRef.current.skipToNext();
+		}
+	}, []);
 
 	/** TTS 从指定段落开始播放 */
 	const startTTSFromParagraph = useCallback(
@@ -270,7 +303,8 @@ export function ReaderPanel({
 
 			ttsPlayerRef.current.updateConfig(ttsConfig);
 			ttsPlayerRef.current.loadText(paragraphs);
-			const startIndex = ttsPlayerRef.current.findSentenceIndexByParagraph(startParaIndex);
+			const filteredParaIndex = originalToFilteredMap[startParaIndex] ?? 0;
+			const startIndex = ttsPlayerRef.current.findSentenceIndexByParagraph(filteredParaIndex);
 			if (startIndex >= 0) {
 				ttsPlayerRef.current.skipTo(startIndex);
 				ttsPlayerRef.current.play();
@@ -279,8 +313,149 @@ export function ReaderPanel({
 			}
 			setTtsPlaying(true);
 		},
-		[ttsConfig, paragraphs],
+		[ttsConfig, paragraphs, originalToFilteredMap],
 	);
+	
+	/** 根据角色信息获取音色 */
+	const getVoiceForCharacter = useCallback((characterName: string): string => {
+		if (!currentNovelId) return ttsConfig.voice || "冰糖";
+
+		const characters = getCharacters(currentNovelId);
+		let matchedCharacter: CharacterInfo | undefined;
+
+		// 首先尝试精确匹配角色名
+		matchedCharacter = characters.find(
+			(c) => c.name.toLowerCase() === characterName.toLowerCase()
+		);
+
+		// 如果没有匹配到，尝试通过别称匹配（特别是"我"）
+		if (!matchedCharacter) {
+			matchedCharacter = characters.find(
+				(c) => c.aliases?.some(alias => alias.toLowerCase() === characterName.toLowerCase())
+			);
+		}
+
+		// 如果找到匹配的角色且有设置音色，使用该音色
+		if (matchedCharacter?.voice) {
+			return matchedCharacter.voice;
+		}
+
+		// 否则使用默认音色
+		return ttsConfig.voice || "冰糖";
+	}, [currentNovelId, getCharacters, ttsConfig.voice]);
+
+	/** 整章TTS增强播放 */
+	const handleEnhancedChapterTTS = useCallback(async () => {
+		if (!ttsConfig.apiKey) {
+			logger.tts("请先配置TTS API Key");
+			return;
+		}
+		if (!aiConfig.apiKey) {
+			logger.tts("请先配置AI API Key");
+			return;
+		}
+		if (!chapter) return;
+		
+		// 先停止当前播放
+		if (ttsPlayerRef.current && ttsPlaying) {
+			ttsPlayerRef.current.pause();
+			setTtsPlaying(false);
+			setTtsHighlightedPara(-1);
+		}
+		
+		setEnhancedTTSPreparing(true);
+		
+		try {
+			logger.tts("开始AI情感增强处理...");
+			
+			// 先调用AI进行情感增强
+			const enhanceMessages: ChatMessage[] = [
+				{ role: 'system', content: NOVEL_TTS_ENHANCE_SYSTEM_PROMPT },
+				{ role: 'user', content: buildNovelTTSEnhanceUserPrompt(chapter.content) }
+			];
+			
+			const enhancedContent = await sendChatCompletion(enhanceMessages, aiConfig);
+			
+			logger.tts("AI情感增强完成");
+			
+			console.log("=== 增强后的小说内容（原始）===");
+			console.log(enhancedContent);
+			
+			// 清理AI返回的内容
+			const cleanedContent = cleanEnhancedScript(enhancedContent);
+			
+			console.log("=== 清理后的小说内容 ===");
+			console.log(cleanedContent);
+			
+			// 解析剧本内容，获取角色列表
+			const { characters: detectedCharacters } = parseScriptContent(cleanedContent);
+			
+			logger.tts("检测到的角色", { characters: detectedCharacters });
+			
+			// 为每个角色分配音色
+			const characterVoices: Record<string, string> = { ...ttsConfig.characterVoices };
+			for (const char of detectedCharacters) {
+				characterVoices[char] = characterVoices[char] || getVoiceForCharacter(char);
+			}
+			
+			// 更新TTS配置以包含角色音色映射
+			const customTTSConfig = {
+				...ttsConfig,
+				characterVoices,
+			};
+			
+			// 创建 ScriptTTSPlayer 来支持角色音色
+			const scriptTTS = new ScriptTTSPlayer(customTTSConfig);
+			scriptTTS.setOnUpdate(() => {});
+			scriptTTS.setOnComplete(() => {
+				logger.tts("播放完成");
+				setTtsPlaying(false);
+				setTtsHighlightedPara(-1);
+			});
+			
+			scriptTTS.loadScript(cleanedContent);
+			
+			console.log("=== 解析出的对话 ===");
+			console.log(scriptTTS.getDialogues());
+			
+			// 如果解析出的对话为空，使用原始内容作为 fallback
+			if (scriptTTS.getDialogues().length === 0) {
+				logger.warn("AI增强内容为空，使用原始内容");
+				const fallbackParagraphs = splitParagraphs(chapter.content).filter((p) => p.trim() !== "");
+				
+				// 使用普通的 TTSPlayer 播放原始内容
+				if (!ttsPlayerRef.current) {
+					ttsPlayerRef.current = new TTSPlayer(ttsConfig);
+					ttsPlayerRef.current.setOnUpdate((sentences) => {
+						setTtsSentences(sentences);
+						if (ttsPlayerRef.current) {
+							const currentPara = ttsPlayerRef.current.getCurrentParagraphIndex();
+							setTtsHighlightedPara(currentPara);
+						}
+					});
+					ttsPlayerRef.current.setOnComplete(() => {
+						logger.tts("播放完成");
+						setTtsPlaying(false);
+						setTtsHighlightedPara(-1);
+					});
+				}
+				
+				ttsPlayerRef.current.updateConfig(ttsConfig);
+				ttsPlayerRef.current.loadText(fallbackParagraphs);
+				ttsPlayerRef.current.play();
+				setTtsPlaying(true);
+			} else {
+				// 使用 ScriptTTSPlayer 播放增强内容
+				scriptTTS.play();
+				setTtsPlaying(true);
+			}
+			
+		} catch (error) {
+			logger.tts("整章TTS增强播放失败: " + (error as Error).message);
+		} finally {
+			setEnhancedTTSPreparing(false);
+		}
+	}, [chapter, ttsConfig, aiConfig, ttsPlaying, currentNovelId, getCharacters, getVoiceForCharacter]);
 
 	/** textarea 键盘事件：Ctrl+Enter 保存，Escape 取消 */
 	const cancelEditing = useCallback(() => {
@@ -794,7 +969,7 @@ export function ReaderPanel({
 						return null;
 					}
 
-					const isTTSHighlighted = readingMode && ttsHighlightedPara === originalIndex;
+					const isTTSHighlighted = readingMode && ttsHighlightedPara !== -1 && paragraphIndexMap[ttsHighlightedPara] === originalIndex;
 
 					return (
 						<div
@@ -1160,9 +1335,36 @@ export function ReaderPanel({
 						</div>
 					)}
 
-					{/* 悬浮操作按钮 */}
-			<div className="reader-floating-actions">
-				{readingMode && (
+			{/* 移动端播放控制条 - 悬浮在阅读栏上方 */}
+			{isMobile && readingMode && ttsPlaying && (
+				<div className="mobile-tts-playback-controls">
+					<button
+						className="tts-playback-btn"
+						onClick={handleTTSPrev}
+						title="上一条"
+					>
+						<Icons.skipBack size={20} />
+					</button>
+					<button
+						className="tts-playback-btn play-pause"
+						onClick={handleTTSToggle}
+						title="暂停"
+					>
+						<Icons.pause size={24} />
+					</button>
+					<button
+						className="tts-playback-btn"
+						onClick={handleTTSNext}
+						title="下一条"
+					>
+						<Icons.skipForward size={20} />
+					</button>
+				</div>
+			)}
+
+			{/* 移动端阅读栏 - 依附在 mobile-tab-bar 之上 */}
+			{isMobile && readingMode && (
+				<div className="mobile-reader-bar">
 					<div className="reading-progress">
 						<div className="progress-info">
 							<span className="progress-label">阅读进度</span>
@@ -1176,70 +1378,168 @@ export function ReaderPanel({
 							<span className="time-value">{estimatedRemainingMinutes > 0 ? `${estimatedRemainingMinutes} 分钟` : '--'}</span>
 						</div>
 					</div>
-				)}
-				{readingMode && ttsPlaying && (
+					<div className="mobile-reader-bar-actions">
+						<button
+							className={`mobile-reader-bar-btn ${ttsPlaying ? "playing" : ""}`}
+							onClick={handleTTSToggle}
+							title="朗读"
+						>
+							<Icons.bookHeadphones size={18} />
+						</button>
+						<button
+							className={`mobile-reader-bar-btn ${enhancedTTSPreparing ? "preparing" : ""}`}
+							onClick={handleEnhancedChapterTTS}
+							disabled={enhancedTTSPreparing}
+							title="情感朗读"
+						>
+							{enhancedTTSPreparing ? (
+								<span className="spinner"></span>
+							) : (
+								<Icons.volume size={18} />
+							)}
+						</button>
+						<button
+							className={`mobile-reader-bar-btn ${showTTSPanel ? "active" : ""}`}
+							onClick={() => {
+								if (showTTSPanel) {
+									setShowTTSPanel(false);
+								} else {
+									setShowTTSPanel(true);
+									setShowReadingSettings(false);
+								}
+							}}
+						>
+							<Icons.bookAudio size={18} />
+						</button>
+						<button
+							className={`mobile-reader-bar-btn ${showReadingSettings ? "active" : ""}`}
+							onClick={() => {
+								if (showReadingSettings) {
+									setShowReadingSettings(false);
+								} else {
+									setShowReadingSettings(true);
+									setShowTTSPanel(false);
+								}
+							}}
+						>
+							<Icons.lineStyle size={18} />
+						</button>
+					</div>
+				</div>
+			)}
+
+			{/* 桌面端播放控制条 - 悬浮在阅读栏上方 */}
+			{!isMobile && readingMode && ttsPlaying && (
+				<div className="desktop-tts-playback-controls">
 					<button
-						className="reader-tts-btn playing"
+						className="tts-playback-btn"
+						onClick={handleTTSPrev}
+						title="上一条"
+					>
+						<Icons.skipBack size={18} />
+					</button>
+					<button
+						className="tts-playback-btn play-pause"
 						onClick={handleTTSToggle}
+						title="暂停"
 					>
-						<Icons.pause size={18} />
-						<span>暂停播放</span>
+						<Icons.pause size={22} />
 					</button>
-				)}
-				{readingMode && !ttsPlaying && (
 					<button
-						className="reader-tts-btn"
-						onClick={handleTTSToggle}
+						className="tts-playback-btn"
+						onClick={handleTTSNext}
+						title="下一条"
 					>
-						<Icons.bookHeadphones size={18} />
-						<span>开始朗读</span>
+						<Icons.skipForward size={18} />
 					</button>
-				)}
-				{readingMode && (
-					<button
-						className={`reader-settings-btn${showTTSPanel ? " active" : ""}`}
-						onClick={() => {
-							if (showTTSPanel) {
-								setShowTTSPanel(false);
-							} else {
-								setShowTTSPanel(true);
-								setShowReadingSettings(false);
-							}
-						}}
-					>
-						<Icons.bookAudio size={18} />
-						<span>语音设置</span>
-					</button>
-				)}
-				{readingMode && (
-					<button
-						className="reading-settings-toggle"
-						onClick={() => {
-							if (showReadingSettings) {
-								setShowReadingSettings(false);
-							} else {
-								setShowReadingSettings(true);
-								setShowTTSPanel(false);
-							}
-						}}
-					>
-						<Icons.lineStyle size={18} />
-						<span>阅读设置</span>
-					</button>
-				)}
-			</div>
+				</div>
+			)}
+
+			{/* 桌面端阅读栏 - 悬浮在右下角 */}
+			{!isMobile && readingMode && (
+				<div className="desktop-reader-bar">
+					<div className="desktop-reader-bar-actions">
+						<button
+							className={`desktop-reader-bar-btn ${ttsPlaying ? "playing" : ""}`}
+							onClick={handleTTSToggle}
+							title="朗读"
+						>
+							<Icons.bookHeadphones size={16} />
+							<span>朗读</span>
+						</button>
+						<button
+							className={`desktop-reader-bar-btn ${enhancedTTSPreparing ? "preparing" : ""}`}
+							onClick={handleEnhancedChapterTTS}
+							disabled={enhancedTTSPreparing}
+							title="情感朗读"
+						>
+							{enhancedTTSPreparing ? (
+								<>
+									<span className="spinner"></span>
+									<span>AI增强中...</span>
+								</>
+							) : (
+								<>
+									<Icons.volume size={16} />
+									<span>情感朗读</span>
+								</>
+							)}
+						</button>
+						<button
+							className={`desktop-reader-bar-btn ${showTTSPanel ? "active" : ""}`}
+							onClick={() => {
+								if (showTTSPanel) {
+									setShowTTSPanel(false);
+								} else {
+									setShowTTSPanel(true);
+									setShowReadingSettings(false);
+								}
+							}}
+						>
+							<Icons.bookAudio size={16} />
+							<span>语音设置</span>
+						</button>
+						<button
+							className={`desktop-reader-bar-btn ${showReadingSettings ? "active" : ""}`}
+							onClick={() => {
+								if (showReadingSettings) {
+									setShowReadingSettings(false);
+								} else {
+									setShowReadingSettings(true);
+									setShowTTSPanel(false);
+								}
+							}}
+						>
+							<Icons.lineStyle size={16} />
+							<span>阅读设置</span>
+						</button>
+					</div>
+					<div className="reading-progress">
+						<div className="progress-info">
+							<span className="progress-label">阅读进度</span>
+							<span className="progress-value">{readingProgressPercent}%</span>
+						</div>
+						<div className="progress-bar">
+							<div className="progress-fill" style={{ width: `${readingProgressPercent}%` }}></div>
+						</div>
+						<div className="time-info">
+							<span className="time-label">预计剩余</span>
+							<span className="time-value">{estimatedRemainingMinutes > 0 ? `${estimatedRemainingMinutes} 分钟` : '--'}</span>
+						</div>
+					</div>
+				</div>
+			)}
 
 					{/* 章节列表弹窗 */}
 					{showChapterList && (
-						<>
-							<div
-								className="chapter-list-overlay"
-								onClick={() => {
-									setShowChapterList(false);
-									setShowReadingSettings(false);
-								}}
-							/>
-							<div className="chapter-list-modal">
+						<div
+							className="chapter-list-overlay"
+							onClick={() => {
+								setShowChapterList(false);
+								setShowReadingSettings(false);
+							}}
+						>
+							<div className="chapter-list-modal" onClick={(e) => e.stopPropagation()}>
 								<div className="config-header">
 									<div className="config-title">
 										<Icons.list size={18} />
@@ -1270,7 +1570,7 @@ export function ReaderPanel({
 									))}
 								</div>
 							</div>
-						</>
+						</div>
 					)}
 				</>
 			)}
