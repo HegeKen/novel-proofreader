@@ -62,10 +62,17 @@ export default function App() {
 		if (novels.length === 0) {
 			loadNovelsFromStorage().then((storedNovels) => {
 				if (storedNovels.length > 0) {
+					const firstNovel = storedNovels[0];
 					useAppStore.setState({
 						novels: storedNovels,
-						currentNovelId: storedNovels[0].id,
+						currentNovelId: firstNovel.id,
 					});
+					const chapters = splitChapters(firstNovel.fullText);
+					const progress = useAppStore.getState().getReadingProgress(firstNovel.id);
+					useAppStore.setState({ chapters });
+					if (progress) {
+						useAppStore.setState({ currentChapterIndex: progress.currentChapterIndex });
+					}
 				}
 			});
 		}

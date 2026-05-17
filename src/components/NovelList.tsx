@@ -21,6 +21,8 @@ export function NovelList({
 	const selectNovel = useAppStore((s) => s.selectNovel);
 	const setChapters = useAppStore((s) => s.setChapters);
 	const setShowCharacterSettings = useAppStore((s) => s.setShowCharacterSettings);
+	const getReadingProgress = useAppStore((s) => s.getReadingProgress);
+	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
 	const [contextMenu, setContextMenu] = useState<{
 		x: number;
 		y: number;
@@ -62,6 +64,12 @@ export function NovelList({
 		selectNovel(novel.id);
 		const chapters = splitChapters(novel.fullText);
 		setChapters(chapters);
+
+		const progress = getReadingProgress(novel.id);
+		if (progress) {
+			setCurrentChapterIndex(progress.currentChapterIndex);
+		}
+
 		if (onNovelSelect) {
 			onNovelSelect();
 		}

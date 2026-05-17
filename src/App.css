@@ -918,6 +918,18 @@ select {
 	gap: 12px;
 }
 
+.reader-progress-bar {
+	height: 3px;
+	background: rgba(0, 0, 0, 0.1);
+	width: 100%;
+}
+
+.reader-progress-fill {
+	height: 100%;
+	background: linear-gradient(90deg, #22c55e, #16a34a);
+	transition: width 0.3s ease;
+}
+
 .reader-toolbar-right {
 	display: flex;
 	align-items: center;
@@ -1163,6 +1175,79 @@ min-width: 200px;
 	background: var(--accent-dim);
 	border-color: var(--accent);
 	color: var(--accent);
+}
+
+.desktop-reader-bar-btn.waiting-selection,
+.mobile-reader-bar-btn.waiting-selection {
+	background: var(--accent);
+	color: white;
+	border-color: var(--accent);
+	animation: waiting-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes waiting-pulse {
+	0%, 100% {
+		box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+	}
+	50% {
+		box-shadow: 0 0 0 6px rgba(99, 102, 241, 0);
+	}
+}
+
+/* ── TTS Selection Hint Banner ── */
+.tts-selection-hint {
+	position: sticky;
+	top: 0;
+	z-index: 50;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 12px 20px;
+	margin-bottom: 16px;
+	background: linear-gradient(135deg, var(--accent), #818cf8);
+	color: white;
+	border-radius: var(--r-lg);
+	box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+	animation: hint-slide-down 0.3s var(--ease);
+}
+
+.tts-selection-hint-content {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.tts-selection-hint-cancel {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.2);
+	color: white;
+	border: none;
+	cursor: pointer;
+	transition: background var(--duration) var(--ease);
+	flex-shrink: 0;
+}
+
+.tts-selection-hint-cancel:hover {
+	background: rgba(255, 255, 255, 0.35);
+}
+
+@keyframes hint-slide-down {
+	from {
+		opacity: 0;
+		transform: translateY(-10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }
 
 /* TTS Playback Controls - Floating above reader bars */
@@ -1785,6 +1870,7 @@ color: var(--text-primary);
 	background: rgba(0, 0, 0, 0.5);
 	backdrop-filter: blur(8px);
 	-webkit-backdrop-filter: blur(8px);
+	will-change: transform;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -2168,6 +2254,105 @@ color: var(--text-primary);
 	line-height: var(--line-height, 32px);
 }
 
+/* ── Page Turn Animation ── */
+.reader-page-container {
+	perspective: 2000px;
+	perspective-origin: center center;
+	transform-style: preserve-3d;
+}
+
+.reader-content.flipping-next {
+	animation: pageFlipNext 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+.reader-content.flipping-prev {
+	animation: pageFlipPrev 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+@keyframes pageFlipNext {
+	0% {
+		transform: rotateY(0deg) scale(1);
+		opacity: 1;
+	}
+	30% {
+		transform: rotateY(-15deg) scale(0.98);
+		opacity: 0.8;
+	}
+	60% {
+		transform: rotateY(-45deg) scale(0.96);
+		opacity: 0.5;
+	}
+	100% {
+		transform: rotateY(0deg) scale(1);
+		opacity: 1;
+	}
+}
+
+@keyframes pageFlipPrev {
+	0% {
+		transform: rotateY(0deg) scale(1);
+		opacity: 1;
+	}
+	30% {
+		transform: rotateY(15deg) scale(0.98);
+		opacity: 0.8;
+	}
+	60% {
+		transform: rotateY(45deg) scale(0.96);
+		opacity: 0.5;
+	}
+	100% {
+		transform: rotateY(0deg) scale(1);
+		opacity: 1;
+	}
+}
+
+.reader-page-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	pointer-events: none;
+	z-index: 1000;
+	opacity: 0;
+	transition: opacity 0.2s ease;
+}
+
+.reader-page-overlay.active {
+	opacity: 1;
+}
+
+.reader-page-shadow-left {
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: 60px;
+	background: linear-gradient(to right, rgba(0,0,0,0.15), transparent);
+	opacity: 0;
+	transition: opacity 0.3s ease;
+}
+
+.reader-page-shadow-right {
+	position: absolute;
+	right: 0;
+	top: 0;
+	bottom: 0;
+	width: 60px;
+	background: linear-gradient(to left, rgba(0,0,0,0.15), transparent);
+	opacity: 0;
+	transition: opacity 0.3s ease;
+}
+
+.reader-page-overlay.active .reader-page-shadow-left {
+	opacity: 1;
+}
+
+.reader-page-overlay.active .reader-page-shadow-right {
+	opacity: 1;
+}
+
 /* ── Paragraph Lines ── */
 .reader-paragraph {
 	display: flex;
@@ -2197,6 +2382,16 @@ color: var(--text-primary);
 
 .reader-paragraph.reading-mode:hover {
 	background: transparent;
+}
+
+/* TTS选择模式下段落可点击提示 */
+.reader-paragraph.reading-mode.clickable-para {
+	cursor: pointer;
+}
+
+.reader-paragraph.reading-mode.clickable-para:hover {
+	background: rgba(99, 102, 241, 0.08);
+	border-radius: var(--r-sm);
 }
 
 .reader-paragraph.highlighted {
@@ -3535,6 +3730,7 @@ color: var(--text-primary);
 	background: rgba(0, 0, 0, 0.5);
 	backdrop-filter: blur(8px);
 	-webkit-backdrop-filter: blur(8px);
+	will-change: transform;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -6134,6 +6330,7 @@ color: var(--text-primary);
 	background: rgba(0, 0, 0, 0.5);
 	backdrop-filter: blur(8px);
 	-webkit-backdrop-filter: blur(8px);
+	will-change: transform;
 	z-index: 1;
 }
 
@@ -6388,6 +6585,7 @@ color: var(--text-primary);
 	background: rgba(0, 0, 0, 0.5);
 	backdrop-filter: blur(8px);
 	-webkit-backdrop-filter: blur(8px);
+	will-change: transform;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -6605,6 +6803,7 @@ color: var(--text-primary);
 	background: rgba(0, 0, 0, 0.5);
 	backdrop-filter: blur(8px);
 	-webkit-backdrop-filter: blur(8px);
+	will-change: transform;
 	display: flex;
 	align-items: center;
 	justify-content: center;

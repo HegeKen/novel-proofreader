@@ -8,13 +8,13 @@ import { useConfigStore } from "../stores/configStore";
 import { splitParagraphs } from "../utils/chapterSplit";
 import { buildParagraphIndexMap, buildOriginalToFilteredMap } from "../utils/formatters";
 
-import { TTSPlayer, ScriptTTSPlayer, parseScriptContent, type TTSSentence } from "../utils/ttsService";
+import { TTSPlayer, ScriptTTSPlayer, type TTSSentence } from "../utils/ttsService";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { logger } from "../utils/logger";
-import { sendChatCompletion, cleanEnhancedScript, type ChatMessage } from "../utils/aiClient";
-import { NOVEL_TTS_ENHANCE_SYSTEM_PROMPT, buildNovelTTSEnhanceUserPrompt } from "../utils/aiClient";
+import { sendChatCompletion, type ChatMessage } from "../utils/aiClient";
+import { READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT, buildReadingModeTTSEnhanceUserPrompt, type ParagraphEmotionResult } from "../utils/aiClient";
 import type { CharacterInfo } from "../types";
 
 export function ReaderPanel({
@@ -105,6 +105,32 @@ export function ReaderPanel({
 	// 章节列表弹窗状态
 	const [showChapterList, setShowChapterList] = useState(false);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const chapterListContentRef = useRef<HTMLDivElement>(null);
+	const activeChapterItemRef = useRef<HTMLDivElement>(null);
+
+	// 当章节列表弹窗打开时，滚动到 active 项并居中
+	useEffect(() => {
+		if (showChapterList && activeChapterItemRef.current && chapterListContentRef.current) {
+			// 使用 setTimeout 确保 DOM 已渲染
+			setTimeout(() => {
+				if (activeChapterItemRef.current && chapterListContentRef.current) {
+					const container = chapterListContentRef.current;
+					const activeItem = activeChapterItemRef.current;
+					
+					const containerRect = container.getBoundingClientRect();
+					const itemRect = activeItem.getBoundingClientRect();
+					
+					const relativeTop = itemRect.top - containerRect.top;
+					const targetScrollTop = container.scrollTop + relativeTop - container.offsetHeight / 2 + itemRect.height / 2;
+					
+					container.scrollTo({
+						top: Math.max(0, targetScrollTop),
+						behavior: 'smooth'
+					});
+				}
+			}, 50);
+		}
+	}, [showChapterList]);
 
 	// 搜索功能状态
 	const [showSearch, setShowSearch] = useState(false);
@@ -123,7 +149,19 @@ export function ReaderPanel({
 	
 	// 整章TTS增强功能
 	const [enhancedTTSPreparing, setEnhancedTTSPreparing] = useState(false);
+	const [paragraphEmotionCache, setParagraphEmotionCache] = useState<Map<number, ParagraphEmotionResult>>(new Map());
+	
+	// 流式TTS播放状态（用于控制条显示）
+	const [isStreamTTSPlaying, setIsStreamTTSPlaying] = useState(false);
+	const scriptTTSRef = useRef<ScriptTTSPlayer | null>(null);
 	const aiConfig = useAppStore((s) => s.aiConfig);
+	
+	// 流式AI情感增强TTS等待选择开始段落模式
+	const [isStreamTTSWaitingForStart, setIsStreamTTSWaitingForStart] = useState(false);
+
+	// 仿真翻页动画状态
+	const [pageFlipping, setPageFlipping] = useState<'none' | 'next' | 'prev'>('none');
+	const [showPageShadow, setShowPageShadow] = useState(false);
 
 	// 阅读进度状态
 	const [currentParagraphIndex, setCurrentParagraphIndex] = useState(0);
@@ -230,6 +268,16 @@ export function ReaderPanel({
 				setTtsPlaying(false);
 			}
 		} else {
+			// 如果正在等待段落选择模式或流式播放中，先停止
+			if (isStreamTTSWaitingForStart) {
+				setIsStreamTTSWaitingForStart(false);
+			}
+			if (scriptTTSRef.current) {
+				scriptTTSRef.current.stop();
+				scriptTTSRef.current = null;
+				setIsStreamTTSPlaying(false);
+				setEnhancedTTSPreparing(false);
+			}
 			logger.tts("开始播放, 段落数: " + paragraphs.length);
 			if (!ttsPlayerRef.current) {
 				ttsPlayerRef.current = new TTSPlayer(ttsConfig);
@@ -260,7 +308,7 @@ export function ReaderPanel({
 				setTtsPlaying(true);
 			}
 		}
-	}, [ttsPlaying, ttsConfig, paragraphs]);
+	}, [ttsPlaying, ttsConfig, paragraphs, isStreamTTSWaitingForStart]);
 
 	/** TTS 播放过程中实时更新配置（音色、语速、音量） */
 	useEffect(() => {
@@ -344,8 +392,48 @@ export function ReaderPanel({
 		return ttsConfig.voice || "冰糖";
 	}, [currentNovelId, getCharacters, ttsConfig.voice]);
 
-	/** 整章TTS增强播放 */
-	const handleEnhancedChapterTTS = useCallback(async () => {
+	/** 分析单个段落的情感 */
+	const analyzeParagraphEmotion = useCallback(async (
+		paraIndex: number,
+		paraText: string,
+		allParagraphs: string[]
+	): Promise<ParagraphEmotionResult | null> => {
+		if (!aiConfig.apiKey) return null;
+
+		// 获取上下文
+		const contextBefore = paraIndex > 0 ? allParagraphs[paraIndex - 1] : '';
+		const contextAfter = paraIndex < allParagraphs.length - 1 ? allParagraphs[paraIndex + 1] : '';
+
+		// 获取已配置的角色信息
+		const configuredCharacters = currentNovelId ? getCharacters(currentNovelId).map(c => ({
+			name: c.name,
+			aliases: c.aliases || [],
+			voice: c.voice
+		})) : [];
+
+		try {
+			const messages: ChatMessage[] = [
+				{ role: 'system', content: READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT },
+				{ role: 'user', content: buildReadingModeTTSEnhanceUserPrompt(paraText, contextBefore, contextAfter, configuredCharacters) }
+			];
+
+			const response = await sendChatCompletion(messages, aiConfig);
+
+			// 解析JSON响应
+			const jsonMatch = response.match(/\{[\s\S]*\}/);
+			if (jsonMatch) {
+				const result = JSON.parse(jsonMatch[0]) as ParagraphEmotionResult;
+				return result;
+			}
+			return null;
+		} catch (error) {
+			logger.tts(`段落${paraIndex}情感分析失败: ${(error as Error).message}`);
+			return null;
+		}
+	}, [aiConfig, currentNovelId, getCharacters]);
+
+	/** 流式TTS增强播放 - 分析完一个段落立即提交TTS */
+	const handleEnhancedChapterTTS = useCallback(async (startFromParagraph?: number) => {
 		if (!ttsConfig.apiKey) {
 			logger.tts("请先配置TTS API Key");
 			return;
@@ -355,107 +443,147 @@ export function ReaderPanel({
 			return;
 		}
 		if (!chapter) return;
-		
+
 		// 先停止当前播放
 		if (ttsPlayerRef.current && ttsPlaying) {
 			ttsPlayerRef.current.pause();
 			setTtsPlaying(false);
 			setTtsHighlightedPara(-1);
 		}
-		
+		// 停止任何已有的流式播放
+		if (scriptTTSRef.current) {
+			scriptTTSRef.current.stop();
+			scriptTTSRef.current = null;
+		}
+
 		setEnhancedTTSPreparing(true);
-		
+		setIsStreamTTSPlaying(true);
+		setIsStreamTTSWaitingForStart(false);
+
 		try {
-			logger.tts("开始AI情感增强处理...");
-			
-			// 先调用AI进行情感增强
-			const enhanceMessages: ChatMessage[] = [
-				{ role: 'system', content: NOVEL_TTS_ENHANCE_SYSTEM_PROMPT },
-				{ role: 'user', content: buildNovelTTSEnhanceUserPrompt(chapter.content) }
-			];
-			
-			const enhancedContent = await sendChatCompletion(enhanceMessages, aiConfig);
-			
-			logger.tts("AI情感增强完成");
-			
-			console.log("=== 增强后的小说内容（原始）===");
-			console.log(enhancedContent);
-			
-			// 清理AI返回的内容
-			const cleanedContent = cleanEnhancedScript(enhancedContent);
-			
-			console.log("=== 清理后的小说内容 ===");
-			console.log(cleanedContent);
-			
-			// 解析剧本内容，获取角色列表
-			const { characters: detectedCharacters } = parseScriptContent(cleanedContent);
-			
-			logger.tts("检测到的角色", { characters: detectedCharacters });
-			
+			const startPara = startFromParagraph ?? 0;
+			logger.tts(`开始流式AI情感增强处理... 起始段落: ${startPara}`);
+
+			// 获取所有段落
+			const allParagraphs = splitParagraphs(chapter.content).filter((p) => p.trim() !== "");
+			const allCharacters = new Set<string>();
+			const newCache = new Map<number, ParagraphEmotionResult>();
+
 			// 为每个角色分配音色
 			const characterVoices: Record<string, string> = { ...ttsConfig.characterVoices };
-			for (const char of detectedCharacters) {
-				characterVoices[char] = characterVoices[char] || getVoiceForCharacter(char);
-			}
-			
-			// 更新TTS配置以包含角色音色映射
+
+			// 创建 ScriptTTSPlayer 来支持流式角色音色
 			const customTTSConfig = {
 				...ttsConfig,
 				characterVoices,
 			};
-			
-			// 创建 ScriptTTSPlayer 来支持角色音色
+
 			const scriptTTS = new ScriptTTSPlayer(customTTSConfig);
+			scriptTTSRef.current = scriptTTS;
 			scriptTTS.setOnUpdate(() => {});
 			scriptTTS.setOnComplete(() => {
-				logger.tts("播放完成");
-				setTtsPlaying(false);
+				logger.tts("流式播放完成");
+				setIsStreamTTSPlaying(false);
 				setTtsHighlightedPara(-1);
+				setEnhancedTTSPreparing(false);
+				scriptTTSRef.current = null;
 			});
-			
-			scriptTTS.loadScript(cleanedContent);
-			
-			console.log("=== 解析出的对话 ===");
-			console.log(scriptTTS.getDialogues());
-			
-			// 如果解析出的对话为空，使用原始内容作为 fallback
-			if (scriptTTS.getDialogues().length === 0) {
-				logger.warn("AI增强内容为空，使用原始内容");
-				const fallbackParagraphs = splitParagraphs(chapter.content).filter((p) => p.trim() !== "");
-				
-				// 使用普通的 TTSPlayer 播放原始内容
-				if (!ttsPlayerRef.current) {
-					ttsPlayerRef.current = new TTSPlayer(ttsConfig);
-					ttsPlayerRef.current.setOnUpdate((sentences) => {
-						setTtsSentences(sentences);
-						if (ttsPlayerRef.current) {
-							const currentPara = ttsPlayerRef.current.getCurrentParagraphIndex();
-							setTtsHighlightedPara(currentPara);
+
+			// 逐段分析并流式添加（从指定段落开始）
+			for (let i = startPara; i < allParagraphs.length; i++) {
+				const paraText = allParagraphs[i];
+
+				// 检查缓存
+				const cachedResult = paragraphEmotionCache.get(i);
+				if (cachedResult && cachedResult.segments && cachedResult.segments.length > 0) {
+					logger.tts(`段落${i}使用缓存`);
+					// 流式添加缓存的segments
+					for (const segment of cachedResult.segments) {
+						// 确保角色有音色
+						if (!characterVoices[segment.speaker]) {
+							characterVoices[segment.speaker] = getVoiceForCharacter(segment.speaker);
 						}
-					});
-					ttsPlayerRef.current.setOnComplete(() => {
-						logger.tts("播放完成");
-						setTtsPlaying(false);
-						setTtsHighlightedPara(-1);
-					});
+						await scriptTTS.addDialogueStream(segment.speaker, segment.text);
+					}
+					cachedResult.characters.forEach(c => allCharacters.add(c));
+					newCache.set(i, cachedResult);
+					continue;
 				}
-				
-				ttsPlayerRef.current.updateConfig(ttsConfig);
-				ttsPlayerRef.current.loadText(fallbackParagraphs);
-				ttsPlayerRef.current.play();
-				setTtsPlaying(true);
-			} else {
-				// 使用 ScriptTTSPlayer 播放增强内容
-				scriptTTS.play();
-				setTtsPlaying(true);
+
+				// 分析段落情感
+				logger.tts(`分析段落${i}...`);
+				const result = await analyzeParagraphEmotion(i, paraText, allParagraphs);
+
+				if (result && result.segments && result.segments.length > 0) {
+					// 流式添加segments，立即开始TTS生成
+					for (const segment of result.segments) {
+						// 确保角色有音色
+						if (!characterVoices[segment.speaker]) {
+							characterVoices[segment.speaker] = getVoiceForCharacter(segment.speaker);
+						}
+						logger.tts(`流式添加对话`, { paragraph: i, speaker: segment.speaker, text: segment.text.slice(0, 30) + "..." });
+						await scriptTTS.addDialogueStream(segment.speaker, segment.text);
+					}
+					result.characters.forEach(c => allCharacters.add(c));
+					newCache.set(i, result);
+				} else {
+					// 如果分析失败，使用原文作为旁白
+					await scriptTTS.addDialogueStream("旁白", paraText);
+				}
 			}
-			
+
+			// 更新缓存
+			setParagraphEmotionCache(newCache);
+
+			// 标记流式添加完成，这样音频队列处理器才知道所有对话都已添加
+			scriptTTS.markStreamComplete();
+
+			logger.tts("流式AI情感增强完成", { 
+				totalParagraphs: allParagraphs.length,
+				characters: Array.from(allCharacters)
+			});
+
 		} catch (error) {
-			logger.tts("整章TTS增强播放失败: " + (error as Error).message);
-		} finally {
+			logger.tts("流式TTS增强播放失败: " + (error as Error).message);
+			setIsStreamTTSPlaying(false);
+			setEnhancedTTSPreparing(false);
+			scriptTTSRef.current = null;
+		}
+	}, [chapter, ttsConfig, aiConfig, ttsPlaying, getVoiceForCharacter, paragraphEmotionCache, analyzeParagraphEmotion]);
+
+	/** 进入流式AI情感增强的"等待选择段落"模式 */
+	const handleEnterStreamTTSSelectionMode = useCallback(() => {
+		if (isStreamTTSWaitingForStart) {
+			setIsStreamTTSWaitingForStart(false);
+			return;
+		}
+		if (!ttsConfig.apiKey) {
+			logger.tts("请先配置TTS API Key");
+			return;
+		}
+		if (!aiConfig.apiKey) {
+			logger.tts("请先配置AI API Key");
+			return;
+		}
+		if (!chapter) return;
+
+		// 停止所有正在播放的音频
+		if (ttsPlayerRef.current) {
+			ttsPlayerRef.current.stop();
+			ttsPlayerRef.current = null;
+			setTtsPlaying(false);
+			setTtsHighlightedPara(-1);
+		}
+		if (scriptTTSRef.current) {
+			scriptTTSRef.current.stop();
+			scriptTTSRef.current = null;
+			setIsStreamTTSPlaying(false);
 			setEnhancedTTSPreparing(false);
 		}
-	}, [chapter, ttsConfig, aiConfig, ttsPlaying, currentNovelId, getCharacters, getVoiceForCharacter]);
+
+		setIsStreamTTSWaitingForStart(true);
+		logger.tts("进入情感朗读段落选择模式，请点击段落开始朗读");
+	}, [isStreamTTSWaitingForStart, ttsConfig.apiKey, aiConfig.apiKey, chapter, ttsPlayerRef, scriptTTSRef]);
 
 	/** textarea 键盘事件：Ctrl+Enter 保存，Escape 取消 */
 	const cancelEditing = useCallback(() => {
@@ -639,6 +767,9 @@ export function ReaderPanel({
 		if (!container) return;
 		container.scrollTop = 0;
 		paragraphRefs.current = [];
+		// 清除段落情感缓存，避免不同章节之间的缓存混淆
+		setParagraphEmotionCache(new Map());
+		logger.tts("切换章节，清除段落情感缓存");
 	}, [currentChapterIndex]);
 
 	// 阅读模式下，监听滚动自动更新阅读进度
@@ -699,6 +830,16 @@ export function ReaderPanel({
 		isScrolling.current = false;
 	}, []);
 
+	// 触发翻页动画
+	const triggerPageFlip = useCallback((direction: 'next' | 'prev') => {
+		setShowPageShadow(true);
+		setPageFlipping(direction);
+		setTimeout(() => {
+			setPageFlipping('none');
+			setShowPageShadow(false);
+		}, 400);
+	}, []);
+
 	const handleTouchMove = useCallback(
 		(e: React.TouchEvent) => {
 			if (!isDragging.current) return;
@@ -710,7 +851,7 @@ export function ReaderPanel({
 			const currentX = e.touches[0].clientX;
 			const deltaY = currentY - touchStartY.current;
 			const deltaX = currentX - touchStartX.current;
-			
+
 			// 如果移动超过一定阈值，认为是滚动操作，不是点击
 			if (!isScrolling.current && (Math.abs(deltaY) > 10 || Math.abs(deltaX) > 10)) {
 				isScrolling.current = true;
@@ -725,13 +866,16 @@ export function ReaderPanel({
 			// 在顶部下滑（deltaY > 0），进入上一章并定位到底部
 			if (isAtTop && deltaY > 50 && currentChapterIndex > 0) {
 				isDragging.current = false;
-				setCurrentChapterIndex(currentChapterIndex - 1);
+				triggerPageFlip('prev');
+				setTimeout(() => {
+					setCurrentChapterIndex(currentChapterIndex - 1);
+				}, 200);
 				setTimeout(() => {
 					const newContainer = containerRef.current;
 					if (newContainer) {
 						newContainer.scrollTop = newContainer.scrollHeight;
 					}
-				}, 100);
+				}, 300);
 			}
 			// 在底部上滑（deltaY < 0），进入下一章并定位到顶部
 			else if (
@@ -740,10 +884,13 @@ export function ReaderPanel({
 				currentChapterIndex < chapters.length - 1
 			) {
 				isDragging.current = false;
-				setCurrentChapterIndex(currentChapterIndex + 1);
+				triggerPageFlip('next');
+				setTimeout(() => {
+					setCurrentChapterIndex(currentChapterIndex + 1);
+				}, 200);
 			}
 		},
-		[currentChapterIndex, chapters.length, setCurrentChapterIndex],
+		[currentChapterIndex, chapters.length, setCurrentChapterIndex, triggerPageFlip],
 	);
 
 	const handleTouchEnd = useCallback(() => {
@@ -792,8 +939,14 @@ export function ReaderPanel({
 					<span>搜索</span>
 				</button>
 			</div>
+			<div className="reader-progress-bar">
+				<div 
+					className="reader-progress-fill" 
+					style={{ width: `${readingProgressPercent}%` }}
+				></div>
+			</div>
 			<div
-				className={`reader-content${readingMode ? " reading-mode" : ""}`}
+				className={`reader-content${readingMode ? " reading-mode" : ""}${pageFlipping !== 'none' ? ` flipping-${pageFlipping}` : ''}`}
 				ref={containerRef}
 				onTouchStart={handleTouchStart}
 				onTouchMove={handleTouchMove}
@@ -843,6 +996,27 @@ export function ReaderPanel({
 					}),
 				}}
 			>
+				{/* 翻页阴影效果 */}
+				{showPageShadow && (
+					<div className="reader-page-overlay active">
+						<div className={`reader-page-shadow-${pageFlipping === 'next' ? 'left' : 'right'}`}></div>
+					</div>
+				)}
+				{/* 流式AI情感增强 - 等待选择段落提示 */}
+				{isStreamTTSWaitingForStart && (
+					<div className="tts-selection-hint">
+						<div className="tts-selection-hint-content">
+							<Icons.volume size={20} />
+							<span>情感朗读模式：请点击想要开始朗读的段落</span>
+						</div>
+						<button
+							className="tts-selection-hint-cancel"
+							onClick={() => setIsStreamTTSWaitingForStart(false)}
+						>
+							<Icons.close size={16} />
+						</button>
+					</div>
+				)}
 				{paragraphs.map((para, filteredIndex) => {
 					// 获取原始段落索引（与校对区一致）
 					const originalIndex = paragraphIndexMap[filteredIndex];
@@ -978,13 +1152,18 @@ export function ReaderPanel({
 							ref={(el) => {
 								paragraphRefs.current[originalIndex] = el;
 							}}
-							className={`reader-paragraph${readingMode ? " reading-mode" : ""}${highlightedParagraph === originalIndex && !readingMode ? " highlighted" : ""}${isTTSHighlighted ? " tts-highlighted" : ""}${animClass}${isEditing ? " editing" : ""}`}
+							className={`reader-paragraph${readingMode ? " reading-mode" : ""}${highlightedParagraph === originalIndex && !readingMode ? " highlighted" : ""}${isTTSHighlighted ? " tts-highlighted" : ""}${animClass}${isEditing ? " editing" : ""}${isStreamTTSWaitingForStart && readingMode ? " clickable-para" : ""}`}
 							onClick={() => {
 								// 如果是滚动操作，不触发点击事件
 								if (isScrolling.current) return;
 								if (!isEditing) {
 									if (readingMode) {
-										startTTSFromParagraph(originalIndex);
+										if (isStreamTTSWaitingForStart) {
+											const filteredParaIndex = originalToFilteredMap[originalIndex] ?? 0;
+											handleEnhancedChapterTTS(filteredParaIndex);
+										} else {
+											startTTSFromParagraph(originalIndex);
+										}
 									} else {
 										setHighlightedParagraph(originalIndex);
 									}
@@ -1336,7 +1515,7 @@ export function ReaderPanel({
 					)}
 
 			{/* 移动端播放控制条 - 悬浮在阅读栏上方 */}
-			{isMobile && readingMode && ttsPlaying && (
+			{isMobile && readingMode && (ttsPlaying || isStreamTTSPlaying || enhancedTTSPreparing) && (
 				<div className="mobile-tts-playback-controls">
 					<button
 						className="tts-playback-btn"
@@ -1365,21 +1544,7 @@ export function ReaderPanel({
 			{/* 移动端阅读栏 - 依附在 mobile-tab-bar 之上 */}
 			{isMobile && readingMode && (
 				<div className="mobile-reader-bar">
-					<div className="reading-progress">
-						<div className="progress-info">
-							<span className="progress-label">阅读进度</span>
-							<span className="progress-value">{readingProgressPercent}%</span>
-						</div>
-						<div className="progress-bar">
-							<div className="progress-fill" style={{ width: `${readingProgressPercent}%` }}></div>
-						</div>
-						<div className="time-info">
-							<span className="time-label">预计剩余</span>
-							<span className="time-value">{estimatedRemainingMinutes > 0 ? `${estimatedRemainingMinutes} 分钟` : '--'}</span>
-						</div>
-					</div>
-					<div className="mobile-reader-bar-actions">
-						<button
+					<button
 							className={`mobile-reader-bar-btn ${ttsPlaying ? "playing" : ""}`}
 							onClick={handleTTSToggle}
 							title="朗读"
@@ -1387,13 +1552,15 @@ export function ReaderPanel({
 							<Icons.bookHeadphones size={18} />
 						</button>
 						<button
-							className={`mobile-reader-bar-btn ${enhancedTTSPreparing ? "preparing" : ""}`}
-							onClick={handleEnhancedChapterTTS}
+							className={`mobile-reader-bar-btn ${enhancedTTSPreparing ? "preparing" : ""} ${isStreamTTSWaitingForStart ? "waiting-selection" : ""}`}
+							onClick={handleEnterStreamTTSSelectionMode}
 							disabled={enhancedTTSPreparing}
-							title="情感朗读"
+							title={isStreamTTSWaitingForStart ? "取消选择段落" : "情感朗读"}
 						>
 							{enhancedTTSPreparing ? (
 								<span className="spinner"></span>
+							) : isStreamTTSWaitingForStart ? (
+								<Icons.close size={18} />
 							) : (
 								<Icons.volume size={18} />
 							)}
@@ -1424,12 +1591,11 @@ export function ReaderPanel({
 						>
 							<Icons.lineStyle size={18} />
 						</button>
-					</div>
 				</div>
 			)}
 
 			{/* 桌面端播放控制条 - 悬浮在阅读栏上方 */}
-			{!isMobile && readingMode && ttsPlaying && (
+			{!isMobile && readingMode && (ttsPlaying || isStreamTTSPlaying || enhancedTTSPreparing) && (
 				<div className="desktop-tts-playback-controls">
 					<button
 						className="tts-playback-btn"
@@ -1468,15 +1634,20 @@ export function ReaderPanel({
 							<span>朗读</span>
 						</button>
 						<button
-							className={`desktop-reader-bar-btn ${enhancedTTSPreparing ? "preparing" : ""}`}
-							onClick={handleEnhancedChapterTTS}
+							className={`desktop-reader-bar-btn ${enhancedTTSPreparing ? "preparing" : ""} ${isStreamTTSWaitingForStart ? "waiting-selection" : ""}`}
+							onClick={handleEnterStreamTTSSelectionMode}
 							disabled={enhancedTTSPreparing}
-							title="情感朗读"
+							title={isStreamTTSWaitingForStart ? "取消选择段落" : "情感朗读"}
 						>
 							{enhancedTTSPreparing ? (
 								<>
 									<span className="spinner"></span>
 									<span>AI增强中...</span>
+								</>
+							) : isStreamTTSWaitingForStart ? (
+								<>
+									<Icons.close size={16} />
+									<span>取消选择</span>
 								</>
 							) : (
 								<>
@@ -1552,22 +1723,26 @@ export function ReaderPanel({
 										<Icons.x size={18} />
 									</button>
 								</div>
-								<div className="chapter-list-content">
-									{chapters.map((ch, index) => (
-										<div
-											key={ch.id}
-											className={`chapter-list-item${index === currentChapterIndex ? " active" : ""}`}
-											onClick={() => {
-												setCurrentChapterIndex(index);
-												setShowChapterList(false);
-											}}
-										>
-											<span className="chapter-index">{index + 1}</span>
-											<span className="chapter-name">
-												{ch.title || `第 ${index + 1} 章`}
-											</span>
-										</div>
-									))}
+								<div className="chapter-list-content" ref={chapterListContentRef}>
+									{chapters.map((ch, index) => {
+										const isActive = index === currentChapterIndex;
+										return (
+											<div
+												key={ch.id}
+												ref={isActive ? activeChapterItemRef : null}
+												className={`chapter-list-item${isActive ? " active" : ""}`}
+												onClick={() => {
+													setCurrentChapterIndex(index);
+													setShowChapterList(false);
+												}}
+											>
+												<span className="chapter-index">{index + 1}</span>
+												<span className="chapter-name">
+													{ch.title || `第 ${index + 1} 章`}
+												</span>
+											</div>
+										);
+									})}
 								</div>
 							</div>
 						</div>

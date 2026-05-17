@@ -714,6 +714,231 @@ ${chapterContent}
 请只对文字内容添加情绪、语调、音色标签，其他内容原样保留。`;
 }
 
+// ============================================================
+// 阅读模式逐段TTS情感增强Prompt
+// ============================================================
+
+/** 阅读模式逐段TTS情感增强系统提示词 */
+export const READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT = `你是一位专业的小说有声书演播导演。请分析小说段落，识别涉及的人物并判断情绪，输出用于TTS语音合成的标注。
+
+## 分析任务
+
+### 1. 人物识别
+- 识别段落中涉及的所有人物名称
+- 包括直接出现的名字和代称（如"我"、"他"、"她"）
+- 返回标准的人物名称（如配置中的主角名）
+
+### 2. 情绪分析
+根据上下文判断段落的整体情绪氛围：
+
+**基础情绪：**
+- 开心、悲伤、愤怒、恐惧、惊讶、兴奋、委屈、平静、冷漠
+
+**复合情绪：**
+- 怅然、欣慰、无奈、愧疚、释然、嫉妒、厌倦、忐忑、动情
+
+**语调风格：**
+- 温柔、高冷、活泼、严肃、慵懒、俏皮、深沉、干练、凌厉
+
+### 3. 特殊标记
+- 如果包含对话，标记说话角色
+- 如果包含唱歌内容，标记(唱歌)
+- 如果需要音效，使用[音频标签]
+
+## 输出格式（JSON）
+
+必须返回以下格式的JSON对象：
+
+\`\`\`json
+{
+  "characters": ["人物A", "人物B"],
+  "segments": [
+    {
+      "type": "narration",
+      "speaker": "旁白",
+      "emotion": "情绪标签",
+      "tone": "语调标签",
+      "text": "(情绪,语调)旁白文本内容"
+    },
+    {
+      "type": "dialogue",
+      "speaker": "角色名",
+      "emotion": "情绪标签",
+      "tone": "语调标签",
+      "text": "(情绪,语调)对话内容"
+    }
+  ]
+}
+\`\`\`
+
+字段说明：
+- characters: 涉及的人物列表，无人则为[]
+- segments: 文本片段数组，每个片段包含：
+  - type: "narration"(旁白) 或 "dialogue"(对话)
+  - speaker: 说话人（旁白固定为"旁白"，对话为角色名）
+  - emotion: 情绪标签
+  - tone: 语调标签
+  - text: 添加标签后的文本内容
+
+## 增强文本格式规则
+
+1. 每个片段格式：(情绪,语调)文本内容
+2. 旁白使用"旁白"作为speaker
+3. 对话使用实际角色名作为speaker
+4. 音频标签放在合适位置：[叹气]、[笑]、[颤抖]等
+5. 保持原文内容不变，只添加标签
+
+## 示例
+
+输入段落：
+"李明站在窗前，望着窗外的雨。三年了，他终于回来了。"
+
+输出：
+\`\`\`json
+{
+  "characters": ["李明"],
+  "segments": [
+    {
+      "type": "narration",
+      "speaker": "旁白",
+      "emotion": "怅然",
+      "tone": "深沉",
+      "text": "(怅然,深沉)李明站在窗前，望着窗外的雨。[叹气]三年了，他终于回来了。"
+    }
+  ]
+}
+\`\`\`
+
+输入段落：
+"王芳激动地说：'你真的回来了！'"
+
+输出：
+\`\`\`json
+{
+  "characters": ["王芳"],
+  "segments": [
+    {
+      "type": "narration",
+      "speaker": "旁白",
+      "emotion": "平静",
+      "tone": "温柔",
+      "text": "(平静,温柔)王芳激动地说："
+    },
+    {
+      "type": "dialogue",
+      "speaker": "王芳",
+      "emotion": "兴奋",
+      "tone": "活泼",
+      "text": "(兴奋,活泼)[激动]'你真的回来了！'"
+    }
+  ]
+}
+\`\`\`
+
+输入段落（混合内容）：
+"李明叹了口气，说：'这些年，你过得好吗？'王芳低下头，轻声回答：'还好，只是有时候会想起以前的事。'"
+
+输出：
+\`\`\`json
+{
+  "characters": ["李明", "王芳"],
+  "segments": [
+    {
+      "type": "narration",
+      "speaker": "旁白",
+      "emotion": "怅然",
+      "tone": "深沉",
+      "text": "(怅然,深沉)李明[叹气]叹了口气，说："
+    },
+    {
+      "type": "dialogue",
+      "speaker": "李明",
+      "emotion": "无奈",
+      "tone": "温柔",
+      "text": "(无奈,温柔)'这些年，你过得好吗？'"
+    },
+    {
+      "type": "narration",
+      "speaker": "旁白",
+      "emotion": "平静",
+      "tone": "温柔",
+      "text": "(平静,温柔)王芳低下头，轻声回答："
+    },
+    {
+      "type": "dialogue",
+      "speaker": "王芳",
+      "emotion": "怅然",
+      "tone": "温柔",
+      "text": "(怅然,温柔)'还好，只是有时候会想起以前的事。'"
+    }
+  ]
+}
+\`\`\`
+
+## 重要约束
+
+- 必须返回有效的JSON格式
+- emotion和tone必须从提供的标签列表中选择
+- 将段落拆分为多个片段，每个片段明确标记是旁白还是对话
+- 旁白speaker固定为"旁白"
+- 对话speaker使用实际角色名
+- 如果无法确定情绪，使用"平静"作为默认值
+- 如果无法确定语调，使用"温柔"作为默认值
+- 必须将叙述性内容和对话内容分开处理`;
+
+/** 阅读模式逐段TTS情感增强User Prompt */
+export function buildReadingModeTTSEnhanceUserPrompt(
+	paragraphText: string,
+	contextBefore: string,
+	contextAfter: string,
+	configuredCharacters: Array<{ name: string; aliases: string[]; voice?: string }>
+): string {
+	const charactersInfo = configuredCharacters.length > 0
+		? configuredCharacters.map(c => {
+			const aliasesStr = c.aliases?.length ? `（别称：${c.aliases.join('、')}）` : '';
+			const voiceStr = c.voice ? ` [音色：${c.voice}]` : '';
+			return `- ${c.name}${aliasesStr}${voiceStr}`;
+		}).join('\n')
+		: '无已配置角色';
+
+	return `请分析以下小说段落，识别涉及的人物并判断情绪。
+
+## 已配置的角色信息
+${charactersInfo}
+
+## 前文上下文
+${contextBefore || '（无）'}
+
+## 当前段落（需要分析）
+${paragraphText}
+
+## 后文上下文
+${contextAfter || '（无）'}
+
+## 分析要求
+1. 从已配置的角色中匹配段落涉及的人物
+2. 根据上下文判断段落的整体情绪氛围
+3. 为文本添加合适的情绪和语调标签
+4. 如果是对话，识别说话人
+
+请严格按照系统提示中的JSON格式返回结果。`;
+}
+
+/** 文本片段类型 */
+export interface TextSegment {
+	type: 'narration' | 'dialogue';
+	speaker: string;
+	emotion: string;
+	tone: string;
+	text: string;
+}
+
+/** 段落情感分析结果类型 */
+export interface ParagraphEmotionResult {
+	characters: string[];
+	segments: TextSegment[];
+}
+
 /**
  * 从 AI 响应中提取 JSON 数组（容错处理）
  */
