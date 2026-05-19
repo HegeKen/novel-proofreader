@@ -37,20 +37,28 @@ export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 	};
 
 	return (
-		<div className="ignored-words-modal">
-			<div className="modal-overlay" onClick={onClose} />
-			<div className="modal-content">
-				<div className="modal-header">
-					<h3>
+		<div className="modal-overlay" onClick={onClose}>
+			<div className="config-modal" onClick={(e) => e.stopPropagation()}>
+				<div className="config-header">
+					<div className="config-title">
 						<Icons.settings size={18} />
-						忽略单词管理
-					</h3>
-					<button className="modal-close" onClick={onClose}>
-						<Icons.close size={20} />
+						<span>忽略单词管理</span>
+					</div>
+					<button className="close-btn" onClick={onClose}>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 16 16"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="2"
+						>
+							<path d="M3 3L13 13M13 3L3 13" />
+						</svg>
 					</button>
 				</div>
 
-				<div className="modal-body">
+				<div className="config-body">
 					<p className="modal-description">
 						管理小说《{novel?.name ?? "未知"}》的忽略单词列表。AI 校对时将跳过这些词。
 					</p>

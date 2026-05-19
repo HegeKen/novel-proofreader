@@ -87,6 +87,17 @@ export function ProofreadPanel() {
 	const totalLines = chapter
 		? splitParagraphs(chapter.content).filter((p) => p.trim() !== "").length
 		: 0;
+	
+	// 计算已检测完成的段落数
+	const checkedLines = useMemo(() => {
+		return chapterResults.filter((r) => r.status === "done" || r.status === "error").length;
+	}, [chapterResults]);
+	
+	// 计算进度百分比
+	const progressPercent = useMemo(() => {
+		if (totalLines === 0) return 0;
+		return Math.round((checkedLines / totalLines) * 100);
+	}, [checkedLines, totalLines]);
 
 	// 建立过滤后索引到原始索引的映射
 	const paragraphIndexMap = useMemo(() => {
@@ -161,7 +172,11 @@ export function ProofreadPanel() {
 
 	const handleStartCheck = async () => {
 		setChecking(true);
-		await checkChapter(granularity, startLine ?? 0);
+		// 将原始索引转换为过滤后索引
+		const filteredStartLine = startLine !== null ? paragraphIndexMap.indexOf(startLine) : -1;
+		const actualStartLine = filteredStartLine >= 0 ? filteredStartLine : 0;
+		console.log(`[ProofreadPanel] handleStartCheck 开始检测: granularity=${granularity}, startLine(原始)=${startLine ?? 0}, filteredStartLine=${actualStartLine}, totalLines=${totalLines}`);
+		await checkChapter(granularity, actualStartLine);
 		setChecking(false);
 	};
 
@@ -441,8 +456,9 @@ export function ProofreadPanel() {
 
 	return (
 		<div className="proofread-panel">
-			<div className="proofread-toolbar">
-				<div className="toolbar-left">
+			<div className="proofread-header">
+				<div className="proofread-toolbar">
+					<div className="toolbar-left">
 					<label className="granularity-select">
 						检测项：
 						<div className="w-32">
@@ -461,22 +477,22 @@ export function ProofreadPanel() {
 							起始行：
 							<div className="w-32">
 								<Select
-									value={String(startLine ?? 0)}
+									value={startLine !== null ? String(startLine) : '0'}
 									onChange={(value) => {
-										const v = Number(value);
-										setStartLine(v === 0 ? null : v);
+										const originalIndex = Number(value);
+										if (originalIndex === 0) {
+											setStartLine(null);
+										} else {
+											// 直接设置原始索引（ReaderPanel 使用原始索引进行比较）
+											setStartLine(originalIndex);
+										}
 									}}
 									options={[
 										{ value: '0', label: '从头开始' },
-										...Array.from(
-											{ length: Math.min(totalLines, 500) },
-											(_, i) => i + 1,
-										)
-											.filter((n) => n < totalLines)
-											.map((n) => ({
-												value: String(n),
-												label: `第 ${n + 1} 行`,
-											})),
+										...paragraphIndexMap.slice(0, Math.min(totalLines, 500)).map((originalIndex) => ({
+											value: String(originalIndex),
+											label: `第 ${originalIndex + 1} 行`,
+										})),
 									]}
 								/>
 							</div>
@@ -523,13 +539,24 @@ export function ProofreadPanel() {
 				</div>
 			</div>
 
-			{/* 忽略单词管理弹窗 */}
-			{showIgnoredWordsModal && (
-				<IgnoredWordsManager onClose={() => setShowIgnoredWordsModal(false)} />
+			{/* 校对进度条 - 放在 toolbar 下面 */}
+			{(checking || checkedLines > 0) && (
+				<div className="proofread-progress-bar">
+					<div 
+						className="progress-fill" 
+						style={{ width: `${progressPercent}%` }}
+					></div>
+				</div>
 			)}
+		</div>
 
-			{/* 批量校对队列面板 */}
-			{showQueuePanel && (
+		{/* 忽略单词管理弹窗 */}
+		{showIgnoredWordsModal && (
+			<IgnoredWordsManager onClose={() => setShowIgnoredWordsModal(false)} />
+		)}
+
+		{/* 批量校对队列面板 */}
+		{showQueuePanel && (
 				<div className="queue-panel-overlay" onClick={() => setShowQueuePanel(false)}>
 					<div className="queue-panel" onClick={(e) => e.stopPropagation()}>
 						<div className="config-header">
@@ -538,10 +565,19 @@ export function ProofreadPanel() {
 								<span>批量校对队列</span>
 							</div>
 							<button
-								className="config-close"
+								className="close-btn"
 								onClick={() => setShowQueuePanel(false)}
 							>
-								<Icons.x size={18} />
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 16 16"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2"
+								>
+									<path d="M3 3L13 13M13 3L3 13" />
+								</svg>
 							</button>
 						</div>
 						<ProofreadQueuePanel />
@@ -568,7 +604,8 @@ export function ProofreadPanel() {
 								setHighlightedParagraph(paraResult.paragraphIndex);
 								// 点击段落时自动切换起始行到该段落
 								if (!checking) {
-									setStartLine(paraResult.paragraphIndex === 0 ? null : paraResult.paragraphIndex);
+									// 设置原始段落索引（ReaderPanel 使用原始索引进行比较）
+									setStartLine(paraResult.paragraphIndex);
 								}
 							}}
 						>

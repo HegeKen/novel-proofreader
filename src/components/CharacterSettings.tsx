@@ -232,165 +232,159 @@ export function CharacterSettings({ novelId, onClose }: CharacterSettingsProps) 
 				</div>
 
 				<div className="config-body">
-					<div className="config-section">
-						<div className="section-label">
-							<Icons.plus size={14} />
-							添加角色
-						</div>
-
-						{/* 添加角色表单 */}
-						{showAddForm ? (
-							<div className="space-y-3">
-								<div className="form-field">
-									<label>角色名</label>
-									<div className="input-wrapper">
-										<input
-											type="text"
-											value={editForm.name}
-											onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-											placeholder="请输入角色名"
-											className="config-input"
-										/>
-									</div>
-								</div>
-								<div className="form-field">
-									<label>性别</label>
-									<Select
-										value={editForm.gender || "other"}
-										onChange={(v) => setEditForm({ ...editForm, gender: v as "male" | "female" | "other" })}
-										options={[
-											{ value: "male", label: "男" },
-											{ value: "female", label: "女" },
-											{ value: "other", label: "其他" },
-										]}
-									/>
-								</div>
-
-								{/* 别称 */}
-								<div className="form-field">
-									<label>别称 <span className="text-xs text-neutral-500">(如：我、主角等)</span></label>
-									<div className="flex gap-2 mb-2">
-										<input
-											type="text"
-											value={newAlias}
-											onChange={(e) => setNewAlias(e.target.value)}
-											onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addAlias())}
-											placeholder="输入别称后按回车添加"
-											className="config-input flex-1"
-										/>
-										<button
-											type="button"
-											className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm text-white transition-all"
-											onClick={addAlias}
-										>
-											<Icons.plus size={14} />
-										</button>
-									</div>
-									{(editForm.aliases || []).length > 0 && (
-										<div className="flex flex-wrap gap-2">
-											{(editForm.aliases || []).map((alias, index) => (
-												<span key={index} className="alias-tag">
-													{alias}
-													<button
-														type="button"
-														className="remove-btn"
-														onClick={() => removeAlias(index)}
-													>
-														×
-													</button>
-												</span>
-											))}
-										</div>
-									)}
-								</div>
-
-								{/* 关系代称 */}
-								<div className="form-field">
-									<label>关系代称 <span className="text-xs text-neutral-500">(如：老婆、老公等)</span></label>
-									<div className="flex gap-2 mb-2">
-										<input
-											type="text"
-											value={newRelationTerm}
-											onChange={(e) => setNewRelationTerm(e.target.value)}
-											onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addRelationTerm())}
-											placeholder="输入关系代称后按回车添加"
-											className="config-input flex-1"
-										/>
-										<button
-											type="button"
-											className="px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm text-white transition-all"
-											onClick={addRelationTerm}
-										>
-											<Icons.plus size={14} />
-										</button>
-									</div>
-									{(editForm.relationTerms || []).length > 0 && (
-										<div className="flex flex-wrap gap-2">
-											{(editForm.relationTerms || []).map((term, index) => (
-												<span key={index} className="relation-tag">
-													{term}
-													<button
-														type="button"
-														className="remove-btn"
-														onClick={() => removeRelationTerm(index)}
-													>
-														×
-													</button>
-												</span>
-											))}
-										</div>
-									)}
-								</div>
-
-								<div className="form-field">
-									<label>指定音色</label>
-									<Select
-										value={editForm.voice || ""}
-										onChange={(v) => setEditForm({ ...editForm, voice: v })}
-										options={[{ value: "", label: "自动选择" }, ...voiceOptions]}
-									/>
-								</div>
-								<div className="form-field">
-									<label>备注</label>
-									<textarea
-										value={editForm.notes || ""}
-										onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
-										placeholder="可选的备注信息"
+					{showAddForm ? (
+						<div className="space-y-3">
+							<div className="form-field">
+								<label>角色名</label>
+								<div className="input-wrapper">
+									<input
+										type="text"
+										value={editForm.name}
+										onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+										placeholder="请输入角色名"
 										className="config-input"
-										style={{ minHeight: "60px" }}
 									/>
 								</div>
-								<div className="flex gap-2 pt-2">
-								<button
-									className="reader-search-btn flex-1 justify-center"
-									onClick={handleAdd}
-								>
-									<Icons.plus size={14} />
-									添加
-								</button>
-								<button
-									className="reader-search-btn"
-									onClick={() => {
-										setShowAddForm(false);
-										setEditForm({ name: "", gender: "other", notes: "", voice: "", aliases: [], relationTerms: [] });
-										setNewAlias("");
-										setNewRelationTerm("");
-									}}
-								>
-									取消
-								</button>
 							</div>
+							<div className="form-field">
+								<label>性别</label>
+								<Select
+									value={editForm.gender || "other"}
+									onChange={(v) => setEditForm({ ...editForm, gender: v as "male" | "female" | "other" })}
+									options={[
+										{ value: "male", label: "男" },
+										{ value: "female", label: "女" },
+										{ value: "other", label: "其他" },
+									]}
+								/>
 							</div>
-						) : (
+
+							{/* 别称 */}
+							<div className="form-field">
+								<label>别称 <span className="text-xs text-neutral-500">(如：我、主角等)</span></label>
+								<div className="flex gap-2 mb-2">
+									<input
+										type="text"
+										value={newAlias}
+										onChange={(e) => setNewAlias(e.target.value)}
+										onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addAlias())}
+										placeholder="输入别称后按回车添加"
+										className="config-input flex-1"
+									/>
+									<button
+										type="button"
+										className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm text-white transition-all"
+										onClick={addAlias}
+									>
+										<Icons.plus size={14} />
+									</button>
+								</div>
+								{(editForm.aliases || []).length > 0 && (
+									<div className="flex flex-wrap gap-2">
+										{(editForm.aliases || []).map((alias, index) => (
+											<span key={index} className="alias-tag">
+												{alias}
+												<button
+													type="button"
+													className="remove-btn"
+													onClick={() => removeAlias(index)}
+												>
+													×
+												</button>
+											</span>
+										))}
+									</div>
+								)}
+							</div>
+
+							{/* 关系代称 */}
+							<div className="form-field">
+								<label>关系代称 <span className="text-xs text-neutral-500">(如：老婆、老公等)</span></label>
+								<div className="flex gap-2 mb-2">
+									<input
+										type="text"
+										value={newRelationTerm}
+										onChange={(e) => setNewRelationTerm(e.target.value)}
+										onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addRelationTerm())}
+										placeholder="输入关系代称后按回车添加"
+										className="config-input flex-1"
+									/>
+									<button
+										type="button"
+										className="px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm text-white transition-all"
+										onClick={addRelationTerm}
+									>
+										<Icons.plus size={14} />
+									</button>
+								</div>
+								{(editForm.relationTerms || []).length > 0 && (
+									<div className="flex flex-wrap gap-2">
+										{(editForm.relationTerms || []).map((term, index) => (
+											<span key={index} className="relation-tag">
+												{term}
+												<button
+													type="button"
+													className="remove-btn"
+													onClick={() => removeRelationTerm(index)}
+												>
+													×
+												</button>
+											</span>
+										))}
+									</div>
+								)}
+							</div>
+
+							<div className="form-field">
+								<label>指定音色</label>
+								<Select
+									value={editForm.voice || ""}
+									onChange={(v) => setEditForm({ ...editForm, voice: v })}
+									options={[{ value: "", label: "自动选择" }, ...voiceOptions]}
+								/>
+							</div>
+							<div className="form-field">
+								<label>备注</label>
+								<textarea
+									value={editForm.notes || ""}
+									onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+									placeholder="可选的备注信息"
+									className="config-input"
+									style={{ minHeight: "60px" }}
+								/>
+							</div>
+							<div className="flex gap-2 pt-2">
 							<button
-								className="w-full px-4 py-3 border-2 border-dashed border-neutral-600 hover:border-neutral-500 rounded flex items-center justify-center gap-2 text-neutral-400 hover:text-neutral-300 transition-all"
-								onClick={() => setShowAddForm(true)}
+								className="reader-search-btn flex-1 justify-center"
+								onClick={handleAdd}
 							>
-								<Icons.plus size={16} />
-								添加新角色
+								<Icons.plus size={14} />
+								添加
 							</button>
-						)}
+							<button
+								className="reader-search-btn"
+								onClick={() => {
+									setShowAddForm(false);
+									setEditForm({ name: "", gender: "other", notes: "", voice: "", aliases: [], relationTerms: [] });
+									setNewAlias("");
+									setNewRelationTerm("");
+								}}
+							>
+								取消
+							</button>
+						</div>
 					</div>
+					) : (
+						<div className="add-character-fab-wrapper">
+							<button
+								className="action-btn add-character"
+								onClick={() => setShowAddForm(true)}
+								title="添加角色"
+							>
+								<Icons.userRoundPlus size={20} />
+							</button>
+						</div>
+					)}
 
 					{/* 角色列表 */}
 					{characters.length > 0 && (
@@ -597,7 +591,7 @@ export function CharacterSettings({ novelId, onClose }: CharacterSettingsProps) 
 															onClick={() => startEdit(char)}
 															title="编辑"
 														>
-															<Icons.edit size={16} />
+															<Icons.userRoundPen size={18} />
 														</button>
 														<button
 															className="action-btn delete"

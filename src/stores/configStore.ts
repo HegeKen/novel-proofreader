@@ -22,13 +22,25 @@ export interface TTSConfig {
 	characterVoices: Record<string, string>;
 }
 
+export interface PromptConfig {
+	proofread: string;
+	proofreadChapter: string;
+	script: string;
+	scriptTts: string;
+	novelTts: string;
+	readingModeTts: string;
+}
+
 interface ConfigState {
 	config: AIModelConfig;
 	ttsConfig: TTSConfig;
+	promptConfig: PromptConfig;
 	setConfig: (config: AIModelConfig) => void;
 	updateConfig: (patch: Partial<AIModelConfig>) => void;
 	setTTSConfig: (config: TTSConfig) => void;
 	updateTTSConfig: (patch: Partial<TTSConfig>) => void;
+	setPromptConfig: (config: PromptConfig) => void;
+	updatePromptConfig: (patch: Partial<PromptConfig>) => void;
 }
 
 const DEFAULT_CONFIG: AIModelConfig = {
@@ -48,17 +60,30 @@ const DEFAULT_TTS_CONFIG: TTSConfig = {
 	characterVoices: {},
 };
 
+const DEFAULT_PROMPT_CONFIG: PromptConfig = {
+	proofread: "",
+	proofreadChapter: "",
+	script: "",
+	scriptTts: "",
+	novelTts: "",
+	readingModeTts: "",
+};
+
 export const useConfigStore = create<ConfigState>()(
 	persist(
 		(set) => ({
 			config: DEFAULT_CONFIG,
 			ttsConfig: DEFAULT_TTS_CONFIG,
+			promptConfig: DEFAULT_PROMPT_CONFIG,
 			setConfig: (config) => set({ config }),
 			updateConfig: (patch) =>
 				set((state) => ({ config: { ...state.config, ...patch } })),
 			setTTSConfig: (config) => set({ ttsConfig: { ...DEFAULT_TTS_CONFIG, ...config } }),
 			updateTTSConfig: (patch) =>
 				set((state) => ({ ttsConfig: { ...DEFAULT_TTS_CONFIG, ...state.ttsConfig, ...patch } })),
+			setPromptConfig: (config) => set({ promptConfig: config }),
+			updatePromptConfig: (patch) =>
+				set((state) => ({ promptConfig: { ...state.promptConfig, ...patch } })),
 		}),
 		{
 			name: "novel-proofreader-ai-config",

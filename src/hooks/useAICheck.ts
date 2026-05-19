@@ -37,6 +37,7 @@ export function useAICheck() {
 			const chapter = chapters[currentChapterIndex];
 			if (!chapter) return;
 
+			console.log(`[useAICheck] checkChapter 开始: chapterIndex=${currentChapterIndex + 1}, granularity=${granularity}, startFrom=${startFrom} (第 ${startFrom + 1} 段)`);
 			logger.proofread(`开始校对第 ${currentChapterIndex + 1} 章, 粒度: ${granularity}, 从第 ${startFrom + 1} 段开始`);
 
 			// 取消之前的请求
@@ -53,6 +54,7 @@ export function useAICheck() {
 				// 分批次发送（每批字符数不超过550，防止请求过大导致失败）
 				// 重要：保留原始段落索引（包含空段落），与阅读区保持一致
 				const paragraphs = splitParagraphs(text);
+				console.log(`[useAICheck] 段落分割完成: 总段落数=${paragraphs.length}, startFrom=${startFrom}`);
 				const MAX_CHARS_PER_BATCH = 450;
 
 				// 初始化每个段落的结果（保留原始索引）
@@ -89,11 +91,14 @@ export function useAICheck() {
 					batches.push({ start: batchStart, end: paragraphs.length });
 				}
 
+				console.log(`[useAICheck] 批次构建完成: 总批次数=${batches.length}, 批次详情:`, batches.map((b, idx) => `批次${idx+1}: ${b.start}-${b.end}`).join(', '));
 				logger.proofread(`共分为 ${batches.length} 批处理`);
 
 				// 逐批处理
 				for (const batch of batches) {
 					if (controller.signal.aborted) break;
+
+					console.log(`[useAICheck] 处理批次: start=${batch.start}, end=${batch.end}`);
 
 					// 更新该批次段落的状态为 checking
 					for (let i = batch.start; i < batch.end; i++) {
@@ -111,6 +116,8 @@ export function useAICheck() {
 							}
 						}
 
+						console.log(`[useAICheck] 发送请求给大模型: textByLine 行号列表=[${Object.keys(textByLine).join(', ')}], 字符总数=${JSON.stringify(textByLine).length}`);
+
 						const messages = [
 							{ role: "system" as const, content: PROOFREAD_SYSTEM_PROMPT_CHAPTER },
 							{
@@ -118,6 +125,8 @@ export function useAICheck() {
 								content: buildProofreadUserPrompt(JSON.stringify(textByLine), ignoredWords),
 							},
 						];
+
+						console.log(`[useAICheck] 发送请求: 批次 ${batch.start}-${batch.end}, 发送的行号:`, Object.keys(textByLine));
 
 						const reply = await sendChatCompletion(
 							messages,
@@ -296,6 +305,7 @@ export function useAICheck() {
 				// 按段落 或 按行检测
 				const allLines = splitParagraphs(text);
 				const filteredItems = allLines.filter((p) => p.trim() !== "");
+				console.log(`[useAICheck] 非chapter粒度: 总行数=${allLines.length}, 过滤后行数=${filteredItems.length}, startFrom=${startFrom}`);
 				// 建立过滤后索引到原始索引的映射
 				const indexMap: number[] = [];
 				allLines.forEach((line, i) => {
@@ -303,6 +313,7 @@ export function useAICheck() {
 						indexMap.push(i);
 					}
 				});
+				console.log(`[useAICheck] 索引映射: indexMap前20项=[${indexMap.slice(0, 20).join(', ')}]...`);
 				// 关键修复：初始化所有段落（包括空段落），确保数组索引与原始段落索引一致
 				const initial: ParagraphResult[] = allLines.map((p, originalIndex) => {
 					// 找到该段落在过滤后的索引
@@ -342,6 +353,8 @@ export function useAICheck() {
 					// 使用原始段落索引（关键修复）
 					const originalIndex = indexMap[i];
 
+					console.log(`[useAICheck] 检测第 ${i + 1} 项: filteredIndex=${i}, originalIndex=${originalIndex}, startFrom=${startFrom}`);
+
 					updateParagraphResult(chapter.id, originalIndex, { status: "checking" });
 
 					try {
@@ -351,6 +364,8 @@ export function useAICheck() {
 							updateParagraphResult(chapter.id, originalIndex, { status: "done" });
 							continue;
 						}
+
+						console.log(`[useAICheck] 发送请求: filteredIndex=${i}, originalIndex=${originalIndex}, 文本长度=${item.length}`);
 
 						const messages = [
 							{ role: "system" as const, content: PROOFREAD_SYSTEM_PROMPT },
@@ -462,8 +477,21 @@ export function useAICheck() {
 	);
 
 	const cancelCheck = useCallback(() => {
+		console.log(`[useAICheck] cancelCheck 被调用，立即中断所有请求`);
 		abortRef.current?.abort();
-	}, []);
+		
+		// 立即更新所有正在检查的段落状态为 pending
+		const chapter = chapters[currentChapterIndex];
+		if (chapter) {
+			const paragraphs = splitParagraphs(chapter.content);
+			paragraphs.forEach((para, index) => {
+				if (para.trim() !== "") {
+					updateParagraphResult(chapter.id, index, { status: "pending" });
+				}
+			});
+			console.log(`[useAICheck] 已将所有段落状态重置为 pending`);
+		}
+	}, [chapters, currentChapterIndex, updateParagraphResult]);
 
 	const checkSingleLine = useCallback(
 		async (

@@ -52,6 +52,10 @@ import {
 	AlertTriangle,
 	Edit,
 	Save as SaveIcon,
+	Copy,
+	UserRound,
+	UserRoundPlus,
+	UserRoundPen,
 } from "lucide-react";
 
 export const Icons = {
@@ -112,6 +116,10 @@ export const Icons = {
 	circle: Circle,
 	edit: Edit,
 	saveIcon: SaveIcon,
+	copy: Copy,
+	userRound: UserRound,
+	userRoundPlus: UserRoundPlus,
+	userRoundPen: UserRoundPen,
 };
 
 export type IconName = keyof typeof Icons;

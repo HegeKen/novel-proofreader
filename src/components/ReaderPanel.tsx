@@ -1227,59 +1227,73 @@ export function ReaderPanel({
 							className="reading-settings-panel"
 							onClick={(e) => e.stopPropagation()}
 						>
-							<div className="settings-title">阅读设置</div>
-
-							{/* 行间距设置 */}
-							<div className="setting-item">
-								<span className="setting-label">行间距</span>
-								<div className="setting-control">
-									<input
-										type="range"
-										min="12"
-										max="40"
-										step="1"
-										value={lineSpacing}
-										onChange={(e) => setLineSpacing(parseInt(e.target.value))}
-									/>
-									<span className="setting-value">{lineSpacing}px</span>
+							<div className="panel-header">
+								<div className="panel-title">
+									<Icons.book size={16} />
+									<span>阅读设置</span>
 								</div>
+								<button
+									className="close-btn"
+									onClick={() => setShowReadingSettings(false)}
+								>
+									<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+										<path d="M3 3L13 13M13 3L3 13" />
+									</svg>
+								</button>
 							</div>
 
-							{/* 字体大小设置 */}
-							<div className="setting-item">
-								<span className="setting-label">字体大小</span>
-								<div className="setting-control">
-									<input
-										type="range"
-										min="12"
-										max="28"
-										step="1"
-										value={fontSize}
-										onChange={(e) => setFontSize(parseInt(e.target.value))}
-									/>
-									<span className="setting-value">{fontSize}px</span>
+							<div className="panel-body">
+								{/* 行间距设置 */}
+								<div className="setting-item">
+									<span className="setting-label">行间距</span>
+									<div className="setting-control">
+										<input
+											type="range"
+											min="12"
+											max="40"
+											step="1"
+											value={lineSpacing}
+											onChange={(e) => setLineSpacing(parseInt(e.target.value))}
+										/>
+										<span className="setting-value">{lineSpacing}px</span>
+									</div>
 								</div>
-							</div>
 
-							{/* 首行缩进设置（整数选项） */}
-							<div className="setting-item">
-								<span className="setting-label">首行缩进</span>
-								<div className="setting-control">
-									<input
-										type="range"
-										min="0"
-										max="4"
-										step="1"
-										value={paragraphIndent}
-										onChange={(e) =>
-											setParagraphIndent(parseInt(e.target.value))
-										}
-									/>
-									<span className="setting-value">{paragraphIndent}字符</span>
+								{/* 字体大小设置 */}
+								<div className="setting-item">
+									<span className="setting-label">字体大小</span>
+									<div className="setting-control">
+										<input
+											type="range"
+											min="12"
+											max="28"
+											step="1"
+											value={fontSize}
+											onChange={(e) => setFontSize(parseInt(e.target.value))}
+										/>
+										<span className="setting-value">{fontSize}px</span>
+									</div>
 								</div>
-							</div>
 
-							{/* 阅读背景设置 */}
+								{/* 首行缩进设置（整数选项） */}
+								<div className="setting-item">
+									<span className="setting-label">首行缩进</span>
+									<div className="setting-control">
+										<input
+											type="range"
+											min="0"
+											max="4"
+											step="1"
+											value={paragraphIndent}
+											onChange={(e) =>
+												setParagraphIndent(parseInt(e.target.value))
+											}
+										/>
+										<span className="setting-value">{paragraphIndent}字符</span>
+									</div>
+								</div>
+
+								{/* 阅读背景设置 */}
 							<div className="setting-item">
 								<span className="setting-label">阅读背景</span>
 								<div className="setting-control background-options">
@@ -1448,25 +1462,28 @@ export function ReaderPanel({
 									)}
 								</div>
 							</div>
+							</div>
 						</div>
 					)}
 
 					{/* TTS 面板 */}
 					{showTTSPanel && readingMode && (
 						<div className="tts-panel">
-							<div className="tts-panel-header">
-								<span>
+							<div className="panel-header">
+								<div className="panel-title">
 									<Icons.volume size={16} />
-									语音朗读设置
-								</span>
+									<span>语音朗读设置</span>
+								</div>
 								<button
-									className="tts-panel-close"
+									className="close-btn"
 									onClick={() => setShowTTSPanel(false)}
 								>
-									<Icons.close size={16} />
+									<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+										<path d="M3 3L13 13M13 3L3 13" />
+									</svg>
 								</button>
 							</div>
-							<div className="tts-panel-body">
+							<div className="panel-body">
 								<div className="tts-setting-item">
 									<label>音色</label>
 									<Select
@@ -1717,10 +1734,19 @@ export function ReaderPanel({
 										<span>目录</span>
 									</div>
 									<button
-										className="config-close"
+										className="close-btn"
 										onClick={() => setShowChapterList(false)}
 									>
-										<Icons.x size={18} />
+										<svg
+											width="16"
+											height="16"
+											viewBox="0 0 16 16"
+											fill="none"
+											stroke="currentColor"
+											strokeWidth="2"
+										>
+											<path d="M3 3L13 13M13 3L3 13" />
+										</svg>
 									</button>
 								</div>
 								<div className="chapter-list-content" ref={chapterListContentRef}>
@@ -1759,8 +1785,17 @@ export function ReaderPanel({
 								<Icons.search size={18} />
 								<span>搜索</span>
 							</div>
-							<button className="config-close" onClick={closeSearch}>
-								<Icons.x size={18} />
+							<button className="close-btn" onClick={closeSearch}>
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 16 16"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2"
+								>
+									<path d="M3 3L13 13M13 3L3 13" />
+								</svg>
 							</button>
 						</div>
 						<div className="search-input-row">

@@ -7,6 +7,14 @@ import { useConfigStore } from "../stores/configStore";
 import type { AIProvider } from "../types";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
+import {
+	PROOFREAD_SYSTEM_PROMPT,
+	PROOFREAD_SYSTEM_PROMPT_CHAPTER,
+	SCRIPT_SYSTEM_PROMPT,
+	SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT,
+	NOVEL_TTS_ENHANCE_SYSTEM_PROMPT,
+	READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT,
+} from "../utils/aiClient";
 
 const PROVIDERS: {
 	value: AIProvider;
@@ -381,20 +389,262 @@ function TTSConfigSection() {
 	);
 }
 
+// PROMPT 设置组件
+function PromptSettingsSection({
+	initialPromptConfig,
+	onSave,
+}: {
+	initialPromptConfig: {
+		proofread: string;
+		proofreadChapter: string;
+		script: string;
+		scriptTts: string;
+		novelTts: string;
+		readingModeTts: string;
+	};
+	onSave: (config: typeof initialPromptConfig) => void;
+}) {
+	const [prompts, setPrompts] = useState({
+		proofread: initialPromptConfig.proofread || PROOFREAD_SYSTEM_PROMPT,
+		proofreadChapter: initialPromptConfig.proofreadChapter || PROOFREAD_SYSTEM_PROMPT_CHAPTER,
+		script: initialPromptConfig.script || SCRIPT_SYSTEM_PROMPT,
+		scriptTts: initialPromptConfig.scriptTts || SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT,
+		novelTts: initialPromptConfig.novelTts || NOVEL_TTS_ENHANCE_SYSTEM_PROMPT,
+		readingModeTts: initialPromptConfig.readingModeTts || READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT,
+	});
+
+	const handleCopy = async (text: string, label: string) => {
+		try {
+			await navigator.clipboard.writeText(text);
+			console.log(`已复制: ${label}`);
+		} catch (err) {
+			console.error('复制失败:', err);
+		}
+	};
+
+	const handleReset = (key: keyof typeof prompts, defaultValue: string) => {
+		setPrompts((prev) => ({ ...prev, [key]: defaultValue }));
+	};
+
+	const handleSave = () => {
+		onSave(prompts);
+	};
+
+	return (
+		<div className="config-section prompt-section">
+			<div className="section-label">
+				<Icons.punctuation size={14} />
+				PROMPT 设置
+			</div>
+
+			<div className="prompt-item">
+				<div className="prompt-header">
+					<label className="prompt-label">校对系统 Prompt（段落级别）</label>
+					<div className="prompt-actions">
+						<button
+							className="prompt-btn"
+							onClick={() => handleCopy(prompts.proofread, '校对系统 Prompt')}
+							title="复制"
+						>
+							<Icons.copy size={14} />
+						</button>
+						<button
+							className="prompt-btn"
+							onClick={() => handleReset('proofread', PROOFREAD_SYSTEM_PROMPT)}
+							title="重置"
+						>
+							<Icons.reset size={14} />
+						</button>
+					</div>
+				</div>
+				<textarea
+					className="prompt-textarea"
+					value={prompts.proofread}
+					onChange={(e) => setPrompts((prev) => ({ ...prev, proofread: e.target.value }))}
+					rows={6}
+				/>
+				<p className="prompt-hint">用于逐段落校对检测</p>
+			</div>
+
+			<div className="prompt-item">
+				<div className="prompt-header">
+					<label className="prompt-label">校对系统 Prompt（章节级别）</label>
+					<div className="prompt-actions">
+						<button
+							className="prompt-btn"
+							onClick={() => handleCopy(prompts.proofreadChapter, '校对系统 Prompt (章节)')}
+							title="复制"
+						>
+							<Icons.copy size={14} />
+						</button>
+						<button
+							className="prompt-btn"
+							onClick={() => handleReset('proofreadChapter', PROOFREAD_SYSTEM_PROMPT_CHAPTER)}
+							title="重置"
+						>
+							<Icons.reset size={14} />
+						</button>
+					</div>
+				</div>
+				<textarea
+					className="prompt-textarea"
+					value={prompts.proofreadChapter}
+					onChange={(e) => setPrompts((prev) => ({ ...prev, proofreadChapter: e.target.value }))}
+					rows={6}
+				/>
+				<p className="prompt-hint">用于整章节批量校对检测</p>
+			</div>
+
+			<div className="prompt-item">
+				<div className="prompt-header">
+					<label className="prompt-label">剧本转换系统 Prompt</label>
+					<div className="prompt-actions">
+						<button
+							className="prompt-btn"
+							onClick={() => handleCopy(prompts.script, '剧本转换 Prompt')}
+							title="复制"
+						>
+							<Icons.copy size={14} />
+						</button>
+						<button
+							className="prompt-btn"
+							onClick={() => handleReset('script', SCRIPT_SYSTEM_PROMPT)}
+							title="重置"
+						>
+							<Icons.reset size={14} />
+						</button>
+					</div>
+				</div>
+				<textarea
+					className="prompt-textarea"
+					value={prompts.script}
+					onChange={(e) => setPrompts((prev) => ({ ...prev, script: e.target.value }))}
+					rows={8}
+				/>
+				<p className="prompt-hint">用于将小说转换为剧本格式</p>
+			</div>
+
+			<div className="prompt-item">
+				<div className="prompt-header">
+					<label className="prompt-label">剧本 TTS 情感增强 Prompt</label>
+					<div className="prompt-actions">
+						<button
+							className="prompt-btn"
+							onClick={() => handleCopy(prompts.scriptTts, '剧本 TTS 增强 Prompt')}
+							title="复制"
+						>
+							<Icons.copy size={14} />
+						</button>
+						<button
+							className="prompt-btn"
+							onClick={() => handleReset('scriptTts', SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT)}
+							title="重置"
+						>
+							<Icons.reset size={14} />
+						</button>
+					</div>
+				</div>
+				<textarea
+					className="prompt-textarea"
+					value={prompts.scriptTts}
+					onChange={(e) => setPrompts((prev) => ({ ...prev, scriptTts: e.target.value }))}
+					rows={8}
+				/>
+				<p className="prompt-hint">用于为剧本对话添加情感/音色标注</p>
+			</div>
+
+			<div className="prompt-item">
+				<div className="prompt-header">
+					<label className="prompt-label">小说 TTS 情感增强 Prompt</label>
+					<div className="prompt-actions">
+						<button
+							className="prompt-btn"
+							onClick={() => handleCopy(prompts.novelTts, '小说 TTS 增强 Prompt')}
+							title="复制"
+						>
+							<Icons.copy size={14} />
+						</button>
+						<button
+							className="prompt-btn"
+							onClick={() => handleReset('novelTts', NOVEL_TTS_ENHANCE_SYSTEM_PROMPT)}
+							title="重置"
+						>
+							<Icons.reset size={14} />
+						</button>
+					</div>
+				</div>
+				<textarea
+					className="prompt-textarea"
+					value={prompts.novelTts}
+					onChange={(e) => setPrompts((prev) => ({ ...prev, novelTts: e.target.value }))}
+					rows={8}
+				/>
+				<p className="prompt-hint">用于为小说章节添加情感/音色标注</p>
+			</div>
+
+			<div className="prompt-item">
+				<div className="prompt-header">
+					<label className="prompt-label">阅读模式 TTS 增强 Prompt</label>
+					<div className="prompt-actions">
+						<button
+							className="prompt-btn"
+							onClick={() => handleCopy(prompts.readingModeTts, '阅读模式 TTS 增强 Prompt')}
+							title="复制"
+						>
+							<Icons.copy size={14} />
+						</button>
+						<button
+							className="prompt-btn"
+							onClick={() => handleReset('readingModeTts', READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT)}
+							title="重置"
+						>
+							<Icons.reset size={14} />
+						</button>
+					</div>
+				</div>
+				<textarea
+					className="prompt-textarea"
+					value={prompts.readingModeTts}
+					onChange={(e) => setPrompts((prev) => ({ ...prev, readingModeTts: e.target.value }))}
+					rows={6}
+				/>
+				<p className="prompt-hint">用于阅读模式下分析段落、识别人物、判断情绪</p>
+			</div>
+
+			<button className="prompt-save-btn" onClick={handleSave}>
+				<Icons.save size={14} />
+				保存 PROMPT 设置
+			</button>
+		</div>
+	);
+}
+
 // 内部组件，使用 key 重置状态
 function ConfigModalContent({
 	initialConfig,
 	apiKeyMap,
 	onSave,
 	onClose,
+	promptConfig,
+	onSavePrompt,
 }: {
 	initialConfig: ConfigState;
 	apiKeyMap: Partial<Record<AIProvider, string>>;
 	onSave: (config: ConfigState) => void;
 	onClose: () => void;
+	promptConfig: {
+		proofread: string;
+		proofreadChapter: string;
+		script: string;
+		scriptTts: string;
+		novelTts: string;
+		readingModeTts: string;
+	};
+	onSavePrompt: (config: typeof promptConfig) => void;
 }) {
 	const [config, setConfig] = useState<ConfigState>(initialConfig);
 	const [showApiKey, setShowApiKey] = useState(false);
+	const [activeTab, setActiveTab] = useState<"model" | "prompt">("model");
 
 	const handleProviderChange = useCallback(
 		(p: AIProvider) => {
@@ -426,7 +676,7 @@ function ConfigModalContent({
 				<div className="config-header">
 					<div className="config-title">
 						<span className="title-icon"><Icons.settings size={16} /></span>
-						<span>AI 模型配置</span>
+						<span>AI 配置</span>
 					</div>
 					<button className="close-btn" onClick={onClose}>
 						<svg
@@ -442,126 +692,155 @@ function ConfigModalContent({
 					</button>
 				</div>
 
+				{/* Tab 切换 */}
+				<div className="config-tabs">
+					<button
+						className={`tab-btn ${activeTab === "model" ? "active" : ""}`}
+						onClick={() => setActiveTab("model")}
+					>
+						<Icons.saveOriginal size={14} />
+						大模型配置
+					</button>
+					<button
+						className={`tab-btn ${activeTab === "prompt" ? "active" : ""}`}
+						onClick={() => setActiveTab("prompt")}
+					>
+						<Icons.punctuation size={14} />
+						PROMPT 设置
+					</button>
+				</div>
+
 				<div className="config-body">
-					<div className="config-section">
-						<div className="section-label">选择模型提供商</div>
-						<div className="provider-grid">
-							{PROVIDERS.map((p) => (
-								<button
-									key={p.value}
-									className={`provider-card ${config.provider === p.value ? "active" : ""}`}
-									onClick={() => handleProviderChange(p.value)}
-									style={
-										{
-											"--provider-color": p.color,
-										} as React.CSSProperties
-									}
-								>
-									<img
-										src={p.logo}
-										alt={p.label}
-										className="provider-logo"
-										onError={(e) => {
-											// 如果图片加载失败，显示文字标识
-											const target = e.target as HTMLImageElement;
-											target.style.display = "none";
-											target.parentElement
-												?.querySelector(".provider-fallback")
-												?.classList.remove("hidden");
-										}}
-									/>
-									<span className="provider-fallback hidden">
-										{p.label.charAt(0)}
-									</span>
-									<span className="provider-name">{p.label}</span>
-								</button>
-							))}
-						</div>
-					</div>
-
-					<div className="config-section">
-						<div className="section-label">API 配置</div>
-						<div className="form-field">
-							<label>Base URL</label>
-							<div className="input-wrapper">
-								<input
-									type="text"
-									value={config.baseUrl}
-									onChange={(e) =>
-										setConfig((prev) => ({ ...prev, baseUrl: e.target.value }))
-									}
-									placeholder="https://api.deepseek.com/v1"
-									className="config-input"
-								/>
-							</div>
-						</div>
-
-						<form onSubmit={(e) => e.preventDefault()}>
-							<div className="form-field">
-								<label>API Key</label>
-								<div className="input-wrapper">
-									<input
-										type={showApiKey ? "text" : "password"}
-										value={config.apiKey}
-										onChange={(e) =>
-											setConfig((prev) => ({ ...prev, apiKey: e.target.value }))
-										}
-										placeholder="sk-..."
-										className="config-input"
-										autoComplete="new-password"
-									/>
-									<button
-										className="toggle-visibility-btn"
-										onClick={() => setShowApiKey(!showApiKey)}
-										type="button"
-									>
-										{showApiKey ? <Icons.eyeOff size={16} /> : <Icons.eye size={16} />}
-									</button>
+					{activeTab === "model" && (
+						<>
+							<div className="config-section">
+								<div className="section-label">选择模型提供商</div>
+								<div className="provider-grid">
+									{PROVIDERS.map((p) => (
+										<button
+											key={p.value}
+											className={`provider-card ${config.provider === p.value ? "active" : ""}`}
+											onClick={() => handleProviderChange(p.value)}
+											style={
+												{
+													"--provider-color": p.color,
+												} as React.CSSProperties
+											}
+										>
+											<img
+												src={p.logo}
+												alt={p.label}
+												className="provider-logo"
+												onError={(e) => {
+													// 如果图片加载失败，显示文字标识
+													const target = e.target as HTMLImageElement;
+													target.style.display = "none";
+													target.parentElement
+														?.querySelector(".provider-fallback")
+														?.classList.remove("hidden");
+												}}
+											/>
+											<span className="provider-fallback hidden">
+												{p.label.charAt(0)}
+											</span>
+											<span className="provider-name">{p.label}</span>
+										</button>
+									))}
 								</div>
 							</div>
-						</form>
 
-						<div className="form-field">
-							<label>模型名称</label>
-							<div className="input-wrapper">
-								<input
-									type="text"
-									value={config.model}
-									onChange={(e) =>
-										setConfig((prev) => ({ ...prev, model: e.target.value }))
-									}
-									placeholder="deepseek-chat"
-									className="config-input"
-								/>
+							<div className="config-section">
+								<div className="section-label">API 配置</div>
+								<div className="form-field">
+									<label>Base URL</label>
+									<div className="input-wrapper">
+										<input
+											type="text"
+											value={config.baseUrl}
+											onChange={(e) =>
+												setConfig((prev) => ({ ...prev, baseUrl: e.target.value }))
+											}
+											placeholder="https://api.deepseek.com/v1"
+											className="config-input"
+										/>
+									</div>
+								</div>
+
+								<form onSubmit={(e) => e.preventDefault()}>
+									<div className="form-field">
+										<label>API Key</label>
+										<div className="input-wrapper">
+											<input
+												type={showApiKey ? "text" : "password"}
+												value={config.apiKey}
+												onChange={(e) =>
+													setConfig((prev) => ({ ...prev, apiKey: e.target.value }))
+												}
+												placeholder="sk-..."
+												className="config-input"
+												autoComplete="new-password"
+											/>
+											<button
+												className="toggle-visibility-btn"
+												onClick={() => setShowApiKey(!showApiKey)}
+												type="button"
+											>
+												{showApiKey ? <Icons.eyeOff size={16} /> : <Icons.eye size={16} />}
+											</button>
+										</div>
+									</div>
+								</form>
+
+								<div className="form-field">
+									<label>模型名称</label>
+									<div className="input-wrapper">
+										<input
+											type="text"
+											value={config.model}
+											onChange={(e) =>
+												setConfig((prev) => ({ ...prev, model: e.target.value }))
+											}
+											placeholder="deepseek-chat"
+											className="config-input"
+										/>
+									</div>
+								</div>
 							</div>
-						</div>
-					</div>
 
-					<div className="config-section">
-						<div className="section-label">调试选项</div>
-						<label className="toggle-label">
-							<div className="toggle-switch">
-								<input
-									type="checkbox"
-									checked={config.enableLogging}
-									onChange={(e) =>
-										setConfig((prev) => ({
-											...prev,
-											enableLogging: e.target.checked,
-										}))
-									}
-								/>
-								<span className="toggle-slider"></span>
+							<div className="config-section">
+								<div className="section-label">调试选项</div>
+								<label className="toggle-label">
+									<div className="toggle-switch">
+										<input
+											type="checkbox"
+											checked={config.enableLogging}
+											onChange={(e) =>
+												setConfig((prev) => ({
+													...prev,
+													enableLogging: e.target.checked,
+												}))
+											}
+										/>
+										<span className="toggle-slider"></span>
+									</div>
+									<span className="toggle-text">开启调试日志</span>
+								</label>
 							</div>
-							<span className="toggle-text">开启调试日志</span>
-						</label>
-					</div>
 
-					<APIUsageSection />
+							<APIUsageSection />
 
-					<ReadingSettingsSection />
+							<ReadingSettingsSection />
 
-					<TTSConfigSection />
+							<TTSConfigSection />
+						</>
+					)}
+
+					{activeTab === "prompt" && (
+						<PromptSettingsSection
+							initialPromptConfig={promptConfig}
+							onSave={onSavePrompt}
+						/>
+					)}
 				</div>
 
 				<div className="config-footer">
@@ -582,6 +861,8 @@ export function ConfigModal({ open, onClose }: Props) {
 	const setAIConfig = useAppStore((s) => s.setAIConfig);
 	const apiKeyMap = useAppStore((s) => s.apiKeyMap);
 	const setApiKeyForProvider = useAppStore((s) => s.setApiKeyForProvider);
+	const promptConfig = useConfigStore((s) => s.promptConfig);
+	const setPromptConfig = useConfigStore((s) => s.setPromptConfig);
 
 	// 计算初始配置
 	const provider = detectProvider(aiConfig.baseURL);
@@ -608,6 +889,14 @@ export function ConfigModal({ open, onClose }: Props) {
 		[setApiKeyForProvider, setAIConfig, onClose],
 	);
 
+	// 保存 PROMPT 配置的回调
+	const handleSavePrompt = useCallback(
+		(config: typeof promptConfig) => {
+			setPromptConfig(config);
+		},
+		[setPromptConfig],
+	);
+
 	if (!open) return null;
 
 	// 使用 key 属性确保每次打开弹窗时重新挂载组件，从而重置状态
@@ -618,6 +907,8 @@ export function ConfigModal({ open, onClose }: Props) {
 			apiKeyMap={apiKeyMap}
 			onSave={handleSave}
 			onClose={onClose}
+			promptConfig={promptConfig}
+			onSavePrompt={handleSavePrompt}
 		/>
 	);
 }
