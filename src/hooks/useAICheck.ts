@@ -25,6 +25,7 @@ export function useAICheck() {
 	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
 	const currentNovelId = useAppStore((s) => s.currentNovelId);
 	const getIgnoredWords = useAppStore((s) => s.getIgnoredWords);
+	const getCharacters = useAppStore((s) => s.getCharacters);
 	const saveProofreadProgress = useAppStore((s) => s.saveProofreadProgress);
 	const setResults = useProofreadStore((s) => s.setResults);
 	const updateParagraphResult = useProofreadStore(
@@ -47,8 +48,13 @@ export function useAICheck() {
 
 			const text = chapter.content;
 			// 获取当前小说的忽略单词列表
-			const ignoredWords = getIgnoredWords(currentNovelId ?? "");
+			const ignoredWordsList = getIgnoredWords(currentNovelId ?? "");
+			// 获取当前小说的角色名和别称，添加到忽略列表
+			const characterNames = currentNovelId ? getCharacters(currentNovelId).flatMap(c => [c.name, ...(c.aliases || [])]) : [];
+			// 合并忽略词列表（去重）
+			const ignoredWords = Array.from(new Set([...ignoredWordsList, ...characterNames]));
 			logger.proofread(`忽略单词列表: ${ignoredWords.join(", ") || "无"}`);
+			logger.proofread(`角色名称已自动加入忽略词: ${characterNames.join(", ") || "无"}`);
 
 			if (granularity === "chapter") {
 				// 分批次发送（每批字符数不超过550，防止请求过大导致失败）
@@ -294,7 +300,20 @@ export function useAICheck() {
 						// 更新该批次非空段落为错误状态
 						for (let lineIdx = batch.start; lineIdx < batch.end; lineIdx++) {
 							if (paragraphs[lineIdx].trim() === "") continue; // 跳过空段落
+							// 将网络错误添加到错误清单
+							const networkError: ProofreadError = {
+								id: `err-${chapter.id}-${lineIdx}-network-${Date.now()}`,
+								startIndex: 0,
+								endIndex: 0,
+								errorType: "network",
+								suggestion: msg.includes("Failed to fetch") ? "网络请求失败，请检查网络连接或API配置" : msg,
+								originalText: paragraphs[lineIdx].slice(0, 50),
+								correctedText: "",
+								applied: false,
+								skipped: false,
+							};
 							updateParagraphResult(chapter.id, lineIdx, {
+								errors: [networkError],
 								status: "error",
 								errorMessage: msg,
 							});
@@ -451,7 +470,22 @@ export function useAICheck() {
 						if (err instanceof DOMException && err.name === "AbortError")
 							return;
 						const msg = err instanceof Error ? err.message : String(err);
+						// 获取当前段落文本
+						const currentItem = filteredItems[i] || "";
+						// 将网络错误添加到错误清单
+						const networkError: ProofreadError = {
+							id: `err-${chapter.id}-${originalIndex}-network-${Date.now()}`,
+							startIndex: 0,
+							endIndex: 0,
+							errorType: "network",
+							suggestion: msg.includes("Failed to fetch") ? "网络请求失败，请检查网络连接或API配置" : msg,
+							originalText: currentItem.slice(0, 50),
+							correctedText: "",
+							applied: false,
+							skipped: false,
+						};
 						updateParagraphResult(chapter.id, originalIndex, {
+							errors: [networkError],
 							status: "error",
 							errorMessage: msg,
 						});
@@ -472,6 +506,7 @@ export function useAICheck() {
 			setResults,
 			updateParagraphResult,
 			getIgnoredWords,
+			getCharacters,
 			saveProofreadProgress,
 		],
 	);

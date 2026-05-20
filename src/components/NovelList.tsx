@@ -3,7 +3,7 @@
 // ============================================================
 import { useAppStore } from "../stores/appStore";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { saveNovelToStorage, deleteNovelFromStorage } from "../utils/fileExport";
+import { saveNovelToStorage, deleteNovelFromStorage, createCharacterTemplate } from "../utils/fileExport";
 import { splitChapters } from "../utils/chapterSplit";
 import { decodeTextBuffer } from "../utils/decodeText";
 import { formatFileSize, formatDateTime } from "../utils/formatters";
@@ -48,8 +48,13 @@ export function NovelList({
 			};
 			addNovel(novel);
 
-			// 解析章节
+			// 保存小说到 storage
 			await saveNovelToStorage(`${novel.name}.txt`, text);
+
+			// 为新小说创建角色模板文件
+			await createCharacterTemplate(novel.name);
+
+			// 解析章节
 			const chapters = splitChapters(text);
 			setChapters(chapters);
 		};

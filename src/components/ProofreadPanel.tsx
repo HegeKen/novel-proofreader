@@ -22,6 +22,7 @@ const ERROR_TYPE_LABELS: Record<string, { icon: keyof typeof Icons; label: strin
 	format: { icon: "grammar", label: "排版" },
 	grammar: { icon: "grammar", label: "病句" },
 	punctuation: { icon: "punctuation", label: "标点" },
+	network: { icon: "alertCircle", label: "网络错误" },
 };
 
 const ERROR_TYPE_COLORS: Record<string, string> = {
@@ -29,6 +30,7 @@ const ERROR_TYPE_COLORS: Record<string, string> = {
 	format: "#faad14",
 	grammar: "#1677ff",
 	punctuation: "#52c41a",
+	network: "#722ed1",
 };
 
 /** 采纳动画时长（ms） */

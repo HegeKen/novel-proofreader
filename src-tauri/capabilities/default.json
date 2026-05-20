@@ -12,40 +12,47 @@
       "identifier": "fs:allow-exists",
       "allow": [
         { "path": "$DOCUMENT/*" },
-        { "path": "$DOCUMENT/novels/*" }
+        { "path": "$DOCUMENT/novels/*" },
+        { "path": "$DOCUMENT/characters/*" },
+        { "path": "$DOCUMENT/characters" }
       ]
     },
     {
       "identifier": "fs:allow-read-dir",
       "allow": [
         { "path": "$DOCUMENT" },
-        { "path": "$DOCUMENT/novels" }
+        { "path": "$DOCUMENT/novels" },
+        { "path": "$DOCUMENT/characters" }
       ]
     },
     {
       "identifier": "fs:allow-mkdir",
       "allow": [
-        { "path": "$DOCUMENT/novels" }
+        { "path": "$DOCUMENT/novels" },
+        { "path": "$DOCUMENT/characters" }
       ]
     },
     {
       "identifier": "fs:allow-read-text-file",
       "allow": [
         { "path": "$DOCUMENT/*" },
-        { "path": "$DOCUMENT/novels/*" }
+        { "path": "$DOCUMENT/novels/*" },
+        { "path": "$DOCUMENT/characters/*" }
       ]
     },
     {
       "identifier": "fs:allow-write-text-file",
       "allow": [
         { "path": "$DOCUMENT/*" },
-        { "path": "$DOCUMENT/novels/*" }
+        { "path": "$DOCUMENT/novels/*" },
+        { "path": "$DOCUMENT/characters/*" }
       ]
     },
     {
       "identifier": "fs:allow-remove",
       "allow": [
-        { "path": "$DOCUMENT/novels/*" }
+        { "path": "$DOCUMENT/novels/*" },
+        { "path": "$DOCUMENT/characters/*" }
       ]
     },
     "dialog:default",

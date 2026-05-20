@@ -1,7 +1,7 @@
 // ============================================================
 // 角色设置组件
 // ============================================================
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useConfigStore } from "../stores/configStore";
 import type { CharacterInfo } from "../types";
@@ -9,18 +9,83 @@ import { synthesizeSpeechWithVoice } from "../utils/ttsService";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { logger } from "../utils/logger";
+import { detectCharactersFromText, detectHighFrequencyWords, saveCharacterConfigToStorage, loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
+import type { DetectedCharacter, HighFrequencyWord } from "../utils/fileExport";
 
 interface CharacterSettingsProps {
 	novelId: string;
+	novelName: string;
 	onClose: () => void;
 }
 
-export function CharacterSettings({ novelId, onClose }: CharacterSettingsProps) {
+export function CharacterSettings({ novelId, novelName, onClose }: CharacterSettingsProps) {
 	const novelCharacters = useAppStore((s) => s.novelCharacters);
 	const characters = useMemo(() => novelCharacters[novelId] ?? [], [novelCharacters, novelId]);
 	const addCharacter = useAppStore((s) => s.addCharacter);
 	const updateCharacter = useAppStore((s) => s.updateCharacter);
 	const removeCharacter = useAppStore((s) => s.removeCharacter);
+	const setCharactersForNovel = useAppStore((s) => s.setCharactersForNovel);
+	const novels = useAppStore((s) => s.novels);
+	const currentNovel = useMemo(() => novels.find(n => n.id === novelId), [novels, novelId]);
+
+	// 检测新角色弹窗状态
+	const [showDetectModal, setShowDetectModal] = useState(false);
+	const [detectedCharacters, setDetectedCharacters] = useState<DetectedCharacter[]>([]);
+	const [isScanning, setIsScanning] = useState(false);
+	const [detectSearchQuery, setDetectSearchQuery] = useState("");
+	
+	// 高频词汇检测弹窗状态
+	const [showWordsModal, setShowWordsModal] = useState(false);
+	const [detectedWords, setDetectedWords] = useState<HighFrequencyWord[]>([]);
+	
+	// 检测结果操作状态：'new' | 'alias' | 'relation'
+	type DetectedAction = 'new' | 'alias' | 'relation';
+	interface DetectedSelection {
+		selected: boolean;
+		action: DetectedAction;
+		mergeTargetId?: string;
+	}
+	const [detectedSelections, setDetectedSelections] = useState<Record<string, DetectedSelection>>({});
+
+	// 检测是否为移动端
+	const [isMobile, setIsMobile] = useState(false);
+	useEffect(() => {
+		const checkMobile = () => {
+			setIsMobile(window.innerWidth <= 768);
+		};
+		checkMobile();
+		window.addEventListener("resize", checkMobile);
+		return () => window.removeEventListener("resize", checkMobile);
+	}, []);
+
+	// 从文件系统加载角色数据
+	const loadedRef = useRef(false);
+	useEffect(() => {
+		if (loadedRef.current) return;
+		loadedRef.current = true;
+		
+		const loadCharactersFromStorage = async () => {
+			if (!novelId) return;
+			const fileName = getCharacterConfigFileName(novelName);
+			const content = await loadCharacterConfigFromStorage(fileName);
+			if (content) {
+				try {
+					const loadedCharacters = JSON.parse(content) as CharacterInfo[];
+					// 如果内存中没有角色数据但文件中有，则加载到内存
+					if (!novelCharacters[novelId] || novelCharacters[novelId].length === 0) {
+						setCharactersForNovel(novelId, loadedCharacters);
+					}
+					console.log('[CharacterSettings] Loaded characters from storage:', { novelId, novelName, count: loadedCharacters.length });
+				} catch (err) {
+					console.error('[CharacterSettings] Failed to parse character config:', err);
+				}
+			} else {
+				console.log('[CharacterSettings] No character config file found for:', { novelId, novelName });
+			}
+		};
+		loadCharactersFromStorage();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [novelId, novelName]);
 
 	// 编辑状态
 	const [editingId, setEditingId] = useState<string | null>(null);
@@ -103,6 +168,24 @@ export function CharacterSettings({ novelId, onClose }: CharacterSettingsProps) 
 		}));
 	}, []);
 
+	const clearAllAliases = useCallback(() => {
+		if ((editForm.aliases || []).length > 0 && confirm("确定要清空所有别称吗？")) {
+			setEditForm(prev => ({
+				...prev,
+				aliases: []
+			}));
+		}
+	}, [editForm.aliases]);
+
+	const clearAllRelationTerms = useCallback(() => {
+		if ((editForm.relationTerms || []).length > 0 && confirm("确定要清空所有关系代称吗？")) {
+			setEditForm(prev => ({
+				...prev,
+				relationTerms: []
+			}));
+		}
+	}, [editForm.relationTerms]);
+
 	const handleAdd = useCallback(() => {
 		if (!editForm.name?.trim()) return;
 		addCharacter(novelId, {
@@ -125,6 +208,275 @@ export function CharacterSettings({ novelId, onClose }: CharacterSettingsProps) 
 		}
 	}, [novelId, removeCharacter]);
 
+	// 显示导出结果弹窗
+	const [exportModal, setExportModal] = useState<{
+		show: boolean;
+		success: boolean;
+		fileName: string;
+		dataStr: string;
+		characterCount: number;
+	}>({
+		show: false,
+		success: false,
+		fileName: "",
+		dataStr: "",
+		characterCount: 0,
+	});
+
+	// 复制JSON数据到剪贴板
+	const copyToClipboard = useCallback(async (data: string) => {
+		try {
+			await navigator.clipboard.writeText(data);
+			alert("已复制到剪贴板！");
+		} catch (err) {
+			console.error('[CharacterSettings] 复制失败:', err);
+			alert("复制失败，请手动选择复制");
+		}
+	}, []);
+
+	// 导出角色
+	const handleExportCharacters = useCallback(async () => {
+		const dataStr = JSON.stringify(characters, null, 2);
+		// 使用小说名称作为文件名前缀
+		const safeName = (novelName || "角色配置").replace(/[\\/:*?"<>|]/g, "_");
+		const fileName = `${safeName}-角色配置-${new Date().toISOString().split("T")[0]}.json`;
+
+		if (isMobile) {
+			// 移动端：使用 Tauri API 保存到 Android/data/cn.helilab.proofreader/documents/characters/ 目录
+			const success = await saveCharacterConfigToStorage(fileName, dataStr);
+			console.log('[CharacterSettings] 角色配置导出结果:', { success, fileName, characterCount: characters.length, dataSize: dataStr.length, isMobile });
+			setExportModal({
+				show: true,
+				success,
+				fileName,
+				dataStr,
+				characterCount: characters.length,
+			});
+		} else {
+			// 桌面端：使用浏览器下载
+			const blob = new Blob([dataStr], { type: "application/json" });
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = fileName;
+			link.click();
+			URL.revokeObjectURL(url);
+		}
+	}, [characters, novelName, isMobile]);
+
+	// 导入角色
+	const handleImportCharacters = useCallback(async () => {
+		const input = document.createElement("input");
+		input.type = "file";
+		input.accept = ".json";
+		input.onchange = async (e) => {
+			const file = (e.target as HTMLInputElement).files?.[0];
+			if (!file) return;
+			
+			const reader = new FileReader();
+			reader.onload = async (event) => {
+				try {
+					const imported = JSON.parse(event.target?.result as string) as CharacterInfo[];
+					if (!Array.isArray(imported)) {
+						alert("文件格式错误：必须是数组");
+						return;
+					}
+					
+					// 验证每个角色的格式
+					const valid = imported.every(char => 
+						typeof char.name === "string" &&
+						["male", "female", "other"].includes(char.gender)
+					);
+					
+					if (!valid) {
+						alert("文件格式错误：角色数据格式不正确");
+						return;
+					}
+					
+					// 获取当前角色列表
+					const currentChars = novelCharacters[novelId] ?? [];
+					
+					// 按名称创建现有角色的映射
+					const existingByName = new Map(currentChars.map(c => [c.name, c]));
+					
+					// 合并角色：同名角色以导入信息为准更新
+					let addedCount = 0;
+					let updatedCount = 0;
+					
+					for (const importedChar of imported) {
+						const existing = existingByName.get(importedChar.name);
+						if (existing) {
+							// 同名角色已存在，以导入信息为准更新
+							updateCharacter(novelId, existing.id, {
+								name: importedChar.name,
+								gender: importedChar.gender,
+								notes: importedChar.notes || "",
+								voice: importedChar.voice || "",
+								aliases: importedChar.aliases || [],
+								relationTerms: importedChar.relationTerms || [],
+							});
+							updatedCount++;
+						} else {
+							// 新角色，添加到列表
+							addCharacter(novelId, {
+								name: importedChar.name,
+								gender: importedChar.gender,
+								notes: importedChar.notes || "",
+								voice: importedChar.voice || "",
+								aliases: importedChar.aliases || [],
+								relationTerms: importedChar.relationTerms || [],
+							});
+							addedCount++;
+						}
+					}
+					
+					// 持久化到存储
+					const finalChars = novelCharacters[novelId] ?? [];
+					const fileName = getCharacterConfigFileName(novelName);
+					await saveCharacterConfigToStorage(fileName, JSON.stringify(finalChars, null, 2));
+					console.log('[CharacterSettings] 导入角色后持久化保存:', { novelId, novelName, fileName, characterCount: finalChars.length });
+					
+					alert(`导入完成！新增 ${addedCount} 个角色，更新 ${updatedCount} 个角色`);
+				} catch (err) {
+					alert("文件解析失败：" + (err instanceof Error ? err.message : String(err)));
+				}
+			};
+			reader.readAsText(file);
+		};
+		input.click();
+	}, [novelId, novelName, novelCharacters, addCharacter, updateCharacter]);
+
+	// 扫描小说检测角色
+	const handleScanCharacters = useCallback(async () => {
+		if (!currentNovel?.fullText) {
+			alert("无法获取小说内容");
+			return;
+		}
+		
+		setIsScanning(true);
+		try {
+			const detected = detectCharactersFromText(currentNovel.fullText, 3);
+			
+			// 过滤掉已存在的角色（但保留用于合并的选项）
+			const existingNames = new Set(characters.map(c => c.name.toLowerCase()));
+			const existingAliases = new Set(characters.flatMap(c => (c.aliases || []).map(a => a.toLowerCase())));
+			
+			const newChars = detected.filter(dc => {
+				const lowerName = dc.name.toLowerCase();
+				return !existingNames.has(lowerName) && !existingAliases.has(lowerName);
+			});
+			
+			setDetectedCharacters(newChars.sort((a, b) => b.frequency - a.frequency));
+			
+			// 初始化选择状态：默认不选中，用户手动选择
+			const initialSelections: Record<string, DetectedSelection> = {};
+			for (const char of newChars) {
+				initialSelections[char.name] = {
+					selected: false,
+					action: 'new',
+				};
+			}
+			setDetectedSelections(initialSelections);
+			setShowDetectModal(true);
+		} catch (err) {
+			console.error('[CharacterSettings] Scan characters failed:', err);
+			alert("扫描失败：" + (err instanceof Error ? err.message : String(err)));
+		} finally {
+			setIsScanning(false);
+		}
+	}, [currentNovel, characters]);
+
+	// 扫描高频词汇
+	const handleScanHighFrequencyWords = useCallback(async () => {
+		if (!currentNovel?.fullText) {
+			alert("无法获取小说内容");
+			return;
+		}
+		
+		setIsScanning(true);
+		try {
+			const words = detectHighFrequencyWords(currentNovel.fullText, 10);
+			
+			const existingNames = new Set(characters.map(c => c.name.toLowerCase()));
+			const existingAliases = new Set(characters.flatMap(c => (c.aliases || []).map(a => a.toLowerCase())));
+			const existingRelationTerms = new Set(characters.flatMap(c => (c.relationTerms || []).map(r => r.toLowerCase())));
+			
+			const filteredWords = words.filter(w => {
+				const lowerWord = w.word.toLowerCase();
+				return !existingNames.has(lowerWord) && !existingAliases.has(lowerWord) && !existingRelationTerms.has(lowerWord);
+			});
+			
+			setDetectedWords(filteredWords);
+			setShowWordsModal(true);
+		} catch (err) {
+			console.error('[CharacterSettings] Scan high frequency words failed:', err);
+			alert("扫描失败：" + (err instanceof Error ? err.message : String(err)));
+		} finally {
+			setIsScanning(false);
+		}
+	}, [currentNovel, characters]);
+
+	// 全选/取消全选
+	const handleToggleAll = useCallback((checked: boolean) => {
+		const newSelections: Record<string, DetectedSelection> = {};
+		for (const char of detectedCharacters) {
+			newSelections[char.name] = {
+				...detectedSelections[char.name],
+				selected: checked,
+			};
+		}
+		setDetectedSelections(newSelections);
+	}, [detectedCharacters, detectedSelections]);
+
+	// 添加选中的检测角色
+	const handleAddSelectedCharacters = useCallback(() => {
+		let addedCount = 0;
+		let mergedCount = 0;
+		
+		for (const char of detectedCharacters) {
+			const selection = detectedSelections[char.name];
+			if (!selection?.selected) continue;
+			
+			if (selection.action === 'new') {
+			// 添加为新角色
+			addCharacter(novelId, {
+				name: char.name,
+				gender: "other",
+				notes: `自动检测到 ${char.frequency} 次，置信度 ${(char.confidence * 100).toFixed(1)}%\n` +
+				       `依据：${char.evidence?.join('; ') || '无'}`,
+				voice: "",
+				aliases: [],
+				relationTerms: [],
+			});
+			addedCount++;
+		} else if (selection.action === 'alias' && selection.mergeTargetId) {
+				// 添加为别名
+				const target = characters.find(c => c.id === selection.mergeTargetId);
+				if (target) {
+					const newAliases = [...(target.aliases || []), char.name, ...(char.aliases || [])];
+					updateCharacter(novelId, target.id, { aliases: newAliases });
+					mergedCount++;
+				}
+			} else if (selection.action === 'relation' && selection.mergeTargetId) {
+				// 添加为关系代称
+				const target = characters.find(c => c.id === selection.mergeTargetId);
+				if (target) {
+					const newRelations = [...(target.relationTerms || []), char.name, ...(char.aliases || [])];
+					updateCharacter(novelId, target.id, { relationTerms: newRelations });
+					mergedCount++;
+				}
+			}
+		}
+		
+		setShowDetectModal(false);
+		
+		const messages = [];
+		if (addedCount > 0) messages.push(`新增 ${addedCount} 个角色`);
+		if (mergedCount > 0) messages.push(`合并 ${mergedCount} 个到已有角色`);
+		alert(messages.join('\n'));
+	}, [detectedCharacters, detectedSelections, novelId, characters, addCharacter, updateCharacter]);
+
+	
 	// 播放备注
 	const handlePlayNote = useCallback(async (character: CharacterInfo) => {
 		if (!character.notes) return;
@@ -209,7 +561,7 @@ export function CharacterSettings({ novelId, onClose }: CharacterSettingsProps) 
 		}
 	}, [playingNoteCharacterId, ttsConfig]);
 
-	return (
+	return (<>
 		<div className="modal-overlay" onClick={onClose}>
 			<div className="character-settings-modal" onClick={(e) => e.stopPropagation()}>
 				<div className="config-header">
@@ -375,13 +727,48 @@ export function CharacterSettings({ novelId, onClose }: CharacterSettingsProps) 
 						</div>
 					</div>
 					) : (
-						<div className="add-character-fab-wrapper">
+						<div className="character-actions-fab-wrapper">
 							<button
 								className="action-btn add-character"
 								onClick={() => setShowAddForm(true)}
 								title="添加角色"
 							>
-								<Icons.userRoundPlus size={20} />
+								<Icons.userRoundPlus size={18} />
+								<span>添加</span>
+							</button>
+							<button
+								className="action-btn character-action"
+								onClick={handleExportCharacters}
+								title="导出角色"
+							>
+								<Icons.save size={18} />
+								<span>导出</span>
+							</button>
+							<button
+								className="action-btn character-action"
+								onClick={handleImportCharacters}
+								title="导入角色"
+							>
+								<Icons.import size={18} />
+								<span>导入</span>
+							</button>
+							<button
+								className="action-btn character-action"
+								onClick={handleScanCharacters}
+								title="扫描检测角色"
+								disabled={isScanning}
+							>
+								<Icons.search size={18} />
+								<span>{isScanning ? "扫描中" : "扫描"}</span>
+							</button>
+							<button
+								className="action-btn character-action"
+								onClick={handleScanHighFrequencyWords}
+								title="高频词汇检测"
+								disabled={isScanning}
+							>
+								<Icons.list size={18} />
+								<span>高频词</span>
 							</button>
 						</div>
 					)}
@@ -433,7 +820,18 @@ export function CharacterSettings({ novelId, onClose }: CharacterSettingsProps) 
 
 												{/* 别称 */}
 												<div className="form-field">
-													<label className="text-xs">别称</label>
+													<div className="flex justify-between items-center mb-2">
+														<label className="text-xs">别称</label>
+														{(editForm.aliases || []).length > 0 && (
+															<button
+																type="button"
+																className="text-xs text-red-500 hover:text-red-400"
+																onClick={clearAllAliases}
+															>
+																清空全部
+															</button>
+														)}
+													</div>
 													<div className="flex gap-2 mb-2">
 														<input
 															type="text"
@@ -471,7 +869,18 @@ export function CharacterSettings({ novelId, onClose }: CharacterSettingsProps) 
 
 												{/* 关系代称 */}
 												<div className="form-field">
-													<label className="text-xs">关系代称</label>
+													<div className="flex justify-between items-center mb-2">
+														<label className="text-xs">关系代称</label>
+														{(editForm.relationTerms || []).length > 0 && (
+															<button
+																type="button"
+																className="text-xs text-red-500 hover:text-red-400"
+																onClick={clearAllRelationTerms}
+															>
+																清空全部
+															</button>
+														)}
+													</div>
 													<div className="flex gap-2 mb-2">
 														<input
 															type="text"
@@ -516,20 +925,21 @@ export function CharacterSettings({ novelId, onClose }: CharacterSettingsProps) 
 													/>
 												</div>
 												<div className="flex gap-2 pt-2">
-									<button
-										className="reader-search-btn flex-1 justify-center"
-										onClick={saveEdit}
-									>
-										<Icons.saveIcon size={14} />
-										保存
-									</button>
-									<button
-										className="reader-search-btn"
-										onClick={cancelEdit}
-									>
-										取消
-									</button>
-								</div>
+													<button
+														className="character-action-btn"
+														onClick={saveEdit}
+													>
+														<Icons.saveIcon size={14} />
+														<span>保存</span>
+													</button>
+													<button
+														className="character-action-btn"
+														onClick={cancelEdit}
+													>
+														<Icons.x size={14} />
+														<span>取消</span>
+													</button>
+												</div>
 											</div>
 										) : (
 											<div className="character-card-content">
@@ -648,5 +1058,332 @@ export function CharacterSettings({ novelId, onClose }: CharacterSettingsProps) 
 				</div>
 			</div>
 		</div>
-	);
+
+		{/* 检测到的新角色弹窗 */}
+		{showDetectModal && (
+			<div className="modal-overlay" onClick={() => setShowDetectModal(false)}>
+				<div className="modal-content detect-characters-modal" onClick={e => e.stopPropagation()}>
+					<div className="modal-header">
+						<h3>检测到的角色</h3>
+						<div className="detect-search-wrapper">
+							<input
+								type="text"
+								className="detect-search-input"
+								placeholder="搜索角色名称..."
+								value={detectSearchQuery}
+								onChange={(e) => setDetectSearchQuery(e.target.value)}
+							/>
+							{detectSearchQuery && (
+								<button
+									className="detect-search-clear"
+									onClick={() => setDetectSearchQuery("")}
+								>
+									×
+								</button>
+							)}
+						</div>
+						<button className="modal-close" onClick={() => setShowDetectModal(false)}>
+							<Icons.close size={18} />
+						</button>
+					</div>
+					<div className="modal-body">
+						<div className="detection-header-row">
+							<button
+								className="select-all-btn"
+								onClick={() => handleToggleAll(true)}
+							>
+								全选
+							</button>
+							<button
+								className="select-none-btn"
+								onClick={() => handleToggleAll(false)}
+							>
+								取消全选
+							</button>
+							<span className="text-sm text-neutral-400">
+								{(() => {
+									const filtered = detectedCharacters.filter(c => c.name.includes(detectSearchQuery));
+									return detectSearchQuery
+										? `找到 ${filtered.length} 个匹配 "${detectSearchQuery}" 的角色`
+										: `从小说中检测到 ${detectedCharacters.length} 个可能的新角色，请选择操作`;
+								})()}
+							</span>
+						</div>
+						<div className="detected-characters-list">
+							{detectedCharacters
+								.filter(char => char.name.includes(detectSearchQuery))
+								.map(char => {
+								const selection = detectedSelections[char.name];
+								if (!selection) return null;
+								return (
+									<div key={char.name} className="detected-character-item">
+										<div className="detected-character-main">
+											<label className="detected-character-label">
+												<input
+													type="checkbox"
+													checked={selection.selected}
+													onChange={(e) => {
+														setDetectedSelections(prev => ({
+															...prev,
+															[char.name]: {
+																...prev[char.name],
+																selected: e.target.checked,
+															},
+														}));
+													}}
+												/>
+												<span className="character-name">{char.name}</span>
+												<span className="character-freq">出现 {char.frequency} 次</span>
+												<span className="character-confidence" title={`置信度: ${(char.confidence * 100).toFixed(1)}%`}>
+													{(char.confidence * 100).toFixed(0)}%
+												</span>
+											</label>
+										</div>
+										{selection.selected && (
+											<div className="detected-character-actions">
+												<div className="action-radios">
+													<label className="action-radio">
+														<input
+															type="radio"
+															name={`action-${char.name}`}
+															checked={selection.action === 'new'}
+															onChange={() => {
+																setDetectedSelections(prev => ({
+																	...prev,
+																	[char.name]: {
+																		...prev[char.name],
+																		action: 'new',
+																	},
+																}));
+															}}
+														/>
+														<span>新增角色</span>
+													</label>
+													<label className="action-radio">
+														<input
+															type="radio"
+															name={`action-${char.name}`}
+															checked={selection.action === 'alias'}
+															onChange={() => {
+																setDetectedSelections(prev => ({
+																	...prev,
+																	[char.name]: {
+																		...prev[char.name],
+																		action: 'alias',
+																	},
+																}));
+															}}
+														/>
+														<span>添加为别名</span>
+													</label>
+													<label className="action-radio">
+														<input
+															type="radio"
+															name={`action-${char.name}`}
+															checked={selection.action === 'relation'}
+															onChange={() => {
+																setDetectedSelections(prev => ({
+																	...prev,
+																	[char.name]: {
+																		...prev[char.name],
+																		action: 'relation',
+																	},
+																}));
+															}}
+														/>
+														<span>添加为代称</span>
+													</label>
+												</div>
+												{(selection.action === 'alias' || selection.action === 'relation') && (
+													<div className="merge-target-select">
+														<select
+															value={selection.mergeTargetId || ''}
+															onChange={(e) => {
+																setDetectedSelections(prev => ({
+																	...prev,
+																	[char.name]: {
+																		...prev[char.name],
+																		mergeTargetId: e.target.value || undefined,
+																	},
+																}));
+															}}
+															className="config-select"
+														>
+															<option value="">选择目标角色</option>
+															{characters.map(c => (
+																<option key={c.id} value={c.id}>
+																	{c.name}
+																</option>
+															))}
+														</select>
+													</div>
+												)}
+											</div>
+										)}
+										{char.evidence.length > 0 && (
+											<div className="character-contexts">
+												{char.evidence.map((ctx, i) => (
+													<div key={i} className="context-item">{ctx}</div>
+												))}
+											</div>
+										)}
+										<div className="detected-character-quick-actions">
+											<button
+												className="quick-btn quick-skip"
+												onClick={() => {
+													setDetectedCharacters(prev => prev.filter(c => c.name !== char.name));
+													setDetectedSelections(prev => {
+														const newSelections = { ...prev };
+														delete newSelections[char.name];
+														return newSelections;
+													});
+												}}
+											>
+												跳过
+											</button>
+											<button
+												className="quick-btn quick-add"
+												onClick={() => {
+													addCharacter(novelId, {
+														name: char.name,
+														gender: "other",
+														notes: `自动检测到 ${char.frequency} 次，置信度 ${(char.confidence * 100).toFixed(1)}%\n` +
+														       `依据：${char.evidence?.join('; ') || '无'}`,
+														voice: "",
+														aliases: [],
+														relationTerms: [],
+													});
+													setDetectedCharacters(prev => prev.filter(c => c.name !== char.name));
+													setDetectedSelections(prev => {
+														const newSelections = { ...prev };
+														delete newSelections[char.name];
+														return newSelections;
+													});
+												}}
+											>
+												确认添加
+											</button>
+										</div>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+					<div className="modal-footer">
+						<button
+							className="btn btn-secondary"
+							onClick={() => setShowDetectModal(false)}
+						>
+							取消
+						</button>
+						<button
+							className="btn btn-primary"
+							onClick={handleAddSelectedCharacters}
+							disabled={Object.values(detectedSelections).filter(s => s.selected && (s.action === 'new' || !!s.mergeTargetId)).length === 0}
+						>
+							确认添加
+						</button>
+					</div>
+				</div>
+			</div>
+		)}
+
+		{/* 高频词汇弹窗 */}
+		{showWordsModal && (
+			<div className="modal-overlay" onClick={() => setShowWordsModal(false)}>
+				<div className="modal-content detect-characters-modal" onClick={e => e.stopPropagation()}>
+					<div className="modal-header">
+						<h3>高频词汇列表</h3>
+						<button className="modal-close" onClick={() => setShowWordsModal(false)}>
+							<Icons.close size={18} />
+						</button>
+					</div>
+					<div className="modal-body">
+						<p className="text-sm text-neutral-400 mb-4">
+							从小说中检测到 {detectedWords.length} 个高频词，其中 {detectedWords.filter(w => w.isPossibleName).length} 个可能是角色名：
+						</p>
+						<div className="detected-characters-list">
+							{detectedWords.map((word, index) => (
+								<div key={index} className="detected-character-item">
+									<div className="detected-character-main">
+										<span className={`character-name ${word.isPossibleName ? 'text-blue-400' : ''}`}>
+											{word.word}
+										</span>
+										<span className="character-freq">出现 {word.frequency} 次</span>
+										{word.isPossibleName && (
+											<span className="character-confidence text-blue-400">
+												可能为人名
+											</span>
+										)}
+									</div>
+									{word.evidence.length > 0 && (
+										<div className="character-contexts">
+											{word.evidence.map((ctx, i) => (
+												<div key={i} className="context-item">{ctx}</div>
+											))}
+										</div>
+									)}
+								</div>
+							))}
+						</div>
+					</div>
+					<div className="modal-footer">
+						<button
+							className="btn btn-secondary"
+							onClick={() => setShowWordsModal(false)}
+						>
+							关闭
+						</button>
+					</div>
+				</div>
+			</div>
+		)}
+
+		{/* 导出结果弹窗 */}
+		{exportModal.show && (
+			<div className="modal-overlay" onClick={() => setExportModal({ ...exportModal, show: false })}>
+				<div className="export-result-modal" onClick={(e) => e.stopPropagation()}>
+					<div className="export-result-header">
+						<div className={`result-icon ${exportModal.success ? 'success' : 'error'}`}>
+							{exportModal.success ? <Icons.checkCircle size={24} /> : <Icons.alertCircle size={24} />}
+						</div>
+						<h3>{exportModal.success ? '保存成功' : '保存失败'}</h3>
+					</div>
+					<div className="export-result-content">
+						{exportModal.success ? (
+							<div className="space-y-2">
+								<p><strong>文件名:</strong> {exportModal.fileName}</p>
+								<p><strong>保存位置:</strong> Android/data/cn.helilab.proofreader/documents/characters/</p>
+								<p><strong>角色数量:</strong> {exportModal.characterCount}个</p>
+							</div>
+						) : (
+							<div className="space-y-2">
+								<p>无法自动保存到文件系统</p>
+								<p><strong>文件名:</strong> {exportModal.fileName}</p>
+								<p><strong>角色数量:</strong> {exportModal.characterCount}个</p>
+								<p><strong>数据大小:</strong> {exportModal.dataStr.length}字节</p>
+								<p className="text-sm text-neutral-400">请尝试复制数据后自行保存</p>
+							</div>
+						)}
+					</div>
+					<div className="export-result-actions">
+						<button
+							className="action-btn secondary"
+							onClick={() => setExportModal({ ...exportModal, show: false })}
+						>
+							<Icons.x size={16} />
+							关闭
+						</button>
+						<button
+							className="action-btn primary"
+							onClick={() => copyToClipboard(exportModal.dataStr)}
+						>
+							<Icons.copy size={16} />
+							复制JSON数据
+						</button>
+					</div>
+				</div>
+			</div>
+		)}
+	</>);
 }

@@ -13,7 +13,7 @@ import { GlobalSearch } from "./components/GlobalSearch";
 import { useAppStore } from "./stores/appStore";
 import { splitChapters } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
-import { exportToFile, loadNovelsFromStorage, saveNovelToStorage, ensureTxtFilename, exportAllData } from "./utils/fileExport";
+import { exportToFile, loadNovelsFromStorage, loadNovelContent, saveNovelToStorage, ensureTxtFilename, exportAllData } from "./utils/fileExport";
 import { parseURLParams, updateURLParams } from "./utils/urlParams";
 import { Icons } from "./components/Icons";
 
@@ -60,18 +60,36 @@ export default function App() {
 	// 加载保存的小说（如果本地存储中没有）
 	useEffect(() => {
 		if (novels.length === 0) {
-			loadNovelsFromStorage().then((storedNovels) => {
-				if (storedNovels.length > 0) {
-					const firstNovel = storedNovels[0];
-					useAppStore.setState({
-						novels: storedNovels,
-						currentNovelId: firstNovel.id,
-					});
-					const chapters = splitChapters(firstNovel.fullText);
-					const progress = useAppStore.getState().getReadingProgress(firstNovel.id);
-					useAppStore.setState({ chapters });
-					if (progress) {
-						useAppStore.setState({ currentChapterIndex: progress.currentChapterIndex });
+			loadNovelsFromStorage().then(async (storedFileNames) => {
+				if (storedFileNames.length > 0) {
+					// 逐个加载小说内容
+					const loadedNovels: typeof novels = [];
+					for (const fileName of storedFileNames) {
+						const content = await loadNovelContent(fileName);
+						if (content) {
+							const novelId = `novel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+							loadedNovels.push({
+								id: novelId,
+								name: fileName.replace(/\.txt$/i, ''),
+								fullText: content,
+								importedAt: Date.now(),
+								chapters: [],
+							});
+						}
+					}
+					
+					if (loadedNovels.length > 0) {
+						const firstNovel = loadedNovels[0];
+						useAppStore.setState({
+							novels: loadedNovels,
+							currentNovelId: firstNovel.id,
+						});
+						const chapters = splitChapters(firstNovel.fullText);
+						const progress = useAppStore.getState().getReadingProgress(firstNovel.id);
+						useAppStore.setState({ chapters });
+						if (progress) {
+							useAppStore.setState({ currentChapterIndex: progress.currentChapterIndex });
+						}
 					}
 				}
 			});
@@ -500,6 +518,7 @@ export default function App() {
 			{showCharacterSettings && (
 				<CharacterSettings
 					novelId={showCharacterSettings}
+					novelName={novels.find(n => n.id === showCharacterSettings)?.name || ""}
 					onClose={() => setShowCharacterSettings(null)}
 				/>
 			)}

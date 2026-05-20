@@ -1,5 +1,27 @@
 # Proof Reader Changelog
 
+## v0.9.4 (2026-05-21)
+
+### 🐛 Bug 修复
+
+**小说导入安卓端存储问题修复**
+- 修复导入新小说时无法在 `novels` 目录下保存副本的问题
+- 问题根因：`saveNovelToStorage`、`loadNovelContent`、`loadNovelsFromStorage`、`deleteNovelFromStorage` 函数在 Tauri 存储失败时静默回退到 localStorage，导致文件未正确保存到安卓文件系统
+- 修复方案：移除静默回退逻辑，当 Tauri 存储失败时正确返回错误状态，确保问题能被及时发现
+
+**角色设置导出功能优化**
+- 优化 `saveCharacterConfigToStorage` 函数，优先使用 Tauri 文件系统保存到 `characters/` 目录
+- 保留 localStorage 作为 fallback，确保数据不因 Tauri 存储失败而丢失
+- 添加详细日志输出，便于排查存储问题
+
+### 🔧 改进优化
+
+**存储模块日志增强**
+- 为 `saveNovelToStorage` 添加保存路径、内容长度等调试日志
+- 为 `saveCharacterConfigToStorage` 添加相同的调试日志
+
+---
+
 ## v0.9.3 (2026-05-19)
 
 ### 🐛 Bug 修复

@@ -25,6 +25,7 @@ export function ReaderPanel({
 	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
 	const currentNovelId = useAppStore((s) => s.currentNovelId);
 	const getCharacters = useAppStore((s) => s.getCharacters);
+	const addCharacter = useAppStore((s) => s.addCharacter);
 	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
 	const fontSize = useAppStore((s) => s.fontSize);
 	const setFontSize = useAppStore((s) => s.setFontSize);
@@ -167,6 +168,10 @@ export function ReaderPanel({
 	const [currentParagraphIndex, setCurrentParagraphIndex] = useState(0);
 	const [readingTimeElapsed, setReadingTimeElapsed] = useState(0);
 	const [showReadingReminder, setShowReadingReminder] = useState(false);
+
+	// 检测到的陌生角色状态
+	const [detectedNewCharacters, setDetectedNewCharacters] = useState<string[]>([]);
+	const [showNewCharacterModal, setShowNewCharacterModal] = useState(false);
 	const readingStartTimeRef = useRef<number>(0);
 	const readingTimerRef = useRef<number | null>(null);
 
@@ -423,7 +428,10 @@ export function ReaderPanel({
 			const jsonMatch = response.match(/\{[\s\S]*\}/);
 			if (jsonMatch) {
 				const result = JSON.parse(jsonMatch[0]) as ParagraphEmotionResult;
+				logger.tts(`段落${paraIndex} AI响应解析结果`, { characters: result.characters, segments: result.segments.map(s => s.speaker) });
 				return result;
+			} else {
+				logger.tts(`段落${paraIndex} AI响应无法解析JSON`, { response: response.slice(0, 100) });
 			}
 			return null;
 		} catch (error) {
@@ -431,6 +439,29 @@ export function ReaderPanel({
 			return null;
 		}
 	}, [aiConfig, currentNovelId, getCharacters]);
+
+	/** 添加检测到的新角色到角色列表 */
+	const handleAddNewCharacters = useCallback((names: string[]) => {
+		if (!currentNovelId) {
+			logger.tts("无法添加角色：currentNovelId 为空");
+			return;
+		}
+		logger.tts(`开始添加 ${names.length} 个新角色`, { novelId: currentNovelId, names });
+		names.forEach(name => {
+			logger.tts(`添加角色: ${name}`, { novelId: currentNovelId });
+			addCharacter(currentNovelId, {
+				name,
+				gender: "other",
+				notes: "自动检测创建",
+				voice: "",
+				aliases: [],
+				relationTerms: [],
+			});
+			logger.tts(`已添加新角色: ${name}`);
+		});
+		setShowNewCharacterModal(false);
+		setDetectedNewCharacters([]);
+	}, [currentNovelId, addCharacter]);
 
 	/** 流式TTS增强播放 - 分析完一个段落立即提交TTS */
 	const handleEnhancedChapterTTS = useCallback(async (startFromParagraph?: number) => {
@@ -515,16 +546,27 @@ export function ReaderPanel({
 				const result = await analyzeParagraphEmotion(i, paraText, allParagraphs);
 
 				if (result && result.segments && result.segments.length > 0) {
+					logger.tts(`段落${i}情感分析返回`, { characters: result.characters, segmentsCount: result.segments.length });
 					// 流式添加segments，立即开始TTS生成
 					for (const segment of result.segments) {
+						logger.tts(`段落${i}处理segment`, { speaker: segment.speaker });
 						// 确保角色有音色
 						if (!characterVoices[segment.speaker]) {
 							characterVoices[segment.speaker] = getVoiceForCharacter(segment.speaker);
 						}
-						logger.tts(`流式添加对话`, { paragraph: i, speaker: segment.speaker, text: segment.text.slice(0, 30) + "..." });
+						logger.tts(`段落${i}流式添加对话`, { speaker: segment.speaker, text: segment.text.slice(0, 30) + "..." });
 						await scriptTTS.addDialogueStream(segment.speaker, segment.text);
+						logger.tts(`段落${i}对话添加完成`, { speaker: segment.speaker });
 					}
+					logger.tts(`段落${i}添加角色到集合`, { before: Array.from(allCharacters), newChars: result.characters });
 					result.characters.forEach(c => allCharacters.add(c));
+					// 兜底：如果 characters 为空但有 segments，也添加 segments 中的说话者
+					if (result.characters.length === 0 && result.segments.length > 0) {
+						const speakersFromSegments = result.segments.map(s => s.speaker).filter(s => s !== "旁白");
+						speakersFromSegments.forEach(s => allCharacters.add(s));
+						logger.tts(`段落${i}从segments兜底添加角色`, { speakers: speakersFromSegments });
+					}
+					logger.tts(`段落${i}添加后集合`, { after: Array.from(allCharacters) });
 					newCache.set(i, result);
 				} else {
 					// 如果分析失败，使用原文作为旁白
@@ -538,10 +580,29 @@ export function ReaderPanel({
 			// 标记流式添加完成，这样音频队列处理器才知道所有对话都已添加
 			scriptTTS.markStreamComplete();
 
-			logger.tts("流式AI情感增强完成", { 
+			const detectedChars = Array.from(allCharacters);
+			logger.tts("流式AI情感增强完成", {
 				totalParagraphs: allParagraphs.length,
-				characters: Array.from(allCharacters)
+				characters: detectedChars
 			});
+
+			// 检测陌生角色
+			if (currentNovelId && detectedChars.length > 0) {
+				const existingCharacters = getCharacters(currentNovelId);
+				const existingNames = new Set(existingCharacters.map(c => c.name.toLowerCase()));
+				const existingAliases = new Set(existingCharacters.flatMap(c => (c.aliases || []).map(a => a.toLowerCase())));
+
+				const newChars = detectedChars.filter(name => {
+					const lowerName = name.toLowerCase();
+					return !existingNames.has(lowerName) && !existingAliases.has(lowerName) && name !== "旁白";
+				});
+
+				if (newChars.length > 0) {
+					logger.tts(`检测到 ${newChars.length} 个新角色`, { newChars });
+					setDetectedNewCharacters(newChars);
+					setShowNewCharacterModal(true);
+				}
+			}
 
 		} catch (error) {
 			logger.tts("流式TTS增强播放失败: " + (error as Error).message);
@@ -549,7 +610,7 @@ export function ReaderPanel({
 			setEnhancedTTSPreparing(false);
 			scriptTTSRef.current = null;
 		}
-	}, [chapter, ttsConfig, aiConfig, ttsPlaying, getVoiceForCharacter, paragraphEmotionCache, analyzeParagraphEmotion]);
+	}, [chapter, ttsConfig, aiConfig, ttsPlaying, getVoiceForCharacter, paragraphEmotionCache, analyzeParagraphEmotion, getCharacters, currentNovelId]);
 
 	/** 进入流式AI情感增强的"等待选择段落"模式 */
 	const handleEnterStreamTTSSelectionMode = useCallback(() => {
@@ -1860,29 +1921,95 @@ export function ReaderPanel({
 
 			{/* 阅读时长提醒弹窗 */}
 			{showReadingReminder && (
-				<>
-					<div className="chapter-list-overlay" onClick={() => setShowReadingReminder(false)} />
-					<div className="reading-reminder-modal">
-						<div className="reading-reminder-icon">
-							<Icons.eye size={48} />
-						</div>
-						<div className="reading-reminder-title">温馨提醒</div>
-						<div className="reading-reminder-message">
-							您已阅读 {Math.floor(readingTimeElapsed / 60000)} 分钟，请注意休息，保护眼睛！
-						</div>
-						<div className="reading-reminder-actions">
-							<button className="reading-reminder-btn primary" onClick={() => setShowReadingReminder(false)}>
-								继续阅读
+				<div className="modal-overlay" onClick={() => setShowReadingReminder(false)}>
+					<div className="config-modal" onClick={(e) => e.stopPropagation()}>
+						<div className="config-header">
+							<div className="config-title">
+								<Icons.eye size={18} />
+								<span>温馨提醒</span>
+							</div>
+							<button className="close-btn" onClick={() => setShowReadingReminder(false)}>
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 16 16"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2"
+								>
+									<path d="M3 3L13 13M13 3L3 13" />
+								</svg>
 							</button>
-							<button className="reading-reminder-btn secondary" onClick={() => {
-								setShowReadingReminder(false);
-								setReadingMode(false);
-							}}>
-								退出阅读模式
-							</button>
+						</div>
+						<div className="config-body">
+							<div className="reading-reminder-content">
+								<div className="reading-reminder-message">
+									您已阅读 {Math.floor(readingTimeElapsed / 60000)} 分钟，请注意休息，保护眼睛！
+								</div>
+								<div className="reading-reminder-actions">
+									<button className="action-btn primary" onClick={() => setShowReadingReminder(false)}>
+										继续阅读
+									</button>
+									<button className="action-btn secondary" onClick={() => {
+										setShowReadingReminder(false);
+										setReadingMode(false);
+									}}>
+										退出阅读模式
+									</button>
+								</div>
+							</div>
 						</div>
 					</div>
-				</>
+				</div>
+			)}
+
+			{/* 检测到新角色弹窗 */}
+			{showNewCharacterModal && detectedNewCharacters.length > 0 && (
+				<div className="modal-overlay" onClick={() => setShowNewCharacterModal(false)}>
+					<div className="config-modal" onClick={(e) => e.stopPropagation()}>
+						<div className="config-header">
+							<div className="config-title">
+								<Icons.userRoundPlus size={18} />
+								<span>检测到新角色</span>
+							</div>
+							<button className="close-btn" onClick={() => setShowNewCharacterModal(false)}>
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 16 16"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2"
+								>
+									<path d="M3 3L13 13M13 3L3 13" />
+								</svg>
+							</button>
+						</div>
+						<div className="config-body">
+							<div className="new-character-modal-content">
+								<div className="new-character-message">
+									情感朗读时检测到 {detectedNewCharacters.length} 个新角色，是否添加到角色列表？
+								</div>
+								<div className="new-character-list">
+									{detectedNewCharacters.map((name) => (
+										<div key={name} className="new-character-item">
+											<Icons.user size={16} />
+											<span>{name}</span>
+										</div>
+									))}
+								</div>
+								<div className="new-character-actions">
+									<button className="action-btn primary" onClick={() => handleAddNewCharacters(detectedNewCharacters)}>
+										全部添加
+									</button>
+									<button className="action-btn secondary" onClick={() => setShowNewCharacterModal(false)}>
+										稍后再说
+									</button>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
 			)}
 		</div>
 	);

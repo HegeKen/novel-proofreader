@@ -5,7 +5,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Novel, Chapter, AIConfig, AIProvider, AppTab, ProofreadQueueItem, ProofreadProgress, APIUsage, NovelCategory, CharacterInfo } from "../types";
 import { setLoggerEnabled } from "../utils/logger";
-import { saveNovelToStorage } from "../utils/fileExport";
+import { saveNovelToStorage, saveCharacterConfigToStorage, getCharacterConfigFileName } from "../utils/fileExport";
 
 // 剧本改编结果类型
 interface ScriptResult {
@@ -220,6 +220,7 @@ interface AppState {
 	updateCharacter: (novelId: string, characterId: string, character: Partial<Omit<CharacterInfo, "id">>) => void;
 	removeCharacter: (novelId: string, characterId: string) => void;
 	getCharacters: (novelId: string) => CharacterInfo[];
+	setCharactersForNovel: (novelId: string, characters: CharacterInfo[]) => void;
 
 	// Actions — 缓存管理
 	saveCache: () => void;
@@ -798,37 +799,80 @@ export const useAppStore = create<AppState>()(
 					},
 				})),
 
-			// 角色管理
-			addCharacter: (novelId, character) =>
-				set((state) => ({
-					novelCharacters: {
-						...state.novelCharacters,
-						[novelId]: [
-							...(state.novelCharacters[novelId] ?? []),
-							{ ...character, id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` }
-						]
+			// 角色管理 - 持久化到文件系统
+			addCharacter: (novelId, character) => {
+				const newCharacter = { ...character, id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` };
+				set((state) => {
+					const updatedCharacters = [
+						...(state.novelCharacters[novelId] ?? []),
+						newCharacter
+					];
+					// 异步保存到文件系统
+					const novel = state.novels.find(n => n.id === novelId);
+					if (novel) {
+						const fileName = getCharacterConfigFileName(novel.name);
+						saveCharacterConfigToStorage(fileName, JSON.stringify(updatedCharacters, null, 2)).catch(err => {
+							console.error('[appStore] Failed to save character config:', err);
+						});
 					}
-				})),
+					return {
+						novelCharacters: {
+							...state.novelCharacters,
+							[novelId]: updatedCharacters
+						}
+					};
+				});
+			},
 
 			updateCharacter: (novelId, characterId, character) =>
-				set((state) => ({
-					novelCharacters: {
-						...state.novelCharacters,
-						[novelId]: (state.novelCharacters[novelId] ?? []).map((ch) =>
-							ch.id === characterId ? { ...ch, ...character } : ch
-						)
+				set((state) => {
+					const updatedCharacters = (state.novelCharacters[novelId] ?? []).map((ch) =>
+						ch.id === characterId ? { ...ch, ...character } : ch
+					);
+					// 异步保存到文件系统
+					const novel = state.novels.find(n => n.id === novelId);
+					if (novel) {
+						const fileName = getCharacterConfigFileName(novel.name);
+						saveCharacterConfigToStorage(fileName, JSON.stringify(updatedCharacters, null, 2)).catch(err => {
+							console.error('[appStore] Failed to save character config:', err);
+						});
 					}
-				})),
+					return {
+						novelCharacters: {
+							...state.novelCharacters,
+							[novelId]: updatedCharacters
+						}
+					};
+				}),
 
 			removeCharacter: (novelId, characterId) =>
+				set((state) => {
+					const updatedCharacters = (state.novelCharacters[novelId] ?? []).filter((ch) => ch.id !== characterId);
+					// 异步保存到文件系统
+					const novel = state.novels.find(n => n.id === novelId);
+					if (novel) {
+						const fileName = getCharacterConfigFileName(novel.name);
+						saveCharacterConfigToStorage(fileName, JSON.stringify(updatedCharacters, null, 2)).catch(err => {
+							console.error('[appStore] Failed to save character config:', err);
+						});
+					}
+					return {
+						novelCharacters: {
+							...state.novelCharacters,
+							[novelId]: updatedCharacters
+						}
+					};
+				}),
+
+			getCharacters: (novelId) => get().novelCharacters[novelId] ?? [],
+
+			setCharactersForNovel: (novelId, characters) =>
 				set((state) => ({
 					novelCharacters: {
 						...state.novelCharacters,
-						[novelId]: (state.novelCharacters[novelId] ?? []).filter((ch) => ch.id !== characterId)
+						[novelId]: characters
 					}
 				})),
-
-			getCharacters: (novelId) => get().novelCharacters[novelId] ?? [],
 
 			saveCache: () => {
 				const now = Date.now();
