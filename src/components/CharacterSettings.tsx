@@ -4,13 +4,14 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useConfigStore } from "../stores/configStore";
-import type { CharacterInfo } from "../types";
+import type { CharacterInfo, CharacterRelationship, CharacterRole } from "../types";
 import { synthesizeSpeechWithVoice } from "../utils/ttsService";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { logger } from "../utils/logger";
 import { detectCharactersFromText, detectHighFrequencyWords, saveCharacterConfigToStorage, loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
 import type { DetectedCharacter, HighFrequencyWord } from "../utils/fileExport";
+import { RelationshipGraph } from "./RelationshipGraph";
 
 interface CharacterSettingsProps {
 	novelId: string;
@@ -21,10 +22,16 @@ interface CharacterSettingsProps {
 export function CharacterSettings({ novelId, novelName, onClose }: CharacterSettingsProps) {
 	const novelCharacters = useAppStore((s) => s.novelCharacters);
 	const characters = useMemo(() => novelCharacters[novelId] ?? [], [novelCharacters, novelId]);
+	const allRelationships = useAppStore((s) => s.characterRelationships);
+	const relationships = useMemo(() => allRelationships[novelId] ?? [], [allRelationships, novelId]);
+	const storeNodePositions = useAppStore((s) => s.nodePositions);
+	const nodePositions = useMemo(() => storeNodePositions[novelId] ?? {}, [storeNodePositions, novelId]);
 	const addCharacter = useAppStore((s) => s.addCharacter);
 	const updateCharacter = useAppStore((s) => s.updateCharacter);
 	const removeCharacter = useAppStore((s) => s.removeCharacter);
 	const setCharactersForNovel = useAppStore((s) => s.setCharactersForNovel);
+	const addRelationship = useAppStore((s) => s.addRelationship);
+	const setNodePositions = useAppStore((s) => s.setNodePositions);
 	const novels = useAppStore((s) => s.novels);
 	const currentNovel = useMemo(() => novels.find(n => n.id === novelId), [novels, novelId]);
 
@@ -46,6 +53,9 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		mergeTargetId?: string;
 	}
 	const [detectedSelections, setDetectedSelections] = useState<Record<string, DetectedSelection>>({});
+
+	// 角色设置标签页状态：'list' | 'graph'
+	const [activeTab, setActiveTab] = useState<"list" | "graph">("graph");
 
 	// 检测是否为移动端
 	const [isMobile, setIsMobile] = useState(false);
@@ -92,6 +102,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const [editForm, setEditForm] = useState<Partial<CharacterInfo>>({
 		name: "",
 		gender: "other",
+		role: undefined,
 		notes: "",
 		voice: "",
 		aliases: [],
@@ -215,6 +226,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		fileName: string;
 		dataStr: string;
 		characterCount: number;
+		relationshipCount?: number;
 	}>({
 		show: false,
 		success: false,
@@ -234,9 +246,36 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		}
 	}, []);
 
-	// 导出角色
+	// 导出角色（包含角色类型和关系图谱）
 	const handleExportCharacters = useCallback(async () => {
-		const dataStr = JSON.stringify(characters, null, 2);
+		const exportData = {
+			version: "1.0",
+			novelId,
+			novelName,
+			exportTime: new Date().toISOString(),
+			characters: characters.map(char => ({
+				id: char.id,
+				name: char.name,
+				gender: char.gender,
+				role: char.role,
+				relationTerms: char.relationTerms || [],
+				aliases: char.aliases || [],
+				notes: char.notes || "",
+				voice: char.voice || "",
+			})),
+			relationships: relationships.map(rel => ({
+				id: rel.id,
+				sourceId: rel.sourceId,
+				targetId: rel.targetId,
+				relationType: rel.relationType,
+				customRelationType: rel.customRelationType,
+				sourceNickname: rel.sourceNickname || [],
+				targetNickname: rel.targetNickname || [],
+			})),
+			nodePositions,
+		};
+		
+		const dataStr = JSON.stringify(exportData, null, 2);
 		// 使用小说名称作为文件名前缀
 		const safeName = (novelName || "角色配置").replace(/[\\/:*?"<>|]/g, "_");
 		const fileName = `${safeName}-角色配置-${new Date().toISOString().split("T")[0]}.json`;
@@ -251,6 +290,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				fileName,
 				dataStr,
 				characterCount: characters.length,
+				relationshipCount: relationships.length,
 			});
 		} else {
 			// 桌面端：使用浏览器下载
@@ -261,8 +301,16 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			link.download = fileName;
 			link.click();
 			URL.revokeObjectURL(url);
+			setExportModal({
+				show: true,
+				success: true,
+				fileName,
+				dataStr,
+				characterCount: characters.length,
+				relationshipCount: relationships.length,
+			});
 		}
-	}, [characters, novelName, isMobile]);
+	}, [characters, relationships, novelName, novelId, isMobile, nodePositions]);
 
 	// 导入角色
 	const handleImportCharacters = useCallback(async () => {
@@ -276,67 +324,115 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			const reader = new FileReader();
 			reader.onload = async (event) => {
 				try {
-					const imported = JSON.parse(event.target?.result as string) as CharacterInfo[];
-					if (!Array.isArray(imported)) {
-						alert("文件格式错误：必须是数组");
+					const imported = JSON.parse(event.target?.result as string);
+					
+					let importedChars: CharacterInfo[] = [];
+					let importedRelationships: CharacterRelationship[] = [];
+					let importedNodePositions: Record<string, { x: number; y: number }> = {};
+
+					// 兼容新旧格式
+					if (imported.version && Array.isArray(imported.characters)) {
+						// 新格式：{ version, characters, relationships, nodePositions }
+						importedChars = imported.characters;
+						importedRelationships = imported.relationships || [];
+						importedNodePositions = imported.nodePositions || {};
+					} else if (Array.isArray(imported)) {
+						// 旧格式：CharacterInfo[]
+						importedChars = imported;
+					} else {
+						alert("文件格式错误：无法识别的数据格式");
 						return;
 					}
-					
+
 					// 验证每个角色的格式
-					const valid = imported.every(char => 
+					const valid = importedChars.every(char => 
 						typeof char.name === "string" &&
 						["male", "female", "other"].includes(char.gender)
 					);
-					
+
 					if (!valid) {
 						alert("文件格式错误：角色数据格式不正确");
 						return;
 					}
-					
-					// 获取当前角色列表
+
+					// --- 导入角色（保留原始ID以确保关系和节点位置能正确关联） ---
 					const currentChars = novelCharacters[novelId] ?? [];
-					
-					// 按名称创建现有角色的映射
 					const existingByName = new Map(currentChars.map(c => [c.name, c]));
-					
-					// 合并角色：同名角色以导入信息为准更新
+					const idMapping = new Map<string, string>(); // oldId → resolvedId
+					const mergedChars: CharacterInfo[] = [...currentChars];
+					const mergedIds = new Set(currentChars.map(c => c.id));
 					let addedCount = 0;
 					let updatedCount = 0;
-					
-					for (const importedChar of imported) {
+
+					for (const importedChar of importedChars) {
 						const existing = existingByName.get(importedChar.name);
 						if (existing) {
-							// 同名角色已存在，以导入信息为准更新
+							// 同名角色已存在，更新属性，保留现有 ID
 							updateCharacter(novelId, existing.id, {
 								name: importedChar.name,
 								gender: importedChar.gender,
+								role: importedChar.role,
 								notes: importedChar.notes || "",
 								voice: importedChar.voice || "",
 								aliases: importedChar.aliases || [],
 								relationTerms: importedChar.relationTerms || [],
 							});
+							idMapping.set(importedChar.id, existing.id);
 							updatedCount++;
 						} else {
-							// 新角色，添加到列表
-							addCharacter(novelId, {
+							// 新角色：使用导出时的原始 ID
+							const charWithId: CharacterInfo = {
+								...importedChar,
 								name: importedChar.name,
 								gender: importedChar.gender,
+								role: importedChar.role,
 								notes: importedChar.notes || "",
 								voice: importedChar.voice || "",
 								aliases: importedChar.aliases || [],
 								relationTerms: importedChar.relationTerms || [],
-							});
+							};
+							if (!mergedIds.has(importedChar.id)) {
+								mergedChars.push(charWithId);
+								mergedIds.add(importedChar.id);
+							}
+							idMapping.set(importedChar.id, importedChar.id);
 							addedCount++;
 						}
 					}
-					
-					// 持久化到存储
-					const finalChars = novelCharacters[novelId] ?? [];
-					const fileName = getCharacterConfigFileName(novelName);
-					await saveCharacterConfigToStorage(fileName, JSON.stringify(finalChars, null, 2));
-					console.log('[CharacterSettings] 导入角色后持久化保存:', { novelId, novelName, fileName, characterCount: finalChars.length });
-					
-					alert(`导入完成！新增 ${addedCount} 个角色，更新 ${updatedCount} 个角色`);
+					setCharactersForNovel(novelId, mergedChars);
+
+					// --- 导入关系（使用ID映射修正 sourceId/targetId） ---
+					let importedRelCount = 0;
+					if (importedRelationships.length > 0) {
+						for (const rel of importedRelationships) {
+							const resolvedSourceId = idMapping.get(rel.sourceId) || rel.sourceId;
+							const resolvedTargetId = idMapping.get(rel.targetId) || rel.targetId;
+							addRelationship(novelId, {
+								sourceId: resolvedSourceId,
+								targetId: resolvedTargetId,
+								relationType: rel.relationType,
+								customRelationType: rel.customRelationType,
+								sourceNickname: rel.sourceNickname || [],
+								targetNickname: rel.targetNickname || [],
+							});
+							importedRelCount++;
+						}
+					}
+
+					// --- 导入节点位置（使用ID映射修正 key） ---
+					if (Object.keys(importedNodePositions).length > 0) {
+						const resolvedPositions: Record<string, { x: number; y: number }> = {};
+						for (const [oldId, pos] of Object.entries(importedNodePositions)) {
+							const resolvedId = idMapping.get(oldId) || oldId;
+							resolvedPositions[resolvedId] = pos;
+						}
+						setNodePositions(novelId, resolvedPositions);
+					}
+
+					const msg = `导入完成！新增 ${addedCount} 个角色，更新 ${updatedCount} 个角色` +
+						(importedRelCount > 0 ? `，导入 ${importedRelCount} 条关系` : "") +
+						(Object.keys(importedNodePositions).length > 0 ? "，导入节点位置" : "");
+					alert(msg);
 				} catch (err) {
 					alert("文件解析失败：" + (err instanceof Error ? err.message : String(err)));
 				}
@@ -344,7 +440,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			reader.readAsText(file);
 		};
 		input.click();
-	}, [novelId, novelName, novelCharacters, addCharacter, updateCharacter]);
+	}, [novelId, novelCharacters, updateCharacter, setCharactersForNovel, addRelationship, setNodePositions]);
 
 	// 扫描小说检测角色
 	const handleScanCharacters = useCallback(async () => {
@@ -583,8 +679,30 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					</button>
 				</div>
 
+				<div className="config-tabs">
+					<button
+						className={`tab-btn ${activeTab === "list" ? "active" : ""}`}
+						onClick={() => setActiveTab("list")}
+					>
+						<Icons.list size={14} />
+						角色列表
+					</button>
+					<button
+						className={`tab-btn ${activeTab === "graph" ? "active" : ""}`}
+						onClick={() => setActiveTab("graph")}
+					>
+						<Icons.sparkle size={14} />
+						关系图谱
+					</button>
+				</div>
+
 				<div className="config-body">
-					{showAddForm ? (
+					{activeTab === "graph" && !showAddForm ? (
+						<RelationshipGraph
+							novelId={novelId}
+							characters={characters}
+						/>
+					) : showAddForm ? (
 						<div className="space-y-3">
 							<div className="form-field">
 								<label>角色名</label>
@@ -607,6 +725,28 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 										{ value: "male", label: "男" },
 										{ value: "female", label: "女" },
 										{ value: "other", label: "其他" },
+									]}
+								/>
+							</div>
+
+							<div className="form-field">
+								<label>角色类型</label>
+								<Select
+									value={editForm.role || ""}
+									onChange={(v) => setEditForm({ ...editForm, role: v ? (v as CharacterRole) : undefined })}
+									options={[
+										{ value: "", label: "未设置" },
+										{ value: "protagonist", label: "男主" },
+										{ value: "heroine", label: "女主" },
+										{ value: "antagonist", label: "反派" },
+										{ value: "supportingMale", label: "男配" },
+										{ value: "supportingFemale", label: "女配" },
+										{ value: "mentor", label: "导师" },
+										{ value: "rival", label: "对手" },
+										{ value: "loveInterest", label: "爱慕对象" },
+										{ value: "family", label: "家人" },
+										{ value: "friend", label: "朋友" },
+										{ value: "npc", label: "NPC" },
 									]}
 								/>
 							</div>
@@ -717,7 +857,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								className="reader-search-btn"
 								onClick={() => {
 									setShowAddForm(false);
-									setEditForm({ name: "", gender: "other", notes: "", voice: "", aliases: [], relationTerms: [] });
+									setEditForm({ name: "", gender: "other", role: undefined, notes: "", voice: "", aliases: [], relationTerms: [] });
 									setNewAlias("");
 									setNewRelationTerm("");
 								}}
@@ -774,7 +914,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					)}
 
 					{/* 角色列表 */}
-					{characters.length > 0 && (
+					{activeTab === "list" && characters.length > 0 && (
 						<div className="config-section">
 							<div className="section-label">
 								<Icons.user size={14} />
@@ -809,13 +949,34 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 														/>
 													</div>
 													<div className="form-field">
-														<label>音色</label>
+														<label>角色类型</label>
 														<Select
-															value={editForm.voice || ""}
-															onChange={(v) => setEditForm({ ...editForm, voice: v })}
-															options={[{ value: "", label: "自动选择" }, ...voiceOptions]}
+															value={editForm.role || ""}
+															onChange={(v) => setEditForm({ ...editForm, role: v ? (v as CharacterRole) : undefined })}
+															options={[
+																{ value: "", label: "未设置" },
+																{ value: "protagonist", label: "男主" },
+																{ value: "heroine", label: "女主" },
+																{ value: "antagonist", label: "反派" },
+																{ value: "supportingMale", label: "男配" },
+																{ value: "supportingFemale", label: "女配" },
+																{ value: "mentor", label: "导师" },
+																{ value: "rival", label: "对手" },
+																{ value: "loveInterest", label: "爱慕对象" },
+																{ value: "family", label: "家人" },
+																{ value: "friend", label: "朋友" },
+																{ value: "npc", label: "NPC" },
+															]}
 														/>
 													</div>
+												</div>
+												<div className="form-field">
+													<label>音色</label>
+													<Select
+														value={editForm.voice || ""}
+														onChange={(v) => setEditForm({ ...editForm, voice: v })}
+														options={[{ value: "", label: "自动选择" }, ...voiceOptions]}
+													/>
 												</div>
 
 												{/* 别称 */}
@@ -959,6 +1120,20 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 															<span className={`gender-badge ${char.gender}`}>
 																{char.gender === "male" ? "男" : char.gender === "female" ? "女" : "其他"}
 															</span>
+															{char.role && (
+																<span className="role-badge">
+																	{char.role === "protagonist" ? "男主" :
+																	 char.role === "heroine" ? "女主" :
+																	 char.role === "antagonist" ? "反派" :
+																	 char.role === "supportingMale" ? "男配" :
+																	 char.role === "supportingFemale" ? "女配" :
+																	 char.role === "mentor" ? "导师" :
+																	 char.role === "rival" ? "对手" :
+																	 char.role === "loveInterest" ? "爱慕对象" :
+																	 char.role === "family" ? "家人" :
+																	 char.role === "friend" ? "朋友" : "NPC"}
+																</span>
+															)}
 														</div>
 
 														<div className="character-details">
@@ -1355,12 +1530,14 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								<p><strong>文件名:</strong> {exportModal.fileName}</p>
 								<p><strong>保存位置:</strong> Android/data/cn.helilab.proofreader/documents/characters/</p>
 								<p><strong>角色数量:</strong> {exportModal.characterCount}个</p>
+								<p><strong>关系数量:</strong> {exportModal.relationshipCount || 0}条</p>
 							</div>
 						) : (
 							<div className="space-y-2">
 								<p>无法自动保存到文件系统</p>
 								<p><strong>文件名:</strong> {exportModal.fileName}</p>
 								<p><strong>角色数量:</strong> {exportModal.characterCount}个</p>
+								<p><strong>关系数量:</strong> {exportModal.relationshipCount || 0}条</p>
 								<p><strong>数据大小:</strong> {exportModal.dataStr.length}字节</p>
 								<p className="text-sm text-neutral-400">请尝试复制数据后自行保存</p>
 							</div>

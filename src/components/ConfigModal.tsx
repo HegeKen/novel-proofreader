@@ -7,6 +7,7 @@ import { useConfigStore } from "../stores/configStore";
 import type { AIProvider } from "../types";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
+import { formatLargeNumber } from "../utils/formatters";
 import {
 	PROOFREAD_SYSTEM_PROMPT,
 	PROOFREAD_SYSTEM_PROMPT_CHAPTER,
@@ -171,7 +172,7 @@ function APIUsageSection() {
 							<Icons.barChart3 size={16} />
 						</div>
 					</div>
-					<div className="usage-stat-value">{apiUsage.totalTokens.toLocaleString()}</div>
+					<div className="usage-stat-value">{formatLargeNumber(apiUsage.totalTokens)}</div>
 					<div className="usage-stat-label">Token 使用量</div>
 				</div>
 			</div>

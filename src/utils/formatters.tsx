@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 /**
  * 可复用的格式化函数
  */
@@ -37,4 +39,33 @@ export function buildOriginalToFilteredMap(content: string): Record<number, numb
         }
     });
     return map;
+}
+
+export function formatLargeNumber(value: number): ReactNode {
+    const detailed = value.toLocaleString();
+    if (value >= 1_000_000_000) {
+        return (
+            <>
+                {(value / 1_000_000_000).toFixed(1)}B{" "}
+                <span className="token-detailed">({detailed})</span>
+            </>
+        );
+    }
+    if (value >= 1_000_000) {
+        return (
+            <>
+                {(value / 1_000_000).toFixed(1)}M{" "}
+                <span className="token-detailed">({detailed})</span>
+            </>
+        );
+    }
+    if (value >= 1_000) {
+        return (
+            <>
+                {(value / 1_000).toFixed(1)}K{" "}
+                <span className="token-detailed">({detailed})</span>
+            </>
+        );
+    }
+    return detailed;
 }

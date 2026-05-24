@@ -154,15 +154,69 @@ export interface ReadingProgress {
 	totalReadingTime: number; // 累计阅读时长（毫秒）
 }
 
+/** 角色类型枚举 */
+export type CharacterRole =
+	| "protagonist" // 男主
+	| "heroine" // 女主
+	| "antagonist" // 反派
+	| "supportingMale" // 男配
+	| "supportingFemale" // 女配
+	| "mentor" // 导师
+	| "rival" // 对手
+	| "loveInterest" // 爱慕对象
+	| "family" // 家人
+	| "friend" // 朋友
+	| "npc"; // NPC
+
 /** 角色信息 */
 export interface CharacterInfo {
 	id: string;
 	name: string;
 	gender: "male" | "female" | "other";
+	role?: CharacterRole; // 角色类型
 	notes?: string;
 	voice?: string; // 为该角色指定的音色
 	aliases?: string[]; // 别称列表，如"我"、"主角"等
 	relationTerms?: string[]; // 关系代称列表，如"老婆"、"老公"等
+}
+
+/** 人物关系类型枚举 */
+export type RelationType =
+	| "couple" // 夫妻
+	| "father-son" // 父子
+	| "father-daughter" // 父女
+	| "mother-son" // 母子
+	| "mother-daughter" // 母女
+	| "brother" // 兄弟
+	| "sister" // 姐妹
+	| "brother-sister" // 兄妹
+	| "sister-brother" // 姐弟
+	| "mother-daughter-in-law" // 婆媳（婆婆与儿媳）
+	| "father-daughter-in-law" // 公媳（公公与儿媳）
+	| "mother-son-in-law" // 岳母女婿
+	| "father-son-in-law" // 翁婿（岳父与女婿）
+	| "co-parents-male" // 亲家公
+	| "co-parents-female" // 亲家母
+	| "lover" // 恋人
+	| "friend" // 朋友
+	| "bestie" // 闺蜜
+	| "rival" // 竞争对手
+	| "master-disciple" // 师徒
+	| "employer-employee" // 雇佣
+	| "colleague" // 同事
+	| "stranger" // 陌生人
+	| "other"; // 其他
+
+/** 人物关系 */
+export interface CharacterRelationship {
+	id: string;
+	novelId: string;
+	sourceId: string; // 关系源角色ID
+	targetId: string; // 关系目标角色ID
+	relationType?: RelationType[]; // 双人关系类型（可多个）
+	customRelationType?: string; // 自定义关系类型（包含 "other" 时使用）
+	sourceNickname: string[]; // 源角色对目标角色的称呼（可多个）
+	targetNickname: string[]; // 目标角色对源角色的称呼（可多个）
 }
 
 /** 阅读背景类型 */

@@ -4585,6 +4585,18 @@ color: var(--text-primary);
 	border-color: rgba(167, 139, 250, 0.3);
 }
 
+.role-badge {
+	padding: 5px 12px;
+	border-radius: 12px;
+	font-size: 12px;
+	font-weight: 600;
+	transition: all 0.3s var(--ease);
+	border: 1px solid transparent;
+	background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(251, 191, 36, 0.1));
+	color: #fbbf24;
+	border-color: rgba(251, 191, 36, 0.3);
+}
+
 /* 详情区域 */
 .character-details {
 	display: flex;
@@ -5350,6 +5362,12 @@ color: var(--text-primary);
 	color: var(--text-muted);
 }
 
+.token-detailed {
+	font-size: 12px;
+	font-weight: 400;
+	color: var(--text-muted);
+}
+
 .usage-progress {
 	margin-bottom: 12px;
 }
@@ -5639,6 +5657,28 @@ color: var(--text-primary);
 	font-weight: 500;
 	outline: none;
 	transition: all var(--duration) var(--ease);
+}
+
+.config-textarea {
+	width: 100%;
+	padding: 10px 12px;
+	border: 2px solid var(--border);
+	border-radius: 8px;
+	background: var(--bg-surface);
+	color: var(--text-primary);
+	font-size: 13px;
+	font-weight: 500;
+	outline: none;
+	transition: all var(--duration) var(--ease);
+	resize: vertical;
+	font-family: inherit;
+	margin-top: 8px;
+	box-sizing: border-box;
+}
+
+.config-textarea:focus {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-alpha);
 }
 
 .toggle-visibility-btn {
@@ -6854,6 +6894,11 @@ color: var(--text-primary);
 		padding: 4px 10px;
 	}
 
+	.role-badge {
+		font-size: 11px;
+		padding: 4px 10px;
+	}
+
 	/* Character Details - Mobile */
 	.character-details {
 		gap: 10px;
@@ -8046,5 +8091,785 @@ color: var(--text-primary);
 		flex-wrap: wrap;
 		gap: 10px;
 	}
+}
+
+/* Relationship Graph Styles */
+.relationship-graph-container {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 400px;
+}
+
+.relationship-graph-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 0;
+	border-bottom: 1px solid var(--glass-border);
+}
+
+.graph-toolbar-btn {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 14px;
+	border-radius: 6px;
+	font-size: 13px;
+	background: var(--bg-surface);
+	border: 1px solid var(--glass-border);
+	color: var(--text-secondary);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+}
+
+.graph-toolbar-btn:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+}
+
+.graph-toolbar-btn.primary {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: white;
+}
+
+.graph-toolbar-btn.primary:hover {
+	background: var(--accent-hover);
+}
+
+.graph-toolbar-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.graph-toolbar-info {
+	flex: 1;
+	display: flex;
+	gap: 16px;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+.graph-zoom-controls {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.graph-zoom-btn {
+	width: 28px;
+	height: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	background: var(--bg-surface);
+	border: 1px solid var(--glass-border);
+	color: var(--text-secondary);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+}
+
+.graph-zoom-btn:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+}
+
+.graph-zoom-level {
+	font-size: 12px;
+	color: var(--text-muted);
+	min-width: 40px;
+	text-align: center;
+}
+
+.relationship-graph-viewport {
+	flex: 1;
+	overflow: hidden;
+	cursor: grab;
+	touch-action: none;
+	background:
+		linear-gradient(135deg, rgba(180, 140, 100, 0.15) 0%, rgba(160, 120, 80, 0.1) 100%),
+		linear-gradient(45deg, #2a2218 0%, #3d3225 50%, #2a2218 100%);
+	border-radius: 8px;
+	margin: 12px 0;
+	box-shadow:
+		inset 0 0 60px rgba(0, 0, 0, 0.4),
+		0 4px 20px rgba(0, 0, 0, 0.3);
+	border: 3px solid #5c4a36;
+	position: relative;
+}
+
+.relationship-graph-viewport::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-image:
+		repeating-linear-gradient(
+			0deg,
+			transparent,
+			transparent 20px,
+			rgba(139, 119, 101, 0.1) 20px,
+			rgba(139, 119, 101, 0.1) 21px
+		),
+		repeating-linear-gradient(
+			90deg,
+			transparent,
+			transparent 20px,
+			rgba(139, 119, 101, 0.1) 20px,
+			rgba(139, 119, 101, 0.1) 21px
+		);
+	pointer-events: none;
+	z-index: 0;
+}
+
+.relationship-graph-viewport.dragging {
+	cursor: grabbing;
+}
+
+.relationship-graph-content {
+	transform-origin: center center;
+	transition: transform 0.1s ease-out;
+}
+
+.relationship-graph-svg {
+	width: 100%;
+	height: 100%;
+	min-height: 400px;
+}
+
+.graph-node {
+	cursor: grab;
+	user-select: none;
+	-webkit-user-select: none;
+	transition: transform 0.1s ease;
+}
+
+.graph-node:hover {
+	cursor: grab;
+}
+
+.graph-node.dragging {
+	cursor: grabbing;
+	z-index: 100;
+}
+
+.graph-node.dragging .node-circle {
+	filter: brightness(1.3);
+	r: 40;
+}
+
+.graph-node.dragging .node-name {
+	font-weight: bold;
+}
+
+.node-circle {
+	fill: #f5f0e8;
+	stroke: #8b7355;
+	stroke-width: 3;
+	transition: all var(--duration) var(--ease);
+	filter: drop-shadow(2px 3px 4px rgba(0, 0, 0, 0.5));
+}
+
+.node-circle::before {
+	content: "";
+	position: absolute;
+	top: -8px;
+	left: 50%;
+	transform: translateX(-50%);
+	width: 12px;
+	height: 12px;
+	background: radial-gradient(circle at 30% 30%, #c9302c 0%, #8b1a1a 60%, #5c1010 100%);
+	border-radius: 50%;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.node-circle.male {
+	fill: #3b82f6;
+	stroke: #3b82f6;
+}
+
+.node-circle.female {
+	fill: #ec4899;
+	stroke: #ec4899;
+}
+
+.node-circle.other {
+	fill: #8b5cf6;
+	stroke: #8b5cf6;
+}
+
+/* 角色类型样式 */
+.node-circle.protagonist {
+	stroke: #007aff;
+	stroke-width: 4;
+	stroke-dasharray: 5 3;
+}
+
+.node-circle.heroine {
+	stroke: #ff2d55;
+	stroke-width: 4;
+	stroke-dasharray: 5 3;
+}
+
+.node-circle.antagonist {
+	stroke: #ff3b30;
+	stroke-width: 4;
+	stroke-dasharray: 3 2;
+}
+
+.node-circle.supportingMale {
+	stroke: #00d4ff;
+	stroke-width: 3;
+}
+
+.node-circle.supportingFemale {
+	stroke: #ff6b9d;
+	stroke-width: 3;
+}
+
+.node-circle.mentor {
+	stroke: #ff9500;
+	stroke-width: 3;
+	stroke-dasharray: 4 2;
+}
+
+.node-circle.rival {
+	stroke: #ff3b30;
+	stroke-width: 3;
+	stroke-dasharray: 2 1;
+}
+
+.node-circle.loveInterest {
+	stroke: #ff2d92;
+	stroke-width: 3;
+	stroke-dasharray: 2 3;
+}
+
+.node-circle.family {
+	stroke: #5856d6;
+	stroke-width: 3;
+}
+
+.node-circle.friend {
+	stroke: #34c759;
+	stroke-width: 2;
+}
+
+.node-circle.npc {
+	stroke: #8e8e93;
+	stroke-width: 2;
+}
+
+.role-badge-circle {
+	fill: #d32f2f;
+	filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.4));
+}
+
+.role-label {
+	fill: white;
+	font-size: 9px;
+	font-weight: 700;
+	pointer-events: none;
+	text-transform: uppercase;
+}
+
+.graph-node:hover .node-circle {
+	filter: brightness(1.2);
+	stroke-width: 3;
+}
+
+.node-name {
+	fill: #1a1a1a;
+	font-size: 13px;
+	font-weight: 700;
+	pointer-events: none;
+	text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+}
+
+.connection-badge {
+	fill: #1976d2;
+	filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.4));
+}
+
+.connection-count {
+	fill: white;
+	font-size: 10px;
+	font-weight: 700;
+}
+
+.graph-edge {
+	cursor: pointer;
+}
+
+.edge-line {
+	stroke: #8b4513;
+	stroke-width: 2.5;
+	stroke-opacity: 0.8;
+	transition: all var(--duration) var(--ease);
+	stroke-dasharray: none;
+	filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.4));
+}
+
+.graph-edge:hover .edge-line {
+	stroke: #c9302c;
+	stroke-width: 3.5;
+	stroke-opacity: 1;
+}
+
+.edge-label-group {
+	cursor: pointer;
+}
+
+.edge-label-bg {
+	fill: #fff9c4;
+	stroke: #d4a017;
+	stroke-width: 1;
+	rx: 3;
+	cursor: pointer;
+}
+
+.edge-label-text {
+	fill: #3e2723;
+	font-size: 10px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.graph-edge:hover .edge-label-bg {
+	fill: #ffeb3b;
+	stroke: #f57f17;
+}
+
+.graph-edge:hover .edge-label-text {
+	fill: #1a1a1a;
+}
+
+.relationship-graph-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 60px 20px;
+	text-align: center;
+}
+
+.empty-icon {
+	width: 80px;
+	height: 80px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--bg-surface);
+	border-radius: 50%;
+	color: var(--text-muted);
+	margin-bottom: 16px;
+}
+
+.empty-title {
+	font-size: 16px;
+	color: var(--text-primary);
+	margin-bottom: 8px;
+}
+
+.empty-desc {
+	font-size: 13px;
+	color: var(--text-muted);
+}
+
+/* Relation Edit Modal */
+.relation-edit-modal {
+	width: 480px;
+	max-height: 80vh;
+	background: var(--glass-bg-strong);
+	backdrop-filter: blur(var(--glass-blur-strong));
+	-webkit-backdrop-filter: blur(var(--glass-blur-strong));
+	border-radius: 16px;
+	border: 1px solid var(--glass-border);
+	box-shadow: var(--shadow-lg);
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+}
+
+.relation-edit-modal .modal-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 16px 20px;
+	border-bottom: 1px solid var(--glass-border);
+}
+
+.relation-edit-modal .modal-header h3 {
+	font-size: 16px;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.relation-edit-modal .modal-close {
+	width: 32px;
+	height: 32px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 6px;
+	background: transparent;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+}
+
+.relation-edit-modal .modal-close:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+}
+
+.relation-edit-modal .modal-body {
+	flex: 1;
+	overflow-y: auto;
+	padding: 20px;
+}
+
+.relation-form-section {
+	margin-bottom: 20px;
+	padding-bottom: 20px;
+	border-bottom: 1px solid var(--glass-border);
+}
+
+.relation-form-section:last-child {
+	margin-bottom: 0;
+	padding-bottom: 0;
+	border-bottom: none;
+}
+
+.nickname-input-row {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+.nickname-add-btn {
+	width: 36px;
+	height: 36px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 6px;
+	background: var(--accent);
+	border: none;
+	color: white;
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+}
+
+.nickname-add-btn:hover {
+	background: var(--accent-hover);
+}
+
+.nickname-suggestions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.nickname-suggestion {
+	padding: 4px 10px;
+	font-size: 12px;
+	background: var(--bg-surface);
+	border: 1px solid var(--glass-border);
+	border-radius: 4px;
+	color: var(--text-secondary);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+}
+
+.nickname-suggestion:hover {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: white;
+}
+
+.nickname-tags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.nickname-tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 10px;
+	font-size: 12px;
+	background: var(--accent-glow);
+	border: 1px solid var(--accent);
+	border-radius: 4px;
+	color: var(--accent);
+}
+
+.nickname-tag .remove-btn {
+	width: 16px;
+	height: 16px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	background: transparent;
+	border: none;
+	color: var(--accent);
+	cursor: pointer;
+	font-size: 14px;
+	line-height: 1;
+}
+
+.nickname-tag .remove-btn:hover {
+	background: var(--accent);
+	color: white;
+}
+
+.relation-edit-modal .modal-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 16px 20px;
+	border-top: 1px solid var(--glass-border);
+}
+
+.modal-footer-right {
+	display: flex;
+	gap: 12px;
+}
+
+.relation-edit-modal .btn {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 10px 18px;
+	border-radius: 8px;
+	font-size: 14px;
+	font-weight: 500;
+	border: none;
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+}
+
+.relation-edit-modal .btn-primary {
+	background: var(--accent);
+	color: white;
+}
+
+.relation-edit-modal .btn-primary:hover {
+	background: var(--accent-hover);
+}
+
+.relation-edit-modal .btn-primary:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.relation-edit-modal .btn-secondary {
+	background: var(--bg-surface);
+	color: var(--text-secondary);
+	border: 1px solid var(--glass-border);
+}
+
+.relation-edit-modal .btn-secondary:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+}
+
+.relation-edit-modal .btn-danger {
+	background: var(--error);
+	color: white;
+}
+
+.relation-edit-modal .btn-danger:hover {
+	opacity: 0.9;
+}
+
+.relation-type-checkboxes {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 6px;
+}
+
+.relation-type-checkbox {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+	color: var(--text-secondary);
+	cursor: pointer;
+	padding: 3px 8px;
+	border-radius: 4px;
+	border: 1px solid var(--glass-border);
+	background: var(--bg-surface);
+	transition: all var(--duration) var(--ease);
+	user-select: none;
+}
+
+.relation-type-checkbox:hover {
+	border-color: var(--accent);
+	background: var(--bg-hover);
+}
+
+.relation-type-checkbox input[type="checkbox"] {
+	accent-color: var(--accent);
+	margin: 0;
+}
+
+.relation-type-checkbox:has(input:checked) {
+	border-color: var(--accent);
+	background: var(--accent-alpha);
+	color: var(--accent);
+}
+
+/* Mobile responsive for Relationship Graph */
+@media (max-width: 768px) {
+	.relation-edit-modal {
+		width: calc(100% - 32px);
+		max-height: 85vh;
+	}
+
+	.relationship-graph-container {
+		min-height: 300px;
+	}
+
+	.relationship-graph-svg {
+		min-height: 300px;
+	}
+
+	.relationship-graph-toolbar {
+		flex-wrap: wrap;
+	}
+
+	.graph-toolbar-info {
+		order: 3;
+		width: 100%;
+		margin-top: 8px;
+	}
+}
+
+/* Character Relations List Modal */
+.avatar-circle-sm {
+	width: 40px;
+	height: 40px;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 16px;
+	font-weight: 700;
+	color: white;
+}
+
+.avatar-circle-sm.male {
+	background: linear-gradient(135deg, #5eb8ff 0%, #3b82f6 50%, #2563eb 100%);
+}
+
+.avatar-circle-sm.female {
+	background: linear-gradient(135deg, #f472b6 0%, #ec4899 50%, #db2777 100%);
+}
+
+.avatar-circle-sm.other {
+	background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%);
+}
+
+.character-relations-list {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	max-height: 400px;
+	overflow-y: auto;
+}
+
+.relation-item {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px;
+	background: var(--bg-surface);
+	border-radius: 12px;
+	border: 1px solid var(--glass-border);
+}
+
+.relation-item-info {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex: 1;
+}
+
+.relation-item-details {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.relation-item-name {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.relation-item-nicknames {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.nickname-badge {
+	padding: 3px 8px;
+	background: var(--accent);
+	color: white;
+	border-radius: 6px;
+	font-size: 11px;
+	font-weight: 500;
+}
+
+.relation-item-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.relation-action-btn {
+	width: 32px;
+	height: 32px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--bg-hover);
+	border: none;
+	border-radius: 8px;
+	color: var(--text-secondary);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+}
+
+.relation-action-btn:hover {
+	background: var(--accent);
+	color: white;
+}
+
+.relation-action-btn.danger:hover {
+	background: var(--error);
+	color: white;
+}
+
+.empty-relations {
+	text-align: center;
+	padding: 40px 20px;
+	color: var(--text-muted);
+}
+
+.empty-relations p {
+	margin: 0;
+	font-size: 14px;
 }
 

@@ -3,7 +3,7 @@
 // ============================================================
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Novel, Chapter, AIConfig, AIProvider, AppTab, ProofreadQueueItem, ProofreadProgress, APIUsage, NovelCategory, CharacterInfo } from "../types";
+import type { Novel, Chapter, AIConfig, AIProvider, AppTab, ProofreadQueueItem, ProofreadProgress, APIUsage, NovelCategory, CharacterInfo, CharacterRelationship } from "../types";
 import { setLoggerEnabled } from "../utils/logger";
 import { saveNovelToStorage, saveCharacterConfigToStorage, getCharacterConfigFileName } from "../utils/fileExport";
 
@@ -222,6 +222,23 @@ interface AppState {
 	getCharacters: (novelId: string) => CharacterInfo[];
 	setCharactersForNovel: (novelId: string, characters: CharacterInfo[]) => void;
 
+	// 人物关系（按小说ID存储）
+	characterRelationships: Record<string, CharacterRelationship[]>;
+
+	// Actions — 人物关系管理
+	addRelationship: (novelId: string, relationship: Omit<CharacterRelationship, "id" | "novelId">) => void;
+	updateRelationship: (novelId: string, relationshipId: string, relationship: Partial<Omit<CharacterRelationship, "id" | "novelId">>) => void;
+	removeRelationship: (novelId: string, relationshipId: string) => void;
+	removeRelationshipsForCharacter: (novelId: string, characterId: string) => void;
+	getRelationshipsForNovel: (novelId: string) => CharacterRelationship[];
+
+	// 角色图谱节点位置（按小说ID存储）
+	nodePositions: Record<string, Record<string, { x: number; y: number }>>;
+
+	// Actions — 节点位置管理
+	setNodePositions: (novelId: string, positions: Record<string, { x: number; y: number }>) => void;
+	clearNodePositions: (novelId: string) => void;
+
 	// Actions — 缓存管理
 	saveCache: () => void;
 }
@@ -274,6 +291,8 @@ export const useAppStore = create<AppState>()(
 			},
 			novelCategories: {},
 			novelCharacters: {},
+			characterRelationships: {},
+			nodePositions: {},
 			readingProgress: {},
 			readingReminderEnabled: true,
 			readingReminderMinutes: 30,
@@ -874,6 +893,65 @@ export const useAppStore = create<AppState>()(
 					}
 				})),
 
+			addRelationship: (novelId, relationship) => {
+				const newRelationship: CharacterRelationship = {
+					...relationship,
+					id: `rel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+					novelId,
+				};
+				set((state) => ({
+					characterRelationships: {
+						...state.characterRelationships,
+						[novelId]: [...(state.characterRelationships[novelId] ?? []), newRelationship]
+					}
+				}));
+			},
+
+			updateRelationship: (novelId, relationshipId, relationship) =>
+				set((state) => ({
+					characterRelationships: {
+						...state.characterRelationships,
+						[novelId]: (state.characterRelationships[novelId] ?? []).map((r) =>
+							r.id === relationshipId ? { ...r, ...relationship } : r
+						)
+					}
+				})),
+
+			removeRelationship: (novelId, relationshipId) =>
+				set((state) => ({
+					characterRelationships: {
+						...state.characterRelationships,
+						[novelId]: (state.characterRelationships[novelId] ?? []).filter((r) => r.id !== relationshipId)
+					}
+				})),
+
+			removeRelationshipsForCharacter: (novelId, characterId) =>
+				set((state) => ({
+					characterRelationships: {
+						...state.characterRelationships,
+						[novelId]: (state.characterRelationships[novelId] ?? []).filter(
+							(r) => r.sourceId !== characterId && r.targetId !== characterId
+						)
+					}
+				})),
+
+			getRelationshipsForNovel: (novelId) => get().characterRelationships[novelId] ?? [],
+
+			setNodePositions: (novelId, positions) =>
+				set((state) => ({
+					nodePositions: {
+						...state.nodePositions,
+						[novelId]: positions,
+					}
+				})),
+
+			clearNodePositions: (novelId) =>
+				set((state) => {
+					const updated = { ...state.nodePositions };
+					delete updated[novelId];
+					return { nodePositions: updated };
+				}),
+
 			saveCache: () => {
 				const now = Date.now();
 				set((state) => {
@@ -910,6 +988,8 @@ export const useAppStore = create<AppState>()(
 				apiUsage: state.apiUsage,
 				novelCategories: state.novelCategories,
 				novelCharacters: state.novelCharacters,
+				characterRelationships: state.characterRelationships,
+				nodePositions: state.nodePositions,
 			}),
 			onRehydrateStorage: () => (state) => {
 				if (state) {
