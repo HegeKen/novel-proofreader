@@ -14,8 +14,11 @@ import { useAppStore } from "./stores/appStore";
 import { splitChapters } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
 import { exportToFile, loadNovelsFromStorage, loadNovelContent, saveNovelToStorage, ensureTxtFilename, exportAllData } from "./utils/fileExport";
+import { formatDateTime } from "./utils/formatters";
 import { parseURLParams, updateURLParams } from "./utils/urlParams";
 import { Icons } from "./components/Icons";
+import { audioCache } from "./utils/ttsService";
+import { useConfigStore } from "./stores/configStore";
 
 type RightTab = "proofread" | "task";
 type MobileTab = "novels" | "chapters" | "reader" | "task" | "settings";
@@ -40,8 +43,6 @@ export default function App() {
 	const [rightTab, setRightTab] = useState<RightTab>("proofread");
 	const [mobileTab, setMobileTab] = useState<MobileTab>("reader");
 	const [isMobile, setIsMobile] = useState(false);
-	// 移动端校对面板显示/隐藏状态
-	const [mobileProofreadVisible, setMobileProofreadVisible] = useState(true);
 
 	// 检测是否为移动端
 	useEffect(() => {
@@ -56,6 +57,12 @@ export default function App() {
 	useEffect(() => {
 		document.documentElement.setAttribute("data-theme", theme);
 	}, [theme]);
+
+	// 监听音频缓存持久化配置变化
+	const audioCachePersistent = useConfigStore((s) => s.ttsConfig.audioCachePersistent);
+	useEffect(() => {
+		audioCache.setPersistent(audioCachePersistent);
+	}, [audioCachePersistent]);
 
 	// 加载保存的小说（如果本地存储中没有）
 	useEffect(() => {
@@ -264,7 +271,7 @@ export default function App() {
 			readingProgress: state.readingProgress,
 			proofreadProgress: state.proofreadProgress,
 			ignoredWords: state.ignoredWords,
-			exportTime: Date.now(),
+			exportTime: formatDateTime(Date.now()),
 			version: "0.9.0",
 		});
 	};
@@ -410,32 +417,12 @@ export default function App() {
 							<div className="mobile-reader-section">
 								<ReaderPanel showReadingModeToggle={true} isMobile={isMobile} />
 							</div>
-							{!readingMode && mobileProofreadVisible && (
+							{!readingMode && (
 								<div className="mobile-proofread-section">
-									<button
-										className="mobile-proofread-toggle"
-										onClick={() =>
-											setMobileProofreadVisible(!mobileProofreadVisible)
-										}
-									>
-										<Icons.chevronDown size={16} />
-										收起校对
-									</button>
 									<div className="right-content">
 										<ProofreadPanel />
 									</div>
 								</div>
-							)}
-							{!readingMode && !mobileProofreadVisible && (
-								<button
-									className="mobile-proofread-toggle"
-									onClick={() =>
-										setMobileProofreadVisible(!mobileProofreadVisible)
-									}
-								>
-									<Icons.chevronUp size={16} />
-									显示校对
-								</button>
 							)}
 						</div>
 					)}

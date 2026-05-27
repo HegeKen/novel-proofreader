@@ -8,6 +8,7 @@ import { sendChatCompletion, buildScriptUserPrompt, SCRIPT_TTS_ENHANCE_SYSTEM_PR
 import { exportToFile } from "../utils/fileExport";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
+import { Select } from "./Select";
 import { SCRIPT_SYSTEM_PROMPT } from "../utils/aiClient";
 import { ScriptTTSPlayer, parseScriptContent } from "../utils/ttsService";
 import type { ChatMessage } from "../utils/aiClient";
@@ -350,20 +351,20 @@ function TaskPanelContent({
 											return (
 												<div key={character} className="voice-setting-item">
 													<span className="character-name">{character}</span>
-													<select
+													<Select
 														value={selectedVoice}
-														onChange={(e) => handleCharacterVoiceChange(character, e.target.value)}
-														className="voice-select"
-													>
-														<option value="冰糖">冰糖（女）</option>
-														<option value="茉莉">茉莉（女）</option>
-														<option value="苏打">苏打（男）</option>
-														<option value="白桦">白桦（男）</option>
-														<option value="Mia">Mia（女英）</option>
-														<option value="Chloe">Chloe（女英）</option>
-														<option value="Milo">Milo（男英）</option>
-														<option value="Dean">Dean（男英）</option>
-													</select>
+														onChange={(value) => handleCharacterVoiceChange(character, value)}
+														options={[
+															{ value: "冰糖", label: "冰糖（女）" },
+															{ value: "茉莉", label: "茉莉（女）" },
+															{ value: "苏打", label: "苏打（男）" },
+															{ value: "白桦", label: "白桦（男）" },
+															{ value: "Mia", label: "Mia（女英）" },
+															{ value: "Chloe", label: "Chloe（女英）" },
+															{ value: "Milo", label: "Milo（男英）" },
+															{ value: "Dean", label: "Dean（男英）" }
+														]}
+													/>
 												</div>
 											);
 										})}

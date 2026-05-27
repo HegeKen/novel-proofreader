@@ -1,7 +1,7 @@
 // ============================================================
 // 章节导航侧栏
 // ============================================================
-import { useState, useEffect, useRef, forwardRef } from "react";
+import { useEffect, useRef, forwardRef } from "react";
 import { useAppStore } from "../stores/appStore";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
@@ -49,7 +49,8 @@ export function ChapterNav({
 	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
 	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
 	const proofreadStatus = useAppStore((s) => s.proofreadStatus);
-	const [hideProofread, setHideProofread] = useState(false);
+	const hideProofread = useAppStore((s) => s.hideProofread);
+	const setHideProofread = useAppStore((s) => s.setHideProofread);
 	const chapterListRef = useRef<HTMLDivElement>(null);
 	const activeItemRef = useRef<HTMLButtonElement>(null);
 

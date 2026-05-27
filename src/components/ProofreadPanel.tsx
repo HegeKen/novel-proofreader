@@ -57,6 +57,8 @@ export function ProofreadPanel() {
 
 	const startLine = useProofreadStore((s) => s.startLine);
 	const setStartLine = useProofreadStore((s) => s.setStartLine);
+	const ttsPlaying = useProofreadStore((s) => s.ttsPlaying);
+	const ttsHighlightedPara = useProofreadStore((s) => s.ttsHighlightedPara);
 
 	const { checkChapter, cancelCheck, checkSingleLine } = useAICheck();
 	const [granularity, setGranularity] = useState<CheckGranularity>("paragraph");
@@ -202,22 +204,40 @@ export function ProofreadPanel() {
 
 		console.log(`[ProofreadPanel] scrollToParagraph: index=${index}`);
 
-		// 强制滚动，不检查是否在可视区域内
-		el.scrollIntoView({ behavior: "smooth", block: "center" });
+		// 计算元素相对于容器的位置
+		const containerRect = container.getBoundingClientRect();
+		const elementRect = el.getBoundingClientRect();
+		
+		// 计算元素相对于容器顶部的偏移
+		const elementOffsetTop = elementRect.top - containerRect.top + container.scrollTop;
+		
+		// 计算滚动目标位置，使元素居中
+		const scrollTarget = elementOffsetTop - (containerRect.height / 2) + (elementRect.height / 2);
+		
+		// 使用平滑滚动
+		container.scrollTo({
+			top: scrollTarget,
+			behavior: "smooth"
+		});
 	}, []);
 
-	// 监听 highlightedParagraph 变化，自动滚动到对应段落
+	// 监听 highlightedParagraph 或 ttsHighlightedPara 变化，自动滚动到对应段落
 	useEffect(() => {
-		if (highlightedParagraph !== null) {
+		const targetPara = ttsPlaying && ttsHighlightedPara !== -1 ? ttsHighlightedPara : highlightedParagraph;
+		if (targetPara !== null) {
 			console.log(
-				`[ProofreadPanel] highlightedParagraph changed: ${highlightedParagraph}`,
+				`[ProofreadPanel] highlightedParagraph changed: ${targetPara}, ttsPlaying: ${ttsPlaying}`,
 			);
-			// 使用 setTimeout 确保 DOM 已经渲染完成
 			setTimeout(() => {
-				scrollToParagraph(highlightedParagraph);
+				scrollToParagraph(targetPara);
 			}, 50);
 		}
-	}, [highlightedParagraph, scrollToParagraph]);
+	}, [highlightedParagraph, ttsHighlightedPara, ttsPlaying, scrollToParagraph]);
+
+	// 当切换章节时，重置高亮段落
+	useEffect(() => {
+		setHighlightedParagraph(null);
+	}, [currentChapterIndex, setHighlightedParagraph]);
 
 	/** 采纳单个错误：高亮旧文本 → 替换 → 高亮新文本 */
 	const handleApply = useCallback(
@@ -354,7 +374,7 @@ export function ProofreadPanel() {
 			const chapterId = currentChapter.id;
 			const paraIndex = paraResult.paragraphIndex;
 
-			// 过滤出未采纳且未跳过的错误
+			// 过滤出未采纳且未忽略的错误
 			const pendingErrors = paraResult.errors.filter(
 				(e) => !e.applied && !e.skipped,
 			);
@@ -395,22 +415,22 @@ export function ProofreadPanel() {
 		[replaceParagraphTextBatch, applyAllErrors, addToast],
 	);
 
-	/** 跳过/取消跳过单个错误 */
+	/** 忽略/取消忽略单个错误 */
 	const handleSkip = useCallback(
 		(paraResult: (typeof chapterResults)[number], err: ProofreadError) => {
 			const state = useAppStore.getState();
 			const currentChapter = state.chapters[state.currentChapterIndex];
 			if (!currentChapter) {
-				addToast("error", "无法跳过：未找到当前章节");
+				addToast("error", "无法忽略：未找到当前章节");
 				return;
 			}
 
 			toggleErrorSkipped(currentChapter.id, paraResult.paragraphIndex, err.id);
 
 			if (err.skipped) {
-				addToast("success", "已取消跳过");
+				addToast("success", "已取消忽略");
 			} else {
-				addToast("info", "已跳过此错误");
+				addToast("info", "已忽略此错误");
 			}
 		},
 		[toggleErrorSkipped, addToast],
@@ -600,8 +620,7 @@ export function ProofreadPanel() {
 							ref={(el) => {
 								paragraphRefs.current[paraResult.paragraphIndex] = el;
 							}}
-							className={`proofread-paragraph ${highlightedParagraph === paraResult.paragraphIndex ? "highlighted" : ""
-								}`}
+							className={`proofread-paragraph ${ttsPlaying && ttsHighlightedPara === paraResult.paragraphIndex ? "tts-highlighted" : highlightedParagraph === paraResult.paragraphIndex ? "highlighted" : ""}`}
 							onClick={() => {
 								setHighlightedParagraph(paraResult.paragraphIndex);
 								// 点击段落时自动切换起始行到该段落
@@ -687,7 +706,7 @@ export function ProofreadPanel() {
 														<span className="applied-badge">已采纳</span>
 													)}
 													{err.skipped && (
-														<span className="skipped-badge">已跳过</span>
+														<span className="skipped-badge">已忽略</span>
 													)}
 												</div>
 												<div className="error-detail">
@@ -720,7 +739,7 @@ export function ProofreadPanel() {
 														handleSkip(paraResult, err);
 													}}
 												>
-													{err.skipped ? "取消跳过" : "跳过"}
+													{err.skipped ? "取消忽略" : "忽略"}
 												</button>
 											</div>
 										);

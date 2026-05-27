@@ -342,14 +342,14 @@ function TTSConfigSection() {
 					value={ttsConfig.voice}
 					onChange={(value) => updateTTSConfig({ voice: value })}
 					options={[
-						{ value: '冰糖', label: '冰糖' },
-						{ value: '茉莉', label: '茉莉' },
-						{ value: '苏打', label: '苏打' },
-						{ value: '白桦', label: '白桦' },
-						{ value: 'Mia', label: 'Mia' },
-						{ value: 'Chloe', label: 'Chloe' },
-						{ value: 'Milo', label: 'Milo' },
-						{ value: 'Dean', label: 'Dean' },
+						{ value: "冰糖", label: "冰糖" },
+						{ value: "茉莉", label: "茉莉" },
+						{ value: "苏打", label: "苏打" },
+						{ value: "白桦", label: "白桦" },
+						{ value: "Mia", label: "Mia" },
+						{ value: "Chloe", label: "Chloe" },
+						{ value: "Milo", label: "Milo" },
+						{ value: "Dean", label: "Dean" }
 					]}
 				/>
 			</div>
@@ -386,6 +386,45 @@ function TTSConfigSection() {
 			>
 				获取 MiMo API Key →
 			</a>
+
+			<div className="divider"></div>
+
+			<div className="section-label">
+				<Icons.cache size={14} />
+				音频缓存设置
+			</div>
+
+			<div className="toggle-item">
+				<label className="toggle-label">
+					<div className="toggle-switch">
+						<input
+							type="checkbox"
+							checked={ttsConfig.audioCacheEnabled}
+							onChange={(e) => updateTTSConfig({ audioCacheEnabled: e.target.checked })}
+						/>
+						<span className="toggle-slider"></span>
+					</div>
+					<span className="toggle-text">启用音频缓存</span>
+				</label>
+				<span className="toggle-hint">启用后，已生成的音频将被缓存，避免重复请求</span>
+			</div>
+
+			{ttsConfig.audioCacheEnabled && (
+				<div className="toggle-item">
+					<label className="toggle-label">
+						<div className="toggle-switch">
+							<input
+								type="checkbox"
+								checked={ttsConfig.audioCachePersistent}
+								onChange={(e) => updateTTSConfig({ audioCachePersistent: e.target.checked })}
+							/>
+							<span className="toggle-slider"></span>
+						</div>
+						<span className="toggle-text">启用缓存持久化</span>
+					</label>
+					<span className="toggle-hint">缓存将保存到本地存储，重启后仍然有效</span>
+				</div>
+			)}
 		</div>
 	);
 }

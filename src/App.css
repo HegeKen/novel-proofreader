@@ -2249,7 +2249,7 @@ color: var(--text-primary);
 }
 
 .reader-content.reading-mode {
-	padding: 32px 48px;
+	padding: 32px 48px 160px;
 	line-height: var(--line-height, 32px);
 }
 
@@ -2861,6 +2861,23 @@ color: var(--text-primary);
 	box-shadow:
 		0 0 0 1px var(--accent-dim),
 		var(--shadow-glow);
+}
+.proofread-paragraph.tts-highlighted {
+	border-color: #ff9500;
+	background: rgba(255, 200, 100, 0.1);
+	box-shadow:
+		0 0 0 1px rgba(255, 149, 0, 0.3),
+		0 2px 8px rgba(255, 149, 0, 0.15);
+	animation: proofread-tts-pulse 1.5s ease-in-out infinite;
+}
+@keyframes proofread-tts-pulse {
+	0%,
+	100% {
+		background: rgba(255, 200, 100, 0.1);
+	}
+	50% {
+		background: rgba(255, 200, 100, 0.18);
+	}
 }
 
 .para-original {
@@ -4345,18 +4362,6 @@ color: var(--text-primary);
 
 .merge-target-select .config-select {
 	width: 100%;
-	padding: 8px 12px;
-	background: var(--bg-hover);
-	border: 1px solid var(--border);
-	border-radius: var(--r-md);
-	color: var(--text-primary);
-	font-size: 13px;
-	cursor: pointer;
-}
-
-.merge-target-select .config-select:focus {
-	outline: none;
-	border-color: var(--accent);
 }
 
 .detected-character-quick-actions {
@@ -4387,6 +4392,16 @@ color: var(--text-primary);
 	color: var(--text-primary);
 }
 
+.quick-ignore {
+	background: rgba(251, 191, 36, 0.15);
+	color: #fbbf24;
+}
+
+.quick-ignore:hover {
+	background: rgba(251, 191, 36, 0.25);
+	color: #fcd34d;
+}
+
 .quick-add {
 	background: var(--accent);
 	color: white;
@@ -4404,6 +4419,11 @@ color: var(--text-primary);
 	padding: 20px;
 	transition: all 0.3s var(--ease-bounce);
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+	margin-bottom: 16px;
+}
+
+.character-card:last-child {
+	margin-bottom: 0;
 }
 
 .character-card:hover {
@@ -4418,6 +4438,63 @@ color: var(--text-primary);
 	gap: 16px;
 }
 
+/* 拖拽排序样式 */
+.drag-item {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 16px;
+	background: var(--bg-raised);
+	border: 1px solid var(--glass-border);
+	border-radius: 12px;
+	cursor: grab;
+	transition: all 0.2s ease;
+	user-select: none;
+}
+
+.drag-item:hover {
+	background: var(--bg-highlight);
+	border-color: var(--accent);
+}
+
+.drag-item.dragging {
+	opacity: 0.5;
+	background: var(--bg-hover);
+	border-color: var(--accent);
+}
+
+.drag-item:active {
+	cursor: grabbing;
+}
+
+.drag-order {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--accent);
+	background: var(--accent-dim);
+	border-radius: 6px;
+	flex-shrink: 0;
+}
+
+.drag-name {
+	font-weight: 500;
+	color: var(--text-primary);
+}
+
+.drag-role {
+	font-size: 12px;
+	color: var(--text-secondary);
+	background: var(--bg-overlay);
+	padding: 2px 8px;
+	border-radius: 10px;
+	margin-left: auto;
+}
+
 /* 主要信息区域 */
 .character-main-section {
 	display: flex;
@@ -4430,6 +4507,37 @@ color: var(--text-primary);
 	margin-top: 8px;
 	padding-top: 16px;
 	border-top: 1px solid var(--glass-border);
+}
+
+/* 别称/代称标签区块 */
+.character-tags-section {
+	margin-top: 12px;
+	padding-top: 12px;
+	border-top: 1px solid var(--glass-border);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.character-tags-section .detail-item {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+}
+
+.character-tags-section .detail-label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-muted);
+	white-space: nowrap;
+	flex-shrink: 0;
+	margin-top: 2px;
+}
+
+.character-tags-section .tags-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
 }
 
 .notes-label {
@@ -4636,8 +4744,9 @@ color: var(--text-primary);
 /* 操作按钮 */
 .character-actions {
 	display: flex;
-	flex-direction: column;
-	gap: 10px;
+	flex-direction: row;
+	gap: 8px;
+	align-items: center;
 }
 
 /* 添加角色悬浮按钮 */
@@ -4651,12 +4760,13 @@ color: var(--text-primary);
 
 /* 角色操作悬浮按钮容器 */
 .character-actions-fab-wrapper {
-	position: fixed;
-	bottom: 24px;
-	right: 24px;
 	display: flex;
 	gap: 8px;
-	z-index: 100;
+	padding: 12px 22px;
+	justify-content: center;
+	border-top: 1px solid var(--border);
+	background: var(--bg-secondary);
+	flex-shrink: 0;
 }
 
 .character-actions-fab-wrapper .action-btn {
@@ -4782,6 +4892,76 @@ color: var(--text-primary);
 	box-shadow: 0 4px 12px rgba(255, 107, 122, 0.2);
 }
 
+/* 排序按钮激活状态 */
+.action-btn.active {
+	background: var(--accent);
+	color: white;
+	border-color: var(--accent);
+}
+
+.action-btn.active:hover {
+	background: var(--accent-hover);
+	color: white;
+	border-color: var(--accent-hover);
+}
+
+/* 拖拽排序项目样式 */
+.drag-item {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 10px 14px;
+	border-radius: var(--r-md);
+	background: var(--bg-overlay);
+	border: 1px solid var(--border);
+	cursor: grab;
+	transition: all var(--duration) var(--ease);
+	user-select: none;
+}
+
+.drag-item:hover {
+	background: var(--bg-hover);
+	border-color: var(--border-strong);
+	transform: translateX(2px);
+}
+
+.drag-item.dragging {
+	opacity: 0.5;
+	border-color: var(--accent);
+	border-style: dashed;
+	transform: scale(0.98);
+}
+
+.drag-order {
+	width: 24px;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 6px;
+	background: var(--accent);
+	color: white;
+	font-size: 12px;
+	font-weight: 600;
+	flex-shrink: 0;
+}
+
+.drag-name {
+	flex: 1;
+	font-size: 14px;
+	font-weight: 500;
+	color: var(--text-primary);
+}
+
+.drag-role {
+	font-size: 11px;
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: var(--bg-secondary);
+	color: var(--text-secondary);
+	flex-shrink: 0;
+}
+
 /* 亮色模式适配 */
 [data-theme="light"] .character-card {
 	background: rgba(255, 255, 255, 0.95);
@@ -4879,8 +5059,7 @@ color: var(--text-primary);
 	/* 角色操作悬浮按钮移动端样式 */
 	.character-actions-fab-wrapper {
 		gap: 6px;
-		bottom: 20px;
-		right: 16px;
+		padding: 10px 14px;
 	}
 	
 	.character-actions-fab-wrapper .action-btn {
@@ -4899,6 +5078,21 @@ color: var(--text-primary);
 	.character-actions-fab-wrapper .action-btn svg {
 		width: 20px;
 		height: 20px;
+	}
+
+	.drag-item {
+		padding: 8px 12px;
+		gap: 8px;
+	}
+
+	.drag-order {
+		width: 20px;
+		height: 20px;
+		font-size: 10px;
+	}
+
+	.drag-name {
+		font-size: 13px;
 	}
 }
 
@@ -5074,6 +5268,10 @@ color: var(--text-primary);
 	padding: 18px 22px;
 	overflow-y: auto;
 	flex: 1;
+}
+
+.config-body.dragging {
+	overflow: hidden;
 }
 
 .config-section {
@@ -5785,6 +5983,23 @@ color: var(--text-primary);
 	font-size: 14px;
 	font-weight: 500;
 	color: var(--text-secondary);
+	flex-shrink: 0;
+}
+
+.toggle-item {
+	margin-bottom: 12px;
+}
+
+.toggle-item:last-child {
+	margin-bottom: 0;
+}
+
+.toggle-hint {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-top: 4px;
+	margin-left: 68px;
+	line-height: 1.5;
 }
 
 .config-footer {
@@ -6932,6 +7147,20 @@ color: var(--text-primary);
 		margin-top: 4px;
 	}
 
+	.character-tags-section {
+		margin-top: 8px;
+		padding-top: 8px;
+		gap: 6px;
+	}
+
+	.character-tags-section .detail-label {
+		font-size: 11px;
+	}
+
+	.character-tags-section .tags-list {
+		gap: 5px;
+	}
+
 	.notes-label {
 		font-size: 11px;
 	}
@@ -7237,6 +7466,20 @@ color: var(--text-primary);
 	.character-notes-section {
 		padding-top: 10px;
 		margin-top: 2px;
+	}
+
+	.character-tags-section {
+		margin-top: 6px;
+		padding-top: 6px;
+		gap: 4px;
+	}
+
+	.character-tags-section .detail-label {
+		font-size: 10px;
+	}
+
+	.character-tags-section .tags-list {
+		gap: 4px;
 	}
 
 	.notes-label {
@@ -8149,6 +8392,50 @@ color: var(--text-primary);
 	gap: 16px;
 	font-size: 12px;
 	color: var(--text-muted);
+}
+
+.graph-focus-controls {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.graph-focus-controls .config-select {
+	width: fit-content;
+}
+
+/* 统一的 config-select 样式 */
+.config-select {
+	padding: 8px 12px;
+	background: var(--bg-hover);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	color: var(--text-primary);
+	font-size: 13px;
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+}
+
+.config-select:hover {
+	border-color: var(--accent);
+	background: var(--bg-highlight);
+}
+
+.config-select:focus {
+	outline: none;
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.config-select option {
+	background: var(--bg-surface);
+	color: var(--text-primary);
+	padding: 8px;
+}
+
+.config-select option:hover {
+	background: var(--accent);
+	color: white;
 }
 
 .graph-zoom-controls {

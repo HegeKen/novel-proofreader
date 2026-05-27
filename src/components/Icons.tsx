@@ -57,6 +57,7 @@ import {
 	UserRound,
 	UserRoundPlus,
 	UserRoundPen,
+	ListOrdered,
 } from "lucide-react";
 
 export const Icons = {
@@ -113,6 +114,7 @@ export const Icons = {
 	fileOutput: FileOutput,
 	barChart3: BarChart3,
 	listTodo: ListTodo,
+	listOrdered: ListOrdered,
 	trash2: Trash2,
 	loader2: Loader2,
 	circle: Circle,

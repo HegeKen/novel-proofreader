@@ -20,6 +20,8 @@ export interface TTSConfig {
 	apiKey: string;
 	baseUrl: string;
 	characterVoices: Record<string, string>;
+	audioCacheEnabled: boolean;
+	audioCachePersistent: boolean;
 }
 
 export interface PromptConfig {
@@ -58,6 +60,8 @@ const DEFAULT_TTS_CONFIG: TTSConfig = {
 	apiKey: "",
 	baseUrl: "https://api.xiaomimimo.com/v1",
 	characterVoices: {},
+	audioCacheEnabled: true,
+	audioCachePersistent: false,
 };
 
 const DEFAULT_PROMPT_CONFIG: PromptConfig = {

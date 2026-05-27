@@ -2,11 +2,199 @@ import type { TTSConfig } from "../stores/configStore";
 import { logger } from "./logger";
 import { useAppStore } from "../stores/appStore";
 
+interface AudioCacheEntry {
+	audioBuffer: ArrayBuffer;
+	timestamp: number;
+}
+
+interface PersistedAudioCacheEntry {
+	audioData: string;
+	timestamp: number;
+}
+
+class AudioCacheManager {
+	private cache: Map<string, AudioCacheEntry> = new Map();
+	private maxCacheSize: number = 50;
+	private maxCacheAge: number = 30 * 60 * 1000; // 30分钟
+	private storageKey: string = "novel-proofreader-audio-cache";
+	private metaKey: string = "novel-proofreader-audio-cache-meta";
+	private isPersistent: boolean = false;
+
+	constructor() {
+		this.loadPersistentSetting();
+		this.loadFromStorage();
+	}
+
+	private loadPersistentSetting(): void {
+		try {
+			const meta = localStorage.getItem(this.metaKey);
+			if (meta) {
+				const data = JSON.parse(meta);
+				this.isPersistent = data.isPersistent || false;
+				logger.tts(`Loaded persistent setting: ${this.isPersistent}`);
+			}
+		} catch (e) {
+			logger.errorGeneric("Failed to load audio cache meta", { error: e });
+		}
+	}
+
+	private savePersistentSetting(): void {
+		try {
+			localStorage.setItem(this.metaKey, JSON.stringify({ isPersistent: this.isPersistent }));
+		} catch (e) {
+			logger.errorGeneric("Failed to save audio cache meta", { error: e });
+		}
+	}
+
+	setPersistent(enabled: boolean): void {
+		logger.tts(`Setting persistent: ${enabled} (was: ${this.isPersistent})`);
+		this.isPersistent = enabled;
+		this.savePersistentSetting();
+		if (enabled) {
+			this.saveToStorage();
+		}
+	}
+
+	getPersistent(): boolean {
+		return this.isPersistent;
+	}
+
+	generateKey(text: string, config: TTSConfig, voice?: string): string {
+		const effectiveVoice = voice || config.voice || "";
+		return `${text}:${effectiveVoice}:${config.speed}:${config.volume}`;
+	}
+
+	get(key: string, config: TTSConfig): ArrayBuffer | undefined {
+		if (!config.audioCacheEnabled) return undefined;
+
+		const entry = this.cache.get(key);
+		if (!entry) return undefined;
+
+		// 检查缓存是否过期
+		if (Date.now() - entry.timestamp > this.maxCacheAge) {
+			this.cache.delete(key);
+			this.saveToStorage();
+			return undefined;
+		}
+
+		return entry.audioBuffer;
+	}
+
+	set(key: string, audioBuffer: ArrayBuffer, config: TTSConfig): void {
+		if (!config.audioCacheEnabled) {
+			logger.tts("Audio cache disabled, skipping cache set", { key: key.slice(0, 30) });
+			return;
+		}
+
+		logger.tts("Setting audio cache", { 
+			key: key.slice(0, 50), 
+			bufferSize: audioBuffer.byteLength, 
+			isPersistent: this.isPersistent,
+			currentCacheSize: this.cache.size 
+		});
+
+		// 如果缓存已满，删除最旧的条目
+		if (this.cache.size >= this.maxCacheSize) {
+			const oldestKey = Array.from(this.cache.entries())
+				.sort((a, b) => a[1].timestamp - b[1].timestamp)[0]?.[0];
+			if (oldestKey) {
+				logger.tts("Cache full, removing oldest entry", { key: oldestKey.slice(0, 30) });
+				this.cache.delete(oldestKey);
+			}
+		}
+
+		this.cache.set(key, {
+			audioBuffer,
+			timestamp: Date.now(),
+		});
+
+		if (this.isPersistent) {
+			logger.tts("Persistent enabled, saving to storage", { cacheSize: this.cache.size });
+			this.saveToStorage();
+		} else {
+			logger.tts("Persistent not enabled, skipping storage save", { cacheSize: this.cache.size });
+		}
+	}
+
+	clear(): void {
+		this.cache.clear();
+		if (this.isPersistent) {
+			localStorage.removeItem(this.storageKey);
+		}
+	}
+
+	getSize(): number {
+		return this.cache.size;
+	}
+
+	private loadFromStorage(): void {
+		try {
+			const stored = localStorage.getItem(this.storageKey);
+			if (stored) {
+				const data: Record<string, PersistedAudioCacheEntry> = JSON.parse(stored);
+				const now = Date.now();
+
+				for (const [key, entry] of Object.entries(data)) {
+					// 检查过期时间
+					if (now - entry.timestamp <= this.maxCacheAge) {
+						try {
+							const binaryString = atob(entry.audioData);
+							const bytes = new Uint8Array(binaryString.length);
+							for (let i = 0; i < binaryString.length; i++) {
+								bytes[i] = binaryString.charCodeAt(i);
+							}
+							this.cache.set(key, {
+								audioBuffer: bytes.buffer as ArrayBuffer,
+								timestamp: entry.timestamp,
+							});
+						} catch (e) {
+							logger.warn("Failed to decode cached audio data", { key, error: e });
+						}
+					}
+				}
+				logger.tts(`Loaded ${this.cache.size} audio entries from storage`);
+			}
+		} catch (e) {
+			logger.errorGeneric("Failed to load audio cache from storage", { error: e });
+		}
+	}
+
+	private saveToStorage(): void {
+		if (!this.isPersistent) return;
+
+		try {
+			const data: Record<string, PersistedAudioCacheEntry> = {};
+
+			this.cache.forEach((entry, key) => {
+				const bytes = new Uint8Array(entry.audioBuffer);
+				let binaryString = "";
+				for (let i = 0; i < bytes.length; i++) {
+					binaryString += String.fromCharCode(bytes[i]);
+				}
+				data[key] = {
+					audioData: btoa(binaryString),
+					timestamp: entry.timestamp,
+				};
+			});
+
+			localStorage.setItem(this.storageKey, JSON.stringify(data));
+			logger.tts(`Saved ${this.cache.size} audio entries to storage`);
+		} catch (e) {
+			logger.errorGeneric("Failed to save audio cache to storage", { error: e });
+		}
+	}
+}
+
+const audioCache = new AudioCacheManager();
+
+export { audioCache };
+
 export interface TTSSentence {
 	index: number;
 	paragraphIndex: number;
 	text: string;
 	audioUrl?: string;
+	audioBuffer?: ArrayBuffer;
 	isPlaying: boolean;
 	isCompleted: boolean;
 }
@@ -593,7 +781,32 @@ export class TTSPlayer {
 			}
 
 			try {
-				const audioBuffer = await synthesizeSpeech(sentence.text, this.config);
+				let audioBuffer = sentence.audioBuffer;
+
+				if (!audioBuffer && this.config.audioCacheEnabled) {
+					// 尝试从全局缓存获取
+					const cacheKey = audioCache.generateKey(sentence.text, this.config);
+					audioBuffer = audioCache.get(cacheKey, this.config);
+
+					if (!audioBuffer) {
+						// 需要生成音频
+						logger.tts("生成句子音频", { index, fromCache: false });
+						audioBuffer = await synthesizeSpeech(sentence.text, this.config);
+						// 缓存到全局和本地
+						audioCache.set(cacheKey, audioBuffer, this.config);
+						this.sentences[index] = { ...this.sentences[index], audioBuffer };
+					} else {
+						logger.tts("使用缓存音频", { index, fromCache: true, cacheSize: audioCache.getSize() });
+						// 更新本地缓存
+						this.sentences[index] = { ...this.sentences[index], audioBuffer };
+					}
+				} else if (!audioBuffer) {
+					// 缓存未启用，直接生成音频
+					logger.tts("生成句子音频（缓存未启用）", { index, fromCache: false });
+					audioBuffer = await synthesizeSpeech(sentence.text, this.config);
+				} else {
+					logger.tts("使用本地缓存音频", { index, fromCache: true });
+				}
 
 				if (cancelled || !this.isPlaying || signal.aborted) {
 					logger.tts("句子播放被取消或停止（音频合成后）", { index, cancelled, isPlaying: this.isPlaying });
@@ -673,6 +886,7 @@ export interface ScriptDialogue {
 	character: string;
 	text: string;
 	voice: string;
+	audioBuffer?: ArrayBuffer;
 	isPlaying: boolean;
 	isCompleted: boolean;
 	paragraphIndex?: number;
@@ -887,6 +1101,13 @@ export class ScriptTTSPlayer {
 		return this.currentIndex;
 	}
 
+	getCurrentParagraphIndex(): number {
+		if (this.currentIndex >= 0 && this.currentIndex < this.dialogues.length) {
+			return this.dialogues[this.currentIndex].paragraphIndex ?? this.currentIndex;
+		}
+		return -1;
+	}
+
 	getDialogues() {
 		return this.dialogues;
 	}
@@ -1074,7 +1295,32 @@ export class ScriptTTSPlayer {
 			}
 
 			try {
-				const audioBuffer = await synthesizeSpeechWithVoice(dialogue.text, this.config, dialogue.voice);
+				let audioBuffer = dialogue.audioBuffer;
+
+				if (!audioBuffer && this.config.audioCacheEnabled) {
+					// 尝试从全局缓存获取
+					const cacheKey = audioCache.generateKey(dialogue.text, this.config, dialogue.voice);
+					audioBuffer = audioCache.get(cacheKey, this.config);
+
+					if (!audioBuffer) {
+						// 需要生成音频
+						logger.tts("生成对话音频", { index, character: dialogue.character, fromCache: false });
+						audioBuffer = await synthesizeSpeechWithVoice(dialogue.text, this.config, dialogue.voice);
+						// 缓存到全局和本地
+						audioCache.set(cacheKey, audioBuffer, this.config);
+						this.dialogues[index] = { ...this.dialogues[index], audioBuffer };
+					} else {
+						logger.tts("使用缓存音频", { index, character: dialogue.character, fromCache: true, cacheSize: audioCache.getSize() });
+						// 更新本地缓存
+						this.dialogues[index] = { ...this.dialogues[index], audioBuffer };
+					}
+				} else if (!audioBuffer) {
+					// 缓存未启用，直接生成音频
+					logger.tts("生成对话音频（缓存未启用）", { index, character: dialogue.character, fromCache: false });
+					audioBuffer = await synthesizeSpeechWithVoice(dialogue.text, this.config, dialogue.voice);
+				} else {
+					logger.tts("使用本地缓存音频", { index, character: dialogue.character, fromCache: true });
+				}
 
 				if (cancelled || !this.isPlaying || signal.aborted) {
 					logger.tts("对话播放被取消或停止（音频合成后）", { index, cancelled, isPlaying: this.isPlaying });

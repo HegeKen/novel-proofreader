@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
 import type { CharacterInfo, CharacterRelationship, RelationType } from "../types";
 import { Icons } from "./Icons";
+import { Select } from "./Select";
 
 interface RelationshipGraphProps {
 	novelId: string;
@@ -36,6 +37,7 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 	const [editingRelation, setEditingRelation] = useState<CharacterRelationship | null>(null);
 	const [showCharacterModal, setShowCharacterModal] = useState(false);
 	const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
+	const [focusedCharacterId, setFocusedCharacterId] = useState<string | null>(null);
 	const [relationForm, setRelationForm] = useState<{
 		sourceId: string;
 		targetId: string;
@@ -249,6 +251,38 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 			.filter((e): e is GraphEdge => e !== null);
 	}, [relationships, graphNodes]);
 
+	const relatedCharacterIds = useMemo(() => {
+		if (!focusedCharacterId) return null;
+		const relatedIds = new Set<string>();
+		relatedIds.add(focusedCharacterId);
+		relationships.forEach((rel) => {
+			if (rel.sourceId === focusedCharacterId) {
+				relatedIds.add(rel.targetId);
+			} else if (rel.targetId === focusedCharacterId) {
+				relatedIds.add(rel.sourceId);
+			}
+		});
+		return relatedIds;
+	}, [focusedCharacterId, relationships]);
+
+	const filteredGraphNodes = useMemo(() => {
+		if (!relatedCharacterIds) return graphNodes;
+		return graphNodes.filter((n) => relatedCharacterIds.has(n.character.id));
+	}, [graphNodes, relatedCharacterIds]);
+
+	const filteredGraphEdges = useMemo(() => {
+		if (!relatedCharacterIds) return graphEdges;
+		return graphEdges.filter(
+			(e) => e.relationship.sourceId === focusedCharacterId || e.relationship.targetId === focusedCharacterId
+		);
+	}, [graphEdges, focusedCharacterId, relatedCharacterIds]);
+
+	const characterSelectWidth = useMemo(() => {
+		const allLabels = ["全部角色", ...characters.map((c) => c.name)];
+		const maxLen = Math.max(4, ...allLabels.map((l) => l.length));
+		return maxLen * 14 + 52;
+	}, [characters]);
+
 	const getCharacterById = useCallback(
 		(id: string) => characters.find((c) => c.id === id),
 		[characters]
@@ -277,6 +311,7 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 	const handleNodeClick = useCallback(
 		(character: CharacterInfo) => {
 			setSelectedCharacterId(character.id);
+			setFocusedCharacterId(character.id);
 			setShowCharacterModal(true);
 		},
 		[]
@@ -607,19 +642,19 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 	);
 
 	const viewBox = useMemo(() => {
-		if (graphNodes.length === 0) return "-300 -300 600 600";
+		if (filteredGraphNodes.length === 0) return "-300 -300 600 600";
 		
 		let minX = Infinity, maxX = -Infinity;
 		let minY = Infinity, maxY = -Infinity;
 		
-		graphNodes.forEach(node => {
+		filteredGraphNodes.forEach(node => {
 			minX = Math.min(minX, node.x);
 			maxX = Math.max(maxX, node.x);
 			minY = Math.min(minY, node.y);
 			maxY = Math.max(maxY, node.y);
 		});
 		
-		const maxRadius = graphNodes.reduce((max, n) => Math.max(max, n.radius), 0);
+		const maxRadius = filteredGraphNodes.reduce((max, n) => Math.max(max, n.radius), 0);
 		const padding = maxRadius + 80;
 		const width = maxX - minX + padding * 2;
 		const height = maxY - minY + padding * 2;
@@ -627,7 +662,7 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 		const centerY = (minY + maxY) / 2;
 		
 		return `${centerX - width / 2} ${centerY - height / 2} ${width} ${height}`;
-	}, [graphNodes]);
+	}, [filteredGraphNodes]);
 
 	if (characters.length === 0) {
 		return (
@@ -644,17 +679,29 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 	return (
 		<div className="relationship-graph-container">
 			<div className="relationship-graph-toolbar">
-				<button
-					className="graph-toolbar-btn primary"
-					onClick={() => handleOpenAddModal()}
-					disabled={characters.length < 2}
-				>
-					<Icons.plus size={14} />
-					添加关系
-				</button>
 				<div className="graph-toolbar-info">
-					<span>{characters.length} 个角色</span>
-					<span>{relationships.length} 条关系</span>
+					<span>{filteredGraphNodes.length} 个角色</span>
+					<span>{filteredGraphEdges.length} 条关系</span>
+				</div>
+				<div className="graph-focus-controls">
+					<Select
+						value={focusedCharacterId || ""}
+						onChange={(value) => setFocusedCharacterId(value || null)}
+						options={[
+							{ value: "", label: "全部角色" },
+							...characters.map((c) => ({ value: c.id, label: c.name }))
+						]}
+						style={{ minWidth: characterSelectWidth }}
+					/>
+					{focusedCharacterId && (
+						<button
+							className="graph-toolbar-btn"
+							onClick={() => setFocusedCharacterId(null)}
+							title="取消聚焦"
+						>
+							<Icons.close size={14} />
+						</button>
+					)}
 				</div>
 				<div className="graph-zoom-controls">
 					<button
@@ -723,7 +770,7 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 							</marker>
 						</defs>
 
-						{graphEdges.map((edge) => {
+						{filteredGraphEdges.map((edge) => {
 							const isSourceDragged = isNodeDragging && draggingNodeId === edge.sourceNode.character.id;
 							const isTargetDragged = isNodeDragging && draggingNodeId === edge.targetNode.character.id;
 							const effectiveSourceX = edge.sourceNode.x + (isSourceDragged ? dragOffset.x : 0);
@@ -832,14 +879,14 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 							);
 						})}
 
-						{graphNodes.map((node) => {
+						{filteredGraphNodes.map((node) => {
 							const isDraggingThis = isNodeDragging && draggingNodeId === node.character.id;
 							const displayX = node.x + (isDraggingThis ? dragOffset.x : 0);
 							const displayY = node.y + (isDraggingThis ? dragOffset.y : 0);
 							return (
 							<g
 								key={node.character.id}
-								className={`graph-node ${isNodeDragging && draggingNodeId === node.character.id ? 'dragging' : ''}`}
+								className={`graph-node ${isNodeDragging && draggingNodeId === node.character.id ? 'dragging' : ''} ${node.character.id === focusedCharacterId ? 'focused' : ''}`}
 								transform={`translate(${displayX}, ${displayY})`}
 								onClick={() => {
 									if (!nodeDraggedRef.current) {
@@ -849,7 +896,7 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 								onMouseDown={(e) => handleNodeMouseDown(e, node.character.id, node.x, node.y)}
 								onTouchStart={(e) => handleNodeTouchStart(e, node.character.id, node.x, node.y)}
 							>
-								<circle r={`${node.radius}`} className={`node-circle ${node.character.gender} ${node.character.role || ''}`} />
+								<circle r={`${node.radius}`} className={`node-circle ${node.character.gender} ${node.character.role || ''} ${node.character.id === focusedCharacterId ? 'focused' : ''}`} />
 								<text className="node-name" textAnchor="middle" dominantBaseline="middle">
 									{node.character.name.length > Math.floor(node.radius / 7)
 										? node.character.name.slice(0, Math.floor(node.radius / 7)) + "..."
@@ -900,20 +947,14 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 							<div className="relation-form-section">
 								<div className="form-field">
 									<label>源角色</label>
-									<select
-										className="config-select"
+									<Select
 										value={relationForm.sourceId}
-										onChange={(e) =>
-											setRelationForm((prev) => ({ ...prev, sourceId: e.target.value }))
+										onChange={(value) =>
+											setRelationForm((prev) => ({ ...prev, sourceId: value }))
 										}
+										options={characters.map((c) => ({ value: c.id, label: c.name }))}
 										disabled={!!editingRelation}
-									>
-										{characters.map((c) => (
-											<option key={c.id} value={c.id}>
-												{c.name}
-											</option>
-										))}
-									</select>
+									/>
 								</div>
 
 								<div className="form-field">
@@ -978,20 +1019,14 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 							<div className="relation-form-section">
 								<div className="form-field">
 									<label>目标角色</label>
-									<select
-										className="config-select"
+									<Select
 										value={relationForm.targetId}
-										onChange={(e) =>
-											setRelationForm((prev) => ({ ...prev, targetId: e.target.value }))
+										onChange={(value) =>
+											setRelationForm((prev) => ({ ...prev, targetId: value }))
 										}
+										options={characters.map((c) => ({ value: c.id, label: c.name }))}
 										disabled={!!editingRelation}
-									>
-										{characters.map((c) => (
-											<option key={c.id} value={c.id}>
-												{c.name}
-											</option>
-										))}
-									</select>
+									/>
 								</div>
 
 								<div className="form-field">
