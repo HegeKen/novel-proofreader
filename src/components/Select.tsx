@@ -12,6 +12,8 @@ interface SelectProps {
   options: Option[];
   placeholder?: string;
   className?: string;
+  disabled?: boolean;
+  style?: React.CSSProperties;
 }
 
 export const Select: React.FC<SelectProps> = ({
@@ -20,6 +22,8 @@ export const Select: React.FC<SelectProps> = ({
   options,
   placeholder = '请选择',
   className = '',
+  disabled = false,
+  style,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,11 +49,16 @@ export const Select: React.FC<SelectProps> = ({
   };
 
   return (
-    <div ref={containerRef} className={`relative w-full ${className}`}>
+    <div ref={containerRef} className={`relative w-full ${className}`} style={style}>
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-[var(--glass-bg)] border border-[var(--border)] rounded-[var(--r-lg)] text-[var(--text-primary)] text-[14px] cursor-pointer transition-all duration-[var(--duration)] hover:bg-[var(--bg-hover)] hover:border-[var(--border-strong)] focus:outline-none focus:border-[var(--accent)] focus:shadow-[0_0_0_3px_var(--accent-dim)]"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`w-full flex items-center justify-between px-4 py-3 bg-[var(--glass-bg)] border border-[var(--border)] rounded-[var(--r-lg)] text-[14px] cursor-pointer transition-all duration-[var(--duration)] focus:outline-none focus:border-[var(--accent)] focus:shadow-[0_0_0_3px_var(--accent-dim)] ${
+          disabled
+            ? 'opacity-50 cursor-not-allowed text-[var(--text-secondary)]'
+            : 'text-[var(--text-primary)] hover:bg-[var(--bg-hover)] hover:border-[var(--border-strong)]'
+        }`}
         style={{
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
@@ -62,7 +71,7 @@ export const Select: React.FC<SelectProps> = ({
         />
       </button>
 
-      {isOpen && (
+      {isOpen && !disabled && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-[var(--glass-bg)] border border-[var(--border)] rounded-[var(--r-lg)] shadow-[var(--shadow-lg)] z-50 overflow-hidden animate-[slideDown_0.2s_ease]"
           style={{
             backdropFilter: 'blur(20px)',

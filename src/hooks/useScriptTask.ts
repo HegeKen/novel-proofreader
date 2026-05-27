@@ -4,6 +4,7 @@
 import { useCallback, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useProofreadStore } from "../stores/proofreadStore";
+import { useConfigStore } from "../stores/configStore";
 import {
 	sendChatCompletion,
 	SCRIPT_SYSTEM_PROMPT,
@@ -14,6 +15,7 @@ import type { ScriptTask } from "../types";
 export function useScriptTask() {
 	const aiConfig = useAppStore((s) => s.aiConfig);
 	const chapters = useAppStore((s) => s.chapters);
+	const promptConfig = useConfigStore((s) => s.promptConfig);
 	const addScriptTask = useProofreadStore((s) => s.addScriptTask);
 	const updateScriptTask = useProofreadStore((s) => s.updateScriptTask);
 	const setScriptRunning = useProofreadStore((s) => s.setScriptRunning);
@@ -34,7 +36,7 @@ export function useScriptTask() {
 
 			try {
 				const messages = [
-					{ role: "system" as const, content: SCRIPT_SYSTEM_PROMPT },
+					{ role: "system" as const, content: promptConfig.script || SCRIPT_SYSTEM_PROMPT },
 					{
 						role: "user" as const,
 						content: buildScriptUserPrompt(chapter.content),

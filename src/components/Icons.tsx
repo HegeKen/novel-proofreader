@@ -24,6 +24,7 @@ import {
 	FileText,
 	ChevronDown,
 	ChevronUp,
+	ChevronRight,
 	Download,
 	Upload,
 	RotateCcw,
@@ -57,6 +58,12 @@ import {
 	UserRound,
 	UserRoundPlus,
 	UserRoundPen,
+	ListOrdered,
+	Laptop,
+	Monitor,
+	Server,
+	Smartphone,
+	CodeXml,
 } from "lucide-react";
 
 export const Icons = {
@@ -91,6 +98,7 @@ export const Icons = {
 	punctuation: FileText,
 	chevronDown: ChevronDown,
 	chevronUp: ChevronUp,
+	chevronRight: ChevronRight,
 	download: Download,
 	downloadCloud: DownloadCloud,
 	upload: Upload,
@@ -113,6 +121,7 @@ export const Icons = {
 	fileOutput: FileOutput,
 	barChart3: BarChart3,
 	listTodo: ListTodo,
+	listOrdered: ListOrdered,
 	trash2: Trash2,
 	loader2: Loader2,
 	circle: Circle,
@@ -122,6 +131,11 @@ export const Icons = {
 	userRound: UserRound,
 	userRoundPlus: UserRoundPlus,
 	userRoundPen: UserRoundPen,
+	laptop: Laptop,
+	monitor: Monitor,
+	server: Server,
+	smartphone: Smartphone,
+	codeXml: CodeXml,
 };
 
 export type IconName = keyof typeof Icons;

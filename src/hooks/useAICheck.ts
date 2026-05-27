@@ -4,6 +4,7 @@
 import { useCallback, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useProofreadStore } from "../stores/proofreadStore";
+import { useConfigStore } from "../stores/configStore";
 import { splitParagraphs } from "../utils/chapterSplit";
 import {
 	sendChatCompletion,
@@ -19,6 +20,8 @@ import type {
 	CheckGranularity,
 } from "../types";
 
+const MAX_CONCURRENT_BATCHES = 3;
+
 export function useAICheck() {
 	const aiConfig = useAppStore((s) => s.aiConfig);
 	const chapters = useAppStore((s) => s.chapters);
@@ -26,6 +29,7 @@ export function useAICheck() {
 	const currentNovelId = useAppStore((s) => s.currentNovelId);
 	const getIgnoredWords = useAppStore((s) => s.getIgnoredWords);
 	const getCharacters = useAppStore((s) => s.getCharacters);
+	const promptConfig = useConfigStore((s) => s.promptConfig);
 	const saveProofreadProgress = useAppStore((s) => s.saveProofreadProgress);
 	const setResults = useProofreadStore((s) => s.setResults);
 	const updateParagraphResult = useProofreadStore(
@@ -100,9 +104,9 @@ export function useAICheck() {
 				console.log(`[useAICheck] 批次构建完成: 总批次数=${batches.length}, 批次详情:`, batches.map((b, idx) => `批次${idx+1}: ${b.start}-${b.end}`).join(', '));
 				logger.proofread(`共分为 ${batches.length} 批处理`);
 
-				// 逐批处理
-				for (const batch of batches) {
-					if (controller.signal.aborted) break;
+				// 多线程并发处理批次（限制最大并发数为 MAX_CONCURRENT_BATCHES）
+				const processBatch = async (batch: { start: number; end: number }) => {
+					if (controller.signal.aborted) return;
 
 					console.log(`[useAICheck] 处理批次: start=${batch.start}, end=${batch.end}`);
 
@@ -125,7 +129,7 @@ export function useAICheck() {
 						console.log(`[useAICheck] 发送请求给大模型: textByLine 行号列表=[${Object.keys(textByLine).join(', ')}], 字符总数=${JSON.stringify(textByLine).length}`);
 
 						const messages = [
-							{ role: "system" as const, content: PROOFREAD_SYSTEM_PROMPT_CHAPTER },
+							{ role: "system" as const, content: promptConfig.proofreadChapter || PROOFREAD_SYSTEM_PROMPT_CHAPTER },
 							{
 								role: "user" as const,
 								content: buildProofreadUserPrompt(JSON.stringify(textByLine), ignoredWords),
@@ -150,17 +154,17 @@ export function useAICheck() {
 
 							// 获取行号（核心字段）- 使用原始段落索引
 							// 支持新格式的 line 字段和旧格式的 lineNumber 字段
-							let lineNumber = obj.line !== undefined ? Number(obj.line) : 
+							let lineNumber = obj.line !== undefined ? Number(obj.line) :
 								(obj.lineNumber !== undefined ? Number(obj.lineNumber) : -1);
-							
+
 							// 支持新格式：find/replace
 							const find = String(obj.find ?? "");
 							const replace = String(obj.replace ?? "");
-							
+
 							// 兼容旧格式：original/corrected
 							const orig = String(obj.original ?? obj.original_text ?? "");
 							const corr = String(obj.corrected ?? obj.corrected_text ?? "");
-							
+
 							const errType = String(obj.type ?? obj.error_type ?? "");
 							const suggest = String(obj.reason ?? obj.suggestion ?? "");
 							const aiStart = obj.start !== undefined ? Number(obj.start) : -1;
@@ -184,7 +188,7 @@ export function useAICheck() {
 							// 检查行号是否在该批次范围内
 							if (lineNumber < batch.start || lineNumber >= batch.end) {
 								// 行号不在该批次，可能是全局行号或其他原因，尝试查找该批次内是否包含
-								const foundLine = paragraphs.findIndex((p, idx) => 
+								const foundLine = paragraphs.findIndex((p, idx) =>
 									idx >= batch.start && idx < batch.end && p.includes(matchText)
 								);
 								console.log(`[useAICheck] 行号检查: lineNumber=${lineNumber}, batch=${batch.start}-${batch.end}, foundLine=${foundLine}`);
@@ -206,7 +210,7 @@ export function useAICheck() {
 								let charCount = 0;
 								let foundParaIdx = -1;
 								let paraStartIdx = -1;
-								
+
 								for (let i = 0; i < paragraphs.length; i++) {
 									const para = paragraphs[i];
 									// 检查全局索引是否在当前段落范围内
@@ -217,9 +221,9 @@ export function useAICheck() {
 									}
 									charCount += para.length;
 								}
-								
+
 								console.log(`[useAICheck] 全局索引转换: aiStart=${aiStart}, aiEnd=${aiEnd}, foundParaIdx=${foundParaIdx}, paraStartIdx=${paraStartIdx}`);
-								
+
 								// 如果找到对应的段落且与当前行号匹配
 								if (foundParaIdx === lineNumber && paraStartIdx >= 0) {
 									const paraEndIdx = paraStartIdx + (aiEnd - aiStart);
@@ -295,7 +299,7 @@ export function useAICheck() {
 							});
 						}
 					} catch (err: unknown) {
-						if (err instanceof DOMException && err.name === "AbortError") break;
+						if (err instanceof DOMException && err.name === "AbortError") return;
 						const msg = err instanceof Error ? err.message : String(err);
 						// 更新该批次非空段落为错误状态
 						for (let lineIdx = batch.start; lineIdx < batch.end; lineIdx++) {
@@ -319,7 +323,24 @@ export function useAICheck() {
 							});
 						}
 					}
+				};
+
+				// 使用 Promise 池实现多线程并发处理
+				const runningBatches: Promise<void>[] = [];
+				for (const batch of batches) {
+					if (controller.signal.aborted) break;
+					// 等待直到有空闲槽位
+					if (runningBatches.length >= MAX_CONCURRENT_BATCHES) {
+						await Promise.race(runningBatches);
+					}
+					const batchPromise = processBatch(batch).then(() => {
+						const idx = runningBatches.indexOf(batchPromise);
+						if (idx > -1) runningBatches.splice(idx, 1);
+					});
+					runningBatches.push(batchPromise);
 				}
+				// 等待所有批次完成
+				await Promise.all(runningBatches);
 			} else {
 				// 按段落 或 按行检测
 				const allLines = splitParagraphs(text);
@@ -387,7 +408,7 @@ export function useAICheck() {
 						console.log(`[useAICheck] 发送请求: filteredIndex=${i}, originalIndex=${originalIndex}, 文本长度=${item.length}`);
 
 						const messages = [
-							{ role: "system" as const, content: PROOFREAD_SYSTEM_PROMPT },
+							{ role: "system" as const, content: promptConfig.proofread || PROOFREAD_SYSTEM_PROMPT },
 							{
 								role: "user" as const,
 								content: buildProofreadUserPrompt(item, ignoredWords),
@@ -587,7 +608,7 @@ export function useAICheck() {
 
 			try {
 				const messages = [
-					{ role: "system" as const, content: PROOFREAD_SYSTEM_PROMPT },
+					{ role: "system" as const, content: promptConfig.proofread || PROOFREAD_SYSTEM_PROMPT },
 					{
 						role: "user" as const,
 						content: buildProofreadUserPrompt(lineText, ignoredWords),

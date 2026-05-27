@@ -178,6 +178,7 @@ export interface CharacterInfo {
 	voice?: string; // 为该角色指定的音色
 	aliases?: string[]; // 别称列表，如"我"、"主角"等
 	relationTerms?: string[]; // 关系代称列表，如"老婆"、"老公"等
+	order?: number; // 自定义排序顺序
 }
 
 /** 人物关系类型枚举 */

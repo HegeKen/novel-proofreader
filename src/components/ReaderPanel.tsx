@@ -147,6 +147,9 @@ export function ReaderPanel({
 	const ttsPlayerRef = useRef<TTSPlayer | null>(null);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
 	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
+	const promptConfig = useConfigStore((s) => s.promptConfig);
+	const setTtsPlayingGlobal = useProofreadStore((s) => s.setTtsPlaying);
+	const setTtsHighlightedParaGlobal = useProofreadStore((s) => s.setTtsHighlightedPara);
 	
 	// 整章TTS增强功能
 	const [enhancedTTSPreparing, setEnhancedTTSPreparing] = useState(false);
@@ -168,6 +171,13 @@ export function ReaderPanel({
 	const [currentParagraphIndex, setCurrentParagraphIndex] = useState(0);
 	const [readingTimeElapsed, setReadingTimeElapsed] = useState(0);
 	const [showReadingReminder, setShowReadingReminder] = useState(false);
+	
+	// 切换章节时重置阅读进度
+	useEffect(() => {
+		queueMicrotask(() => {
+			setCurrentParagraphIndex(0);
+		});
+	}, [currentChapterIndex]);
 
 	// 检测到的陌生角色状态
 	const [detectedNewCharacters, setDetectedNewCharacters] = useState<string[]>([]);
@@ -179,6 +189,15 @@ export function ReaderPanel({
 	useEffect(() => {
 		readingStartTimeRef.current = Date.now();
 	}, []);
+
+	// 同步 TTS 状态到全局 store（供校对区使用）
+	useEffect(() => {
+		setTtsPlayingGlobal(ttsPlaying);
+	}, [ttsPlaying, setTtsPlayingGlobal]);
+
+	useEffect(() => {
+		setTtsHighlightedParaGlobal(ttsHighlightedPara);
+	}, [ttsHighlightedPara, setTtsHighlightedParaGlobal]);
 
 	const saveReadingProgress = useAppStore((s) => s.saveReadingProgress);
 	const readingReminderEnabled = useAppStore((s) => s.readingReminderEnabled);
@@ -272,6 +291,15 @@ export function ReaderPanel({
 				ttsPlayerRef.current.pause();
 				setTtsPlaying(false);
 			}
+		} else if (isStreamTTSPlaying) {
+			// 情感朗读暂停/恢复
+			if (scriptTTSRef.current) {
+				if (scriptTTSRef.current.getIsPaused()) {
+					scriptTTSRef.current.resume();
+				} else {
+					scriptTTSRef.current.pause();
+				}
+			}
 		} else {
 			// 如果正在等待段落选择模式或流式播放中，先停止
 			if (isStreamTTSWaitingForStart) {
@@ -313,7 +341,7 @@ export function ReaderPanel({
 				setTtsPlaying(true);
 			}
 		}
-	}, [ttsPlaying, ttsConfig, paragraphs, isStreamTTSWaitingForStart]);
+	}, [ttsPlaying, ttsConfig, paragraphs, isStreamTTSWaitingForStart, isStreamTTSPlaying]);
 
 	/** TTS 播放过程中实时更新配置（音色、语速、音量） */
 	useEffect(() => {
@@ -324,15 +352,33 @@ export function ReaderPanel({
 
 	/** TTS 上一条 */
 	const handleTTSPrev = useCallback(() => {
+		console.log('[TTS] handleTTSPrev called');
+		console.log('[TTS] ttsPlayerRef exists:', !!ttsPlayerRef.current);
+		console.log('[TTS] scriptTTSRef exists:', !!scriptTTSRef.current);
 		if (ttsPlayerRef.current) {
+			console.log('[TTS] calling ttsPlayerRef.current.skipToPrev()');
 			ttsPlayerRef.current.skipToPrev();
+		} else if (scriptTTSRef.current) {
+			console.log('[TTS] calling scriptTTSRef.current.skipToPrev()');
+			scriptTTSRef.current.skipToPrev();
+		} else {
+			console.log('[TTS] no TTS player available');
 		}
 	}, []);
 
 	/** TTS 下一条 */
 	const handleTTSNext = useCallback(() => {
+		console.log('[TTS] handleTTSNext called');
+		console.log('[TTS] ttsPlayerRef exists:', !!ttsPlayerRef.current);
+		console.log('[TTS] scriptTTSRef exists:', !!scriptTTSRef.current);
 		if (ttsPlayerRef.current) {
+			console.log('[TTS] calling ttsPlayerRef.current.skipToNext()');
 			ttsPlayerRef.current.skipToNext();
+		} else if (scriptTTSRef.current) {
+			console.log('[TTS] calling scriptTTSRef.current.skipToNext()');
+			scriptTTSRef.current.skipToNext();
+		} else {
+			console.log('[TTS] no TTS player available');
 		}
 	}, []);
 
@@ -418,7 +464,7 @@ export function ReaderPanel({
 
 		try {
 			const messages: ChatMessage[] = [
-				{ role: 'system', content: READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT },
+				{ role: 'system', content: promptConfig.readingModeTts || READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT },
 				{ role: 'user', content: buildReadingModeTTSEnhanceUserPrompt(paraText, contextBefore, contextAfter, configuredCharacters) }
 			];
 
@@ -511,7 +557,14 @@ export function ReaderPanel({
 
 			const scriptTTS = new ScriptTTSPlayer(customTTSConfig);
 			scriptTTSRef.current = scriptTTS;
-			scriptTTS.setOnUpdate(() => {});
+			scriptTTS.setOnUpdate(() => {
+				if (scriptTTSRef.current) {
+					const currentDialogueIndex = scriptTTSRef.current.getCurrentIndex();
+					const currentPara = scriptTTSRef.current.getCurrentParagraphIndex();
+					logger.tts(`[情感朗读] 正在播放对话: ${currentDialogueIndex}, 正在高亮段落: ${currentPara}`);
+					setTtsHighlightedPara(currentPara);
+				}
+			});
 			scriptTTS.setOnComplete(() => {
 				logger.tts("流式播放完成");
 				setIsStreamTTSPlaying(false);
@@ -534,7 +587,7 @@ export function ReaderPanel({
 						if (!characterVoices[segment.speaker]) {
 							characterVoices[segment.speaker] = getVoiceForCharacter(segment.speaker);
 						}
-						await scriptTTS.addDialogueStream(segment.speaker, segment.text);
+						await scriptTTS.addDialogueStream(segment.speaker, segment.text, i);
 					}
 					cachedResult.characters.forEach(c => allCharacters.add(c));
 					newCache.set(i, cachedResult);
@@ -555,7 +608,7 @@ export function ReaderPanel({
 							characterVoices[segment.speaker] = getVoiceForCharacter(segment.speaker);
 						}
 						logger.tts(`段落${i}流式添加对话`, { speaker: segment.speaker, text: segment.text.slice(0, 30) + "..." });
-						await scriptTTS.addDialogueStream(segment.speaker, segment.text);
+						await scriptTTS.addDialogueStream(segment.speaker, segment.text, i);
 						logger.tts(`段落${i}对话添加完成`, { speaker: segment.speaker });
 					}
 					logger.tts(`段落${i}添加角色到集合`, { before: Array.from(allCharacters), newChars: result.characters });
@@ -570,7 +623,7 @@ export function ReaderPanel({
 					newCache.set(i, result);
 				} else {
 					// 如果分析失败，使用原文作为旁白
-					await scriptTTS.addDialogueStream("旁白", paraText);
+					await scriptTTS.addDialogueStream("旁白", paraText, i);
 				}
 			}
 
@@ -729,8 +782,21 @@ export function ReaderPanel({
 
 		console.log(`[ReaderPanel] scrollToParagraph: index=${index}`);
 
-		// 强制滚动，不检查是否在可视区域内
-		el.scrollIntoView({ behavior: "smooth", block: "center" });
+		// 计算元素相对于容器的位置
+		const containerRect = container.getBoundingClientRect();
+		const elementRect = el.getBoundingClientRect();
+		
+		// 计算元素相对于容器顶部的偏移
+		const elementOffsetTop = elementRect.top - containerRect.top + container.scrollTop;
+		
+		// 计算滚动目标位置，使元素居中
+		const scrollTarget = elementOffsetTop - (containerRect.height / 2) + (elementRect.height / 2);
+		
+		// 使用平滑滚动
+		container.scrollTo({
+			top: scrollTarget,
+			behavior: "smooth"
+		});
 	}, []);
 
 	useEffect(() => {
@@ -744,6 +810,30 @@ export function ReaderPanel({
 			}, 50);
 		}
 	}, [highlightedParagraph, scrollToParagraph]);
+
+	// TTS 高亮段落变化时自动滚动
+	useEffect(() => {
+		if (ttsHighlightedPara !== -1) {
+			console.log(
+				`[ReaderPanel] TTS highlighted paragraph changed: ${ttsHighlightedPara}`,
+			);
+			// 将过滤后的索引转换为原始索引
+			const originalIndex = paragraphIndexMap[ttsHighlightedPara];
+			console.log(
+				`[ReaderPanel] TTS highlighted original index: ${originalIndex}`,
+			);
+			if (originalIndex !== undefined) {
+				setTimeout(() => {
+					scrollToParagraph(originalIndex);
+				}, 50);
+			}
+		}
+	}, [ttsHighlightedPara, scrollToParagraph, paragraphIndexMap]);
+
+	// 当切换章节时，重置高亮段落
+	useEffect(() => {
+		setHighlightedParagraph(null);
+	}, [currentChapterIndex, setHighlightedParagraph]);
 
 	useEffect(() => {
 		if (applyAnimation) {
@@ -1551,14 +1641,14 @@ export function ReaderPanel({
 										value={ttsConfig.voice}
 										onChange={(value) => updateTTSConfig({ voice: value })}
 										options={[
-											{ value: '冰糖', label: '冰糖' },
-											{ value: '茉莉', label: '茉莉' },
-											{ value: '苏打', label: '苏打' },
-											{ value: '白桦', label: '白桦' },
-											{ value: 'Mia', label: 'Mia' },
-											{ value: 'Chloe', label: 'Chloe' },
-											{ value: 'Milo', label: 'Milo' },
-											{ value: 'Dean', label: 'Dean' },
+											{ value: "冰糖", label: "冰糖" },
+											{ value: "茉莉", label: "茉莉" },
+											{ value: "苏打", label: "苏打" },
+											{ value: "白桦", label: "白桦" },
+											{ value: "Mia", label: "Mia" },
+											{ value: "Chloe", label: "Chloe" },
+											{ value: "Milo", label: "Milo" },
+											{ value: "Dean", label: "Dean" }
 										]}
 									/>
 								</div>

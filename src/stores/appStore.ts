@@ -88,6 +88,9 @@ interface AppState {
 	// 忽略单词列表（按小说存储）
 	ignoredWords: Record<string, string[]>;
 
+	// 忽略角色名列表（按小说存储，扫描检测时跳过）
+	ignoredCharacterNames: Record<string, string[]>;
+
 	// 校对任务队列
 	proofreadQueue: ProofreadQueueItem[];
 	// 当前正在执行的任务ID
@@ -114,6 +117,9 @@ interface AppState {
 	readingReminderEnabled: boolean;
 	readingReminderMinutes: number;
 
+	// UI 状态 - 隐藏已校对章节
+	hideProofread: boolean;
+
 	// Actions — 阅读进度
 	saveReadingProgress: (novelId: string, chapterIndex: number, paragraphIndex: number) => void;
 	getReadingProgress: (novelId: string) => {
@@ -127,6 +133,9 @@ interface AppState {
 	// Actions — 阅读时长提醒
 	setReadingReminderEnabled: (enabled: boolean) => void;
 	setReadingReminderMinutes: (minutes: number) => void;
+
+	// Actions — 隐藏已校对章节
+	setHideProofread: (hide: boolean) => void;
 
 	// Actions — 小说管理
 	addNovel: (novel: Novel) => void;
@@ -175,7 +184,13 @@ interface AppState {
 	addIgnoredWord: (novelId: string, word: string) => void;
 	removeIgnoredWord: (novelId: string, word: string) => void;
 	getIgnoredWords: (novelId: string) => string[];
+	setIgnoredWords: (novelId: string, words: string[]) => void;
 	clearIgnoredWords: (novelId: string) => void;
+
+	// Actions — 忽略角色名
+	addIgnoredCharacterName: (novelId: string, name: string) => void;
+	getIgnoredCharacterNames: (novelId: string) => string[];
+	setIgnoredCharacterNames: (novelId: string, names: string[]) => void;
 
 	// Actions — 校对队列
 	addToProofreadQueue: (items: Omit<ProofreadQueueItem, "id" | "status" | "startTime" | "endTime">[]) => void;
@@ -187,6 +202,7 @@ interface AppState {
 	// Actions — 校对进度
 	saveProofreadProgress: (novelId: string, chapterId: number, lastParagraphIndex: number, completed: boolean) => void;
 	getProofreadProgress: (novelId: string, chapterId: number) => ProofreadProgress | undefined;
+	setProofreadProgress: (novelId: string, progress: Record<number, ProofreadProgress>) => void;
 	clearProofreadProgress: (novelId: string, chapterId?: number) => void;
 
 	// Actions — API 使用统计
@@ -231,6 +247,7 @@ interface AppState {
 	removeRelationship: (novelId: string, relationshipId: string) => void;
 	removeRelationshipsForCharacter: (novelId: string, characterId: string) => void;
 	getRelationshipsForNovel: (novelId: string) => CharacterRelationship[];
+	setRelationshipsForNovel: (novelId: string, relationships: CharacterRelationship[]) => void;
 
 	// 角色图谱节点位置（按小说ID存储）
 	nodePositions: Record<string, Record<string, { x: number; y: number }>>;
@@ -278,6 +295,7 @@ export const useAppStore = create<AppState>()(
 			lastCacheSaveTime: null,
 			proofreadStatus: {},
 			ignoredWords: {},
+			ignoredCharacterNames: {},
 			proofreadQueue: [],
 			currentProofreadingTaskId: null,
 			proofreadProgress: {},
@@ -296,6 +314,7 @@ export const useAppStore = create<AppState>()(
 			readingProgress: {},
 			readingReminderEnabled: true,
 			readingReminderMinutes: 30,
+			hideProofread: false,
 
 			addNovel: (novel) =>
 				set((state) => {
@@ -376,12 +395,47 @@ export const useAppStore = create<AppState>()(
 				return get().ignoredWords[novelId] ?? [];
 			},
 
+			setIgnoredWords: (novelId, words) =>
+				set((state) => ({
+					ignoredWords: {
+						...state.ignoredWords,
+						[novelId]: words,
+					},
+				})),
+
 			clearIgnoredWords: (novelId) =>
 				set((state) => {
 					const newIgnoredWords = { ...state.ignoredWords };
 					delete newIgnoredWords[novelId];
 					return { ignoredWords: newIgnoredWords };
 				}),
+
+			// 忽略角色名操作
+			addIgnoredCharacterName: (novelId, name) =>
+				set((state) => {
+					const currentNames = state.ignoredCharacterNames[novelId] ?? [];
+					if (currentNames.includes(name)) {
+						return state;
+					}
+					return {
+						ignoredCharacterNames: {
+							...state.ignoredCharacterNames,
+							[novelId]: [...currentNames, name],
+						},
+					};
+				}),
+
+			getIgnoredCharacterNames: (novelId) => {
+				return get().ignoredCharacterNames[novelId] ?? [];
+			},
+
+			setIgnoredCharacterNames: (novelId, names) =>
+				set((state) => ({
+					ignoredCharacterNames: {
+						...state.ignoredCharacterNames,
+						[novelId]: names,
+					},
+				})),
 
 			// 校对队列操作
 			addToProofreadQueue: (items) =>
@@ -441,6 +495,14 @@ export const useAppStore = create<AppState>()(
 				const state = get();
 				return state.proofreadProgress[novelId]?.[chapterId];
 			},
+
+			setProofreadProgress: (novelId, progress) =>
+				set((state) => ({
+					proofreadProgress: {
+						...state.proofreadProgress,
+						[novelId]: progress,
+					},
+				})),
 
 			clearProofreadProgress: (novelId, chapterId) =>
 				set((state) => {
@@ -536,6 +598,9 @@ export const useAppStore = create<AppState>()(
 			// 阅读时长提醒设置
 			setReadingReminderEnabled: (enabled) => set({ readingReminderEnabled: enabled }),
 			setReadingReminderMinutes: (minutes) => set({ readingReminderMinutes: minutes }),
+
+			// 隐藏已校对章节设置
+			setHideProofread: (hide) => set({ hideProofread: hide }),
 
 			setCurrentChapter: (index) => set({ currentChapterIndex: index }),
 
@@ -937,6 +1002,14 @@ export const useAppStore = create<AppState>()(
 
 			getRelationshipsForNovel: (novelId) => get().characterRelationships[novelId] ?? [],
 
+			setRelationshipsForNovel: (novelId: string, relationships: CharacterRelationship[]) =>
+				set((state) => ({
+					characterRelationships: {
+						...state.characterRelationships,
+						[novelId]: relationships
+					}
+				})),
+
 			setNodePositions: (novelId, positions) =>
 				set((state) => ({
 					nodePositions: {
@@ -984,12 +1057,14 @@ export const useAppStore = create<AppState>()(
 				nextBookId: state.nextBookId,
 				proofreadStatus: state.proofreadStatus,
 				ignoredWords: state.ignoredWords,
+				ignoredCharacterNames: state.ignoredCharacterNames,
 				proofreadProgress: state.proofreadProgress,
 				apiUsage: state.apiUsage,
 				novelCategories: state.novelCategories,
 				novelCharacters: state.novelCharacters,
 				characterRelationships: state.characterRelationships,
 				nodePositions: state.nodePositions,
+				hideProofread: state.hideProofread,
 			}),
 			onRehydrateStorage: () => (state) => {
 				if (state) {

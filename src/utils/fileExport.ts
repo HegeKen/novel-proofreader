@@ -834,7 +834,7 @@ export async function exportAllData(data: {
   }>;
   proofreadProgress: Record<string, Record<number, import('../types').ProofreadProgress>>;
   ignoredWords: Record<string, string[]>;
-  exportTime: number;
+  exportTime: string;
   version: string;
 }): Promise<boolean> {
   try {

@@ -31,6 +31,9 @@ interface ProofreadState {
 	scriptRunning: boolean;
 	// 忽略单词列表（按小说存储）
 	ignoredWords: Record<string, string[]>;
+	// TTS 朗读状态
+	ttsPlaying: boolean;
+	ttsHighlightedPara: number;
 
 	// Actions
 	setResults: (chapterId: number, results: ParagraphResult[]) => void;
@@ -68,6 +71,8 @@ interface ProofreadState {
 	updateScriptTask: (taskId: number, update: Partial<ScriptTask>) => void;
 	clearScriptTasks: () => void;
 	setScriptRunning: (running: boolean) => void;
+	setTtsPlaying: (playing: boolean) => void;
+	setTtsHighlightedPara: (paraIndex: number) => void;
 }
 
 export const useProofreadStore = create<ProofreadState>((set, get) => ({
@@ -78,6 +83,8 @@ export const useProofreadStore = create<ProofreadState>((set, get) => ({
 	scriptTasks: [],
 	scriptRunning: false,
 	ignoredWords: {},
+	ttsPlaying: false,
+	ttsHighlightedPara: -1,
 
 	setResults: (chapterId, results) =>
 		set((state) => ({
@@ -263,4 +270,8 @@ export const useProofreadStore = create<ProofreadState>((set, get) => ({
 	clearScriptTasks: () => set({ scriptTasks: [] }),
 
 	setScriptRunning: (running) => set({ scriptRunning: running }),
+
+	setTtsPlaying: (playing) => set({ ttsPlaying: playing }),
+
+	setTtsHighlightedPara: (paraIndex) => set({ ttsHighlightedPara: paraIndex }),
 }));

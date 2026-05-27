@@ -8,7 +8,7 @@ import { sendChatCompletion, buildScriptUserPrompt, SCRIPT_TTS_ENHANCE_SYSTEM_PR
 import { exportToFile } from "../utils/fileExport";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
-import { SCRIPT_SYSTEM_PROMPT } from "../utils/aiClient";
+import { Select } from "./Select";
 import { ScriptTTSPlayer, parseScriptContent } from "../utils/ttsService";
 import type { ChatMessage } from "../utils/aiClient";
 import type { Chapter, AIConfig, CharacterInfo } from "../types";
@@ -18,8 +18,6 @@ interface ScriptSegment {
 	content: string;
 	originalText: string;
 }
-
-const DEFAULT_PROMPT = SCRIPT_SYSTEM_PROMPT;
 
 // 内部组件，使用 key 重置状态
 function TaskPanelContent({
@@ -53,6 +51,7 @@ function TaskPanelContent({
 	const scriptTTSRef = useRef<ScriptTTSPlayer | null>(null);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
 	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
+	const promptConfig = useConfigStore((s) => s.promptConfig);
 	const ttsConfigRef = useRef(ttsConfig);
 
 	const detectedCharacters = useMemo(() => {
@@ -135,7 +134,7 @@ function TaskPanelContent({
 			};
 
 			const enhanceMessages: ChatMessage[] = [
-				{ role: "system", content: SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT },
+				{ role: "system", content: promptConfig.scriptTts || SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT },
 				{ role: "user", content: buildScriptTTSEnhanceUserPrompt(result[0].content) },
 			];
 
@@ -199,7 +198,7 @@ function TaskPanelContent({
 	const handleGenerate = useCallback(async () => {
 		if (!chapter) return;
 
-		const effectivePrompt = prompt.trim() || DEFAULT_PROMPT;
+		const effectivePrompt = prompt.trim() || promptConfig.script;
 		if (!aiConfig.apiKey) {
 			setError("请先在设置中配置 API Key");
 			return;
@@ -278,7 +277,7 @@ function TaskPanelContent({
 					<textarea
 						value={prompt}
 						onChange={(e) => setPrompt(e.target.value)}
-						placeholder={DEFAULT_PROMPT}
+						placeholder={promptConfig.script}
 						className="prompt-textarea"
 						rows={4}
 					/>
@@ -350,20 +349,20 @@ function TaskPanelContent({
 											return (
 												<div key={character} className="voice-setting-item">
 													<span className="character-name">{character}</span>
-													<select
+													<Select
 														value={selectedVoice}
-														onChange={(e) => handleCharacterVoiceChange(character, e.target.value)}
-														className="voice-select"
-													>
-														<option value="冰糖">冰糖（女）</option>
-														<option value="茉莉">茉莉（女）</option>
-														<option value="苏打">苏打（男）</option>
-														<option value="白桦">白桦（男）</option>
-														<option value="Mia">Mia（女英）</option>
-														<option value="Chloe">Chloe（女英）</option>
-														<option value="Milo">Milo（男英）</option>
-														<option value="Dean">Dean（男英）</option>
-													</select>
+														onChange={(value) => handleCharacterVoiceChange(character, value)}
+														options={[
+															{ value: "冰糖", label: "冰糖（女）" },
+															{ value: "茉莉", label: "茉莉（女）" },
+															{ value: "苏打", label: "苏打（男）" },
+															{ value: "白桦", label: "白桦（男）" },
+															{ value: "Mia", label: "Mia（女英）" },
+															{ value: "Chloe", label: "Chloe（女英）" },
+															{ value: "Milo", label: "Milo（男英）" },
+															{ value: "Dean", label: "Dean（男英）" }
+														]}
+													/>
 												</div>
 											);
 										})}

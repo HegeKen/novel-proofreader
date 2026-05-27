@@ -10,17 +10,25 @@ import { TaskPanel } from "./components/TaskPanel";
 import { ConfigModal } from "./components/ConfigModal";
 import { CharacterSettings } from "./components/CharacterSettings";
 import { GlobalSearch } from "./components/GlobalSearch";
+import { HomePage } from "./components/HomePage";
 import { useAppStore } from "./stores/appStore";
 import { splitChapters } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
 import { exportToFile, loadNovelsFromStorage, loadNovelContent, saveNovelToStorage, ensureTxtFilename, exportAllData } from "./utils/fileExport";
+import { formatDateTime } from "./utils/formatters";
 import { parseURLParams, updateURLParams } from "./utils/urlParams";
 import { Icons } from "./components/Icons";
+import { audioCache } from "./utils/ttsService";
+import { useConfigStore } from "./stores/configStore";
 
 type RightTab = "proofread" | "task";
 type MobileTab = "novels" | "chapters" | "reader" | "task" | "settings";
 
 export default function App() {
+	// 初始化时检查 URL 参数，如果有 bookId 参数则不显示主页
+	const urlParams = new URLSearchParams(window.location.search);
+	const hasBookIdParam = urlParams.has("bookId");
+	const [showHome, setShowHome] = useState(!hasBookIdParam);
 	const novels = useAppStore((s) => s.novels);
 	const currentNovelId = useAppStore((s) => s.currentNovelId);
 	const setChapters = useAppStore((s) => s.setChapters);
@@ -40,8 +48,6 @@ export default function App() {
 	const [rightTab, setRightTab] = useState<RightTab>("proofread");
 	const [mobileTab, setMobileTab] = useState<MobileTab>("reader");
 	const [isMobile, setIsMobile] = useState(false);
-	// 移动端校对面板显示/隐藏状态
-	const [mobileProofreadVisible, setMobileProofreadVisible] = useState(true);
 
 	// 检测是否为移动端
 	useEffect(() => {
@@ -56,6 +62,12 @@ export default function App() {
 	useEffect(() => {
 		document.documentElement.setAttribute("data-theme", theme);
 	}, [theme]);
+
+	// 监听音频缓存持久化配置变化
+	const audioCachePersistent = useConfigStore((s) => s.ttsConfig.audioCachePersistent);
+	useEffect(() => {
+		audioCache.setPersistent(audioCachePersistent);
+	}, [audioCachePersistent]);
 
 	// 加载保存的小说（如果本地存储中没有）
 	useEffect(() => {
@@ -103,7 +115,10 @@ export default function App() {
 
 		const setChapters = useAppStore.getState().setChapters;
 		const trySelect = () => {
-			const novel = novels.find((n) => n.bookId === params.bookId);
+			// bookId 从 1 开始，需要转换为 0-based 索引
+			const novelIndex = params.bookId - 1;
+			if (novelIndex === undefined || novelIndex < 0) return false;
+			const novel = novels[novelIndex];
 			if (novel) {
 				selectNovel(novel.id);
 				if (novel.fullText) {
@@ -115,7 +130,11 @@ export default function App() {
 				}
 				if (params.readingMode === "true") {
 					setReadingMode(true);
+				} else {
+					setReadingMode(false);
 				}
+				// 如果有参数，隐藏主页
+				setShowHome(false);
 				return true;
 			}
 			return false;
@@ -131,7 +150,7 @@ export default function App() {
 			}, 100);
 			setTimeout(() => clearInterval(checkInterval), 5000);
 		}
-	}, [novels, selectNovel, setCurrentChapterIndex, setReadingMode]);
+	}, [novels, selectNovel, setCurrentChapterIndex, setReadingMode, setShowHome]);
 
 	// 状态变化时同步到 URL
 	useEffect(() => {
@@ -148,16 +167,11 @@ export default function App() {
 
 		const handleTitleClick = useCallback((e: React.MouseEvent) => {
 		e.preventDefault();
-		window.history.pushState(null, "", "/");
-		selectNovel(null);
-		setChapters([]);
-		setReadingMode(false);
-		setCurrentChapterIndex(0);
-		// 移动端点击标题时切换到小说标签
+		setShowHome(true);
 		if (isMobile) {
 			setMobileTab("novels");
 		}
-	}, [selectNovel, setChapters, setReadingMode, setCurrentChapterIndex, isMobile, setMobileTab]);
+	}, [setShowHome, isMobile, setMobileTab]);
 
 	const handleVolumeKey = useCallback(
 		(e: KeyboardEvent) => {
@@ -264,7 +278,7 @@ export default function App() {
 			readingProgress: state.readingProgress,
 			proofreadProgress: state.proofreadProgress,
 			ignoredWords: state.ignoredWords,
-			exportTime: Date.now(),
+			exportTime: formatDateTime(Date.now()),
 			version: "0.9.0",
 		});
 	};
@@ -279,8 +293,12 @@ export default function App() {
 
 	return (
 		<div className="app">
-			{/* 顶部栏 */}
-			<header className="app-header">
+			{showHome ? (
+				<HomePage onStart={() => setShowHome(false)} />
+			) : (
+				<>
+					{/* 顶部栏 */}
+					<header className="app-header">
 				<div className="header-left">
 					<h1 className="app-title">
 						<a href="/" onClick={handleTitleClick} style={{ textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: "8px" }}>
@@ -410,32 +428,12 @@ export default function App() {
 							<div className="mobile-reader-section">
 								<ReaderPanel showReadingModeToggle={true} isMobile={isMobile} />
 							</div>
-							{!readingMode && mobileProofreadVisible && (
+							{!readingMode && (
 								<div className="mobile-proofread-section">
-									<button
-										className="mobile-proofread-toggle"
-										onClick={() =>
-											setMobileProofreadVisible(!mobileProofreadVisible)
-										}
-									>
-										<Icons.chevronDown size={16} />
-										收起校对
-									</button>
 									<div className="right-content">
 										<ProofreadPanel />
 									</div>
 								</div>
-							)}
-							{!readingMode && !mobileProofreadVisible && (
-								<button
-									className="mobile-proofread-toggle"
-									onClick={() =>
-										setMobileProofreadVisible(!mobileProofreadVisible)
-									}
-								>
-									<Icons.chevronUp size={16} />
-									显示校对
-								</button>
 							)}
 						</div>
 					)}
@@ -516,11 +514,13 @@ export default function App() {
 			<ConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
 			{/* 角色设置弹窗 */}
 			{showCharacterSettings && (
-				<CharacterSettings
-					novelId={showCharacterSettings}
-					novelName={novels.find(n => n.id === showCharacterSettings)?.name || ""}
-					onClose={() => setShowCharacterSettings(null)}
-				/>
+						<CharacterSettings
+							novelId={showCharacterSettings}
+							novelName={novels.find(n => n.id === showCharacterSettings)?.name || ""}
+							onClose={() => setShowCharacterSettings(null)}
+						/>
+					)}
+				</>
 			)}
 		</div>
 	);
