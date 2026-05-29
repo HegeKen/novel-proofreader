@@ -111,12 +111,12 @@ export default function App() {
 	// 初始化：从 URL 参数恢复状态
 	useEffect(() => {
 		const params = parseURLParams();
-		if (params.bookId === undefined) return;
+		const bookId = params.bookId;
+		if (bookId === undefined) return;
 
 		const setChapters = useAppStore.getState().setChapters;
 		const trySelect = () => {
-			// bookId 从 1 开始，需要转换为 0-based 索引
-			const novelIndex = params.bookId - 1;
+			const novelIndex = bookId - 1;
 			if (novelIndex === undefined || novelIndex < 0) return false;
 			const novel = novels[novelIndex];
 			if (novel) {
