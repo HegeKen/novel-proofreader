@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Users, Cloud, MessageSquare, Loader2 } from "lucide-react";
 import { Icons } from "./Icons";
 
-import { fetchLatestRelease, formatFileSize, getAllAssetsByPlatform, type GitHubRelease } from "../utils/githubApi";
+import { fetchLatestReleaseWithAssets, formatFileSize, getAllAssetsByPlatform, tryDownloadWithMirrors, type GitHubRelease } from "../utils/githubApi";
 
 interface HomePageProps {
 	onStart?: () => void;
@@ -13,9 +13,10 @@ export function HomePage({ onStart }: HomePageProps) {
 	const [loading, setLoading] = useState(true);
 	const [allReleases, setAllReleases] = useState<GitHubRelease[]>([]);
 	const [showDownloadModal, setShowDownloadModal] = useState(false);
+	const [downloadingAsset, setDownloadingAsset] = useState<string | null>(null);
 
 	useEffect(() => {
-		fetchLatestRelease().then(data => {
+		fetchLatestReleaseWithAssets().then(data => {
 			setRelease(data);
 			setLoading(false);
 		});
@@ -40,6 +41,19 @@ export function HomePage({ onStart }: HomePageProps) {
 		onStart?.();
 	};
 
+	const handleDownload = async (url: string, fileName: string) => {
+		if (downloadingAsset === fileName) return;
+		setDownloadingAsset(fileName);
+		try {
+			await tryDownloadWithMirrors(url, fileName);
+		} catch (error) {
+			console.error("Download failed:", error);
+			alert("下载失败，请稍后重试或尝试其他镜像源");
+		} finally {
+			setDownloadingAsset(null);
+		}
+	};
+
 	const getArchitecture = (fileName: string): string => {
 		const lowerName = fileName.toLowerCase();
 		if (lowerName.includes("aarch64") || lowerName.includes("arm64")) return "ARM64";
@@ -60,7 +74,6 @@ export function HomePage({ onStart }: HomePageProps) {
 
 		lines.forEach(line => {
 			const trimmedLine = line.trim();
-			// 检测模块标题：**模块名称**
 			const moduleMatch = trimmedLine.match(/^\*\*([^*]+)\*\*/);
 			if (moduleMatch) {
 				sections.push({ type: "module", content: moduleMatch[1].trim() });
@@ -71,7 +84,6 @@ export function HomePage({ onStart }: HomePageProps) {
 			}
 		});
 
-		// 按模块分组，每个模块重新编号
 		const groupedSections: { moduleName?: string; items: string[] }[] = [];
 		let currentGroup: { moduleName?: string; items: string[] } = { items: [] };
 
@@ -144,9 +156,37 @@ export function HomePage({ onStart }: HomePageProps) {
 		},
 	];
 
+	const renderDownloadButton = (asset: NonNullable<GitHubRelease>["assets"][0], platformKey: string, index: number, isDownloading: boolean) => {
+		const arch = getArchitecture(asset.name);
+		const ext = getFileExtension(asset.name);
+		const displayName = platformKey === "macos" ? arch : `${arch} (${ext})`;
+		return (
+			<button
+				key={index}
+				onClick={() => handleDownload(asset.browser_download_url, asset.name)}
+				className="download-asset-btn"
+				disabled={isDownloading}
+				style={{ opacity: isDownloading ? 0.7 : 1, cursor: isDownloading ? "wait" : "pointer", flex: 1 }}
+			>
+				<div className="asset-icon">
+					{isDownloading ? (
+						<Loader2 className="animate-spin" size={16} />
+					) : (
+						<Icons.download size={16} />
+					)}
+				</div>
+				<div className="asset-info">
+					<span className="asset-name">{displayName}</span>
+					<span className="asset-size">
+						{isDownloading ? "下载中..." : formatFileSize(asset.size)}
+					</span>
+				</div>
+			</button>
+		);
+	};
+
 	return (
 		<div className="home-page">
-			{/* Header */}
 			<header className="app-header">
 				<div className="header-left">
 					<h1 className="app-title">
@@ -162,7 +202,7 @@ export function HomePage({ onStart }: HomePageProps) {
 					{onStart && (
 						<button className="btn-start-web" onClick={handleStartApp}>
 							<Icons.book size={16} />
-							<span>使用网页端</span>
+							<span>使用网页端</span>的
 						</button>
 					)}
 					<button className="btn-download" onClick={() => setShowDownloadModal(true)}>
@@ -172,7 +212,6 @@ export function HomePage({ onStart }: HomePageProps) {
 				</div>
 			</header>
 
-			{/* Hero Section */}
 			<section className="hero-section">
 				<div className="hero-content">
 					<div className="hero-icon">
@@ -185,8 +224,7 @@ export function HomePage({ onStart }: HomePageProps) {
 					<p className="hero-description">
 						专为小说创作者打造的 AI 辅助工具，帮助您提升写作效率，让文字更加完美。
 					</p>
-					
-					{/* Start Button */}
+
 					{onStart && (
 						<button className="start-btn" onClick={handleStartApp}>
 							<Icons.book size={20} />
@@ -201,7 +239,6 @@ export function HomePage({ onStart }: HomePageProps) {
 				</div>
 			</section>
 
-			{/* Features Section */}
 			<section className="features-section">
 				<h2 className="section-title">核心功能</h2>
 				<div className="features-grid">
@@ -217,7 +254,6 @@ export function HomePage({ onStart }: HomePageProps) {
 				</div>
 			</section>
 
-			{/* About Section */}
 			<section className="about-section">
 				<h2 className="section-title">关于项目</h2>
 				<div className="about-content">
@@ -250,7 +286,6 @@ export function HomePage({ onStart }: HomePageProps) {
 					</div>
 				</div>
 
-				{/* Changelog Section */}
 				<div className="changelog-section">
 					<h3 className="changelog-title">更新日志</h3>
 					<div className="timeline">
@@ -281,7 +316,6 @@ export function HomePage({ onStart }: HomePageProps) {
 				</div>
 			</section>
 
-			{/* Download Modal */}
 			{showDownloadModal && (
 				<div className="modal-overlay" onClick={() => setShowDownloadModal(false)}>
 					<div className="config-modal" onClick={e => e.stopPropagation()}>
@@ -300,48 +334,46 @@ export function HomePage({ onStart }: HomePageProps) {
 									<Loader2 className="animate-spin" size={24} />
 								</div>
 							) : release?.assets && release.assets.length > 0 ? (
-								<div className="download-platforms-list">
-									{[
-										{ key: "macos", name: "macOS", icon: Icons.laptop },
-										{ key: "windows", name: "Windows", icon: Icons.monitor },
-										{ key: "linux", name: "Linux", icon: Icons.server },
-										{ key: "android", name: "Android", icon: Icons.smartphone },
-									].map(platform => {
-										const assets = getAllAssetsByPlatform(release.assets, platform.key as "macos" | "windows" | "linux" | "android");
-										if (assets.length === 0) return null;
-										return (
-											<div key={platform.key} className="download-platform-section">
-												<div className="platform-header">
-													<platform.icon size={18} />
-													<span className="platform-name">{platform.name}</span>
+								<>
+									<div className="download-hint">
+										<p style={{ fontSize: "0.9em", color: "#666", marginBottom: "16px", padding: "12px", backgroundColor: "#f8f9fa", borderRadius: "8px" }}>
+											💡 如果 GitHub 官方源下载较慢，系统会自动尝试多个镜像加速源
+										</p>
+									</div>
+									<div className="download-platforms-list">
+										{[
+											{ key: "macos", name: "macOS", icon: Icons.laptop },
+											{ key: "windows", name: "Windows", icon: Icons.monitor },
+											{ key: "linux", name: "Linux", icon: Icons.server },
+											{ key: "android", name: "Android", icon: Icons.smartphone },
+										].map(platform => {
+											const assets = getAllAssetsByPlatform(release.assets, platform.key as "macos" | "windows" | "linux" | "android");
+											if (assets.length === 0) return null;
+											const assetPairs: typeof assets[] = [];
+											for (let i = 0; i < assets.length; i += 2) {
+												assetPairs.push(assets.slice(i, i + 2));
+											}
+											return (
+												<div key={platform.key} className="download-platform-section">
+													<div className="platform-header">
+														<platform.icon size={18} />
+														<span className="platform-name">{platform.name}</span>
+													</div>
+													<div className="platform-assets">
+														{assetPairs.map((pair, pairIndex) => (
+															<div key={pairIndex} style={{ display: "flex", gap: "8px", width: "100%" }}>
+																{pair.map((asset, assetIndex) =>
+																	renderDownloadButton(asset, platform.key, pairIndex * 2 + assetIndex, downloadingAsset === asset.name)
+																)}
+																{pair.length === 1 && <div style={{ flex: 1 }} />}
+															</div>
+														))}
+													</div>
 												</div>
-												<div className="platform-assets">
-													{assets.map((asset, index) => {
-														const arch = getArchitecture(asset.name);
-														const ext = getFileExtension(asset.name);
-														const displayName = platform.key === "macos" ? arch : `${arch} (${ext})`;
-														return (
-															<a
-																key={index}
-																href={asset.browser_download_url}
-																className="download-asset-btn"
-																download
-															>
-																<div className="asset-icon">
-																	<Icons.download size={16} />
-																</div>
-																<div className="asset-info">
-																	<span className="asset-name">{displayName}</span>
-																	<span className="asset-size">{formatFileSize(asset.size)}</span>
-																</div>
-															</a>
-														);
-													})}
-												</div>
-											</div>
-										);
-									})}
-								</div>
+											);
+										})}
+									</div>
+								</>
 							) : (
 								<p className="no-assets">暂无可用下载</p>
 							)}
@@ -350,7 +382,6 @@ export function HomePage({ onStart }: HomePageProps) {
 				</div>
 			)}
 
-			{/* Footer */}
 			<footer className="footer">
 				<p>
 					© 2026 AI 排版校对助手 · 基于 React + Tauri 构建

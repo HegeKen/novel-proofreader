@@ -8,6 +8,7 @@ import type { AIProvider } from "../types";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { formatLargeNumber } from "../utils/formatters";
+import { logger } from "../utils/logger";
 import {
 	PROOFREAD_SYSTEM_PROMPT,
 	PROOFREAD_SYSTEM_PROMPT_CHAPTER,
@@ -456,9 +457,9 @@ function PromptSettingsSection({
 	const handleCopy = async (text: string, label: string) => {
 		try {
 			await navigator.clipboard.writeText(text);
-			console.log(`已复制: ${label}`);
+			logger.ui(`已复制: ${label}`);
 		} catch (err) {
-			console.error('复制失败:', err);
+			logger.errorGeneric('复制失败:', err);
 		}
 	};
 

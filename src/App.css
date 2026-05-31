@@ -903,6 +903,61 @@ select {
 	border-color: var(--accent, #0a84ff);
 }
 
+.volume-group {
+	margin-bottom: 8px;
+}
+
+.volume-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 10px 12px;
+	border-radius: var(--r-lg);
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text-primary);
+	border: 1px solid var(--border);
+	background: var(--glass-bg);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+	transition: all var(--duration) var(--ease);
+	cursor: pointer;
+}
+
+.volume-item:hover {
+	background: var(--bg-hover);
+	border-color: var(--border-strong);
+}
+
+.volume-item.proofread {
+	color: var(--accent);
+}
+
+.volume-chevron {
+	transition: transform var(--duration) var(--ease);
+	color: var(--text-muted);
+}
+
+.volume-chevron.expanded {
+	transform: rotate(90deg);
+	color: var(--accent);
+}
+
+.volume-title {
+	flex: 1;
+}
+
+.volume-chapters {
+	padding-left: 16px;
+	margin-top: 4px;
+}
+
+.volume-chapters .chapter-item {
+	font-size: 12px;
+	padding: 8px 10px;
+}
+
 .chapter-title {
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -2975,26 +3030,6 @@ color: var(--text-primary);
 	gap: 6px;
 }
 
-.btn-apply-all {
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	padding: 6px 10px;
-	background: var(--bg-surface);
-	border: 1px solid var(--border);
-	border-radius: var(--r-sm);
-	font-size: 12px;
-	color: var(--text-muted);
-	cursor: pointer;
-	transition: all var(--duration) var(--ease);
-}
-
-.btn-apply-all:hover {
-	background: var(--bg-hover);
-	border-color: var(--border-strong);
-	color: var(--text);
-}
-
 .error-item {
 	padding: 10px 12px;
 	background: var(--bg-surface);
@@ -3838,7 +3873,7 @@ color: var(--text-primary);
 }
 
 .character-settings-modal {
-	width: 700px; /* 更宽的宽度 */
+	width: 900px; /* 更宽的宽度 */
 	max-height: 85vh;
 	background: var(--glass-bg-strong);
 	backdrop-filter: blur(var(--glass-blur-strong));
@@ -4269,6 +4304,115 @@ color: var(--text-primary);
 .detect-characters-modal .modal-footer .btn-secondary:hover {
 	background: var(--bg-highlight);
 	border-color: var(--border-strong);
+}
+
+/* AI分析进度容器 */
+.analyze-progress-container {
+	text-align: center;
+	padding: 32px 20px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 12px;
+}
+
+.analyze-icon-wrapper {
+	position: relative;
+	width: 80px;
+	height: 80px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 8px;
+}
+
+.analyze-icon {
+	color: var(--accent);
+	z-index: 1;
+}
+
+.analyze-icon-ring {
+	position: absolute;
+	inset: 0;
+	border-radius: 50%;
+	border: 2px solid var(--accent);
+	opacity: 0.3;
+	animation: pulse-ring 2s ease-out infinite;
+}
+
+@keyframes pulse-ring {
+	0% {
+		transform: scale(0.8);
+		opacity: 0.5;
+	}
+	50% {
+		opacity: 0.2;
+	}
+	100% {
+		transform: scale(1.4);
+		opacity: 0;
+	}
+}
+
+.analyze-title {
+	font-size: 18px;
+	font-weight: 600;
+	color: var(--text-primary);
+	margin: 0;
+}
+
+.analyze-subtitle {
+	font-size: 13px;
+	color: var(--text-secondary);
+	margin: 0;
+}
+
+.analyze-progress-bar {
+	width: 100%;
+	max-width: 300px;
+	height: 6px;
+	background: var(--bg-elevated);
+	border-radius: 3px;
+	overflow: hidden;
+	margin-top: 8px;
+}
+
+.analyze-progress-fill {
+	height: 100%;
+	background: linear-gradient(90deg, var(--accent), var(--accent-light));
+	border-radius: 3px;
+	transition: width 0.4s ease-out;
+}
+
+.analyze-progress-info {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	width: 100%;
+	max-width: 300px;
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+
+.analyze-batch {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.analyze-percent {
+	font-weight: 600;
+	color: var(--accent);
+}
+
+.analyze-hint {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	font-size: 11px;
+	color: var(--text-tertiary);
+	margin-top: 8px;
 }
 
 .detected-characters-list {
@@ -8352,7 +8496,8 @@ color: var(--text-primary);
 	text-decoration: none;
 	color: var(--text);
 	transition: all var(--duration) var(--ease);
-	min-width: 120px;
+	min-width: 0;
+	flex: 1;
 	justify-content: center;
 }
 

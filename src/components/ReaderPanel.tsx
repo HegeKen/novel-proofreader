@@ -352,33 +352,33 @@ export function ReaderPanel({
 
 	/** TTS 上一条 */
 	const handleTTSPrev = useCallback(() => {
-		console.log('[TTS] handleTTSPrev called');
-		console.log('[TTS] ttsPlayerRef exists:', !!ttsPlayerRef.current);
-		console.log('[TTS] scriptTTSRef exists:', !!scriptTTSRef.current);
+		logger.tts('handleTTSPrev called');
+		logger.tts('ttsPlayerRef exists:', !!ttsPlayerRef.current);
+		logger.tts('scriptTTSRef exists:', !!scriptTTSRef.current);
 		if (ttsPlayerRef.current) {
-			console.log('[TTS] calling ttsPlayerRef.current.skipToPrev()');
+			logger.tts('calling ttsPlayerRef.current.skipToPrev()');
 			ttsPlayerRef.current.skipToPrev();
 		} else if (scriptTTSRef.current) {
-			console.log('[TTS] calling scriptTTSRef.current.skipToPrev()');
+			logger.tts('calling scriptTTSRef.current.skipToPrev()');
 			scriptTTSRef.current.skipToPrev();
 		} else {
-			console.log('[TTS] no TTS player available');
+			logger.tts('no TTS player available');
 		}
 	}, []);
 
 	/** TTS 下一条 */
 	const handleTTSNext = useCallback(() => {
-		console.log('[TTS] handleTTSNext called');
-		console.log('[TTS] ttsPlayerRef exists:', !!ttsPlayerRef.current);
-		console.log('[TTS] scriptTTSRef exists:', !!scriptTTSRef.current);
+		logger.tts('handleTTSNext called');
+		logger.tts('ttsPlayerRef exists:', !!ttsPlayerRef.current);
+		logger.tts('scriptTTSRef exists:', !!scriptTTSRef.current);
 		if (ttsPlayerRef.current) {
-			console.log('[TTS] calling ttsPlayerRef.current.skipToNext()');
+			logger.tts('calling ttsPlayerRef.current.skipToNext()');
 			ttsPlayerRef.current.skipToNext();
 		} else if (scriptTTSRef.current) {
-			console.log('[TTS] calling scriptTTSRef.current.skipToNext()');
+			logger.tts('calling scriptTTSRef.current.skipToNext()');
 			scriptTTSRef.current.skipToNext();
 		} else {
-			console.log('[TTS] no TTS player available');
+			logger.tts('no TTS player available');
 		}
 	}, []);
 
@@ -484,7 +484,7 @@ export function ReaderPanel({
 			logger.tts(`段落${paraIndex}情感分析失败: ${(error as Error).message}`);
 			return null;
 		}
-	}, [aiConfig, currentNovelId, getCharacters]);
+	}, [aiConfig, currentNovelId, getCharacters, promptConfig.readingModeTts]);
 
 	/** 添加检测到的新角色到角色列表 */
 	const handleAddNewCharacters = useCallback((names: string[]) => {
@@ -774,13 +774,13 @@ export function ReaderPanel({
 		const container = containerRef.current;
 
 		if (!el || !container) {
-			console.log(
-				`[ReaderPanel] scrollToParagraph failed: el=${!!el}, container=${!!container}, index=${index}`,
+			logger.ui(
+				`scrollToParagraph failed: el=${!!el}, container=${!!container}, index=${index}`,
 			);
 			return;
 		}
 
-		console.log(`[ReaderPanel] scrollToParagraph: index=${index}`);
+		logger.proofread(`scrollToParagraph: index=${index}`);
 
 		// 计算元素相对于容器的位置
 		const containerRect = container.getBoundingClientRect();
@@ -801,9 +801,7 @@ export function ReaderPanel({
 
 	useEffect(() => {
 		if (highlightedParagraph !== null) {
-			console.log(
-				`[ReaderPanel] highlightedParagraph changed: ${highlightedParagraph}`,
-			);
+			logger.proofread(`highlightedParagraph changed: ${highlightedParagraph}`);
 			// 使用 setTimeout 确保 DOM 已经渲染完成
 			setTimeout(() => {
 				scrollToParagraph(highlightedParagraph);
@@ -814,13 +812,13 @@ export function ReaderPanel({
 	// TTS 高亮段落变化时自动滚动
 	useEffect(() => {
 		if (ttsHighlightedPara !== -1) {
-			console.log(
-				`[ReaderPanel] TTS highlighted paragraph changed: ${ttsHighlightedPara}`,
+			logger.tts(
+				`highlighted paragraph changed: ${ttsHighlightedPara}`,
 			);
 			// 将过滤后的索引转换为原始索引
 			const originalIndex = paragraphIndexMap[ttsHighlightedPara];
-			console.log(
-				`[ReaderPanel] TTS highlighted original index: ${originalIndex}`,
+			logger.tts(
+				`highlighted original index: ${originalIndex}`,
 			);
 			if (originalIndex !== undefined) {
 				setTimeout(() => {
@@ -1197,8 +1195,8 @@ export function ReaderPanel({
 								applyAnimation!.startIndex,
 								applyAnimation!.endIndex,
 							);
-							console.log(
-								`[ReaderPanel] anim-highlight-old:`,
+							logger.proofread(
+								`anim-highlight-old:`,
 								`\n  phase: ${applyAnimation!.phase}`,
 								`\n  paragraphIndex: ${applyAnimation!.paragraphIndex}`,
 								`\n  startIndex: ${applyAnimation!.startIndex}`,
@@ -1230,8 +1228,8 @@ export function ReaderPanel({
 
 						// 验证位置处的文本是否与新文本匹配
 						const actualText = para.slice(startIdx, endIdx);
-						console.log(
-							`[ReaderPanel] anim-highlight-new:`,
+						logger.proofread(
+							`anim-highlight-new:`,
 							`\n  phase: ${applyAnimation!.phase}`,
 							`\n  paragraphIndex: ${applyAnimation!.paragraphIndex}`,
 							`\n  startIndex: ${applyAnimation!.startIndex}`,
@@ -1246,7 +1244,7 @@ export function ReaderPanel({
 
 						if (actualText === newText) {
 							// 位置匹配，使用精确位置
-							console.log(`[ReaderPanel] anim-highlight-new: 位置匹配，使用精确位置`);
+							logger.proofread(`anim-highlight-new: 位置匹配，使用精确位置`);
 							return {
 								before: para.slice(0, startIdx),
 								highlight: newText,
@@ -1265,7 +1263,7 @@ export function ReaderPanel({
 								foundIdx = searchStart + relativeIdx;
 							}
 							
-							console.log(`[ReaderPanel] anim-highlight-new: 位置不匹配，在预期位置附近搜索，foundIdx: ${foundIdx}`);
+							logger.proofread(`anim-highlight-new: 位置不匹配，在预期位置附近搜索，foundIdx: ${foundIdx}`);
 							if (foundIdx >= 0) {
 								return {
 									before: para.slice(0, foundIdx),

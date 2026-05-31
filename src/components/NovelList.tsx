@@ -82,6 +82,10 @@ export function NovelList({
 
 	const handleRemove = async (e: React.MouseEvent, id: string) => {
 		e.stopPropagation();
+		const confirmed = window.confirm("删除小说前请确认：校对后的小说是否已导出保存？\n\n点击\"确定\"删除，点击\"取消\"保留。");
+		if (!confirmed) {
+			return;
+		}
 		const novel = novels.find(n => n.id === id);
 		if (novel) {
 			await deleteNovelFromStorage(`${novel.name}.txt`);

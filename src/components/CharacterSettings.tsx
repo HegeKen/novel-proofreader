@@ -11,6 +11,7 @@ import { Select } from "./Select";
 import { logger } from "../utils/logger";
 import { detectCharactersFromText, detectHighFrequencyWords, saveCharacterConfigToStorage, loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
 import type { DetectedCharacter, HighFrequencyWord } from "../utils/fileExport";
+import { analyzeCharactersInBatches } from "../utils/aiClient";
 import { formatDateTime } from "../utils/formatters";
 import { RelationshipGraph } from "./RelationshipGraph";
 
@@ -54,6 +55,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const removeCharacter = useAppStore((s) => s.removeCharacter);
 	const setCharactersForNovel = useAppStore((s) => s.setCharactersForNovel);
 	const setRelationshipsForNovel = useAppStore((s) => s.setRelationshipsForNovel);
+	const getRelationshipsForNovel = useAppStore((s) => s.getRelationshipsForNovel);
 	const setNodePositions = useAppStore((s) => s.setNodePositions);
 	const setIgnoredWords = useAppStore((s) => s.setIgnoredWords);
 	const setProofreadProgress = useAppStore((s) => s.setProofreadProgress);
@@ -79,6 +81,12 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 高频词汇检测弹窗状态
 	const [showWordsModal, setShowWordsModal] = useState(false);
 	const [detectedWords, setDetectedWords] = useState<HighFrequencyWord[]>([]);
+
+	// 角色分析弹窗状态
+	const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
+	const [isAnalyzing, setIsAnalyzing] = useState(false);
+	const [analyzeProgress, setAnalyzeProgress] = useState({ current: 0, total: 0 });
+	const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 	
 	// 检测结果操作状态：'new' | 'alias' | 'relation'
 	type DetectedAction = 'new' | 'alias' | 'relation';
@@ -120,12 +128,12 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					if (!novelCharacters[novelId] || novelCharacters[novelId].length === 0) {
 						setCharactersForNovel(novelId, loadedCharacters);
 					}
-					console.log('[CharacterSettings] Loaded characters from storage:', { novelId, novelName, count: loadedCharacters.length });
+					logger.file('Loaded characters from storage:', { novelId, novelName, count: loadedCharacters.length });
 				} catch (err) {
-					console.error('[CharacterSettings] Failed to parse character config:', err);
+					logger.errorGeneric('[CharacterSettings]', 'Failed to parse character config:', err);
 				}
 			} else {
-				console.log('[CharacterSettings] No character config file found for:', { novelId, novelName });
+				logger.file('No character config file found for:', { novelId, novelName });
 			}
 		};
 		loadCharactersFromStorage();
@@ -152,6 +160,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const audioRef = useRef<HTMLAudioElement | null>(null);
 	const cancelPlayRef = useRef<(() => void) | null>(null);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
+	const aiConfig = useAppStore((s) => s.aiConfig);
 
 	const voiceOptions = [
 		{ value: "冰糖", label: "冰糖 (女)" },
@@ -323,7 +332,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		if (isMobile) {
 			// 移动端：使用 Tauri API 保存到 Android/data/cn.helilab.proofreader/documents/characters/ 目录
 			const success = await saveCharacterConfigToStorage(fileName, dataStr);
-			console.log('[CharacterSettings] 小说设置导出结果:', { success, fileName, characterCount: characters.length, dataSize: dataStr.length, isMobile });
+			logger.file('小说设置导出结果:', { success, fileName, characterCount: characters.length, dataSize: dataStr.length, isMobile });
 			setExportModal({
 				show: true,
 				success,
@@ -591,6 +600,137 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			setIsScanning(false);
 		}
 	}, [currentNovel, characters, getIgnoredWords, getIgnoredCharacterNames, novelId, setDetectedWords, setShowWordsModal]);
+
+	// 使用AI分析整本小说提取角色和关系
+	const handleAnalyzeCharacters = async () => {
+		if (!currentNovel?.fullText) {
+			alert("无法获取小说内容");
+			return;
+		}
+
+		if (!aiConfig.apiKey || !aiConfig.baseURL) {
+			alert("请先在设置中配置AI模型");
+			return;
+		}
+
+		setIsAnalyzing(true);
+		setAnalyzeError(null);
+		setAnalyzeProgress({ current: 0, total: 0 });
+
+		const abortController = new AbortController();
+
+		try {
+			// 构建AI配置（转换为AIConfig格式）
+			const config = {
+				baseURL: aiConfig.baseURL,
+				apiKey: aiConfig.apiKey,
+				model: aiConfig.model,
+				customHeaders: {},
+				maxCharsPerRequest: 0,
+				enableLogging: false,
+			};
+
+			const result = await analyzeCharactersInBatches(
+				currentNovel.fullText,
+				config,
+				50000, // 50K字符每批次
+				abortController.signal,
+				(current, total) => {
+					setAnalyzeProgress({ current, total });
+				}
+			);
+
+			logger.proofread("[CharacterSettings] AI分析完成:", {
+				charactersCount: result.characters.length,
+				relationshipsCount: result.relationships.length,
+			});
+
+			// 将分析结果转换为CharacterInfo格式并添加到角色列表
+			const existingNames = new Set(characters.map(c => c.name.toLowerCase()));
+			const newCharactersWithIds: Array<{ id: string } & Omit<CharacterInfo, "id">> = [];
+			const nameToIdMap = new Map<string, string>();
+
+			// 先为新角色生成ID并建立映射
+			for (const char of result.characters) {
+				if (!existingNames.has(char.name.toLowerCase())) {
+					const charId = `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+					nameToIdMap.set(char.name.toLowerCase(), charId);
+					newCharactersWithIds.push({
+						id: charId,
+						name: char.name,
+						gender: char.gender,
+						role: char.role as CharacterRole,
+						notes: char.description,
+						voice: "",
+						aliases: char.aliases,
+						relationTerms: [] as string[],
+						order: newCharactersWithIds.length,
+					});
+					existingNames.add(char.name.toLowerCase());
+				}
+			}
+
+			// 添加新角色
+			for (const char of newCharactersWithIds) {
+				// eslint-disable-next-line @typescript-eslint/no-unused-vars
+				const { id, ...charWithoutId } = char;
+				addCharacter(novelId, charWithoutId);
+			}
+
+			// 获取当前关系并添加新关系
+			const currentRelationships = getRelationshipsForNovel(novelId);
+			const newRelationships: CharacterRelationship[] = [];
+
+			for (const rel of result.relationships) {
+				const sourceNameLower = rel.sourceName.toLowerCase();
+				const targetNameLower = rel.targetName.toLowerCase();
+
+				// 查找已存在角色的ID
+				const matchedSource = characters.find(c => c.name.toLowerCase() === sourceNameLower);
+				const matchedTarget = characters.find(c => c.name.toLowerCase() === targetNameLower);
+
+				// 获取新角色的ID
+				const newSourceId = nameToIdMap.get(sourceNameLower);
+				const newTargetId = nameToIdMap.get(targetNameLower);
+
+				// 确定source和target的ID
+				const sourceId = matchedSource?.id || newSourceId;
+				const targetId = matchedTarget?.id || newTargetId;
+
+				// 跳过无法匹配的关系
+				if (!sourceId || !targetId) continue;
+
+				// 跳过自环关系
+				if (sourceId === targetId) continue;
+
+				newRelationships.push({
+					id: `rel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+					novelId,
+					sourceId,
+					targetId,
+					relationType: [rel.relationType as import("../types").RelationType],
+					customRelationType: rel.customRelationType,
+					sourceNickname: rel.sourceNickname,
+					targetNickname: rel.targetNickname,
+				});
+			}
+
+			// 添加新关系
+			setRelationshipsForNovel(novelId, [...currentRelationships, ...newRelationships]);
+
+			alert(`分析完成！新增 ${newCharactersWithIds.length} 个角色和 ${newRelationships.length} 条关系`);
+			setShowAnalyzeModal(false);
+		} catch (err) {
+			if (err instanceof Error && err.message === "分析已取消") {
+				logger.proofread("[CharacterSettings] 用户取消分析");
+			} else {
+				logger.warn("[CharacterSettings] AI分析失败:", err);
+				setAnalyzeError(err instanceof Error ? err.message : String(err));
+			}
+		} finally {
+			setIsAnalyzing(false);
+		}
+	};
 
 	// 全选/取消全选
 	const handleToggleAll = useCallback((checked: boolean) => {
@@ -1396,6 +1536,15 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 							<span>高频词</span>
 						</button>
 						<button
+							className="action-btn character-action"
+							onClick={() => setShowAnalyzeModal(true)}
+							title="AI分析角色"
+							disabled={isAnalyzing || isScanning}
+						>
+							<Icons.sparkle size={18} />
+							<span>{isAnalyzing ? "分析中" : "AI分析"}</span>
+						</button>
+						<button
 							className={`action-btn character-action ${isDragMode ? 'active' : ''}`}
 							onClick={() => setIsDragMode(!isDragMode)}
 							title="拖拽排序"
@@ -1704,6 +1853,113 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						>
 							关闭
 						</button>
+					</div>
+				</div>
+			</div>
+		)}
+
+		{/* AI分析角色弹窗 */}
+		{showAnalyzeModal && (
+			<div className="modal-overlay" onClick={() => !isAnalyzing && setShowAnalyzeModal(false)}>
+				<div className="modal-content detect-characters-modal" onClick={e => e.stopPropagation()}>
+					<div className="modal-header">
+						<h3>AI 角色分析</h3>
+						{!isAnalyzing && (
+							<button className="modal-close" onClick={() => setShowAnalyzeModal(false)}>
+								<Icons.close size={18} />
+							</button>
+						)}
+					</div>
+					<div className="modal-body">
+						{analyzeError && (
+							<div className="text-red-400 mb-4 p-3 bg-red-900/20 rounded">
+								<p className="font-bold">分析失败</p>
+								<p className="text-sm">{analyzeError}</p>
+							</div>
+						)}
+						{isAnalyzing ? (
+							<div className="analyze-progress-container">
+								<div className="analyze-icon-wrapper">
+									<Icons.sparkle size={40} className="analyze-icon animate-pulse" />
+									<div className="analyze-icon-ring"></div>
+								</div>
+								<p className="analyze-title">正在分析小说内容</p>
+								<p className="analyze-subtitle">提取角色人物小传与关系图谱...</p>
+								<div className="analyze-progress-bar">
+									<div
+										className="analyze-progress-fill"
+										style={{
+											width: analyzeProgress.total > 0
+												? `${(analyzeProgress.current / analyzeProgress.total) * 100}%`
+												: '0%'
+										}}
+									/>
+								</div>
+								<div className="analyze-progress-info">
+									<span className="analyze-batch">
+										<Icons.list size={14} />
+										批次 {analyzeProgress.current} / {analyzeProgress.total}
+									</span>
+									<span className="analyze-percent">
+										{analyzeProgress.total > 0
+											? Math.round((analyzeProgress.current / analyzeProgress.total) * 100)
+											: 0}%
+									</span>
+								</div>
+								<p className="analyze-hint">
+									<Icons.clock size={12} />
+									预计需要几分钟，请勿关闭应用
+								</p>
+							</div>
+						) : (
+							<div className="space-y-4">
+								<p className="text-sm text-neutral-400">
+									AI 将分析整本小说内容，提取角色人物小传和关系图谱信息。
+								</p>
+								<div className="bg-neutral-800/50 p-4 rounded text-sm space-y-2">
+									<p className="text-accent">功能特点：</p>
+									<ul className="list-disc list-inside text-neutral-300 space-y-1">
+										<li>自动识别小说中的主要角色</li>
+										<li>提取角色外貌、性格、背景描述</li>
+										<li>分析角色之间的关系</li>
+										<li>支持超大文本（1M+ tokens）</li>
+									</ul>
+								</div>
+								<p className="text-xs text-neutral-500">
+									注意：分析结果会消耗 AI API 调用配额，请确保已配置有效的 API Key
+								</p>
+							</div>
+						)}
+					</div>
+					<div className="modal-footer">
+						{isAnalyzing ? (
+							<button
+								className="btn btn-secondary"
+								onClick={() => {
+									// 取消分析 - 需要通过 abort controller
+									setIsAnalyzing(false);
+									setShowAnalyzeModal(false);
+								}}
+							>
+								取消分析
+							</button>
+						) : (
+							<>
+								<button
+									className="btn btn-secondary"
+									onClick={() => setShowAnalyzeModal(false)}
+								>
+									关闭
+								</button>
+								<button
+									className="btn btn-primary"
+									onClick={handleAnalyzeCharacters}
+								>
+									<Icons.sparkle size={16} />
+									开始分析
+								</button>
+							</>
+						)}
 					</div>
 				</div>
 			</div>

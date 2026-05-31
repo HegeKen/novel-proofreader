@@ -10,6 +10,7 @@ import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { ScriptTTSPlayer, parseScriptContent } from "../utils/ttsService";
+import { logger } from "../utils/logger";
 import type { ChatMessage } from "../utils/aiClient";
 import type { Chapter, AIConfig, CharacterInfo } from "../types";
 
@@ -143,12 +144,12 @@ function TaskPanelContent({
 				ttsEnhanceAiConfig,
 			);
 
-			console.log("=== 增强后的剧本内容（原始） ===");
-			console.log(enhancedScript);
+			logger.tts("=== 增强后的剧本内容（原始） ===");
+			logger.tts(enhancedScript);
 
 			const cleanedScript = cleanEnhancedScript(enhancedScript);
-			console.log("=== 清理后的剧本内容 ===");
-			console.log(cleanedScript);
+			logger.tts("=== 清理后的剧本内容 ===");
+			logger.tts(cleanedScript);
 
 			// 根据角色信息构建 characterVoices
 			const { characters: detected } = parseScriptContent(cleanedScript);
@@ -170,8 +171,7 @@ function TaskPanelContent({
 
 			scriptTTSRef.current.loadScript(cleanedScript);
 			
-			console.log("=== 解析出的对话 ===");
-			console.log(scriptTTSRef.current.getDialogues());
+			logger.tts("=== 解析出的对话 ===", scriptTTSRef.current.getDialogues());
 
 			setTtsPlaying(true);
 			scriptTTSRef.current.play();

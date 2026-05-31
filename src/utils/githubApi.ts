@@ -10,6 +10,61 @@ export interface GitHubRelease {
 	published_at: string;
 }
 
+const GITHUB_MIRRORS = [
+	"https://gh-proxy.com",
+	"https://ghproxy.net",
+	"https://ghproxy.com",
+	"https://gh.api.99988866.xyz",
+	"https://mirror.ghproxy.com"
+];
+
+export function getMirrorUrls(originalUrl: string): string[] {
+	const urls: string[] = [originalUrl];
+	for (const mirror of GITHUB_MIRRORS) {
+		try {
+			const url = new URL(originalUrl);
+			const mirrorUrl = `${mirror}${url.pathname}`;
+			if (url.search) {
+				urls.push(`${mirrorUrl}${url.search}`);
+			} else {
+				urls.push(mirrorUrl);
+			}
+		} catch {
+			urls.push(`${mirror}/${originalUrl.replace("https://github.com/", "")}`);
+		}
+	}
+	return urls;
+}
+
+export async function tryDownloadWithMirrors(url: string, fileName: string): Promise<void> {
+	const urls = getMirrorUrls(url);
+	let lastError: Error | null = null;
+
+	for (let i = 0; i < urls.length; i++) {
+		try {
+			const response = await fetch(urls[i]);
+			if (!response.ok) {
+				throw new Error(`HTTP ${response.status}`);
+			}
+			const blob = await response.blob();
+			const downloadUrl = URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = downloadUrl;
+			a.download = fileName;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(downloadUrl);
+			return;
+		} catch (error) {
+			lastError = error as Error;
+			console.warn(`Download failed from ${urls[i]} (${i + 1}/${urls.length}):`, error);
+		}
+	}
+
+	throw lastError || new Error("All download attempts failed");
+}
+
 export async function fetchLatestRelease(repo: string = "HegeKen/novel-proofreader"): Promise<GitHubRelease | null> {
 	try {
 		const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`);
@@ -20,6 +75,22 @@ export async function fetchLatestRelease(repo: string = "HegeKen/novel-proofread
 		return await response.json();
 	} catch (error) {
 		console.error("Error fetching GitHub release:", error);
+		return null;
+	}
+}
+
+export async function fetchLatestReleaseWithAssets(repo: string = "HegeKen/novel-proofreader"): Promise<GitHubRelease | null> {
+	try {
+		const response = await fetch(`https://api.github.com/repos/${repo}/releases`);
+		if (!response.ok) {
+			console.error(`Failed to fetch releases: ${response.status}`);
+			return null;
+		}
+		const releases: GitHubRelease[] = await response.json();
+		const releaseWithAssets = releases.find(r => r.assets && r.assets.length > 0);
+		return releaseWithAssets || null;
+	} catch (error) {
+		console.error("Error fetching releases:", error);
 		return null;
 	}
 }
@@ -43,7 +114,7 @@ export function getAllAssetsByPlatform(assets: GitHubRelease["assets"], platform
 		linux: ["linux", "deb", "rpm", "appimage", "snap", ".tar.gz"],
 		android: ["android", "android", ".apk", ".aab"],
 	};
-	
+
 	const matchingAssets = assets.filter(asset => {
 		const lowerName = asset.name.toLowerCase();
 		if (platform === "android") {
@@ -51,14 +122,14 @@ export function getAllAssetsByPlatform(assets: GitHubRelease["assets"], platform
 		}
 		return platformPatterns[platform].some(pattern => lowerName.includes(pattern));
 	});
-	
+
 	const prioritizedPatterns: Record<string, string[]> = {
 		macos: [".dmg", ".pkg", "-arm64", "-x64"],
 		windows: [".exe", ".msi", "-x64", "-ia32"],
 		linux: [".deb", ".rpm", "appimage", ".tar.gz"],
 		android: [".apk", ".aab"],
 	};
-	
+
 	matchingAssets.sort((a, b) => {
 		const aName = a.name.toLowerCase();
 		const bName = b.name.toLowerCase();
@@ -70,6 +141,6 @@ export function getAllAssetsByPlatform(assets: GitHubRelease["assets"], platform
 		}
 		return 0;
 	});
-	
+
 	return matchingAssets;
 }

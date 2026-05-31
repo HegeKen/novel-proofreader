@@ -199,6 +199,17 @@ export const PROOFREAD_SYSTEM_PROMPT = `你是小说文字编辑。输出JSON数
 /** 校对系统 prompt（章节级别 - 按行号返回） */
 export const PROOFREAD_SYSTEM_PROMPT_CHAPTER = `你是小说文字编辑，校对整章JSON（key为行号，value为段落文本）。逐行检查typo(错别字)/format(排版空格空行)/punctuation(标点致命错误)/grammar(病句)。输出JSON数组，字段：lineNumber(与输入key一致，string)、column(错误起始列，从1计数)、find(原文连续片段，含错误及前后各≥3字符，8-20字)、replace(修正后)、type、reason(≤10汉字)。严格约束：lineNumber须存在；column基于该行逐字符计算(含空格标点)；find精确复制；不跨行；无错返回[]；只输出JSON数组，无markdown。示例输入{"0":"第一章","1":"倾盘大雨"} → [{"lineNumber":"1","column":5,"find":"倾盘大雨","replace":"倾盆大雨","type":"typo","reason":"错别字"}]。的/地/得错误：find含错误及前后各≥2字符。优先级：错别字>语法>排版>标点。不修改风格化/口语化表达。`;
 
+/** 构建带忽略词的系统 prompt */
+export function buildProofreadSystemPrompt(
+	basePrompt: string,
+	ignoredWords?: string[],
+): string {
+	if (!ignoredWords || ignoredWords.length === 0) {
+		return basePrompt;
+	}
+	return basePrompt + `\n\n【强制约束】以下词语无论是否错误，都绝对不能出现在find字段中（这些是人名/地名/专有名词/特殊术语）：${ignoredWords.join('、')}`;
+}
+
 /** 校对 user prompt */
 export function buildProofreadUserPrompt(
 	text: string,
@@ -207,7 +218,7 @@ export function buildProofreadUserPrompt(
 	let prompt = `请检查以下文本：\n\n${text}`;
 
 	if (ignoredWords && ignoredWords.length > 0) {
-		prompt += `\n\n以下词语在本文中出现时，请不要将其标记为错误（可能是人名、地名或特殊术语）：\n${ignoredWords.join("、")}`;
+		prompt += `\n\n【强制约束】以下词语在本文中出现时，绝对不能标记为错误（这些是人名、地名、专有名词或特殊术语），即使它们看起来像错别字：\n${ignoredWords.join("、")}\n\n请直接跳过这些词语，不要在返回结果中包含它们。`;
 	}
 
 	return prompt;
@@ -465,4 +476,182 @@ export function extractJSON(text: string): unknown[] {
 	}
 
 	return [];
+}
+
+/** 角色分析系统提示词 - 用于从整本小说中提取角色人物小传和关系图谱 */
+export const CHARACTER_ANALYSIS_SYSTEM_PROMPT = `你是小说角色分析专家。请从给定的小说文本中分析并提取所有重要角色信息，生成结构化的JSON数据。
+
+## 输出格式
+请返回以下JSON结构（纯JSON，无markdown）：
+
+{
+  "characters": [
+    {
+      "name": "角色名称（主要人名）",
+      "aliases": ["别名1", "别名2"],
+      "gender": "male/female/other",
+      "role": "protagonist/heroine/antagonist/supportingMale/supportingFemale/mentor/rival/loveInterest/family/friend/npc",
+      "description": "人物外貌、性格、背景的小传描述（100-300字）",
+      "appearances": ["首次出场章节或位置描述"]
+    }
+  ],
+  "relationships": [
+    {
+      "sourceName": "角色A名称",
+      "targetName": "角色B名称",
+      "relationType": "couple/father-son/father-daughter/mother-son/mother-daughter/brother/sister/brother-sister/lover/friend/rival/master-disciple/employer-employee/colleague/stranger/other",
+      "customRelationType": "自定义关系描述（如果relationType是other）",
+      "sourceNickname": ["角色A对B的称呼1", "角色A对B的称呼2"],
+      "targetNickname": ["角色B对A的称呼1", "角色B对A的称呼2"],
+      "description": "这段关系的简要描述（50字以内）"
+    }
+  ]
+}
+
+## 角色分类标准
+- protagonist: 男主/男主角
+- heroine: 女主/女主角
+- antagonist: 反派/敌对角色
+- supportingMale: 男配角
+- supportingFemale: 女配角
+- mentor: 导师/师父
+- rival: 竞争对手/对手
+- loveInterest: 爱慕对象/暧昧对象
+- family: 家人/亲属
+- friend: 朋友/好友
+- npc: 其他次要角色
+
+## 关系类型说明
+- couple: 夫妻/恋人关系
+- father-son/father-daughter: 父子/父女
+- mother-son/mother-daughter: 母子/母女
+- brother/sister/brother-sister: 兄弟/姐妹/兄妹/姐弟
+- lover: 恋人/情人（暧昧或恋爱中）
+- friend: 朋友/好友
+- rival: 竞争对手
+- master-disciple: 师徒
+- employer-employee: 雇佣关系
+- colleague: 同事/同僚
+- stranger: 陌生人
+- other: 其他（需填写customRelationType）
+
+## 分析原则
+1. 只提取有明确名字或明确身份指代的重要角色
+2. 注意识别角色的别名和称呼变化
+3. 从文本中的对话、互动、明确描述来推断关系
+4. 关系代称要完整（如"老婆"、"老公"、"师父"、"徒弟"等）
+5. description应该描述角色外貌特征、性格特点、身份背景
+6. 如果文本过长，请分批次分析，最后合并结果
+
+## 约束
+- 输出必须是有效的JSON格式
+- 数组可能为空，但结构必须完整
+- 不要臆造信息，只基于文本内容
+- 遇到不确定的关系，可以标记为other但提供描述`;
+
+/** 角色分析结果类型 */
+export interface CharacterAnalysisResult {
+	characters: Array<{
+		name: string;
+		aliases: string[];
+		gender: "male" | "female" | "other";
+		role: string;
+		description: string;
+		appearances: string[];
+	}>;
+	relationships: Array<{
+		sourceName: string;
+		targetName: string;
+		relationType: string;
+		customRelationType?: string;
+		sourceNickname: string[];
+		targetNickname: string[];
+		description: string;
+	}>;
+}
+
+/** 分段分析大文本并合并结果 */
+export async function analyzeCharactersInBatches(
+	fullText: string,
+	config: AIConfig,
+	batchSize: number = 50000,
+	signal?: AbortSignal,
+	onProgress?: (current: number, total: number) => void,
+): Promise<CharacterAnalysisResult> {
+	const chunks: string[] = [];
+	for (let i = 0; i < fullText.length; i += batchSize) {
+		chunks.push(fullText.slice(i, i + batchSize));
+	}
+
+	const total = chunks.length;
+	const allCharacters: CharacterAnalysisResult["characters"] = [];
+	const allRelationships: CharacterAnalysisResult["relationships"] = [];
+	const processedNames = new Set<string>();
+
+	const userPromptTemplate = `请分析以下小说文本，提取角色和关系信息：
+
+[TEXT_START]
+{chunk}
+[TEXT_END]
+
+请以JSON格式输出角色和关系信息。`;
+
+	for (let i = 0; i < chunks.length; i++) {
+		if (signal?.aborted) {
+			throw new Error("分析已取消");
+		}
+
+		onProgress?.(i + 1, total);
+
+		const messages: ChatMessage[] = [
+			{ role: "system", content: CHARACTER_ANALYSIS_SYSTEM_PROMPT },
+			{ role: "user", content: userPromptTemplate.replace("{chunk}", chunks[i]) },
+		];
+
+		try {
+			const response = await sendChatCompletion(messages, config, signal);
+
+			// 尝试解析JSON
+			const jsonMatch = response.match(/\{[\s\S]*\}/);
+			if (jsonMatch) {
+				try {
+					const result = JSON.parse(jsonMatch[0]) as Partial<CharacterAnalysisResult>;
+
+					// 合并角色（去重）
+					for (const char of result.characters || []) {
+						if (!processedNames.has(char.name)) {
+							processedNames.add(char.name);
+							allCharacters.push(char);
+						}
+					}
+
+					// 合并关系
+					for (const rel of result.relationships || []) {
+						allRelationships.push(rel);
+					}
+				} catch {
+					logger.warn("[CharacterAnalysis] 解析JSON失败，跳过该批次");
+				}
+			}
+		} catch (err) {
+			logger.warn("[CharacterAnalysis] 批次分析失败:", err);
+			// 继续处理其他批次
+		}
+	}
+
+	// 对角色进行关系计数统计，影响力大的角色排在前面
+	allCharacters.sort((a, b) => {
+		const aRelCount = allRelationships.filter(
+			r => r.sourceName === a.name || r.targetName === a.name
+		).length;
+		const bRelCount = allRelationships.filter(
+			r => r.sourceName === b.name || r.targetName === b.name
+		).length;
+		return bRelCount - aRelCount;
+	});
+
+	return {
+		characters: allCharacters,
+		relationships: allRelationships,
+	};
 }

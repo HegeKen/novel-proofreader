@@ -18,17 +18,35 @@ import { exportToFile, loadNovelsFromStorage, loadNovelContent, saveNovelToStora
 import { formatDateTime } from "./utils/formatters";
 import { parseURLParams, updateURLParams } from "./utils/urlParams";
 import { Icons } from "./components/Icons";
+import { logger } from "./utils/logger";
 import { audioCache } from "./utils/ttsService";
 import { useConfigStore } from "./stores/configStore";
 
 type RightTab = "proofread" | "task";
 type MobileTab = "novels" | "chapters" | "reader" | "task" | "settings";
 
+const VISITED_KEY = "proofreader_has_visited";
+
+function hasVisited(): boolean {
+	try {
+		return localStorage.getItem(VISITED_KEY) === "true";
+	} catch {
+		return false;
+	}
+}
+
+function markAsVisited(): void {
+	try {
+		localStorage.setItem(VISITED_KEY, "true");
+	} catch {
+		console.warn("Failed to save visited state to localStorage");
+	}
+}
+
 export default function App() {
-	// 初始化时检查 URL 参数，如果有 bookId 参数则不显示主页
 	const urlParams = new URLSearchParams(window.location.search);
 	const hasBookIdParam = urlParams.has("bookId");
-	const [showHome, setShowHome] = useState(!hasBookIdParam);
+	const [showHome, setShowHome] = useState(!hasVisited() && !hasBookIdParam);
 	const novels = useAppStore((s) => s.novels);
 	const currentNovelId = useAppStore((s) => s.currentNovelId);
 	const setChapters = useAppStore((s) => s.setChapters);
@@ -46,10 +64,14 @@ export default function App() {
 	const setShowCharacterSettings = useAppStore((s) => s.setShowCharacterSettings);
 	const [configOpen, setConfigOpen] = useState(false);
 	const [rightTab, setRightTab] = useState<RightTab>("proofread");
-	const [mobileTab, setMobileTab] = useState<MobileTab>("reader");
+	const [mobileTab, setMobileTab] = useState<MobileTab>("novels");
 	const [isMobile, setIsMobile] = useState(false);
 
-	// 检测是否为移动端
+	const handleStartApp = useCallback(() => {
+		markAsVisited();
+		setShowHome(false);
+	}, []);
+
 	useEffect(() => {
 		const checkMobile = () => {
 			setIsMobile(window.innerWidth <= 768);
@@ -63,18 +85,15 @@ export default function App() {
 		document.documentElement.setAttribute("data-theme", theme);
 	}, [theme]);
 
-	// 监听音频缓存持久化配置变化
 	const audioCachePersistent = useConfigStore((s) => s.ttsConfig.audioCachePersistent);
 	useEffect(() => {
 		audioCache.setPersistent(audioCachePersistent);
 	}, [audioCachePersistent]);
 
-	// 加载保存的小说（如果本地存储中没有）
 	useEffect(() => {
 		if (novels.length === 0) {
 			loadNovelsFromStorage().then(async (storedFileNames) => {
 				if (storedFileNames.length > 0) {
-					// 逐个加载小说内容
 					const loadedNovels: typeof novels = [];
 					for (const fileName of storedFileNames) {
 						const content = await loadNovelContent(fileName);
@@ -108,7 +127,6 @@ export default function App() {
 		}
 	}, [novels.length]);
 
-	// 初始化：从 URL 参数恢复状态
 	useEffect(() => {
 		const params = parseURLParams();
 		const bookId = params.bookId;
@@ -133,7 +151,6 @@ export default function App() {
 				} else {
 					setReadingMode(false);
 				}
-				// 如果有参数，隐藏主页
 				setShowHome(false);
 				return true;
 			}
@@ -152,7 +169,6 @@ export default function App() {
 		}
 	}, [novels, selectNovel, setCurrentChapterIndex, setReadingMode, setShowHome]);
 
-	// 状态变化时同步到 URL
 	useEffect(() => {
 		if (!currentNovelId) return;
 		const novel = novels.find((n) => n.id === currentNovelId);
@@ -165,7 +181,7 @@ export default function App() {
 		});
 	}, [currentNovelId, currentChapterIndex, readingMode, novels]);
 
-		const handleTitleClick = useCallback((e: React.MouseEvent) => {
+	const handleTitleClick = useCallback((e: React.MouseEvent) => {
 		e.preventDefault();
 		setShowHome(true);
 		if (isMobile) {
@@ -215,14 +231,12 @@ export default function App() {
 		input.click();
 	};
 
-	/** 导出修改后的版本（另存为） */
 	const handleExportAsNew = async () => {
 		const novel = novels.find((n) => n.id === currentNovelId);
 		if (!novel) return;
 		await exportToFile(novel.fullText, `${novel.name}.txt`);
 	};
 
-	/** 保存到原文件 */
 	const handleSaveToOriginal = async () => {
 		const novel = novels.find((n) => n.id === currentNovelId);
 		if (!novel) return;
@@ -240,50 +254,45 @@ export default function App() {
 		}
 	};
 
-	/** 导出整本小说为 TXT */
 	const handleExportNovel = async () => {
 		const novel = novels.find((n) => n.id === currentNovelId);
 		if (!novel) return;
 		await exportToFile(novel.fullText, `${novel.name}_edited.txt`);
 	};
 
-	/** 手动保存缓存 */
 	const handleSaveCache = async () => {
 		saveCache();
 		const novel = novels.find((n) => n.id === currentNovelId);
 		if (novel?.fullText) {
 			await saveNovelToStorage(ensureTxtFilename(novel.name), novel.fullText);
 		}
-		// 显示保存成功的提示
 		const now = new Date();
 		const timeStr = now.toLocaleTimeString("zh-CN", {
 			hour: "2-digit",
 			minute: "2-digit",
 			second: "2-digit",
 		});
-		console.log(`缓存已保存！\n保存时间：${timeStr}`);
+		logger.file("缓存已保存！", `保存时间：${timeStr}`);
 	};
 
-	/** 导出所有数据 */
 	const handleExportAllData = async () => {
 		const state = useAppStore.getState();
+		const includeSensitiveData = confirm("是否在导出文件中包含 API 密钥等敏感信息？\n\n选择「确定」将包含敏感信息，选择「取消」则不包含。");
 		await exportAllData({
 			novels: state.novels,
 			aiConfig: {
 				...state.aiConfig,
-				apiKey: "[REDACTED]", // 不导出敏感信息
+				apiKey: includeSensitiveData ? state.aiConfig.apiKey : "[REDACTED]",
 			},
 			apiUsage: state.apiUsage,
 			novelCategories: state.novelCategories,
 			readingProgress: state.readingProgress,
-			proofreadProgress: state.proofreadProgress,
 			ignoredWords: state.ignoredWords,
 			exportTime: formatDateTime(Date.now()),
 			version: "0.9.0",
 		});
 	};
 
-	// 移动端标签切换
 	const handleMobileTabChange = (tab: MobileTab) => {
 		setMobileTab(tab);
 		if (tab === "task") {
@@ -294,10 +303,9 @@ export default function App() {
 	return (
 		<div className="app">
 			{showHome ? (
-				<HomePage onStart={() => setShowHome(false)} />
+				<HomePage onStart={handleStartApp} />
 			) : (
 				<>
-					{/* 顶部栏 */}
 					<header className="app-header">
 				<div className="header-left">
 					<h1 className="app-title">
@@ -398,9 +406,7 @@ export default function App() {
 				</div>
 			</header>
 
-			{/* 主体布局 - 响应式 */}
 			<div className={`app-body ${isMobile && readingMode ? "app-body-reading-mode" : ""}`}>
-				{/* 最左：小说列表 - 桌面端阅读模式隐藏 */}
 				<aside
 					className={`app-novel-list ${isMobile && mobileTab === "novels" ? "mobile-active" : ""} ${!isMobile && readingMode ? "hidden-panel" : ""}`}
 				>
@@ -409,7 +415,6 @@ export default function App() {
 					/>
 				</aside>
 
-				{/* 左二：章节导航 - 桌面端阅读模式隐藏 */}
 				<aside
 					className={`app-sidebar ${isMobile && mobileTab === "chapters" ? "mobile-active" : ""} ${!isMobile && readingMode ? "hidden-panel" : ""}`}
 				>
@@ -418,11 +423,9 @@ export default function App() {
 					/>
 				</aside>
 
-				{/* 中间：阅读区（桌面端） */}
 				<main
 					className={`app-main ${rightTab === "task" ? "task-mode" : ""} ${isMobile && mobileTab === "reader" ? "" : isMobile ? "hidden" : ""} ${!isMobile && readingMode ? "" : ""}`}
 				>
-					{/* 移动端：阅读区 + 校对区合并 */}
 					{isMobile && mobileTab === "reader" && (
 						<div className="mobile-reader-proofread">
 							<div className="mobile-reader-section">
@@ -437,11 +440,9 @@ export default function App() {
 							)}
 						</div>
 					)}
-					{/* 桌面端：仅显示阅读区 */}
 					{!isMobile && <ReaderPanel showReadingModeToggle={true} isMobile={isMobile} />}
 				</main>
 
-				{/* 右侧：校对 / 任务（桌面端）- 桌面端阅读模式隐藏 */}
 				<aside
 					className={`app-right ${rightTab === "task" ? "task-mode" : ""} ${isMobile && mobileTab === "task" ? "mobile-active" : ""} ${!isMobile && readingMode ? "hidden-panel" : ""}`}
 				>
@@ -473,7 +474,6 @@ export default function App() {
 				</aside>
 			</div>
 
-			{/* 移动端底部标签栏 */}
 			{isMobile && (
 				<>
 					<div className="mobile-tab-bar">
@@ -510,9 +510,7 @@ export default function App() {
 				</>
 			)}
 
-			{/* 设置弹窗 */}
 			<ConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
-			{/* 角色设置弹窗 */}
 			{showCharacterSettings && (
 						<CharacterSettings
 							novelId={showCharacterSettings}

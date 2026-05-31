@@ -4,7 +4,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Novel, Chapter, AIConfig, AIProvider, AppTab, ProofreadQueueItem, ProofreadProgress, APIUsage, NovelCategory, CharacterInfo, CharacterRelationship } from "../types";
-import { setLoggerEnabled } from "../utils/logger";
+import { setLoggerEnabled, logger } from "../utils/logger";
 import { saveNovelToStorage, saveCharacterConfigToStorage, getCharacterConfigFileName } from "../utils/fileExport";
 
 // 剧本改编结果类型
@@ -622,7 +622,7 @@ export const useAppStore = create<AppState>()(
 
 							// 如果 oldText 和 newText 相同，不需要替换
 							if (oldText === newText) {
-								console.log(`[appStore] replaceParagraphText skip: oldText === newText, chapterId=${chapterId}, paragraphIndex=${paragraphIndex}`);
+								logger.debug(`[appStore] replaceParagraphText skip: oldText === newText, chapterId=${chapterId}, paragraphIndex=${paragraphIndex}`);
 								return ch;
 							}
 
@@ -634,11 +634,11 @@ export const useAppStore = create<AppState>()(
 									const before = para.slice(0, startIndex);
 									const after = para.slice(endIndex);
 									const newPara = before + newText + after;
-									console.log(`[appStore] replaceParagraphText (exact position): paragraphIndex=${paragraphIndex}, startIndex=${startIndex}, endIndex=${endIndex}, oldText="${oldText}", newText="${newText}"`);
+									logger.debug(`[appStore] replaceParagraphText (exact position): paragraphIndex=${paragraphIndex}, startIndex=${startIndex}, endIndex=${endIndex}, oldText="${oldText}", newText="${newText}"`);
 									para = newPara;
 									replaced = true;
 								} else {
-									console.log(`[appStore] replaceParagraphText position mismatch: expected "${oldText}", actual "${actualText}"`);
+									logger.debug(`[appStore] replaceParagraphText position mismatch: expected "${oldText}", actual "${actualText}"`);
 									// 位置不匹配，降级使用 indexOf 查找
 								}
 							}
@@ -661,18 +661,18 @@ export const useAppStore = create<AppState>()(
 								
 								// 【重要】如果预期位置附近找不到，不使用全局indexOf
 								// 避免错误地匹配到段落中其他相同的文本
-								console.log(`[appStore] replaceParagraphText: paragraphIndex=${paragraphIndex}, oldText="${oldText}", newText="${newText}", foundIdx=${foundIdx}, expectedStart=${startIndex}, para length=${para.length}`);
+								logger.debug(`[appStore] replaceParagraphText: paragraphIndex=${paragraphIndex}, oldText="${oldText}", newText="${newText}", foundIdx=${foundIdx}, expectedStart=${startIndex}, para length=${para.length}`);
 								if (foundIdx >= 0) {
 									const before = para.slice(0, foundIdx);
 									const after = para.slice(foundIdx + oldText.length);
 									const newPara = before + newText + after;
-									console.log(`[appStore] replaceParagraphText: before="${before.slice(-20)}", after="${after.slice(0, 20)}", newPara length=${newPara.length}`);
+									logger.debug(`[appStore] replaceParagraphText: before="${before.slice(-20)}", after="${after.slice(0, 20)}", newPara length=${newPara.length}`);
 									para = newPara;
 									replaced = true;
 								} else {
 									// 如果预期位置附近找不到，不进行替换
 									// 避免错误地匹配到段落中其他相同的文本
-									console.log(`[appStore] replaceParagraphText not found near expected position: oldText="${oldText}", newText="${newText}", chapterId=${chapterId}, paragraphIndex=${paragraphIndex}, expectedStart=${startIndex}`);
+									logger.debug(`[appStore] replaceParagraphText not found near expected position: oldText="${oldText}", newText="${newText}", chapterId=${chapterId}, paragraphIndex=${paragraphIndex}, expectedStart=${startIndex}`);
 								}
 							}
 
@@ -704,7 +704,7 @@ export const useAppStore = create<AppState>()(
 				if (replaced) {
 					const state = get();
 					const novel = state.novels.find(n => n.id === state.currentNovelId);
-					console.log('[appStore] replaceParagraphText saving, novel:', novel?.name, 'fullText length:', novel?.fullText?.length);
+					logger.file('[appStore] replaceParagraphText saving, novel:', novel?.name, 'fullText length:', novel?.fullText?.length);
 					if (novel) {
 						void saveNovelToStorage(`${novel.name}.txt`, novel.fullText);
 					}
@@ -798,7 +798,7 @@ export const useAppStore = create<AppState>()(
 				if (replacedCount > 0) {
 					const state = get();
 					const novel = state.novels.find(n => n.id === state.currentNovelId);
-					console.log('[appStore] replaceParagraphTextBatch saving, replaced:', replacedCount, 'novel:', novel?.name);
+					logger.file('[appStore] replaceParagraphTextBatch saving, replaced:', replacedCount, 'novel:', novel?.name);
 					if (novel) {
 						void saveNovelToStorage(`${novel.name}.txt`, novel.fullText);
 					}

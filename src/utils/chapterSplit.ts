@@ -1,52 +1,77 @@
 // ============================================================
-// 章节识别与分割
+// 章节识别与分割（支持分卷小说）
 // ============================================================
 import type { Chapter } from "../types";
+import { logger } from "./logger";
 
-/** 常见章节标题正则（捕获组包含序号 + 章节名） */
+/** 卷名正则 */
+const VOLUME_PATTERNS = [
+	/(?:^|\n)\s*(第[一二三四五六七八九十百千万零\d]+卷(?:[ \t]+[^\n]+)?)/g,
+	/(?:^|\n)\s*(卷[一二三四五六七八九十百千万零\d]+(?:[ \t]+[^\n]+)?)/g,
+	/(?:^|\n)\s*(Vol\.?\s*\d+(?:[ \t]+[^\n]+)?)/gi,
+	/(?:^|\n)\s*(Volume\s*\d+(?:[ \t]+[^\n]+)?)/gi,
+];
+
+/** 章节名正则 */
 const CHAPTER_PATTERNS = [
-	// 中文章节：第X章 + 可选章节名
-	/(?:^|\n)\s*(第[一二三四五六七八九十百千万零\d]+[章回节卷部篇](?:\s*[^\n]*)?)/g,
-	// 序章/序言/前言/引子/楔子 + 可选章节名
-	/(?:^|\n)\s*(序章|序言|前言|引子|楔子|尾声|后记|番外|结局(?:\s*[^\n]*)?)/g,
-	// 英文章节
-	/(?:^|\n)\s*(Chapter\s+\d+[^\n]*)/gi,
-	/(?:^|\n)\s*(PROLOGUE|EPILOGUE|AFTERWORD[^\n]*)/gi,
+	/(?:^|\n)\s*(第[一二三四五六七八九十百千万零\d]+[章回节部篇](?:[ \t]+[^\n]+)?)/g,
+	/(?:^|\n)\s*(序章|序言|前言|引子|楔子|尾声|后记|番外(?:[一二三四五六七八九十\d]+)?(?:[ \t]+[^\n]+)?|结局(?:[ \t]+[^\n]+)?)/g,
+	/(?:^|\n)\s*(Chapter\s+\d+(?:[ \t]+[^\n]+)?)/gi,
+	/(?:^|\n)\s*(PROLOGUE|EPILOGUE|AFTERWORD(?:[ \t]+[^\n]+)?)/gi,
 ];
 
 /** 按字符数强制分割的阈值 */
 const DEFAULT_CHUNK_SIZE = 5000;
 
+interface MatchItem {
+	title: string;
+	index: number;
+	isVolume: boolean;
+}
+
 /**
- * 从全文中识别章节并分割
+ * 从全文中识别章节并分割（支持分卷小说）
  */
 export function splitChapters(
 	fullText: string,
 	chunkSize = DEFAULT_CHUNK_SIZE,
 ): Chapter[] {
-	// 收集所有匹配到的章节标题及其位置
-	const matches: { title: string; index: number }[] = [];
+	const matches: MatchItem[] = [];
 
-	for (const pattern of CHAPTER_PATTERNS) {
-		// 每次使用前重置 lastIndex（因为 /g flag）
+	// 收集所有卷名匹配
+	for (const pattern of VOLUME_PATTERNS) {
 		pattern.lastIndex = 0;
 		let m: RegExpExecArray | null;
 		while ((m = pattern.exec(fullText)) !== null) {
 			matches.push({
 				title: m[1].trim(),
 				index: m.index,
+				isVolume: true,
 			});
 		}
 	}
 
-	// 去重（同一位置可能被多个正则匹配）并按位置排序
-	const unique = new Map<number, string>();
-	for (const m of matches) {
-		if (!unique.has(m.index)) {
-			unique.set(m.index, m.title);
+	// 收集所有章节名匹配
+	for (const pattern of CHAPTER_PATTERNS) {
+		pattern.lastIndex = 0;
+		let m: RegExpExecArray | null;
+		while ((m = pattern.exec(fullText)) !== null) {
+			matches.push({
+				title: m[1].trim(),
+				index: m.index,
+				isVolume: false,
+			});
 		}
 	}
-	const sorted = Array.from(unique.entries()).sort((a, b) => a[0] - b[0]);
+
+	// 去重并按位置排序
+	const unique = new Map<number, MatchItem>();
+	for (const m of matches) {
+		if (!unique.has(m.index)) {
+			unique.set(m.index, m);
+		}
+	}
+	const sorted = Array.from(unique.values()).sort((a, b) => a.index - b.index);
 
 	// 如果没有匹配到任何章节，按 chunkSize 强制分割
 	if (sorted.length === 0) {
@@ -68,35 +93,91 @@ export function splitChapters(
 		return chapters;
 	}
 
-	// 构建章节列表
+	// 构建章节列表，为每个章节找到所属卷
 	const chapters: Chapter[] = [];
+
 	for (let i = 0; i < sorted.length; i++) {
-		const [startIdx, title] = sorted[i];
-		const endIdx = i + 1 < sorted.length ? sorted[i + 1][0] : fullText.length;
-		chapters.push({
-			id: i + 1,
-			title,
-			startIndex: startIdx,
-			endIndex: endIdx,
-			content: fullText.slice(startIdx, endIdx),
-		});
+		const match = sorted[i];
+		const endIdx = i + 1 < sorted.length ? sorted[i + 1].index : fullText.length;
+
+		if (match.isVolume) {
+			// 这是一个卷名
+			chapters.push({
+				id: chapters.length,
+				title: match.title,
+				startIndex: match.index,
+				endIndex: endIdx,
+				content: fullText.slice(match.index, endIdx),
+				isVolume: true,
+			});
+		} else {
+			// 这是一个章节名，找到所属卷
+			let parentId: number | undefined = undefined;
+
+			// 向前查找最近的卷名
+			for (let j = i - 1; j >= 0; j--) {
+				if (sorted[j].isVolume) {
+					// 找到卷名对应的章节 ID
+					parentId = chapters.findIndex(ch => ch.startIndex === sorted[j].index && ch.isVolume);
+					if (parentId >= 0) {
+						parentId = chapters[parentId].id;
+					}
+					break;
+				}
+			}
+
+			chapters.push({
+				id: chapters.length,
+				title: match.title,
+				startIndex: match.index,
+				endIndex: endIdx,
+				content: fullText.slice(match.index, endIdx),
+				isVolume: false,
+				parentId: parentId,
+			});
+		}
 	}
 
 	// 如果第一个章节之前还有内容，作为"前言"
-	if (sorted[0][0] > 0) {
-		const preamble = fullText.slice(0, sorted[0][0]).trim();
+	if (sorted[0].index > 0) {
+		const preamble = fullText.slice(0, sorted[0].index).trim();
 		if (preamble.length > 0) {
 			chapters.unshift({
 				id: 0,
 				title: "前言",
 				startIndex: 0,
-				endIndex: sorted[0][0],
+				endIndex: sorted[0].index,
 				content: preamble,
+				isVolume: false,
 			});
-			// 重新编号
-			chapters.forEach((ch, idx) => (ch.id = idx));
 		}
 	}
+
+	// 重新编号并修复所有 parentId
+	chapters.forEach((ch, idx) => (ch.id = idx));
+	for (let i = 0; i < chapters.length; i++) {
+		const ch = chapters[i];
+		if (!ch.isVolume) {
+			// 向前查找最近的卷
+			let foundParentId: number | undefined = undefined;
+			for (let j = i - 1; j >= 0; j--) {
+				if (chapters[j].isVolume) {
+					foundParentId = chapters[j].id;
+					break;
+				}
+			}
+			ch.parentId = foundParentId;
+		}
+	}
+
+	logger.debug("[splitChapters] 最终章节划分结果:", chapters.map(ch => ({
+		id: ch.id,
+		title: ch.title,
+		isVolume: ch.isVolume,
+		parentId: ch.parentId,
+		startIndex: ch.startIndex,
+		endIndex: ch.endIndex
+	})));
 
 	return chapters;
 }
@@ -121,7 +202,6 @@ export function splitTextChunks(text: string, maxChars: number): string[] {
 	for (const para of paragraphs) {
 		if (current.length + para.length + 2 > maxChars) {
 			if (current.length > 0) chunks.push(current);
-			// 如果单个段落就超过 maxChars，强制按字符截断
 			if (para.length > maxChars) {
 				let offset = 0;
 				while (offset < para.length) {

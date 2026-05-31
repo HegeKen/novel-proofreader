@@ -24,6 +24,8 @@ export interface Chapter {
 	startIndex: number;
 	endIndex: number;
 	content: string;
+	isVolume?: boolean;
+	parentId?: number;
 }
 
 /** AI 模型配置 */
@@ -37,7 +39,7 @@ export interface AIConfig {
 }
 
 /** 错误类型 */
-export type ErrorType = "typo" | "format" | "grammar" | "punctuation" | "network";
+export type ErrorType = "typo" | "format" | "grammar" | "punctuation" | "network" | "timeout";
 
 /** 单个检测错误 */
 export interface ProofreadError {

@@ -11,6 +11,7 @@ import {
 	PROOFREAD_SYSTEM_PROMPT,
 	PROOFREAD_SYSTEM_PROMPT_CHAPTER,
 	buildProofreadUserPrompt,
+	buildProofreadSystemPrompt,
 	extractJSON,
 } from "../utils/aiClient";
 import { logger } from "../utils/logger";
@@ -20,7 +21,7 @@ import type {
 	CheckGranularity,
 } from "../types";
 
-const MAX_CONCURRENT_BATCHES = 3;
+const MAX_CONCURRENT_BATCHES = 5;
 
 export function useAICheck() {
 	const aiConfig = useAppStore((s) => s.aiConfig);
@@ -42,7 +43,7 @@ export function useAICheck() {
 			const chapter = chapters[currentChapterIndex];
 			if (!chapter) return;
 
-			console.log(`[useAICheck] checkChapter 开始: chapterIndex=${currentChapterIndex + 1}, granularity=${granularity}, startFrom=${startFrom} (第 ${startFrom + 1} 段)`);
+			logger.proofread(`checkChapter 开始: chapterIndex=${currentChapterIndex + 1}, granularity=${granularity}, startFrom=${startFrom} (第 ${startFrom + 1} 段)`);
 			logger.proofread(`开始校对第 ${currentChapterIndex + 1} 章, 粒度: ${granularity}, 从第 ${startFrom + 1} 段开始`);
 
 			// 取消之前的请求
@@ -64,7 +65,7 @@ export function useAICheck() {
 				// 分批次发送（每批字符数不超过550，防止请求过大导致失败）
 				// 重要：保留原始段落索引（包含空段落），与阅读区保持一致
 				const paragraphs = splitParagraphs(text);
-				console.log(`[useAICheck] 段落分割完成: 总段落数=${paragraphs.length}, startFrom=${startFrom}`);
+				logger.proofread(`段落分割完成: 总段落数=${paragraphs.length}, startFrom=${startFrom}`);
 				const MAX_CHARS_PER_BATCH = 450;
 
 				// 初始化每个段落的结果（保留原始索引）
@@ -101,14 +102,14 @@ export function useAICheck() {
 					batches.push({ start: batchStart, end: paragraphs.length });
 				}
 
-				console.log(`[useAICheck] 批次构建完成: 总批次数=${batches.length}, 批次详情:`, batches.map((b, idx) => `批次${idx+1}: ${b.start}-${b.end}`).join(', '));
+				logger.proofread(`批次构建完成: 总批次数=${batches.length}, 批次详情:`, batches.map((b, idx) => `批次${idx+1}: ${b.start}-${b.end}`).join(', '));
 				logger.proofread(`共分为 ${batches.length} 批处理`);
 
 				// 多线程并发处理批次（限制最大并发数为 MAX_CONCURRENT_BATCHES）
 				const processBatch = async (batch: { start: number; end: number }) => {
 					if (controller.signal.aborted) return;
 
-					console.log(`[useAICheck] 处理批次: start=${batch.start}, end=${batch.end}`);
+					logger.proofread(`处理批次: start=${batch.start}, end=${batch.end}`);
 
 					// 更新该批次段落的状态为 checking
 					for (let i = batch.start; i < batch.end; i++) {
@@ -126,7 +127,7 @@ export function useAICheck() {
 							}
 						}
 
-						console.log(`[useAICheck] 发送请求给大模型: textByLine 行号列表=[${Object.keys(textByLine).join(', ')}], 字符总数=${JSON.stringify(textByLine).length}`);
+						logger.proofread(`发送请求给大模型: textByLine 行号列表=[${Object.keys(textByLine).join(', ')}], 字符总数=${JSON.stringify(textByLine).length}`);
 
 						const messages = [
 							{ role: "system" as const, content: promptConfig.proofreadChapter || PROOFREAD_SYSTEM_PROMPT_CHAPTER },
@@ -136,7 +137,7 @@ export function useAICheck() {
 							},
 						];
 
-						console.log(`[useAICheck] 发送请求: 批次 ${batch.start}-${batch.end}, 发送的行号:`, Object.keys(textByLine));
+						logger.proofread(`发送请求: 批次 ${batch.start}-${batch.end}, 发送的行号:`, Object.keys(textByLine));
 
 						const reply = await sendChatCompletion(
 							messages,
@@ -174,7 +175,7 @@ export function useAICheck() {
 							const matchText = find || orig;
 							const correctText = replace || corr;
 
-							console.log(`[useAICheck] 解析错误: matchText="${matchText}", correctText="${correctText}", lineNumber=${lineNumber}, aiStart=${aiStart}, aiEnd=${aiEnd}`);
+							logger.proofread(`解析错误: matchText="${matchText}", correctText="${correctText}", lineNumber=${lineNumber}, aiStart=${aiStart}, aiEnd=${aiEnd}`);
 
 							if (!matchText) continue;
 
@@ -191,7 +192,7 @@ export function useAICheck() {
 								const foundLine = paragraphs.findIndex((p, idx) =>
 									idx >= batch.start && idx < batch.end && p.includes(matchText)
 								);
-								console.log(`[useAICheck] 行号检查: lineNumber=${lineNumber}, batch=${batch.start}-${batch.end}, foundLine=${foundLine}`);
+								logger.proofread(`行号检查: lineNumber=${lineNumber}, batch=${batch.start}-${batch.end}, foundLine=${foundLine}`);
 								if (foundLine < 0) {
 									console.warn(`[useAICheck] 批次 ${batch.start}-${batch.end} 中无法找到包含 "${matchText}" 的段落`);
 									continue;
@@ -222,7 +223,7 @@ export function useAICheck() {
 									charCount += para.length;
 								}
 
-								console.log(`[useAICheck] 全局索引转换: aiStart=${aiStart}, aiEnd=${aiEnd}, foundParaIdx=${foundParaIdx}, paraStartIdx=${paraStartIdx}`);
+								logger.proofread(`全局索引转换: aiStart=${aiStart}, aiEnd=${aiEnd}, foundParaIdx=${foundParaIdx}, paraStartIdx=${paraStartIdx}`);
 
 								// 如果找到对应的段落且与当前行号匹配
 								if (foundParaIdx === lineNumber && paraStartIdx >= 0) {
@@ -235,7 +236,7 @@ export function useAICheck() {
 											endIdx = paraEndIdx;
 										} else {
 											// 位置不匹配，降级使用 indexOf
-											console.log(`[useAICheck] 全局索引位置不匹配: 期望 "${matchText}"，实际 "${actualText}"，降级使用 indexOf`);
+											logger.proofread(`全局索引位置不匹配: 期望 "${matchText}"，实际 "${actualText}"，降级使用 indexOf`);
 											const idx = targetPara.indexOf(matchText);
 											if (idx < 0) {
 												console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${matchText}"`);
@@ -246,7 +247,7 @@ export function useAICheck() {
 										}
 									} else {
 										// 位置超出段落范围，降级使用 indexOf
-										console.log(`[useAICheck] 全局索引超出段落范围: paraEndIdx=${paraEndIdx}, paraLength=${targetPara.length}`);
+										logger.proofread(`全局索引超出段落范围: paraEndIdx=${paraEndIdx}, paraLength=${targetPara.length}`);
 										const idx = targetPara.indexOf(matchText);
 										if (idx < 0) {
 											console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${matchText}"`);
@@ -257,7 +258,7 @@ export function useAICheck() {
 									}
 								} else {
 									// 全局索引转换失败或段落不匹配，降级使用 indexOf
-									console.log(`[useAICheck] 全局索引转换失败: foundParaIdx=${foundParaIdx}, lineNumber=${lineNumber}`);
+									logger.proofread(`全局索引转换失败: foundParaIdx=${foundParaIdx}, lineNumber=${lineNumber}`);
 									const idx = targetPara.indexOf(matchText);
 									if (idx < 0) {
 										console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${matchText}"`);
@@ -326,26 +327,27 @@ export function useAICheck() {
 				};
 
 				// 使用 Promise 池实现多线程并发处理
-				const runningBatches: Promise<void>[] = [];
+				let activeCount = 0;
+				const results: Promise<void>[] = [];
 				for (const batch of batches) {
 					if (controller.signal.aborted) break;
 					// 等待直到有空闲槽位
-					if (runningBatches.length >= MAX_CONCURRENT_BATCHES) {
-						await Promise.race(runningBatches);
+					while (activeCount >= MAX_CONCURRENT_BATCHES) {
+						await new Promise(resolve => setTimeout(resolve, 100));
 					}
-					const batchPromise = processBatch(batch).then(() => {
-						const idx = runningBatches.indexOf(batchPromise);
-						if (idx > -1) runningBatches.splice(idx, 1);
+					activeCount++;
+					const promise = processBatch(batch).finally(() => {
+						activeCount--;
 					});
-					runningBatches.push(batchPromise);
+					results.push(promise);
 				}
 				// 等待所有批次完成
-				await Promise.all(runningBatches);
+				await Promise.all(results);
 			} else {
 				// 按段落 或 按行检测
 				const allLines = splitParagraphs(text);
 				const filteredItems = allLines.filter((p) => p.trim() !== "");
-				console.log(`[useAICheck] 非chapter粒度: 总行数=${allLines.length}, 过滤后行数=${filteredItems.length}, startFrom=${startFrom}`);
+				logger.proofread(`非chapter粒度: 总行数=${allLines.length}, 过滤后行数=${filteredItems.length}, startFrom=${startFrom}`);
 				// 建立过滤后索引到原始索引的映射
 				const indexMap: number[] = [];
 				allLines.forEach((line, i) => {
@@ -353,7 +355,7 @@ export function useAICheck() {
 						indexMap.push(i);
 					}
 				});
-				console.log(`[useAICheck] 索引映射: indexMap前20项=[${indexMap.slice(0, 20).join(', ')}]...`);
+				logger.proofread(`索引映射: indexMap前20项=[${indexMap.slice(0, 20).join(', ')}]...`);
 				// 关键修复：初始化所有段落（包括空段落），确保数组索引与原始段落索引一致
 				const initial: ParagraphResult[] = allLines.map((p, originalIndex) => {
 					// 找到该段落在过滤后的索引
@@ -393,7 +395,7 @@ export function useAICheck() {
 					// 使用原始段落索引（关键修复）
 					const originalIndex = indexMap[i];
 
-					console.log(`[useAICheck] 检测第 ${i + 1} 项: filteredIndex=${i}, originalIndex=${originalIndex}, startFrom=${startFrom}`);
+					logger.proofread(`检测第 ${i + 1} 项: filteredIndex=${i}, originalIndex=${originalIndex}, startFrom=${startFrom}`);
 
 					updateParagraphResult(chapter.id, originalIndex, { status: "checking" });
 
@@ -405,20 +407,58 @@ export function useAICheck() {
 							continue;
 						}
 
-						console.log(`[useAICheck] 发送请求: filteredIndex=${i}, originalIndex=${originalIndex}, 文本长度=${item.length}`);
+						logger.proofread(`发送请求: filteredIndex=${i}, originalIndex=${originalIndex}, 文本长度=${item.length}`);
 
+						// 只传输当前段落实际包含的 ignoredWords，减少 token 消耗
+						const relevantIgnoredWords = ignoredWords.filter(word => word && item.includes(word));
+						logger.proofread(`段落包含的 ignoredWords: ${relevantIgnoredWords.length}/${ignoredWords.length} - ${relevantIgnoredWords.join('、')}`);
+
+						const systemPrompt = buildProofreadSystemPrompt(
+							promptConfig.proofread || PROOFREAD_SYSTEM_PROMPT,
+							relevantIgnoredWords,
+						);
 						const messages = [
-							{ role: "system" as const, content: promptConfig.proofread || PROOFREAD_SYSTEM_PROMPT },
+							{ role: "system" as const, content: systemPrompt },
 							{
 								role: "user" as const,
-								content: buildProofreadUserPrompt(item, ignoredWords),
+								content: buildProofreadUserPrompt(item, relevantIgnoredWords),
 							},
 						];
-						const reply = await sendChatCompletion(
-							messages,
-							aiConfig,
-							controller.signal,
-						);
+
+						// 添加 5 秒超时
+						const timeoutPromise = new Promise<never>((_, reject) => {
+							setTimeout(() => reject(new Error('PROOFREAD_TIMEOUT')), 5000);
+						});
+
+						let reply: string;
+						try {
+							reply = await Promise.race([
+								sendChatCompletion(messages, aiConfig, controller.signal),
+								timeoutPromise
+							]);
+						} catch (timeoutErr) {
+							if ((timeoutErr as Error).message === 'PROOFREAD_TIMEOUT') {
+								const currentItem = filteredItems[i] || "";
+								const timeoutError: ProofreadError = {
+									id: `err-${chapter.id}-${originalIndex}-timeout-${Date.now()}`,
+									startIndex: 0,
+									endIndex: 0,
+									errorType: "timeout",
+									suggestion: "请求超时（5秒），已跳过此段落",
+									originalText: currentItem.slice(0, 50),
+									correctedText: "",
+									applied: false,
+									skipped: false,
+								};
+								updateParagraphResult(chapter.id, originalIndex, {
+									errors: [timeoutError],
+									status: "error",
+									errorMessage: "请求超时（5秒）",
+								});
+								continue;
+							}
+							throw timeoutErr;
+						}
 						const raw = extractJSON(reply);
 
 						const errors: ProofreadError[] = [];
@@ -447,6 +487,13 @@ export function useAICheck() {
 
 							// 校验：matchText 和 correctText 必须不同（去除空白字符后也不能相同）
 							if (matchText === correctText || matchText.replace(/\s/g, '') === correctText.replace(/\s/g, '')) continue;
+
+							// 强约束：忽略词列表中的词语不标记为错误
+							const isIgnored = ignoredWords.some(word => {
+								if (!word) return false;
+								return matchText.includes(word) || word.includes(matchText);
+							});
+							if (isIgnored) continue;
 
 							// 优先使用AI返回的位置，否则用indexOf查找
 							let startIdx: number;
@@ -529,11 +576,13 @@ export function useAICheck() {
 			getIgnoredWords,
 			getCharacters,
 			saveProofreadProgress,
+			promptConfig.proofread,
+			promptConfig.proofreadChapter,
 		],
 	);
 
 	const cancelCheck = useCallback(() => {
-		console.log(`[useAICheck] cancelCheck 被调用，立即中断所有请求`);
+		logger.proofread(`cancelCheck 被调用，立即中断所有请求`);
 		abortRef.current?.abort();
 		
 		// 立即更新所有正在检查的段落状态为 pending
@@ -545,7 +594,7 @@ export function useAICheck() {
 					updateParagraphResult(chapter.id, index, { status: "pending" });
 				}
 			});
-			console.log(`[useAICheck] 已将所有段落状态重置为 pending`);
+			logger.proofread(`已将所有段落状态重置为 pending`);
 		}
 	}, [chapters, currentChapterIndex, updateParagraphResult]);
 
@@ -607,11 +656,19 @@ export function useAICheck() {
 			});
 
 			try {
+				// 只传输当前段落实际包含的 ignoredWords，减少 token 消耗
+				const relevantIgnoredWords = ignoredWords.filter(word => word && lineText.includes(word));
+				logger.proofread(`段落包含的 ignoredWords: ${relevantIgnoredWords.length}/${ignoredWords.length} - ${relevantIgnoredWords.join('、')}`);
+				
+				const systemPrompt = buildProofreadSystemPrompt(
+					promptConfig.proofread || PROOFREAD_SYSTEM_PROMPT,
+					relevantIgnoredWords,
+				);
 				const messages = [
-					{ role: "system" as const, content: promptConfig.proofread || PROOFREAD_SYSTEM_PROMPT },
+					{ role: "system" as const, content: systemPrompt },
 					{
 						role: "user" as const,
-						content: buildProofreadUserPrompt(lineText, ignoredWords),
+						content: buildProofreadUserPrompt(lineText, relevantIgnoredWords),
 					},
 				];
 				const reply = await sendChatCompletion(messages, aiConfig);
@@ -695,6 +752,7 @@ export function useAICheck() {
 			setResults,
 			updateParagraphResult,
 			getIgnoredWords,
+			promptConfig.proofread,
 		],
 	);
 

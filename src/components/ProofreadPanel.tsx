@@ -13,6 +13,7 @@ import { Select } from "./Select";
 import { IgnoredWordsManager } from "./IgnoredWordsManager";
 import { ToastContainer } from "./Toast";
 import { ProofreadQueuePanel } from "./ProofreadQueuePanel";
+import { logger } from "../utils/logger";
 import type { ToastMessage } from "./Toast";
 import type { CheckGranularity, ProofreadError } from "../types";
 
@@ -42,7 +43,6 @@ export function ProofreadPanel() {
 	const chapters = useAppStore((s) => s.chapters);
 	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
 	const replaceParagraphText = useAppStore((s) => s.replaceParagraphText);
-	const replaceParagraphTextBatch = useAppStore((s) => s.replaceParagraphTextBatch);
 	const results = useProofreadStore((s) => s.results);
 	const setResults = useProofreadStore((s) => s.setResults);
 	const highlightedParagraph = useProofreadStore((s) => s.highlightedParagraph);
@@ -50,7 +50,6 @@ export function ProofreadPanel() {
 		(s) => s.setHighlightedParagraph,
 	);
 	const toggleErrorApplied = useProofreadStore((s) => s.toggleErrorApplied);
-	const applyAllErrors = useProofreadStore((s) => s.applyAllErrors);
 	const toggleErrorSkipped = useProofreadStore((s) => s.toggleErrorSkipped);
 	const setApplyAnimation = useProofreadStore((s) => s.setApplyAnimation);
 	const updateErrorIndices = useProofreadStore((s) => s.updateErrorIndices);
@@ -179,7 +178,7 @@ export function ProofreadPanel() {
 		// 将原始索引转换为过滤后索引
 		const filteredStartLine = startLine !== null ? paragraphIndexMap.indexOf(startLine) : -1;
 		const actualStartLine = filteredStartLine >= 0 ? filteredStartLine : 0;
-		console.log(`[ProofreadPanel] handleStartCheck 开始检测: granularity=${granularity}, startLine(原始)=${startLine ?? 0}, filteredStartLine=${actualStartLine}, totalLines=${totalLines}`);
+		logger.proofread(`handleStartCheck 开始检测: granularity=${granularity}, startLine(原始)=${startLine ?? 0}, filteredStartLine=${actualStartLine}, totalLines=${totalLines}`);
 		await checkChapter(granularity, actualStartLine);
 		setChecking(false);
 	};
@@ -195,17 +194,17 @@ export function ProofreadPanel() {
 		const el = paragraphRefs.current[index];
 		const container = proofreadContentRef.current;
 
-		console.log(`[ProofreadPanel] scrollToParagraph: index=${index}, el=${!!el}, container=${!!container}`);
+		logger.proofread(`scrollToParagraph: index=${index}, el=${!!el}, container=${!!container}`);
 		
 		if (!el || !container) {
-			console.log(
-				`[ProofreadPanel] scrollToParagraph failed: el=${!!el}, container=${!!container}, index=${index}`,
+			logger.ui(
+				`scrollToParagraph failed: el=${!!el}, container=${!!container}, index=${index}`,
 			);
 			return;
 		}
 
 		// 使用 scrollIntoView 方法，这是最可靠的方式
-		console.log(`[ProofreadPanel] scrollToParagraph: calling scrollIntoView`);
+		logger.proofread(`scrollToParagraph: calling scrollIntoView`);
 		el.scrollIntoView({
 			behavior: 'smooth',
 			block: 'center',
@@ -216,9 +215,7 @@ export function ProofreadPanel() {
 	// 监听 highlightedParagraph 变化，自动滚动到对应段落
 	useEffect(() => {
 		if (highlightedParagraph !== null) {
-			console.log(
-				`[ProofreadPanel] highlightedParagraph changed: ${highlightedParagraph}`,
-			);
+			logger.proofread(`highlightedParagraph changed: ${highlightedParagraph}`);
 			setTimeout(() => {
 				scrollToParagraph(highlightedParagraph);
 			}, 50);
@@ -228,8 +225,8 @@ export function ProofreadPanel() {
 	// TTS 高亮段落变化时自动滚动
 	useEffect(() => {
 		if (ttsHighlightedPara !== -1) {
-			console.log(
-				`[ProofreadPanel] TTS highlighted paragraph changed: ${ttsHighlightedPara}`,
+			logger.tts(
+				`highlighted paragraph changed: ${ttsHighlightedPara}`,
 			);
 			setTimeout(() => {
 				scrollToParagraph(ttsHighlightedPara);
@@ -241,6 +238,14 @@ export function ProofreadPanel() {
 	useEffect(() => {
 		setHighlightedParagraph(null);
 	}, [currentChapterIndex, setHighlightedParagraph]);
+
+	// 切换章节时滚动到顶部
+	useEffect(() => {
+		const container = proofreadContentRef.current;
+		if (container) {
+			container.scrollTop = 0;
+		}
+	}, [currentChapterIndex]);
 
 	/** 采纳单个错误：高亮旧文本 → 替换 → 高亮新文本 */
 	const handleApply = useCallback(
@@ -314,7 +319,7 @@ export function ProofreadPanel() {
 					err.startIndex,
 					err.endIndex,
 				);
-				console.log(`[ProofreadPanel] 采纳修改: chapterId=${chapterId}, paraIndex=${paraIndex}, original="${err.originalText}", corrected="${err.correctedText}", success=${replaced}`);
+				logger.proofread(`采纳修改: chapterId=${chapterId}, paraIndex=${paraIndex}, original="${err.originalText}", corrected="${err.correctedText}", success=${replaced}`);
 				toggleErrorApplied(chapterId, paraIndex, err.id); // 使用原始段落索引
 
 				// 更新同段落中剩余错误的索引（每次替换后都要更新，确保位置准确）
@@ -365,59 +370,6 @@ export function ProofreadPanel() {
 		],
 	);
 
-	/** 批量采纳当前段落的所有错误（从后往前处理避免位置偏移） */
-	const handleApplyAll = useCallback(
-		(paraResult: (typeof chapterResults)[number]) => {
-			// 动画互斥
-			if (animatingRef.current) return;
-
-			const state = useAppStore.getState();
-			const currentChapter = state.chapters[state.currentChapterIndex];
-			if (!currentChapter) return;
-			const chapterId = currentChapter.id;
-			const paraIndex = paraResult.paragraphIndex;
-
-			// 过滤出未采纳且未忽略的错误
-			const pendingErrors = paraResult.errors.filter(
-				(e) => !e.applied && !e.skipped,
-			);
-			if (pendingErrors.length === 0) {
-				addToast("info", "没有可采纳的错误");
-				return;
-			}
-
-			animatingRef.current = true;
-
-			// 批量替换（内部已按位置从后往前排序）
-			const errorsToReplace = pendingErrors.map((e) => ({
-				oldText: e.originalText,
-				newText: e.correctedText,
-				startIndex: e.startIndex,
-				endIndex: e.endIndex,
-			}));
-
-			const replacedCount = replaceParagraphTextBatch(
-				chapterId,
-				paraIndex,
-				errorsToReplace,
-			);
-
-			// 更新所有错误状态为已采纳（使用原始段落索引）
-			applyAllErrors(chapterId, paraIndex);
-
-			if (replacedCount === pendingErrors.length) {
-				addToast("success", `已采纳全部 ${replacedCount} 处错误`);
-			} else if (replacedCount > 0) {
-				addToast("warning", `部分采纳：成功 ${replacedCount}/${pendingErrors.length} 处`);
-			} else {
-				addToast("error", "批量采纳失败：所有错误均无法匹配");
-			}
-
-			animatingRef.current = false;
-		},
-		[replaceParagraphTextBatch, applyAllErrors, addToast],
-	);
-
 	/** 忽略/取消忽略单个错误 */
 	const handleSkip = useCallback(
 		(paraResult: (typeof chapterResults)[number], err: ProofreadError) => {
@@ -442,30 +394,30 @@ export function ProofreadPanel() {
 	// 查找第一个未处理错误所在的段落索引
 	const findFirstUnhandledErrorParagraph = useCallback(() => {
 		if (!chapter) {
-			console.log("[ProofreadPanel] findFirstUnhandledErrorParagraph: chapter is null");
+			logger.proofread(`findFirstUnhandledErrorParagraph: chapter is null`);
 			return null;
 		}
-		console.log(`[ProofreadPanel] findFirstUnhandledErrorParagraph: checking ${chapterResults.length} results`);
+		logger.proofread(`findFirstUnhandledErrorParagraph: checking ${chapterResults.length} results`);
 		for (const result of chapterResults) {
 			const hasUnhandledError = result.errors.some(
 				(e) => !e.applied && !e.skipped,
 			);
 			if (hasUnhandledError) {
-				console.log(`[ProofreadPanel] findFirstUnhandledErrorParagraph: found at index ${result.paragraphIndex}`);
+				logger.proofread(`findFirstUnhandledErrorParagraph: found at index ${result.paragraphIndex}`);
 				return result.paragraphIndex;
 			}
 		}
-		console.log("[ProofreadPanel] findFirstUnhandledErrorParagraph: no unhandled errors found");
+		logger.proofread(`findFirstUnhandledErrorParagraph: no unhandled errors found`);
 		return null;
 	}, [chapter, chapterResults]);
 
 	// 点击错误计数时跳转到第一个未处理错误的段落
 	const handleErrorCountClick = useCallback(() => {
-		console.log("[ProofreadPanel] handleErrorCountClick triggered");
+		logger.proofread(`handleErrorCountClick triggered`);
 		const firstUnhandledIndex = findFirstUnhandledErrorParagraph();
-		console.log(`[ProofreadPanel] handleErrorCountClick: firstUnhandledIndex = ${firstUnhandledIndex}`);
+		logger.proofread(`handleErrorCountClick: firstUnhandledIndex = ${firstUnhandledIndex}`);
 		if (firstUnhandledIndex !== null) {
-			console.log(`[ProofreadPanel] handleErrorCountClick: calling setHighlightedParagraph(${firstUnhandledIndex})`);
+			logger.proofread(`handleErrorCountClick: calling setHighlightedParagraph(${firstUnhandledIndex})`);
 			setHighlightedParagraph(firstUnhandledIndex);
 		}
 	}, [findFirstUnhandledErrorParagraph, setHighlightedParagraph]);
@@ -555,14 +507,15 @@ export function ProofreadPanel() {
 						<Icons.listTodo size={16} />
 					</button>
 					<button
-						className="btn-ignored-words"
+						className="btn-settings"
 						onClick={() => setShowIgnoredWordsModal(true)}
 						title="管理忽略单词"
 					>
 						<Icons.settings size={16} />
 					</button>
 					{checking ? (
-						<button className="btn-cancel" onClick={cancelCheck}>
+						<button className="btn-settings" onClick={cancelCheck}>
+							<Icons.close size={16} />
 							取消检测
 						</button>
 					) : (
@@ -682,17 +635,6 @@ export function ProofreadPanel() {
 								)}
 							{paraResult.errors.length > 0 && (
 								<div className="para-errors">
-									{/* 批量采纳按钮 */}
-									<button
-										className="btn-apply-all"
-										onClick={(e) => {
-											e.stopPropagation();
-											handleApplyAll(paraResult);
-										}}
-									>
-										<Icons.checkAll size={14} />
-										采纳全部 ({paraResult.errors.filter(e => !e.applied && !e.skipped).length})
-									</button>
 									{paraResult.errors.map((err: ProofreadError) => {
 										const typeInfo = ERROR_TYPE_LABELS[err.errorType];
 										const IconComponent = typeInfo ? Icons[typeInfo.icon] : null;
@@ -723,7 +665,7 @@ export function ProofreadPanel() {
 												</div>
 												<div className="error-detail">
 													<span className="error-original">
-														「{err.originalText}」
+														{err.originalText}
 													</span>
 													<span className="error-arrow">→</span>
 													<span className="error-suggestion">

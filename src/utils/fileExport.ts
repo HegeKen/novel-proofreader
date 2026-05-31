@@ -1,6 +1,7 @@
 import type { Novel } from '../types';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, exists, readTextFile, mkdir, readDir, remove, BaseDirectory } from '@tauri-apps/plugin-fs';
+import { logger } from './logger';
 
 function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI__' in window;
@@ -87,21 +88,21 @@ export async function saveCharacterConfigToStorage(fileName: string, content: st
       await ensureCharactersDirectory();
       const fullPath = getCharactersStoragePath(fileName);
       const baseDir = getBaseDir();
-      console.log('[fileExport] Saving character config to:', fullPath, 'baseDir:', baseDir);
-      console.log('[fileExport] Content length:', content.length);
+      logger.file('Saving character config to:', fullPath, 'baseDir:', baseDir);
+      logger.file('Content length:', content.length);
       await writeTextFile(fullPath, content, { baseDir });
-      console.log('[fileExport] Save successful');
+      logger.file('Save successful');
       return true;
     } catch (e) {
-      console.warn('[fileExport] Tauri storage failed, falling back to localStorage:', e);
+      logger.warn('[fileExport]', 'Tauri storage failed, falling back to localStorage:', e);
     }
   }
   try {
     localStorage.setItem(LOCAL_STORAGE_PREFIX + fileName, content);
-    console.log('[fileExport] Saved character config to localStorage:', fileName);
+    logger.file('Saved character config to localStorage:', fileName);
     return true;
   } catch (e) {
-    console.error('[fileExport] Failed to save character config:', e);
+    logger.errorGeneric('[fileExport]', 'Failed to save character config:', e);
     return false;
   }
 }
@@ -111,23 +112,23 @@ export async function loadCharacterConfigFromStorage(fileName: string): Promise<
     try {
       const content = await loadFromTauri(fileName);
       if (content) {
-        console.log('[fileExport] Loaded character config from Tauri storage:', fileName);
+        logger.file('Loaded character config from Tauri storage:', fileName);
         return content;
       }
     } catch (e) {
-      console.warn('[fileExport] Tauri storage load failed, falling back to localStorage:', e);
+      logger.warn('[fileExport]', 'Tauri storage load failed, falling back to localStorage:', e);
     }
   }
   try {
     const content = localStorage.getItem(LOCAL_STORAGE_PREFIX + fileName);
     if (content) {
-      console.log('[fileExport] Loaded character config from localStorage:', fileName);
+      logger.file('Loaded character config from localStorage:', fileName);
       return content;
     }
-    console.log('[fileExport] Character config not found:', fileName);
+    logger.file('Character config not found:', fileName);
     return null;
   } catch (e) {
-    console.error('[fileExport] Failed to load character config:', e);
+    logger.errorGeneric('[fileExport]', 'Failed to load character config:', e);
     return null;
   }
 }
@@ -524,7 +525,7 @@ function filterSubstringNames(validated: Map<string, DetectedCharacter>): Map<st
     if (!isSubstring) {
       result.set(name, data);
     } else {
-      console.log(`[角色检测] 过滤拆分姓名: "${name}" (是 "${names.find(n => n.includes(name) && n !== name)}" 的子串)`);
+      logger.debug(`[角色检测] 过滤拆分姓名: "${name}" (是 "${names.find(n => n.includes(name) && n !== name)}" 的子串)`);
     }
   }
   
@@ -541,7 +542,7 @@ export interface HighFrequencyWord {
 }
 
 export function detectHighFrequencyWords(text: string, minFrequency: number = 10): HighFrequencyWord[] {
-  console.log(`[高频词汇检测] 开始扫描，文本长度: ${text.length} 字符`);
+  logger.debug(`[高频词汇检测] 开始扫描，文本长度: ${text.length} 字符`);
   const startTime = Date.now();
   
   const wordCount = new Map<string, number>();
@@ -549,7 +550,7 @@ export function detectHighFrequencyWords(text: string, minFrequency: number = 10
   
   const words = text.match(/[\u4e00-\u9fa5]{2,4}/g) || [];
   
-  console.log(`[高频词汇检测] 提取了 ${words.length} 个词`);
+  logger.debug(`[高频词汇检测] 提取了 ${words.length} 个词`);
 
   for (let i = 0; i < words.length; i++) {
     const word = words[i];
@@ -610,8 +611,8 @@ export function detectHighFrequencyWords(text: string, minFrequency: number = 10
   });
   
   const endTime = Date.now();
-  console.log(`[高频词汇检测] 完成！发现 ${results.length} 个高频词，耗时 ${(endTime - startTime).toFixed(2)}ms`);
-  console.log(`[高频词汇检测] 其中可能是人名的: ${results.filter(r => r.isPossibleName).length} 个`);
+  logger.debug(`[高频词汇检测] 完成！发现 ${results.length} 个高频词，耗时 ${(endTime - startTime).toFixed(2)}ms`);
+  logger.debug(`[高频词汇检测] 其中可能是人名的: ${results.filter(r => r.isPossibleName).length} 个`);
   
   return results;
 }
@@ -619,30 +620,30 @@ export function detectHighFrequencyWords(text: string, minFrequency: number = 10
 // ==================== 主检测函数 ====================
 
 export function detectCharactersFromText(text: string, minFrequency: number = 3): DetectedCharacter[] {
-  console.log(`[角色检测] 开始扫描，文本长度: ${text.length} 字符`);
+  logger.debug(`[角色检测] 开始扫描，文本长度: ${text.length} 字符`);
   const startTime = Date.now();
   
-  console.log(`[角色检测] 阶段1/5: 提取候选角色...`);
+  logger.debug(`[角色检测] 阶段1/5: 提取候选角色...`);
   const candidates = extractCandidates(text);
-  console.log(`[角色检测] 阶段1完成: 发现 ${candidates.size} 个候选角色`);
+  logger.debug(`[角色检测] 阶段1完成: 发现 ${candidates.size} 个候选角色`);
   
-  console.log(`[角色检测] 阶段2/5: 上下文验证...`);
+  logger.debug(`[角色检测] 阶段2/5: 上下文验证...`);
   let validated = validateByContext(text, candidates);
-  console.log(`[角色检测] 阶段2完成: 通过验证 ${validated.size} 个角色`);
+  logger.debug(`[角色检测] 阶段2完成: 通过验证 ${validated.size} 个角色`);
   
-  console.log(`[角色检测] 阶段3/5: 共现网络增强...`);
+  logger.debug(`[角色检测] 阶段3/5: 共现网络增强...`);
   validated = enhanceByCooccurrence(text, validated);
-  console.log(`[角色检测] 阶段3完成: 增强 ${validated.size} 个角色的置信度`);
+  logger.debug(`[角色检测] 阶段3完成: 增强 ${validated.size} 个角色的置信度`);
   
-  console.log(`[角色检测] 阶段4/5: 称谓/别名归并...`);
+  logger.debug(`[角色检测] 阶段4/5: 称谓/别名归并...`);
   validated = detectAliases(text, validated);
-  console.log(`[角色检测] 阶段4完成: 完成别名归并`);
+  logger.debug(`[角色检测] 阶段4完成: 完成别名归并`);
 
-  console.log(`[角色检测] 阶段5/5: 过滤拆分姓名...`);
+  logger.debug(`[角色检测] 阶段5/5: 过滤拆分姓名...`);
   validated = filterSubstringNames(validated);
-  console.log(`[角色检测] 阶段5完成: 剩余 ${validated.size} 个角色`);
+  logger.debug(`[角色检测] 阶段5完成: 剩余 ${validated.size} 个角色`);
 
-  console.log(`[角色检测] 阶段6/6: 过滤常用词...`);
+  logger.debug(`[角色检测] 阶段6/6: 过滤常用词...`);
   const filteredResults = new Map<string, DetectedCharacter>();
   for (const [name, data] of validated) {
     let containsCommonWord = false;
@@ -655,10 +656,10 @@ export function detectCharactersFromText(text: string, minFrequency: number = 3)
     if (!containsCommonWord) {
       filteredResults.set(name, data);
     } else {
-      console.log(`[角色检测] 过滤常用词: "${name}"`);
+      logger.debug(`[角色检测] 过滤常用词: "${name}"`);
     }
   }
-  console.log(`[角色检测] 阶段6完成: 剩余 ${filteredResults.size} 个角色`);
+  logger.debug(`[角色检测] 阶段6完成: 剩余 ${filteredResults.size} 个角色`);
 
   const results: DetectedCharacter[] = [];
   for (const [, data] of filteredResults) {
@@ -670,9 +671,9 @@ export function detectCharactersFromText(text: string, minFrequency: number = 3)
   results.sort((a, b) => b.frequency - a.frequency);
   
   const endTime = Date.now();
-  console.log(`[角色检测] 扫描完成！共检测到 ${results.length} 个角色，耗时 ${(endTime - startTime).toFixed(2)}ms`);
+  logger.debug(`[角色检测] 扫描完成！共检测到 ${results.length} 个角色，耗时 ${(endTime - startTime).toFixed(2)}ms`);
   if (results.length > 0) {
-    console.log(`[角色检测] Top 5 角色: ${results.slice(0, 5).map(r => `${r.name}(频率: ${r.frequency})`).join(', ')}`);
+    logger.debug(`[角色检测] Top 5 角色: ${results.slice(0, 5).map(r => `${r.name}(频率: ${r.frequency})`).join(', ')}`);
   }
   
   return results;
@@ -683,10 +684,10 @@ export async function createCharacterTemplate(novelName: string): Promise<boolea
     const fileName = getCharacterConfigFileName(novelName);
     const emptyCharacters: import('../types').CharacterInfo[] = [];
     const content = JSON.stringify(emptyCharacters, null, 2);
-    console.log('[fileExport] Creating character template for novel:', novelName, 'fileName:', fileName);
+    logger.file('Creating character template for novel:', novelName, 'fileName:', fileName);
     return await saveCharacterConfigToStorage(fileName, content);
   } catch (e) {
-    console.error('[fileExport] Failed to create character template:', e);
+    logger.errorGeneric('[fileExport]', 'Failed to create character template:', e);
     return false;
   }
 }
@@ -701,12 +702,12 @@ export async function exportToTxt(novel: Novel): Promise<boolean> {
     });
     if (filePath) {
       await writeFile(filePath, new TextEncoder().encode(content));
-      console.log('[fileExport] Exported novel to:', filePath);
+      logger.file('Exported novel to:', filePath);
       return true;
     }
     return false;
   } catch (e) {
-    console.error('[fileExport] Failed to export novel:', e);
+    logger.errorGeneric('[fileExport]', 'Failed to export novel:', e);
     return false;
   }
 }
@@ -720,12 +721,12 @@ export async function exportToFile(content: string, fileName: string): Promise<"
     });
     if (filePath) {
       await writeFile(filePath, new TextEncoder().encode(content));
-      console.log('[fileExport] Exported file to:', filePath);
+      logger.file('Exported file to:', filePath);
       return "success";
     }
     return false;
   } catch (e) {
-    console.error('[fileExport] Failed to export file:', e);
+    logger.errorGeneric('[fileExport]', 'Failed to export file:', e);
     // 尝试 fallback 到下载
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -750,7 +751,7 @@ export async function exportCharactersToJson(_novelId: string, novelName: string
     });
     if (filePath) {
       await writeFile(filePath, new TextEncoder().encode(content));
-      console.log('[fileExport] Exported characters to:', filePath);
+      logger.file('Exported characters to:', filePath);
       return true;
     }
     return false;
@@ -767,10 +768,10 @@ export async function loadNovelContent(fileName: string): Promise<string | null>
     const fullPath = getNovelsStoragePath(fileName);
     const baseDir = getBaseDir();
     const content = await readTextFile(fullPath, { baseDir });
-    console.log('[fileExport] Loaded novel content from storage:', fileName);
+    logger.file('Loaded novel content from storage:', fileName);
     return content;
   } catch (e) {
-    console.error('[fileExport] Failed to load novel:', e);
+    logger.errorGeneric('[fileExport]', 'Failed to load novel:', e);
     return null;
   }
 }
@@ -780,13 +781,13 @@ export async function saveNovelToStorage(fileName: string, content: string): Pro
     await ensureNovelsDirectory();
     const fullPath = getNovelsStoragePath(fileName);
     const baseDir = getBaseDir();
-    console.log('[fileExport] Saving to:', fullPath, 'baseDir:', baseDir);
-    console.log('[fileExport] Content length:', content.length);
+    logger.proofread(`Saving to: ${fullPath} baseDir: ${baseDir}`);
+    logger.proofread(`Content length: ${content.length}`);
     await writeTextFile(fullPath, content, { baseDir });
-    console.log('[fileExport] Save successful');
+    logger.file('Save successful');
     return true;
   } catch (e) {
-    console.error('[fileExport] Failed to save novel to storage:', e);
+    logger.errorGeneric('[fileExport]', 'Failed to save novel to storage:', e);
     return false;
   }
 }
@@ -813,10 +814,10 @@ export async function loadNovelsFromStorage(): Promise<string[]> {
     const baseDir = getBaseDir();
     const files = await readDir(novelsPath, { baseDir });
     const txtFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt')).map(f => f.name);
-    console.log('[fileExport] Loaded novels from storage:', txtFiles);
+    logger.file('Loaded novels from storage:', txtFiles);
     return txtFiles;
   } catch (e) {
-    console.error('[fileExport] Failed to load novels:', e);
+    logger.errorGeneric('[fileExport]', 'Failed to load novels:', e);
     return [];
   }
 }
@@ -832,7 +833,6 @@ export async function exportAllData(data: {
     readingStartTime: number;
     totalReadingTime: number;
   }>;
-  proofreadProgress: Record<string, Record<number, import('../types').ProofreadProgress>>;
   ignoredWords: Record<string, string[]>;
   exportTime: string;
   version: string;
@@ -846,12 +846,12 @@ export async function exportAllData(data: {
     });
     if (filePath) {
       await writeFile(filePath, new TextEncoder().encode(content));
-      console.log('[fileExport] Exported all data to:', filePath);
+      logger.file('Exported all data to:', filePath);
       return true;
     }
     return false;
   } catch (e) {
-    console.error('[fileExport] Failed to export all data:', e);
+    logger.errorGeneric('[fileExport]', 'Failed to export all data:', e);
     return false;
   }
 }
