@@ -8,13 +8,33 @@ import { Icons } from "./Icons";
 import { useSwipeGesture } from "../hooks/useSwipeGesture";
 import type { Chapter } from "../types";
 import { logger } from "../utils/logger";
+import { generateChapterTitle } from "../utils/aiClient";
 
 const ChapterItem = forwardRef<HTMLButtonElement, {
 	chapter: Chapter;
 	index: number;
 	isActive: boolean;
 	onSelect: () => void;
-}>(({ chapter, index, isActive, onSelect }, ref) => {
+	hasNoTitle?: boolean;
+	isSuggesting?: boolean;
+	showSuggestions?: boolean;
+	chapterTitleSuggestions?: string[];
+	onSuggestTitle?: () => void;
+	onApplyTitle?: (title: string) => void;
+	onCloseSuggestions?: () => void;
+}>(({
+	chapter,
+	index,
+	isActive,
+	onSelect,
+	hasNoTitle = false,
+	isSuggesting = false,
+	showSuggestions = false,
+	chapterTitleSuggestions = [],
+	onSuggestTitle,
+	onApplyTitle,
+	onCloseSuggestions
+}, ref) => {
 	const proofreadStatus = useAppStore((s) => s.proofreadStatus);
 	const toggleProofreadStatus = useAppStore((s) => s.toggleProofreadStatus);
 	const isProofread = proofreadStatus[chapter.id] ?? false;
@@ -26,21 +46,63 @@ const ChapterItem = forwardRef<HTMLButtonElement, {
 	});
 
 	return (
-		<button
-			ref={ref}
-			className={`chapter-item ${isActive ? "active" : ""} ${isProofread ? "proofread" : ""}`}
-			onClick={onSelect}
-			onTouchStart={swipeHandlers.onTouchStart}
-			onTouchMove={swipeHandlers.onTouchMove}
-			onTouchEnd={swipeHandlers.onTouchEnd}
-			title={`${chapter.title}${isProofread ? " (已校对)" : ""}`}
-		>
-			<span className="chapter-number">{index + 1}</span>
-			<span className="chapter-title">{chapter.title}</span>
-			{isProofread && (
-				<Icons.circleCheckBig size={16} className="proofread-icon" />
+		<div className="chapter-item-wrapper">
+			<button
+				ref={ref}
+				className={`chapter-item ${isActive ? "active" : ""} ${isProofread ? "proofread" : ""}`}
+				onClick={onSelect}
+				onTouchStart={swipeHandlers.onTouchStart}
+				onTouchMove={swipeHandlers.onTouchMove}
+				onTouchEnd={swipeHandlers.onTouchEnd}
+				title={`${chapter.title}${isProofread ? " (已校对)" : ""}`}
+			>
+				<span className="chapter-number">{index + 1}</span>
+				<span className="chapter-title">{chapter.title}</span>
+				{isProofread && (
+					<Icons.circleCheckBig size={16} className="proofread-icon" />
+				)}
+				{hasNoTitle && (
+					<span
+						className="suggest-title-btn"
+						onClick={(e) => {
+							e.stopPropagation();
+							onSuggestTitle?.();
+						}}
+						style={{ pointerEvents: isSuggesting ? 'none' : 'auto', opacity: isSuggesting ? 0.5 : 1 }}
+					>
+						<Icons.sparkle size={14} />
+					</span>
+				)}
+			</button>
+			{showSuggestions && (
+				<div className="chapter-title-suggestions">
+					<div className="suggestions-header">
+						<span>AI推荐章节名</span>
+						<button
+							className="close-suggestions"
+							onClick={(e) => {
+								e.stopPropagation();
+								onCloseSuggestions?.();
+							}}
+						>
+							<Icons.x size={14} />
+						</button>
+					</div>
+					{chapterTitleSuggestions.map((title, idx) => (
+						<button
+							key={idx}
+							className="suggestion-item"
+							onClick={(e) => {
+								e.stopPropagation();
+								onApplyTitle?.(title);
+							}}
+						>
+							{title}
+						</button>
+					))}
+				</div>
 			)}
-		</button>
+		</div>
 	);
 });
 
@@ -52,6 +114,11 @@ const VolumeItem = ({
 	onToggleExpand,
 	onChapterSelect,
 	directChapters,
+	suggestingChapterId,
+	chapterTitleSuggestions,
+	onSuggestChapterTitle,
+	onApplyChapterTitle,
+	onCloseSuggestions,
 }: {
 	volume: Chapter;
 	chapters: Chapter[];
@@ -60,6 +127,11 @@ const VolumeItem = ({
 	onToggleExpand: () => void;
 	onChapterSelect?: () => void;
 	directChapters?: Chapter[];
+	suggestingChapterId?: number | null;
+	chapterTitleSuggestions?: Record<number, string[]>;
+	onSuggestChapterTitle?: (chapterId: number, chapterIndex: number) => void;
+	onApplyChapterTitle?: (chapterId: number, chapterIndex: number, title: string) => void;
+	onCloseSuggestions?: (chapterId: number) => void;
 }) => {
 	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
 	const proofreadStatus = useAppStore((s) => s.proofreadStatus);
@@ -87,20 +159,30 @@ const VolumeItem = ({
 			</button>
 			{!isExpanded && (
 				<div className="volume-chapters">
-					{volumeChapters.map((ch) => {
+					{volumeChapters.map((ch, volIdx) => {
 						const isActive = ch.id === currentChapterIndex;
+						const hasNoTitle = !ch.title || /^第[\d一二三四五六七八九十]+[章回]$/.test(ch.title);
+						const isSuggesting = suggestingChapterId === ch.id;
+						const showSuggestions = suggestingChapterId === ch.id && (chapterTitleSuggestions?.[ch.id]?.length ?? 0) > 0;
 						return (
 							<ChapterItem
 								key={ch.id}
 								chapter={ch}
-								index={ch.id}
+								index={volIdx}
 								isActive={isActive}
+								hasNoTitle={hasNoTitle}
+								isSuggesting={isSuggesting}
+								showSuggestions={showSuggestions}
+								chapterTitleSuggestions={chapterTitleSuggestions?.[ch.id] || []}
 								onSelect={() => {
 									setCurrentChapterIndex(ch.id);
 									if (onChapterSelect) {
 										onChapterSelect();
 									}
 								}}
+								onSuggestTitle={() => onSuggestChapterTitle?.(ch.id, volIdx)}
+								onApplyTitle={(title) => onApplyChapterTitle?.(ch.id, volIdx, title)}
+								onCloseSuggestions={() => onCloseSuggestions?.(ch.id)}
 							/>
 						);
 					})}
@@ -162,6 +244,74 @@ export function ChapterNav({
 			return newSet;
 		});
 	}, [userCollapsedVolumes]);
+
+	// AI 章节名推荐相关状态
+	const [suggestingChapterId, setSuggestingChapterId] = useState<number | null>(null);
+	const [chapterTitleSuggestions, setChapterTitleSuggestions] = useState<Record<number, string[]>>({});
+	const aiConfig = useAppStore((s) => s.aiConfig);
+
+	// AI 推荐章节名处理函数
+	const handleSuggestChapterTitle = useCallback(async (chapterId: number, chapterIndex: number) => {
+		if (suggestingChapterId === chapterId) return;
+
+		const chapter = chapters.find(ch => ch.id === chapterId);
+		if (!chapter) return;
+
+		setSuggestingChapterId(chapterId);
+		setChapterTitleSuggestions(prev => ({ ...prev, [chapterId]: [] }));
+
+		try {
+			// 收集前几章的章节名和内容
+			const previousChapters: Record<string, string> = {};
+			for (let i = Math.max(0, chapterIndex - 5); i < chapterIndex; i++) {
+				const prevChapter = chapters[i];
+				if (prevChapter && prevChapter.title) {
+					previousChapters[prevChapter.title] = prevChapter.content.slice(0, 200);
+				}
+			}
+
+			const suggestions = await generateChapterTitle(
+				chapter.content,
+				previousChapters,
+				chapterIndex + 1,
+				aiConfig
+			);
+			setChapterTitleSuggestions(prev => ({ ...prev, [chapterId]: suggestions }));
+		} catch (error) {
+			console.error("Failed to generate chapter title:", error);
+			alert("生成章节名失败，请检查AI配置");
+		} finally {
+			setSuggestingChapterId(null);
+		}
+	}, [chapters, aiConfig, suggestingChapterId]);
+
+	// 应用推荐的章节名
+	const handleApplyChapterTitle = useCallback((chapterId: number, _chapterIndex: number, title: string) => {
+		const chapterIndexInChapters = chapters.findIndex(ch => ch.id === chapterId);
+		if (chapterIndexInChapters < 0) return;
+
+		const chapter = chapters[chapterIndexInChapters];
+		const updatedChapters = [...chapters];
+		updatedChapters[chapterIndexInChapters] = { ...chapter, title };
+		useAppStore.getState().setChapters(updatedChapters);
+
+		setChapterTitleSuggestions(prev => {
+			const newSuggestions = { ...prev };
+			delete newSuggestions[chapterId];
+			return newSuggestions;
+		});
+		setSuggestingChapterId(null);
+	}, [chapters]);
+
+	// 关闭推荐列表
+	const handleCloseSuggestions = useCallback((chapterId: number) => {
+		setChapterTitleSuggestions(prev => {
+			const newSuggestions = { ...prev };
+			delete newSuggestions[chapterId];
+			return newSuggestions;
+		});
+		setSuggestingChapterId(null);
+	}, []);
 
 	// 当当前章节变化时，滚动到 active 项并居中
 	useEffect(() => {
@@ -264,6 +414,11 @@ export function ChapterNav({
 								onToggleExpand={() => toggleVolumeExpand(0)}
 								onChapterSelect={onChapterSelect}
 								directChapters={filteredStandalone}
+								suggestingChapterId={suggestingChapterId}
+								chapterTitleSuggestions={chapterTitleSuggestions}
+								onSuggestChapterTitle={handleSuggestChapterTitle}
+								onApplyChapterTitle={handleApplyChapterTitle}
+								onCloseSuggestions={handleCloseSuggestions}
 							/>
 						)}
 						{/* 分卷章节 */}
@@ -280,6 +435,11 @@ export function ChapterNav({
 								isExpanded={getVolumeExpandedState(vol.id)}
 								onToggleExpand={() => toggleVolumeExpand(vol.id)}
 								onChapterSelect={onChapterSelect}
+								suggestingChapterId={suggestingChapterId}
+								chapterTitleSuggestions={chapterTitleSuggestions}
+								onSuggestChapterTitle={handleSuggestChapterTitle}
+								onApplyChapterTitle={handleApplyChapterTitle}
+								onCloseSuggestions={handleCloseSuggestions}
 							/>
 							);
 						})}
@@ -288,6 +448,9 @@ export function ChapterNav({
 					/* 无分卷时直接显示章节列表 */
 					filteredAllChapters.map((ch, index) => {
 						const isActive = ch.id === currentChapterIndex;
+						const hasNoTitle = !ch.title || /^第[\d一二三四五六七八九十]+[章回]$/.test(ch.title);
+						const isSuggesting = suggestingChapterId === ch.id;
+						const showSuggestions = suggestingChapterId === ch.id && (chapterTitleSuggestions?.[ch.id]?.length ?? 0) > 0;
 						return (
 							<ChapterItem
 								key={ch.id}
@@ -295,12 +458,19 @@ export function ChapterNav({
 								chapter={ch}
 								index={index}
 								isActive={isActive}
+								hasNoTitle={hasNoTitle}
+								isSuggesting={isSuggesting}
+								showSuggestions={showSuggestions}
+								chapterTitleSuggestions={chapterTitleSuggestions?.[ch.id] || []}
 								onSelect={() => {
 									setCurrentChapterIndex(ch.id);
 									if (onChapterSelect) {
 										onChapterSelect();
 									}
 								}}
+								onSuggestTitle={() => handleSuggestChapterTitle(ch.id, index)}
+								onApplyTitle={(title) => handleApplyChapterTitle(ch.id, index, title)}
+								onCloseSuggestions={() => handleCloseSuggestions(ch.id)}
 							/>
 						);
 					})

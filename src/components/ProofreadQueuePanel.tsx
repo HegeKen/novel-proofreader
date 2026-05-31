@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useAICheck } from "../hooks/useAICheck";
 import { Icons } from "./Icons";
+import { generateChapterTitle } from "../utils/aiClient";
 
 export function ProofreadQueuePanel() {
 	const queue = useAppStore((s) => s.proofreadQueue);
@@ -18,6 +19,12 @@ export function ProofreadQueuePanel() {
 
 	const [selectedChapters, setSelectedChapters] = useState<number[]>([]);
 	const [isRunning, setIsRunning] = useState(false);
+	const aiConfig = useAppStore((s) => s.aiConfig);
+
+	// 章节名推荐状态
+	const [suggestingChapterIndex, setSuggestingChapterIndex] = useState<number | null>(null);
+	const [chapterTitleSuggestions, setChapterTitleSuggestions] = useState<string[]>([]);
+	const [suggestingChapterId, setSuggestingChapterId] = useState<number | null>(null);
 
 	const { checkChapter } = useAICheck();
 
@@ -56,6 +63,57 @@ export function ProofreadQueuePanel() {
 			.filter((item): item is { chapterId: number; chapterTitle: string; novelId: string } => item !== null);
 		addToQueue(items);
 		setSelectedChapters([]);
+	};
+
+	// 章节名推荐处理函数
+	const handleSuggestChapterTitle = async (chapterIndex: number) => {
+		if (suggestingChapterIndex === chapterIndex) return;
+
+		const chapter = chapters[chapterIndex];
+		if (!chapter) return;
+
+		setSuggestingChapterIndex(chapterIndex);
+		setSuggestingChapterId(chapter.id);
+		setChapterTitleSuggestions([]);
+
+		try {
+			// 收集前几章的章节名和内容
+			const previousChapters: Record<string, string> = {};
+			for (let i = Math.max(0, chapterIndex - 5); i < chapterIndex; i++) {
+				const prevChapter = chapters[i];
+				if (prevChapter && prevChapter.title) {
+					previousChapters[prevChapter.title] = prevChapter.content.slice(0, 200);
+				}
+			}
+
+			const suggestions = await generateChapterTitle(
+				chapter.content,
+				previousChapters,
+				chapterIndex + 1,
+				aiConfig
+			);
+			setChapterTitleSuggestions(suggestions);
+		} catch (error) {
+			console.error("Failed to generate chapter title:", error);
+			alert("生成章节名失败，请检查AI配置");
+		} finally {
+			setSuggestingChapterIndex(null);
+		}
+	};
+
+	// 应用推荐的章节名
+	const handleApplyChapterTitle = (chapterIndex: number, title: string) => {
+		const chapter = chapters[chapterIndex];
+		if (!chapter) return;
+
+		// 更新章节标题
+		const updatedChapters = [...chapters];
+		updatedChapters[chapterIndex] = { ...chapter, title };
+		useAppStore.getState().setChapters(updatedChapters);
+
+		// 清除推荐状态
+		setChapterTitleSuggestions([]);
+		setSuggestingChapterId(null);
 	};
 
 	// 处理队列中的任务
@@ -190,23 +248,64 @@ export function ProofreadQueuePanel() {
 				</div>
 
 				<div className="chapter-list">
-					{chapters.map((chapter, index) => (
-						<div
-							key={chapter.id}
-							className={`chapter-item ${selectedChapters.includes(chapter.id) ? "selected" : ""} ${index === currentChapterIndex ? "current" : ""}`}
-						>
-							<input
-								type="checkbox"
-								checked={selectedChapters.includes(chapter.id)}
-								onChange={() => toggleChapterSelection(chapter.id)}
-							/>
-							<span className="chapter-index">{index + 1}</span>
-							<span className="chapter-title-text">{chapter.title}</span>
-							{index === currentChapterIndex && (
-								<Icons.check size={14} className="current-indicator" />
-							)}
-						</div>
-					))}
+					{chapters.map((chapter, index) => {
+						const hasNoTitle = !chapter.title || /^第[\d一二三四五六七八九十]+[章回]$/.test(chapter.title);
+						const isSuggesting = suggestingChapterIndex === index;
+						const showSuggestions = suggestingChapterId === chapter.id && chapterTitleSuggestions.length > 0;
+
+						return (
+							<div key={chapter.id}>
+								<div
+									className={`chapter-item ${selectedChapters.includes(chapter.id) ? "selected" : ""} ${index === currentChapterIndex ? "current" : ""}`}
+								>
+									<input
+										type="checkbox"
+										checked={selectedChapters.includes(chapter.id)}
+										onChange={() => toggleChapterSelection(chapter.id)}
+									/>
+									<span className="chapter-index">{index + 1}</span>
+									<span className="chapter-title-text">{chapter.title}</span>
+									{index === currentChapterIndex && (
+										<Icons.check size={14} className="current-indicator" />
+									)}
+									{hasNoTitle && (
+										<button
+											className="suggest-title-btn"
+											onClick={() => handleSuggestChapterTitle(index)}
+											disabled={isSuggesting}
+										>
+											<Icons.sparkle size={14} />
+										</button>
+									)}
+								</div>
+								{showSuggestions && (
+									<div className="chapter-title-suggestions">
+										<div className="suggestions-header">
+											<span>AI推荐章节名</span>
+											<button
+												className="close-suggestions"
+												onClick={() => {
+													setChapterTitleSuggestions([]);
+													setSuggestingChapterId(null);
+												}}
+											>
+												<Icons.x size={14} />
+											</button>
+										</div>
+										{chapterTitleSuggestions.map((title, idx) => (
+											<button
+												key={idx}
+												className="suggestion-item"
+												onClick={() => handleApplyChapterTitle(index, title)}
+											>
+												{title}
+											</button>
+										))}
+									</div>
+								)}
+							</div>
+						);
+					})}
 				</div>
 			</div>
 

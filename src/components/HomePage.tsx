@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { Users, Cloud, MessageSquare, Loader2 } from "lucide-react";
+import { Users, Cloud, MessageSquare, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { Icons } from "./Icons";
 
-import { fetchLatestReleaseWithAssets, formatFileSize, getAllAssetsByPlatform, tryDownloadWithMirrors, type GitHubRelease } from "../utils/githubApi";
+import { fetchLatestReleaseWithAssets, fetchAllReleases, formatFileSize, getAllAssetsByPlatform, tryDownloadWithMirrors, downloadFromMirror, getMirrorUrl, GITHUB_MIRRORS, CORS_PROXIES, compareVersions, getCurrentVersion, type GitHubRelease, type MirrorSource } from "../utils/githubApi";
 
 interface HomePageProps {
 	onStart?: () => void;
@@ -15,27 +15,47 @@ export function HomePage({ onStart }: HomePageProps) {
 	const [showDownloadModal, setShowDownloadModal] = useState(false);
 	const [downloadingAsset, setDownloadingAsset] = useState<string | null>(null);
 
+	// 镜像源选择弹窗状态
+	const [mirrorPickerAsset, setMirrorPickerAsset] = useState<{ url: string; fileName: string; displayName: string; size: number } | null>(null);
+	const [downloadingMirror, setDownloadingMirror] = useState<string>("");
+	const [mirrorResults, setMirrorResults] = useState<Record<string, "success" | "error">>({});
+
+	// API CORS 代理选择（用于获取 Releases 列表）
+	const [selectedApiProxyIndex, setSelectedApiProxyIndex] = useState<number>(0);
+	const selectedApiProxy = CORS_PROXIES[selectedApiProxyIndex];
+
+	// 版本比对状态
+	const [currentVersion, setCurrentVersion] = useState<string>("");
+	const [hasUpdate, setHasUpdate] = useState(false);
+
 	useEffect(() => {
-		fetchLatestReleaseWithAssets().then(data => {
-			setRelease(data);
-			setLoading(false);
-		});
+		(async () => {
+			const version = await getCurrentVersion();
+			setCurrentVersion(version);
+		})();
 	}, []);
 
 	useEffect(() => {
-		const fetchReleases = async () => {
-			try {
-				const response = await fetch("https://api.github.com/repos/HegeKen/novel-proofreader/releases");
-				if (response.ok) {
-					const releases: GitHubRelease[] = await response.json();
-					setAllReleases(releases);
-				}
-			} catch (error) {
-				console.error("Failed to fetch releases:", error);
+		let cancelled = false;
+		(async () => {
+			setLoading(true);
+			const [releaseData, releasesData] = await Promise.all([
+				fetchLatestReleaseWithAssets("HegeKen/novel-proofreader", selectedApiProxy),
+				fetchAllReleases("HegeKen/novel-proofreader", selectedApiProxy),
+			]);
+			if (cancelled) return;
+			setRelease(releaseData);
+			setAllReleases(releasesData);
+
+			if (releaseData?.tag_name && currentVersion) {
+				const needsUpdate = compareVersions(currentVersion, releaseData.tag_name) === -1;
+				setHasUpdate(needsUpdate);
 			}
-		};
-		fetchReleases();
-	}, []);
+
+			setLoading(false);
+		})();
+		return () => { cancelled = true; };
+	}, [selectedApiProxy, currentVersion]);
 
 	const handleStartApp = () => {
 		onStart?.();
@@ -51,6 +71,35 @@ export function HomePage({ onStart }: HomePageProps) {
 			alert("下载失败，请稍后重试或尝试其他镜像源");
 		} finally {
 			setDownloadingAsset(null);
+		}
+	};
+
+	const handleOpenMirrorPicker = (url: string, fileName: string, displayName: string, size: number) => {
+		setMirrorPickerAsset({ url, fileName, displayName, size });
+		setDownloadingMirror("");
+		setMirrorResults({});
+	};
+
+	const handleCloseMirrorPicker = () => {
+		setMirrorPickerAsset(null);
+		setDownloadingMirror("");
+		setMirrorResults({});
+	};
+
+	const handleMirrorDownload = async (mirror: MirrorSource) => {
+		if (!mirrorPickerAsset) return;
+		const mirrorKey = mirror.name;
+		setDownloadingMirror(mirrorKey);
+
+		try {
+			const mirrorUrl = getMirrorUrl(mirrorPickerAsset.url, mirror);
+			await downloadFromMirror(mirrorUrl, mirrorPickerAsset.fileName);
+			setMirrorResults(prev => ({ ...prev, [mirrorKey]: "success" }));
+		} catch (error) {
+			console.error(`Download from ${mirror.name} failed:`, error);
+			setMirrorResults(prev => ({ ...prev, [mirrorKey]: "error" }));
+		} finally {
+			setDownloadingMirror("");
 		}
 	};
 
@@ -161,27 +210,38 @@ export function HomePage({ onStart }: HomePageProps) {
 		const ext = getFileExtension(asset.name);
 		const displayName = platformKey === "macos" ? arch : `${arch} (${ext})`;
 		return (
-			<button
-				key={index}
-				onClick={() => handleDownload(asset.browser_download_url, asset.name)}
-				className="download-asset-btn"
-				disabled={isDownloading}
-				style={{ opacity: isDownloading ? 0.7 : 1, cursor: isDownloading ? "wait" : "pointer", flex: 1 }}
-			>
-				<div className="asset-icon">
-					{isDownloading ? (
-						<Loader2 className="animate-spin" size={16} />
-					) : (
-						<Icons.download size={16} />
-					)}
-				</div>
-				<div className="asset-info">
-					<span className="asset-name">{displayName}</span>
-					<span className="asset-size">
-						{isDownloading ? "下载中..." : formatFileSize(asset.size)}
-					</span>
-				</div>
-			</button>
+			<div key={index} className="download-asset-wrapper" style={{ display: "flex", gap: "4px", flex: 1 }}>
+				<button
+					onClick={() => handleDownload(asset.browser_download_url, asset.name)}
+					className="download-asset-btn"
+					disabled={isDownloading}
+					style={{ opacity: isDownloading ? 0.7 : 1, cursor: isDownloading ? "wait" : "pointer", flex: 1 }}
+				>
+					<div className="asset-icon">
+						{isDownloading ? (
+							<Loader2 className="animate-spin" size={16} />
+						) : (
+							<Icons.download size={16} />
+						)}
+					</div>
+					<div className="asset-info">
+						<span className="asset-name">{displayName}</span>
+						<span className="asset-size">
+							{isDownloading ? "下载中..." : formatFileSize(asset.size)}
+						</span>
+					</div>
+				</button>
+				<button
+					className="mirror-picker-btn"
+					title="选择下载源"
+					onClick={(e) => {
+						e.stopPropagation();
+						handleOpenMirrorPicker(asset.browser_download_url, asset.name, displayName, asset.size);
+					}}
+				>
+					<Icons.chevronDown size={14} />
+				</button>
+			</div>
 		);
 	};
 
@@ -202,7 +262,7 @@ export function HomePage({ onStart }: HomePageProps) {
 					{onStart && (
 						<button className="btn-start-web" onClick={handleStartApp}>
 							<Icons.book size={16} />
-							<span>使用网页端</span>的
+							<span>使用网页版</span>
 						</button>
 					)}
 					<button className="btn-download" onClick={() => setShowDownloadModal(true)}>
@@ -329,6 +389,27 @@ export function HomePage({ onStart }: HomePageProps) {
 							</button>
 						</div>
 						<div className="modal-body">
+							<div className="api-mirror-selector" style={{ marginBottom: "16px" }}>
+								<Icons.server size={14} />
+								<select
+									value={selectedApiProxyIndex}
+									onChange={(e) => {
+										setSelectedApiProxyIndex(parseInt(e.target.value, 10));
+									}}
+									className="api-mirror-select"
+								>
+									{CORS_PROXIES.map((p, i) => (
+										<option key={i} value={i}>{p.name}</option>
+									))}
+								</select>
+							</div>
+							{hasUpdate && release?.tag_name && (
+								<div className="update-hint" style={{ marginBottom: "16px" }}>
+									<p style={{ fontSize: "0.9em", color: "#d97706", padding: "12px", backgroundColor: "#fef3c7", borderRadius: "8px", border: "1px solid #f59e0b" }}>
+										🚀 发现新版本 {release.tag_name}，当前版本 {currentVersion}，建议更新以获取最新功能
+									</p>
+								</div>
+							)}
 							{loading ? (
 								<div className="loading-spinner">
 									<Loader2 className="animate-spin" size={24} />
@@ -377,6 +458,68 @@ export function HomePage({ onStart }: HomePageProps) {
 							) : (
 								<p className="no-assets">暂无可用下载</p>
 							)}
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* 镜像源选择弹窗 */}
+			{mirrorPickerAsset && (
+				<div className="modal-overlay" onClick={handleCloseMirrorPicker}>
+					<div className="mirror-picker-modal" onClick={e => e.stopPropagation()}>
+						<div className="modal-header">
+							<h3 className="modal-title">
+								<Icons.download size={18} />
+								<span>选择下载源</span>
+							</h3>
+							<button className="btn-close" onClick={handleCloseMirrorPicker}>
+								<Icons.x size={18} />
+							</button>
+						</div>
+						<div className="modal-body">
+							<div className="mirror-picker-info">
+								<span className="mirror-picker-file">{mirrorPickerAsset.displayName}</span>
+								<span className="mirror-picker-size">{formatFileSize(mirrorPickerAsset.size)}</span>
+							</div>
+							<div className="mirror-picker-list">
+								{GITHUB_MIRRORS.map((mirror) => {
+									const mirrorKey = mirror.name;
+									const isDownloadingThis = downloadingMirror === mirrorKey;
+									const result = mirrorResults[mirrorKey];
+									return (
+										<button
+											key={mirrorKey}
+											className={`mirror-picker-item ${result === "success" ? "success" : ""} ${result === "error" ? "error" : ""}`}
+											onClick={() => handleMirrorDownload(mirror)}
+											disabled={isDownloadingThis || result === "success"}
+										>
+											<div className="mirror-picker-item-left">
+												<div className="mirror-picker-item-icon">
+													{isDownloadingThis ? (
+														<Loader2 className="animate-spin" size={18} />
+													) : result === "success" ? (
+														<CheckCircle2 size={18} />
+													) : result === "error" ? (
+														<XCircle size={18} />
+													) : (
+														<Icons.download size={18} />
+													)}
+												</div>
+												<div className="mirror-picker-item-info">
+													<span className="mirror-picker-item-name">{mirror.name}</span>
+													<span className="mirror-picker-item-desc">{mirror.description}</span>
+												</div>
+											</div>
+											{result === "success" && (
+												<span className="mirror-picker-item-status">下载成功</span>
+											)}
+											{result === "error" && (
+												<span className="mirror-picker-item-status error">下载失败</span>
+											)}
+										</button>
+									);
+								})}
+							</div>
 						</div>
 					</div>
 				</div>

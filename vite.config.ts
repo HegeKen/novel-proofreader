@@ -1,17 +1,20 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import fs from 'fs'
+import path from 'path'
 
-// https://vite.dev/config/
+const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'))
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  // Tauri 需要一个固定端口
   server: {
     port: 1420,
     strictPort: true,
   },
-  // Tauri 使用相对路径
   base: './',
-  // 环境变量前缀
   envPrefix: ['VITE_', 'TAURI_'],
+  define: {
+    __APP_VERSION__: JSON.stringify(packageJson.version),
+  },
 })

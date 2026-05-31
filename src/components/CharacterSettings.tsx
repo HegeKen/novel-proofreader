@@ -4,13 +4,13 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useConfigStore } from "../stores/configStore";
-import type { CharacterInfo, CharacterRelationship, CharacterRole, NovelCategory, ProofreadProgress } from "../types";
+import type { CharacterInfo, CharacterRelationship, CharacterRole, NovelCategory, ProofreadProgress, RelationType } from "../types";
 import { synthesizeSpeechWithVoice } from "../utils/ttsService";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { logger } from "../utils/logger";
-import { detectCharactersFromText, detectHighFrequencyWords, saveCharacterConfigToStorage, loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
-import type { DetectedCharacter, HighFrequencyWord } from "../utils/fileExport";
+import { saveCharacterConfigToStorage, loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
+import type { DetectedCharacter } from "../utils/fileExport";
 import { analyzeCharactersInBatches } from "../utils/aiClient";
 import { formatDateTime } from "../utils/formatters";
 import { RelationshipGraph } from "./RelationshipGraph";
@@ -19,6 +19,441 @@ interface CharacterSettingsProps {
 	novelId: string;
 	novelName: string;
 	onClose: () => void;
+}
+
+// 手动整理关系项组件
+interface OrganizeRelationItemProps {
+	relIndex: number;
+	rel: {
+		sourceName?: string;
+		targetName?: string;
+		relationType: string;
+		customRelationType?: string;
+		sourceNickname?: string[];
+		targetNickname?: string[];
+		description: string;
+	};
+	characters: CharacterInfo[];
+	novelId: string;
+	onAdded: () => void;
+}
+
+const RELATION_TYPE_OPTIONS: Array<{ value: RelationType; label: string }> = [
+	{ value: "couple", label: "夫妻" },
+	{ value: "lover", label: "恋人" },
+	{ value: "father-son", label: "父子" },
+	{ value: "father-daughter", label: "父女" },
+	{ value: "mother-son", label: "母子" },
+	{ value: "mother-daughter", label: "母女" },
+	{ value: "brother", label: "兄弟" },
+	{ value: "sister", label: "姐妹" },
+	{ value: "brother-sister", label: "兄妹" },
+	{ value: "sister-brother", label: "姐弟" },
+	{ value: "mother-daughter-in-law", label: "婆媳" },
+	{ value: "father-daughter-in-law", label: "公媳" },
+	{ value: "mother-son-in-law", label: "岳母女婿" },
+	{ value: "father-son-in-law", label: "翁婿" },
+	{ value: "co-parents-male", label: "亲家公" },
+	{ value: "co-parents-female", label: "亲家母" },
+	{ value: "classmate", label: "同学" },
+	{ value: "friend", label: "朋友" },
+	{ value: "bestie", label: "闺蜜" },
+	{ value: "rival", label: "竞争对手" },
+	{ value: "master-disciple", label: "师徒" },
+	{ value: "employer-employee", label: "雇佣" },
+	{ value: "colleague", label: "同事" },
+	{ value: "stranger", label: "陌生人" },
+	{ value: "other", label: "其他" },
+];
+
+function OrganizeRelationItem({ rel, characters, novelId, onAdded }: OrganizeRelationItemProps) {
+	const addRelationship = useAppStore((s) => s.addRelationship);
+	const [sourceId, setSourceId] = useState("");
+	const [targetId, setTargetId] = useState("");
+	const [relationType, setRelationType] = useState<RelationType>("friend");
+	const [sourceNickname, setSourceNickname] = useState("");
+	const [targetNickname, setTargetNickname] = useState("");
+	const [isAdded, setIsAdded] = useState(false);
+
+	const handleAdd = () => {
+		if (!sourceId || !targetId) {
+			alert("请选择源角色和目标角色");
+			return;
+		}
+		if (sourceId === targetId) {
+			alert("源角色和目标角色不能相同");
+			return;
+		}
+
+		addRelationship(novelId, {
+			sourceId,
+			targetId,
+			relationType: [relationType],
+			sourceNickname: sourceNickname ? [sourceNickname] : [],
+			targetNickname: targetNickname ? [targetNickname] : [],
+		});
+
+		setIsAdded(true);
+		onAdded();
+	};
+
+	return (
+		<div className="organize-relation-item">
+			<div className="organize-relation-desc">
+				<Icons.userRound size={14} />
+				<span>{rel.description || `${rel.sourceName || '未知'} -- ${rel.targetName || '未知'}`}</span>
+			</div>
+			<div className="organize-relation-form">
+				<div className="organize-relation-row">
+					<div className="organize-relation-field">
+						<label>源角色</label>
+						<select
+							value={sourceId}
+							onChange={(e) => setSourceId(e.target.value)}
+							className="form-select"
+						>
+							<option value="">选择角色...</option>
+							{characters.map((char) => (
+								<option key={char.id} value={char.id}>
+									{char.name}
+								</option>
+							))}
+						</select>
+					</div>
+					<div className="organize-relation-arrow">
+						<Icons.chevronRight size={16} />
+					</div>
+					<div className="organize-relation-field">
+						<label>目标角色</label>
+						<select
+							value={targetId}
+							onChange={(e) => setTargetId(e.target.value)}
+							className="form-select"
+						>
+							<option value="">选择角色...</option>
+							{characters.map((char) => (
+								<option key={char.id} value={char.id}>
+									{char.name}
+								</option>
+							))}
+						</select>
+					</div>
+				</div>
+				<div className="organize-relation-row">
+					<div className="organize-relation-field">
+						<label>关系类型</label>
+						<select
+							value={relationType}
+							onChange={(e) => setRelationType(e.target.value as RelationType)}
+							className="form-select"
+						>
+							{RELATION_TYPE_OPTIONS.map((opt) => (
+								<option key={opt.value} value={opt.value}>
+									{opt.label}
+								</option>
+							))}
+						</select>
+					</div>
+					<div className="organize-relation-field">
+						<label>源对目标的称呼</label>
+						<input
+							type="text"
+							value={sourceNickname}
+							onChange={(e) => setSourceNickname(e.target.value)}
+							placeholder="如：老公、妻子"
+							className="form-input"
+						/>
+					</div>
+					<div className="organize-relation-field">
+						<label>目标对源的称呼</label>
+						<input
+							type="text"
+							value={targetNickname}
+							onChange={(e) => setTargetNickname(e.target.value)}
+							placeholder="如：老婆、丈夫"
+							className="form-input"
+						/>
+					</div>
+				</div>
+				<button
+					className="btn btn-primary btn-sm"
+					onClick={handleAdd}
+					disabled={isAdded}
+				>
+					{isAdded ? <Icons.check size={14} /> : <Icons.plus size={14} />}
+					{isAdded ? "已添加" : "添加关系"}
+				</button>
+			</div>
+		</div>
+	);
+}
+
+// 角色合并配置面板组件
+interface MergeConfigPanelProps {
+	sourceChars: CharacterInfo[];
+	onExecute: (mergedChar: CharacterInfo, deleteIds: string[]) => void;
+	onBack: () => void;
+}
+
+function MergeConfigPanel({ sourceChars, onExecute, onBack }: MergeConfigPanelProps) {
+	const [mergedName, setMergedName] = useState(sourceChars[0]?.name || "");
+	const [mergedGender, setMergedGender] = useState<"male" | "female" | "other">(sourceChars[0]?.gender || "other");
+	const [mergedRole, setMergedRole] = useState<CharacterRole | undefined>(sourceChars[0]?.role);
+	const [mergedVoice, setMergedVoice] = useState(sourceChars[0]?.voice || "");
+
+	// 收集所有别名和关系代称
+	const allAliases = useMemo(() => {
+		const aliases = new Set<string>();
+		sourceChars.forEach(char => {
+			char.aliases?.forEach(alias => aliases.add(alias));
+		});
+		return Array.from(aliases);
+	}, [sourceChars]);
+
+	const allRelationTerms = useMemo(() => {
+		const terms = new Set<string>();
+		sourceChars.forEach(char => {
+			char.relationTerms?.forEach(term => terms.add(term));
+		});
+		return Array.from(terms);
+	}, [sourceChars]);
+
+	// 收集所有来源角色的备注
+	const allNotes = useMemo(() => {
+		return sourceChars
+			.map(char => ({ id: char.id, name: char.name, notes: char.notes || "" }))
+			.filter(item => item.notes.trim());
+	}, [sourceChars]);
+
+	const [selectedAliases, setSelectedAliases] = useState<Set<string>>(new Set(allAliases));
+	const [selectedRelationTerms, setSelectedRelationTerms] = useState<Set<string>>(new Set(allRelationTerms));
+	const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set(allNotes.map(n => n.id)));
+
+	const [customNotes, setCustomNotes] = useState("");
+
+	const toggleAlias = (alias: string) => {
+		setSelectedAliases(prev => {
+			const newSet = new Set(prev);
+			if (newSet.has(alias)) {
+				newSet.delete(alias);
+			} else {
+				newSet.add(alias);
+			}
+			return newSet;
+		});
+	};
+
+	const toggleRelationTerm = (term: string) => {
+		setSelectedRelationTerms(prev => {
+			const newSet = new Set(prev);
+			if (newSet.has(term)) {
+				newSet.delete(term);
+			} else {
+				newSet.add(term);
+			}
+			return newSet;
+		});
+	};
+
+	const toggleNote = (charId: string) => {
+		setSelectedNotes(prev => {
+			const newSet = new Set(prev);
+			if (newSet.has(charId)) {
+				newSet.delete(charId);
+			} else {
+				newSet.add(charId);
+			}
+			return newSet;
+		});
+	};
+
+	const handleExecute = () => {
+		if (!mergedName.trim()) {
+			alert("请输入合并后的角色名称");
+			return;
+		}
+
+		const selectedNotesContent = allNotes
+			.filter(n => selectedNotes.has(n.id))
+			.map(n => n.notes.trim())
+			.filter(n => n)
+			.join("\n\n");
+
+		const finalNotes = [selectedNotesContent, customNotes]
+			.filter(n => n.trim())
+			.join("\n\n");
+
+		const mergedChar: CharacterInfo = {
+			id: `char-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+			name: mergedName.trim(),
+			gender: mergedGender,
+			role: mergedRole,
+			voice: mergedVoice,
+			notes: finalNotes,
+			aliases: Array.from(selectedAliases),
+			relationTerms: Array.from(selectedRelationTerms),
+		};
+
+		const deleteIds = sourceChars.map(c => c.id);
+		onExecute(mergedChar, deleteIds);
+	};
+
+	return (
+		<div className="merge-config-panel">
+			<div className="merge-source-info">
+				<span className="merge-source-label">合并来源：</span>
+				{sourceChars.map(c => c.name).join(", ")}
+			</div>
+
+			<div className="merge-config-form">
+				<div className="form-field">
+					<label>角色名称</label>
+					<input
+						type="text"
+						className="config-input"
+						value={mergedName}
+						onChange={(e) => setMergedName(e.target.value)}
+						placeholder="输入合并后的角色名称"
+					/>
+				</div>
+
+				<div className="grid grid-cols-2 gap-3">
+					<div className="form-field">
+						<label>性别</label>
+						<Select
+							value={mergedGender}
+							onChange={(v) => setMergedGender(v as "male" | "female" | "other")}
+							options={[
+								{ value: "male", label: "男" },
+								{ value: "female", label: "女" },
+								{ value: "other", label: "其他" },
+							]}
+						/>
+					</div>
+					<div className="form-field">
+						<label>角色类型</label>
+						<Select
+							value={mergedRole || ""}
+							onChange={(v) => setMergedRole(v ? (v as CharacterRole) : undefined)}
+							options={[
+								{ value: "", label: "未设置" },
+								{ value: "protagonist", label: "男主" },
+								{ value: "heroine", label: "女主" },
+								{ value: "antagonist", label: "反派" },
+								{ value: "supportingMale", label: "男配" },
+								{ value: "supportingFemale", label: "女配" },
+								{ value: "mentor", label: "导师" },
+								{ value: "rival", label: "对手" },
+								{ value: "loveInterest", label: "爱慕对象" },
+								{ value: "family", label: "家人" },
+								{ value: "friend", label: "朋友" },
+								{ value: "npc", label: "NPC" },
+							]}
+						/>
+					</div>
+				</div>
+
+				<div className="form-field">
+					<label>音色</label>
+					<Select
+						value={mergedVoice || ""}
+						onChange={(v) => setMergedVoice(v as string)}
+						options={[
+							{ value: "", label: "默认" },
+							{ value: "冰糖", label: "冰糖 (女)" },
+							{ value: "茉莉", label: "茉莉 (女)" },
+							{ value: "苏打", label: "苏打 (男)" },
+							{ value: "白桦", label: "白桦 (男)" },
+							{ value: "Mia", label: "Mia (女)" },
+							{ value: "Chloe", label: "Chloe (女)" },
+							{ value: "Milo", label: "Milo (男)" },
+							{ value: "Dean", label: "Dean (男)" },
+						]}
+					/>
+				</div>
+
+				{allNotes.length > 0 && (
+					<div className="form-field">
+						<label>保留的备注 ({selectedNotes.size}/{allNotes.length})</label>
+						<div className="merge-notes-list">
+							{allNotes.map(note => (
+								<label
+									key={note.id}
+									className={`merge-note-item ${selectedNotes.has(note.id) ? 'selected' : ''}`}
+								>
+									<input
+										type="checkbox"
+										checked={selectedNotes.has(note.id)}
+										onChange={() => toggleNote(note.id)}
+									/>
+									<div className="note-content">
+										<span className="note-author">{note.name}</span>
+										<p>{note.notes}</p>
+									</div>
+								</label>
+							))}
+						</div>
+					</div>
+				)}
+
+				<div className="form-field">
+					<label>自定义备注（追加到选中的备注后）</label>
+					<textarea
+						className="config-input"
+						value={customNotes}
+						onChange={(e) => setCustomNotes(e.target.value)}
+						placeholder="输入额外的备注信息"
+						rows={3}
+					/>
+				</div>
+
+				{allAliases.length > 0 && (
+					<div className="form-field">
+						<label>保留的别名 ({selectedAliases.size}/{allAliases.length})</label>
+						<div className="merge-tags-grid">
+							{allAliases.map(alias => (
+								<label key={alias} className={`merge-tag-item ${selectedAliases.has(alias) ? 'selected' : ''}`}>
+									<input
+										type="checkbox"
+										checked={selectedAliases.has(alias)}
+										onChange={() => toggleAlias(alias)}
+									/>
+									<span>{alias}</span>
+								</label>
+							))}
+						</div>
+					</div>
+				)}
+
+				{allRelationTerms.length > 0 && (
+					<div className="form-field">
+						<label>保留的关系代称 ({selectedRelationTerms.size}/{allRelationTerms.length})</label>
+						<div className="merge-tags-grid">
+							{allRelationTerms.map(term => (
+								<label key={term} className={`merge-tag-item ${selectedRelationTerms.has(term) ? 'selected' : ''}`}>
+									<input
+										type="checkbox"
+										checked={selectedRelationTerms.has(term)}
+										onChange={() => toggleRelationTerm(term)}
+									/>
+									<span>{term}</span>
+								</label>
+							))}
+						</div>
+					</div>
+				)}
+			</div>
+
+			<div className="modal-footer">
+				<button className="btn btn-secondary" onClick={onBack}>
+					上一步
+				</button>
+				<button className="btn btn-primary" onClick={handleExecute}>
+					确认合并 ({sourceChars.length}个角色)
+				</button>
+			</div>
+		</div>
+	);
 }
 
 export function CharacterSettings({ novelId, novelName, onClose }: CharacterSettingsProps) {
@@ -56,6 +491,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const setCharactersForNovel = useAppStore((s) => s.setCharactersForNovel);
 	const setRelationshipsForNovel = useAppStore((s) => s.setRelationshipsForNovel);
 	const getRelationshipsForNovel = useAppStore((s) => s.getRelationshipsForNovel);
+	const removeRelationship = useAppStore((s) => s.removeRelationship);
+	const updateRelationship = useAppStore((s) => s.updateRelationship);
 	const setNodePositions = useAppStore((s) => s.setNodePositions);
 	const setIgnoredWords = useAppStore((s) => s.setIgnoredWords);
 	const setProofreadProgress = useAppStore((s) => s.setProofreadProgress);
@@ -75,12 +512,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 检测新角色弹窗状态
 	const [showDetectModal, setShowDetectModal] = useState(false);
 	const [detectedCharacters, setDetectedCharacters] = useState<DetectedCharacter[]>([]);
-	const [isScanning, setIsScanning] = useState(false);
 	const [detectSearchQuery, setDetectSearchQuery] = useState("");
-	
-	// 高频词汇检测弹窗状态
-	const [showWordsModal, setShowWordsModal] = useState(false);
-	const [detectedWords, setDetectedWords] = useState<HighFrequencyWord[]>([]);
 
 	// 角色分析弹窗状态
 	const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
@@ -96,6 +528,126 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		mergeTargetId?: string;
 	}
 	const [detectedSelections, setDetectedSelections] = useState<Record<string, DetectedSelection>>({});
+
+	// 角色合并弹窗状态
+	const [showMergeModal, setShowMergeModal] = useState(false);
+	const [selectedForMerge, setSelectedForMerge] = useState<string[]>([]);
+	const [mergeMode, setMergeMode] = useState<"select" | "config">("select");
+	const [mergeSourceChars, setMergeSourceChars] = useState<CharacterInfo[]>([]);
+
+	// 手动整理关系弹窗状态
+	const [showOrganizeRelationsModal, setShowOrganizeRelationsModal] = useState(false);
+	const [skippedRelationships, setSkippedRelationships] = useState<Array<{
+		sourceName?: string;
+		targetName?: string;
+		relationType: string;
+		customRelationType?: string;
+		sourceNickname?: string[];
+		targetNickname?: string[];
+		description: string;
+	}>>([]);
+
+	// 关系管理弹窗状态
+	const [showManageRelationsModal, setShowManageRelationsModal] = useState(false);
+	const [editingRelation, setEditingRelation] = useState<CharacterRelationship | null>(null);
+	const [showOnlyUnknown, setShowOnlyUnknown] = useState(true);
+	const [selectedCharacterForRelations, setSelectedCharacterForRelations] = useState<string | null>(null);
+	const [relationForm, setRelationForm] = useState<{
+		sourceId: string;
+		targetId: string;
+		relationType: RelationType[];
+		customRelationType: string;
+		sourceNickname: string[];
+		targetNickname: string[];
+		newSourceNickname: string;
+		newTargetNickname: string;
+	}>({
+		sourceId: "",
+		targetId: "",
+		relationType: [],
+		customRelationType: "",
+		sourceNickname: [],
+		targetNickname: [],
+		newSourceNickname: "",
+		newTargetNickname: "",
+	});
+
+	const getCharacterById = useCallback(
+		(id: string) => characters.find((c) => c.id === id),
+		[characters]
+	);
+
+	const getSourceSuggestions = useCallback(
+		(input: string) => {
+			if (!input) return [];
+			const targetChar = getCharacterById(relationForm.targetId);
+			if (!targetChar) return [];
+			const suggestions = new Set<string>();
+			["老婆", "老公", "妻子", "丈夫", "爱人", "亲爱的", targetChar.name, targetChar.name.charAt(0)].forEach((s) => {
+				if (s.toLowerCase().includes(input.toLowerCase())) {
+					suggestions.add(s);
+				}
+			});
+			return Array.from(suggestions).slice(0, 5);
+		},
+		[getCharacterById, relationForm.targetId]
+	);
+
+	const getTargetSuggestions = useCallback(
+		(input: string) => {
+			if (!input) return [];
+			const sourceChar = getCharacterById(relationForm.sourceId);
+			if (!sourceChar) return [];
+			const suggestions = new Set<string>();
+			["老婆", "老公", "妻子", "丈夫", "爱人", "亲爱的", sourceChar.name, sourceChar.name.charAt(0)].forEach((s) => {
+				if (s.toLowerCase().includes(input.toLowerCase())) {
+					suggestions.add(s);
+				}
+			});
+			return Array.from(suggestions).slice(0, 5);
+		},
+		[getCharacterById, relationForm.sourceId]
+	);
+
+	const handleAddSourceNickname = useCallback((setForm: typeof setRelationForm) => {
+		setForm((prev) => {
+			if (prev.newSourceNickname.trim()) {
+				return {
+					...prev,
+					sourceNickname: [...prev.sourceNickname, prev.newSourceNickname.trim()],
+					newSourceNickname: "",
+				};
+			}
+			return prev;
+		});
+	}, []);
+
+	const handleRemoveSourceNickname = useCallback((index: number, setForm: typeof setRelationForm) => {
+		setForm((prev) => ({
+			...prev,
+			sourceNickname: prev.sourceNickname.filter((_, i) => i !== index),
+		}));
+	}, []);
+
+	const handleAddTargetNickname = useCallback((setForm: typeof setRelationForm) => {
+		setForm((prev) => {
+			if (prev.newTargetNickname.trim()) {
+				return {
+					...prev,
+					targetNickname: [...prev.targetNickname, prev.newTargetNickname.trim()],
+					newTargetNickname: "",
+				};
+			}
+			return prev;
+		});
+	}, []);
+
+	const handleRemoveTargetNickname = useCallback((index: number, setForm: typeof setRelationForm) => {
+		setForm((prev) => ({
+			...prev,
+			targetNickname: prev.targetNickname.filter((_, i) => i !== index),
+		}));
+	}, []);
 
 	// 角色设置标签页状态：'list' | 'graph'
 	const [activeTab, setActiveTab] = useState<"list" | "graph">("graph");
@@ -528,79 +1080,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		input.click();
 	}, [novelId, novelCharacters, updateCharacter, setCharactersForNovel, setRelationshipsForNovel, setNodePositions, setIgnoredWords, setProofreadProgress, setNovelCategory, setIgnoredCharacterNames]);
 
-	// 扫描小说检测角色
-	const handleScanCharacters = useCallback(async () => {
-		if (!currentNovel?.fullText) {
-			alert("无法获取小说内容");
-			return;
-		}
-		
-		setIsScanning(true);
-		try {
-			const detected = detectCharactersFromText(currentNovel.fullText, 3);
-			
-			// 过滤掉已存在的角色和已忽略的角色（但保留用于合并的选项）
-			const existingNames = new Set(characters.map(c => c.name.toLowerCase()));
-			const existingAliases = new Set(characters.flatMap(c => (c.aliases || []).map(a => a.toLowerCase())));
-			const ignoredNames = new Set(getIgnoredCharacterNames(novelId).map(n => n.toLowerCase()));
-
-			const newChars = detected.filter(dc => {
-				const lowerName = dc.name.toLowerCase();
-				return !existingNames.has(lowerName) && !existingAliases.has(lowerName) && !ignoredNames.has(lowerName);
-			});
-			
-			setDetectedCharacters(newChars.sort((a, b) => b.frequency - a.frequency));
-			
-			// 初始化选择状态：默认不选中，用户手动选择
-			const initialSelections: Record<string, DetectedSelection> = {};
-			for (const char of newChars) {
-				initialSelections[char.name] = {
-					selected: false,
-					action: 'new',
-				};
-			}
-			setDetectedSelections(initialSelections);
-			setShowDetectModal(true);
-		} catch (err) {
-			console.error('[CharacterSettings] Scan characters failed:', err);
-			alert("扫描失败：" + (err instanceof Error ? err.message : String(err)));
-		} finally {
-			setIsScanning(false);
-		}
-	}, [currentNovel, characters, getIgnoredCharacterNames, novelId, setDetectedCharacters, setDetectedSelections, setShowDetectModal]);
-
-	// 扫描高频词汇
-	const handleScanHighFrequencyWords = useCallback(async () => {
-		if (!currentNovel?.fullText) {
-			alert("无法获取小说内容");
-			return;
-		}
-		
-		setIsScanning(true);
-		try {
-			const words = detectHighFrequencyWords(currentNovel.fullText, 10);
-			
-			const existingNames = new Set(characters.map(c => c.name.toLowerCase()));
-			const existingAliases = new Set(characters.flatMap(c => (c.aliases || []).map(a => a.toLowerCase())));
-			const existingRelationTerms = new Set(characters.flatMap(c => (c.relationTerms || []).map(r => r.toLowerCase())));
-			const ignoredWordSet = new Set(getIgnoredWords(novelId).map(w => w.toLowerCase()));
-			const ignoredNameSet = new Set(getIgnoredCharacterNames(novelId).map(n => n.toLowerCase()));
-			
-			const filteredWords = words.filter(w => {
-				const lowerWord = w.word.toLowerCase();
-				return !existingNames.has(lowerWord) && !existingAliases.has(lowerWord) && !existingRelationTerms.has(lowerWord) && !ignoredWordSet.has(lowerWord) && !ignoredNameSet.has(lowerWord);
-			});
-			
-			setDetectedWords(filteredWords);
-			setShowWordsModal(true);
-		} catch (err) {
-			console.error('[CharacterSettings] Scan high frequency words failed:', err);
-			alert("扫描失败：" + (err instanceof Error ? err.message : String(err)));
-		} finally {
-			setIsScanning(false);
-		}
-	}, [currentNovel, characters, getIgnoredWords, getIgnoredCharacterNames, novelId, setDetectedWords, setShowWordsModal]);
-
 	// 使用AI分析整本小说提取角色和关系
 	const handleAnalyzeCharacters = async () => {
 		if (!currentNovel?.fullText) {
@@ -680,46 +1159,114 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			// 获取当前关系并添加新关系
 			const currentRelationships = getRelationshipsForNovel(novelId);
 			const newRelationships: CharacterRelationship[] = [];
+			const currentSkippedRelationships: typeof result.relationships = [];
+
+			// 建立角色名称到新ID的映射（仅包含新添加的角色）
+			// 重要：这里使用新生成的ID，而不是AI返回的ID
+			const nameToIdMapFull = new Map<string, string>();
+			for (const char of newCharactersWithIds) {
+				nameToIdMapFull.set(char.name.toLowerCase(), char.id);
+			}
+
+			// 建立AI返回的原始ID到新ID的映射（用于处理AI在relationships中使用了与characters不一致的ID的情况）
+			const aiIdToNewIdMap = new Map<string, string>();
+			for (let i = 0; i < result.characters.length; i++) {
+				const originalId = result.characters[i].id;
+				if (originalId && newCharactersWithIds[i]) {
+					aiIdToNewIdMap.set(originalId, newCharactersWithIds[i].id);
+				}
+			}
 
 			for (const rel of result.relationships) {
-				const sourceNameLower = rel.sourceName.toLowerCase();
-				const targetNameLower = rel.targetName.toLowerCase();
+				// 优先使用 sourceName/targetName（按提示词要求）
+				// 如果AI不按要求返回了 sourceId/targetId，则需要做额外处理
+				let sourceName = rel.sourceName;
+				let targetName = rel.targetName;
 
-				// 查找已存在角色的ID
-				const matchedSource = characters.find(c => c.name.toLowerCase() === sourceNameLower);
-				const matchedTarget = characters.find(c => c.name.toLowerCase() === targetNameLower);
+				// 如果 sourceName/targetName 不存在，尝试使用 sourceId/targetId
+				// 这种情况下AI可能自作主张使用了ID，我们需要通过ID映射找到正确的角色
+				if (!sourceName && rel.sourceId) {
+					// 首先尝试用原始ID映射表查找
+					const mappedId = aiIdToNewIdMap.get(rel.sourceId);
+					if (mappedId) {
+						// 通过新ID反查角色名
+						const char = newCharactersWithIds.find(c => c.id === mappedId);
+						if (char) {
+							sourceName = char.name;
+						}
+					}
+				}
+				if (!targetName && rel.targetId) {
+					const mappedId = aiIdToNewIdMap.get(rel.targetId);
+					if (mappedId) {
+						const char = newCharactersWithIds.find(c => c.id === mappedId);
+						if (char) {
+							targetName = char.name;
+						}
+					}
+				}
 
-				// 获取新角色的ID
-				const newSourceId = nameToIdMap.get(sourceNameLower);
-				const newTargetId = nameToIdMap.get(targetNameLower);
+				// 如果仍然无法确定角色名，保存到跳过的关系列表
+				if (!sourceName || !targetName) {
+					logger.warn("[CharacterSettings] 无法确定关系中的角色名，跳过:", rel);
+					currentSkippedRelationships.push(rel);
+					continue;
+				}
 
-				// 确定source和target的ID
-				const sourceId = matchedSource?.id || newSourceId;
-				const targetId = matchedTarget?.id || newTargetId;
+				const sourceNameLower = sourceName.toLowerCase();
+				const targetNameLower = targetName.toLowerCase();
 
-				// 跳过无法匹配的关系
-				if (!sourceId || !targetId) continue;
+				// 查找角色的ID（在新添加的角色中查找）
+				const sourceId = nameToIdMapFull.get(sourceNameLower);
+				const targetId = nameToIdMapFull.get(targetNameLower);
+
+				// 如果在新添加的角色中找不到，尝试在已存在的角色中查找
+				const finalSourceId = sourceId || characters.find(c => c.name.toLowerCase() === sourceNameLower)?.id;
+				const finalTargetId = targetId || characters.find(c => c.name.toLowerCase() === targetNameLower)?.id;
+
+				// 跳过无法匹配的关系，保存到跳过的关系列表
+				if (!finalSourceId || !finalTargetId) {
+					logger.warn(`[CharacterSettings] 无法找到角色ID: ${sourceName}(${sourceId}) -> ${targetName}(${targetId})`);
+					currentSkippedRelationships.push(rel);
+					continue;
+				}
 
 				// 跳过自环关系
-				if (sourceId === targetId) continue;
+				if (finalSourceId === finalTargetId) continue;
 
 				newRelationships.push({
 					id: `rel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
 					novelId,
-					sourceId,
-					targetId,
+					sourceId: finalSourceId,
+					targetId: finalTargetId,
 					relationType: [rel.relationType as import("../types").RelationType],
 					customRelationType: rel.customRelationType,
-					sourceNickname: rel.sourceNickname,
-					targetNickname: rel.targetNickname,
+					sourceNickname: rel.sourceNickname || [],
+					targetNickname: rel.targetNickname || [],
 				});
 			}
 
 			// 添加新关系
 			setRelationshipsForNovel(novelId, [...currentRelationships, ...newRelationships]);
 
-			alert(`分析完成！新增 ${newCharactersWithIds.length} 个角色和 ${newRelationships.length} 条关系`);
-			setShowAnalyzeModal(false);
+			// 保存跳过的关系供手动整理
+			setSkippedRelationships(currentSkippedRelationships);
+
+			// 根据结果显示不同消息
+			if (currentSkippedRelationships.length > 0) {
+				const shouldOrganize = confirm(
+					`分析完成！\n\n新增 ${newCharactersWithIds.length} 个角色\n导入 ${newRelationships.length} 条关系\n\n有 ${currentSkippedRelationships.length} 条关系因无法匹配角色而被跳过。\n\n是否现在手动整理这些关系？`
+				);
+				if (shouldOrganize) {
+					setShowAnalyzeModal(false);
+					setShowOrganizeRelationsModal(true);
+				} else {
+					setShowAnalyzeModal(false);
+				}
+			} else {
+				alert(`分析完成！新增 ${newCharactersWithIds.length} 个角色和 ${newRelationships.length} 条关系`);
+				setShowAnalyzeModal(false);
+			}
 		} catch (err) {
 			if (err instanceof Error && err.message === "分析已取消") {
 				logger.proofread("[CharacterSettings] 用户取消分析");
@@ -730,6 +1277,48 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		} finally {
 			setIsAnalyzing(false);
 		}
+	};
+
+	// 打开角色合并弹窗
+	const handleOpenMergeModal = () => {
+		setSelectedForMerge([]);
+		setMergeMode("select");
+		setMergeSourceChars([]);
+		setShowMergeModal(true);
+	};
+
+	// 选择/取消选择角色进行合并
+	const handleToggleMergeSelection = (charId: string) => {
+		setSelectedForMerge(prev => {
+			if (prev.includes(charId)) {
+				return prev.filter(id => id !== charId);
+			}
+			return [...prev, charId];
+		});
+	};
+
+	// 进入配置模式，准备合并
+	const handleProceedToMergeConfig = () => {
+		if (selectedForMerge.length < 2) {
+			alert("请至少选择2个角色进行合并");
+			return;
+		}
+		const chars = characters.filter(c => selectedForMerge.includes(c.id));
+		setMergeSourceChars(chars);
+		setMergeMode("config");
+	};
+
+	// 执行角色合并
+	const handleExecuteMerge = (mergedChar: CharacterInfo, deleteIds: string[]) => {
+		// 删除被合并的角色
+		for (const id of deleteIds) {
+			removeCharacter(novelId, id);
+		}
+		// 添加合并后的角色
+		addCharacter(novelId, mergedChar);
+		// 关闭弹窗
+		setShowMergeModal(false);
+		alert(`成功合并 ${deleteIds.length + 1} 个角色为 "${mergedChar.name}"`);
 	};
 
 	// 全选/取消全选
@@ -1519,27 +2108,9 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						</button>
 						<button
 							className="action-btn character-action"
-							onClick={handleScanCharacters}
-							title="扫描检测角色"
-							disabled={isScanning}
-						>
-							<Icons.search size={18} />
-							<span>{isScanning ? "扫描中" : "扫描"}</span>
-						</button>
-						<button
-							className="action-btn character-action"
-							onClick={handleScanHighFrequencyWords}
-							title="高频词汇检测"
-							disabled={isScanning}
-						>
-							<Icons.list size={18} />
-							<span>高频词</span>
-						</button>
-						<button
-							className="action-btn character-action"
 							onClick={() => setShowAnalyzeModal(true)}
 							title="AI分析角色"
-							disabled={isAnalyzing || isScanning}
+							disabled={isAnalyzing}
 						>
 							<Icons.sparkle size={18} />
 							<span>{isAnalyzing ? "分析中" : "AI分析"}</span>
@@ -1551,6 +2122,22 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						>
 							<Icons.listOrdered size={18} />
 							<span>排序</span>
+						</button>
+						<button
+							className="action-btn character-action"
+							onClick={handleOpenMergeModal}
+							title="合并角色"
+						>
+							<Icons.combine size={18} />
+							<span>合并</span>
+						</button>
+						<button
+							className="action-btn character-action"
+							onClick={() => setShowManageRelationsModal(true)}
+							title="管理关系"
+						>
+							<Icons.userRoundPen size={18} />
+							<span>关系</span>
 						</button>
 					</div>
 				)}
@@ -1796,68 +2383,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			</div>
 		)}
 
-		{/* 高频词汇弹窗 */}
-		{showWordsModal && (
-			<div className="modal-overlay" onClick={() => setShowWordsModal(false)}>
-				<div className="modal-content detect-characters-modal" onClick={e => e.stopPropagation()}>
-					<div className="modal-header">
-						<h3>高频词汇列表</h3>
-						<button className="modal-close" onClick={() => setShowWordsModal(false)}>
-							<Icons.close size={18} />
-						</button>
-					</div>
-					<div className="modal-body">
-						<p className="text-sm text-neutral-400 mb-4">
-							从小说中检测到 {detectedWords.length} 个高频词，其中 {detectedWords.filter(w => w.isPossibleName).length} 个可能是角色名：
-						</p>
-						<div className="detected-characters-list">
-							{detectedWords.map((word, index) => (
-								<div key={index} className="detected-character-item">
-									<div className="detected-character-main">
-										<span className={`character-name ${word.isPossibleName ? 'text-blue-400' : ''}`}>
-											{word.word}
-										</span>
-										<span className="character-freq">出现 {word.frequency} 次</span>
-										{word.isPossibleName && (
-											<span className="character-confidence text-blue-400">
-												可能为人名
-											</span>
-										)}
-									</div>
-									{word.evidence.length > 0 && (
-										<div className="character-contexts">
-											{word.evidence.map((ctx, i) => (
-												<div key={i} className="context-item">{ctx}</div>
-											))}
-										</div>
-									)}
-									<div className="detected-character-quick-actions">
-										<button
-											className="quick-btn quick-ignore"
-											onClick={() => {
-												addIgnoredCharacterName(novelId, word.word);
-												setDetectedWords(prev => prev.filter((_, i) => i !== index));
-											}}
-										>
-											忽略
-										</button>
-									</div>
-								</div>
-							))}
-						</div>
-					</div>
-					<div className="modal-footer">
-						<button
-							className="btn btn-secondary"
-							onClick={() => setShowWordsModal(false)}
-						>
-							关闭
-						</button>
-					</div>
-				</div>
-			</div>
-		)}
-
 		{/* AI分析角色弹窗 */}
 		{showAnalyzeModal && (
 			<div className="modal-overlay" onClick={() => !isAnalyzing && setShowAnalyzeModal(false)}>
@@ -1916,18 +2441,15 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								<p className="text-sm text-neutral-400">
 									AI 将分析整本小说内容，提取角色人物小传和关系图谱信息。
 								</p>
-								<div className="bg-neutral-800/50 p-4 rounded text-sm space-y-2">
-									<p className="text-accent">功能特点：</p>
-									<ul className="list-disc list-inside text-neutral-300 space-y-1">
-										<li>自动识别小说中的主要角色</li>
-										<li>提取角色外貌、性格、背景描述</li>
-										<li>分析角色之间的关系</li>
-										<li>支持超大文本（1M+ tokens）</li>
-									</ul>
+								<div className="analyze-features">
+									<p className="analyze-features-title">功能特点</p>
+									<div className="analyze-features-list">
+										<span className="analyze-feature-item">自动识别小说中的主要角色</span>
+										<span className="analyze-feature-item">提取角色外貌、性格、背景描述</span>
+										<span className="analyze-feature-item">分析角色之间的关系</span>
+										<span className="analyze-feature-item">支持超大文本（1M+ tokens）</span>
+									</div>
 								</div>
-								<p className="text-xs text-neutral-500">
-									注意：分析结果会消耗 AI API 调用配额，请确保已配置有效的 API Key
-								</p>
 							</div>
 						)}
 					</div>
@@ -1960,6 +2482,617 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								</button>
 							</>
 						)}
+					</div>
+				</div>
+			</div>
+		)}
+
+		{/* 角色合并弹窗 */}
+		{showMergeModal && (
+			<div className="modal-overlay" onClick={() => setShowMergeModal(false)}>
+				<div className="modal-content merge-characters-modal" onClick={e => e.stopPropagation()}>
+					<div className="modal-header">
+						<h3>{mergeMode === "select" ? "选择要合并的角色" : "配置合并结果"}</h3>
+						<button className="modal-close" onClick={() => setShowMergeModal(false)}>
+							<Icons.x size={18} />
+						</button>
+					</div>
+					<div className="modal-body">
+						{mergeMode === "select" ? (
+							<div className="merge-select-mode">
+								<p className="merge-hint">请选择至少2个角色进行合并：</p>
+								<div className="merge-character-list">
+									{sortedCharacters.map((char) => (
+										<label
+											key={char.id}
+											className={`merge-character-item ${selectedForMerge.includes(char.id) ? 'selected' : ''}`}
+										>
+											<input
+												type="checkbox"
+												checked={selectedForMerge.includes(char.id)}
+												onChange={() => handleToggleMergeSelection(char.id)}
+											/>
+											<span className="merge-char-name">{char.name}</span>
+											<span className="merge-char-role">
+												{char.role ? (
+													char.role === "protagonist" ? "男主" :
+													char.role === "heroine" ? "女主" :
+													char.role === "antagonist" ? "反派" :
+													char.role === "supportingMale" ? "男配" :
+													char.role === "supportingFemale" ? "女配" :
+													char.role === "mentor" ? "导师" :
+													char.role === "rival" ? "对手" :
+													char.role === "loveInterest" ? "爱慕对象" :
+													char.role === "family" ? "家人" :
+													char.role === "friend" ? "朋友" : "NPC"
+												) : "未设置"}
+											</span>
+										</label>
+									))}
+								</div>
+							</div>
+						) : (
+							<MergeConfigPanel
+								sourceChars={mergeSourceChars}
+								onExecute={handleExecuteMerge}
+								onBack={() => setMergeMode("select")}
+							/>
+						)}
+					</div>
+					{mergeMode === "select" && (
+						<div className="modal-footer">
+							<button
+								className="btn btn-secondary"
+								onClick={() => setShowMergeModal(false)}
+							>
+								取消
+							</button>
+							<button
+								className="btn btn-primary"
+								onClick={handleProceedToMergeConfig}
+								disabled={selectedForMerge.length < 2}
+							>
+								下一步 ({selectedForMerge.length}个)
+							</button>
+						</div>
+					)}
+				</div>
+			</div>
+		)}
+
+		{/* 手动整理关系弹窗 */}
+		{showOrganizeRelationsModal && (
+			<div className="modal-overlay" onClick={() => setShowOrganizeRelationsModal(false)}>
+				<div className="modal-content organize-relations-modal" onClick={e => e.stopPropagation()}>
+					<div className="modal-header">
+						<h3>手动整理关系</h3>
+						<button className="modal-close" onClick={() => setShowOrganizeRelationsModal(false)}>
+							<Icons.x size={18} />
+						</button>
+					</div>
+					<div className="modal-body">
+						{skippedRelationships.length === 0 ? (
+							<p className="text-neutral-400 text-center py-8">没有需要整理的关系</p>
+						) : (
+							<div className="organize-relations-list">
+								{skippedRelationships.map((rel, index) => (
+									<OrganizeRelationItem
+										key={index}
+										relIndex={index}
+										rel={rel}
+										characters={characters}
+										novelId={novelId}
+										onAdded={() => {
+											setSkippedRelationships(prev => prev.filter((_, i) => i !== index));
+										}}
+									/>
+								))}
+							</div>
+						)}
+					</div>
+					<div className="modal-footer">
+						<button
+							className="btn btn-secondary"
+							onClick={() => setShowOrganizeRelationsModal(false)}
+						>
+							关闭
+						</button>
+						<button
+							className="btn btn-primary"
+							onClick={() => {
+								alert(`成功添加 ${skippedRelationships.length} 条关系`);
+								setShowOrganizeRelationsModal(false);
+							}}
+							disabled={skippedRelationships.length === 0}
+						>
+							完成 ({skippedRelationships.length})
+						</button>
+					</div>
+				</div>
+			</div>
+		)}
+
+		{/* 关系管理弹窗 */}
+		{showManageRelationsModal && (
+			<div className="modal-overlay" onClick={() => setShowManageRelationsModal(false)}>
+				<div className="modal-content manage-relations-modal" onClick={e => e.stopPropagation()}>
+					<div className="modal-header">
+						<h3>管理关系</h3>
+						<button className="modal-close" onClick={() => setShowManageRelationsModal(false)}>
+							<Icons.x size={18} />
+						</button>
+					</div>
+					<div className="flex flex-col gap-2 px-4 pb-2">
+						<div className="flex items-center gap-2">
+							<label className="text-sm text-neutral-400">查看角色的关系：</label>
+							<select
+								value={selectedCharacterForRelations || ""}
+								onChange={(e) => setSelectedCharacterForRelations(e.target.value || null)}
+								className="form-select"
+								style={{ maxWidth: "200px" }}
+							>
+								<option value="">查看所有角色关系</option>
+								{characters.map((char) => (
+									<option key={char.id} value={char.id}>{char.name}</option>
+								))}
+							</select>
+						</div>
+						<div className="flex items-center gap-2 justify-between">
+							<div className="flex items-center gap-2">
+								<label className="text-sm text-neutral-400">只显示未知角色关系</label>
+								<button
+									className={`w-11 h-6 rounded-full transition-colors ${showOnlyUnknown ? 'bg-[var(--accent)]' : 'bg-neutral-600'}`}
+									onClick={() => setShowOnlyUnknown(!showOnlyUnknown)}
+								>
+									<div className={`w-4 h-4 rounded-full bg-white m-1 transition-transform ${showOnlyUnknown ? 'translate-x-5' : ''}`} />
+								</button>
+							</div>
+						</div>
+					</div>
+					<div className="modal-body">
+						{(() => {
+							let filteredRels = showOnlyUnknown
+								? relationships.filter(rel => {
+									const sourceChar = characters.find(c => c.id === rel.sourceId);
+									const targetChar = characters.find(c => c.id === rel.targetId);
+									return !sourceChar || !targetChar;
+								})
+								: relationships;
+
+							if (selectedCharacterForRelations) {
+								filteredRels = filteredRels.filter(rel => 
+									rel.sourceId === selectedCharacterForRelations || rel.targetId === selectedCharacterForRelations
+								);
+							}
+							
+							return filteredRels.length === 0
+								? <p className="text-neutral-400 text-center py-8">暂无关系，请通过AI分析或关系图谱添加</p>
+								: (
+									<div className="manage-relations-list">
+										{filteredRels.map((rel) => {
+											const sourceChar = characters.find(c => c.id === rel.sourceId);
+											const targetChar = characters.find(c => c.id === rel.targetId);
+											
+											let displayNicknames: string[] = [];
+											
+											if (selectedCharacterForRelations) {
+												const isSource = rel.sourceId === selectedCharacterForRelations;
+												if (isSource) {
+													displayNicknames = rel.sourceNickname;
+												} else {
+													displayNicknames = rel.targetNickname;
+												}
+											}
+											
+											console.log("[关系列表] relId:", rel.id, "sourceId:", rel.sourceId, "targetId:", rel.targetId, "源角色:", sourceChar?.name || "未知", "目标角色:", targetChar?.name || "未知");
+											return (
+										<div key={rel.id} className="manage-relation-item">
+											<div className="manage-relation-info">
+												<div className="manage-relation-avatar">
+													<div className={`avatar-circle-sm ${(selectedCharacterForRelations ? characters.find(c => c.id === selectedCharacterForRelations) : sourceChar)?.gender || "other"}`}>
+														{(selectedCharacterForRelations ? characters.find(c => c.id === selectedCharacterForRelations) : sourceChar)?.name.charAt(0) || "?"}
+													</div>
+												</div>
+												<div className="manage-relation-details">
+													<div className="manage-relation-names">
+														{selectedCharacterForRelations ? (
+															<>
+																<span className="relation-name">{characters.find(c => c.id === selectedCharacterForRelations)?.name || "未知"}</span>
+																<span className="relation-arrow">
+																	<Icons.chevronRight size={14} />
+																	<span className="relation-type-badge">
+																		{rel.relationType?.[0] || "其他"}
+																	</span>
+																	<Icons.chevronRight size={14} />
+																</span>
+																<span className="relation-name">{
+																	(rel.sourceId === selectedCharacterForRelations ? targetChar : sourceChar)?.name || "未知"
+																}</span>
+															</>
+														) : (
+															<>
+																<span className="relation-name">{sourceChar?.name || "未知"}</span>
+																<span className="relation-arrow">
+																	<Icons.chevronRight size={14} />
+																	<span className="relation-type-badge">
+																		{rel.relationType?.[0] || "其他"}
+																	</span>
+																	<Icons.chevronRight size={14} />
+																</span>
+																<span className="relation-name">{targetChar?.name || "未知"}</span>
+															</>
+														)}
+													</div>
+													<div className="manage-relation-nicknames">
+														{selectedCharacterForRelations ? (
+															displayNicknames?.map((nick, i) => (
+																<span key={i} className="nickname-badge">{nick}</span>
+															))
+														) : (
+															<>
+																{rel.sourceNickname?.map((nick, i) => (
+																	<span key={i} className="nickname-badge">{nick}</span>
+																))}
+																{rel.targetNickname?.map((nick, i) => (
+																	<span key={i} className="nickname-badge">{nick}</span>
+																))}
+															</>
+														)}
+													</div>
+												</div>
+											</div>
+											<div className="manage-relation-actions">
+												<button
+													className="relation-action-btn"
+													onClick={() => {
+														let validSourceId = rel.sourceId;
+														let validTargetId = rel.targetId;
+														
+														if (!characters.find(c => c.id === rel.sourceId)) {
+															validSourceId = characters[0]?.id || "";
+														}
+														if (!characters.find(c => c.id === rel.targetId)) {
+															validTargetId = characters[0]?.id || "";
+														}
+														if (validSourceId === validTargetId && characters.length > 1) {
+															validTargetId = characters[1]?.id || "";
+														}
+														
+														setRelationForm({
+															sourceId: validSourceId,
+															targetId: validTargetId,
+															relationType: [...(rel.relationType || [])],
+															customRelationType: "",
+															sourceNickname: [...(rel.sourceNickname || [])],
+															targetNickname: [...(rel.targetNickname || [])],
+															newSourceNickname: "",
+															newTargetNickname: "",
+														});
+														setEditingRelation({ ...rel, sourceId: validSourceId, targetId: validTargetId });
+													}}
+													title="编辑"
+												>
+													<Icons.edit size={14} />
+												</button>
+												<button
+													className="relation-action-btn danger"
+													onClick={() => {
+														if (confirm("确定要删除这条关系吗？")) {
+															removeRelationship(novelId, rel.id);
+														}
+													}}
+													title="删除"
+												>
+													<Icons.trash2 size={14} />
+												</button>
+											</div>
+										</div>
+									);
+										})}
+									</div>
+								);
+						})()}
+					</div>
+					<div className="modal-footer">
+						<button
+							className="btn btn-secondary"
+							onClick={() => setShowManageRelationsModal(false)}
+						>
+							关闭
+						</button>
+					</div>
+				</div>
+			</div>
+		)}
+
+		{/* 编辑关系弹窗 */}
+		{editingRelation && (
+			<div className="modal-overlay" onClick={() => setEditingRelation(null)}>
+				<div className="relation-edit-modal" onClick={e => e.stopPropagation()}>
+					<div className="modal-header">
+						<h3>编辑关系</h3>
+						<button className="modal-close" onClick={() => setEditingRelation(null)}>
+							<Icons.x size={18} />
+						</button>
+					</div>
+					<div className="modal-body">
+						<div className="relation-form-section">
+							<div className="form-field">
+								<label>源角色</label>
+								<Select
+									value={relationForm.sourceId}
+									onChange={(value) =>
+										setRelationForm((prev) => ({ ...prev, sourceId: value }))
+									}
+									options={characters.map((c) => ({ value: c.id, label: c.name }))}
+								/>
+							</div>
+
+							<div className="form-field">
+								<label>
+									{getCharacterById(relationForm.sourceId)?.name || "源角色"}对{" "}
+									{getCharacterById(relationForm.targetId)?.name || "目标角色"}的称呼
+								</label>
+								<div className="nickname-input-row">
+									<input
+										type="text"
+										className="config-input flex-1"
+										value={relationForm.newSourceNickname}
+										onChange={(e) =>
+											setRelationForm((prev) => ({
+												...prev,
+												newSourceNickname: e.target.value,
+											}))
+										}
+										onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), handleAddSourceNickname(setRelationForm))}
+										placeholder="输入称呼后按回车"
+									/>
+									<button className="nickname-add-btn" onClick={() => handleAddSourceNickname(setRelationForm)}>
+										<Icons.plus size={14} />
+									</button>
+								</div>
+								<div className="nickname-suggestions">
+									{getSourceSuggestions(relationForm.newSourceNickname).map((s, i) => (
+										<button
+											key={i}
+											className="nickname-suggestion"
+											onClick={() => {
+												setRelationForm((prev) => ({
+													...prev,
+													sourceNickname: [...prev.sourceNickname, s],
+													newSourceNickname: "",
+												}));
+											}}
+										>
+											{s}
+										</button>
+									))}
+								</div>
+								{relationForm.sourceNickname.length > 0 && (
+									<div className="nickname-tags">
+										{relationForm.sourceNickname.map((nick, i) => (
+											<span key={i} className="nickname-tag">
+												{nick}
+												<button
+													type="button"
+													className="remove-btn"
+													onClick={() => handleRemoveSourceNickname(i, setRelationForm)}
+												>
+													×
+												</button>
+											</span>
+										))}
+									</div>
+								)}
+							</div>
+						</div>
+
+						<div className="relation-form-section">
+							<div className="form-field">
+								<label>目标角色</label>
+								<Select
+									value={relationForm.targetId}
+									onChange={(value) =>
+										setRelationForm((prev) => ({ ...prev, targetId: value }))
+									}
+									options={characters.map((c) => ({ value: c.id, label: c.name }))}
+								/>
+							</div>
+
+							<div className="form-field">
+								<label>双人关系类型（可多选）</label>
+								<div className="relation-type-checkboxes">
+									{[
+										["couple", "夫妻"],
+										["father-son", "父子"],
+										["father-daughter", "父女"],
+										["mother-son", "母子"],
+										["mother-daughter", "母女"],
+										["brother", "兄弟"],
+										["sister", "姐妹"],
+										["brother-sister", "兄妹"],
+										["sister-brother", "姐弟"],
+										["mother-daughter-in-law", "婆媳"],
+										["father-daughter-in-law", "公媳"],
+										["mother-son-in-law", "岳母女婿"],
+										["father-son-in-law", "翁婿"],
+										["co-parents-male", "亲家公"],
+										["co-parents-female", "亲家母"],
+										["lover", "恋人"],
+										["classmate", "同学"],
+										["friend", "朋友"],
+										["bestie", "闺蜜"],
+										["rival", "竞争对手"],
+										["master-disciple", "师徒"],
+										["employer-employee", "雇佣"],
+										["colleague", "同事"],
+										["stranger", "陌生人"],
+										["other", "其他"],
+									].map(([value, label]) => (
+										<label key={value} className="relation-type-checkbox">
+											<input
+												type="checkbox"
+												checked={relationForm.relationType.includes(value as RelationType)}
+												onChange={() => {
+													setRelationForm((prev) => {
+														const current = prev.relationType;
+														if (current.includes(value as RelationType)) {
+															return { ...prev, relationType: current.filter((t) => t !== value) };
+														} else {
+															return { ...prev, relationType: [...current, value as RelationType] };
+														}
+													});
+												}}
+											/>
+											<span>{label}</span>
+										</label>
+									))}
+								</div>
+								{relationForm.relationType.includes("other") && (
+									<textarea
+										className="config-textarea"
+										placeholder="请输入自定义关系类型..."
+										value={relationForm.customRelationType}
+										onChange={(e) =>
+											setRelationForm((prev) => ({ ...prev, customRelationType: e.target.value }))
+										}
+										rows={2}
+									/>
+								)}
+							</div>
+
+							<div className="form-field">
+								<label>
+									{getCharacterById(relationForm.targetId)?.name || "目标角色"}对{" "}
+									{getCharacterById(relationForm.sourceId)?.name || "源角色"}的称呼
+								</label>
+								<div className="nickname-input-row">
+									<input
+										type="text"
+										className="config-input flex-1"
+										value={relationForm.newTargetNickname}
+										onChange={(e) =>
+											setRelationForm((prev) => ({
+												...prev,
+												newTargetNickname: e.target.value,
+											}))
+										}
+										onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), handleAddTargetNickname(setRelationForm))}
+										placeholder="输入称呼后按回车"
+									/>
+									<button className="nickname-add-btn" onClick={() => handleAddTargetNickname(setRelationForm)}>
+										<Icons.plus size={14} />
+									</button>
+								</div>
+								<div className="nickname-suggestions">
+									{getTargetSuggestions(relationForm.newTargetNickname).map((s, i) => (
+										<button
+											key={i}
+											className="nickname-suggestion"
+											onClick={() => {
+												setRelationForm((prev) => ({
+													...prev,
+													targetNickname: [...prev.targetNickname, s],
+													newTargetNickname: "",
+												}));
+											}}
+										>
+											{s}
+										</button>
+									))}
+								</div>
+								{relationForm.targetNickname.length > 0 && (
+									<div className="nickname-tags">
+										{relationForm.targetNickname.map((nick, i) => (
+											<span key={i} className="nickname-tag">
+												{nick}
+												<button
+													type="button"
+													className="remove-btn"
+													onClick={() => handleRemoveTargetNickname(i, setRelationForm)}
+												>
+													×
+												</button>
+											</span>
+										))}
+									</div>
+								)}
+							</div>
+						</div>
+					</div>
+					<div className="modal-footer">
+						{editingRelation && (
+							<button
+								className="btn btn-danger"
+								onClick={() => {
+									if (confirm("确定要删除这条关系吗？")) {
+										removeRelationship(novelId, editingRelation.id);
+										setEditingRelation(null);
+									}
+								}}
+							>
+								删除
+							</button>
+						)}
+						<button
+							className="btn btn-secondary"
+							onClick={() => setEditingRelation(null)}
+						>
+							取消
+						</button>
+						<button
+							className="btn btn-primary"
+							onClick={() => {
+								if (!relationForm.sourceId || !relationForm.targetId) {
+									alert("请选择源角色和目标角色");
+									return;
+								}
+								if (relationForm.sourceId === relationForm.targetId) {
+									alert("源角色和目标角色不能相同");
+									return;
+								}
+								if (relationForm.relationType.length === 0) {
+									alert("请至少选择一种关系类型");
+									return;
+								}
+
+								const finalRelationType = relationForm.relationType.includes("other") && relationForm.customRelationType
+									? [...relationForm.relationType.filter(t => t !== "other"), relationForm.customRelationType as RelationType]
+									: relationForm.relationType;
+
+								const existingRels = getRelationshipsForNovel(novelId)?.filter(
+									r => r.sourceId === relationForm.sourceId && 
+									     r.targetId === relationForm.targetId &&
+									     r.id !== editingRelation?.id
+								) || [];
+
+								if (existingRels.length > 0) {
+									const mergedRelation = {
+										sourceId: relationForm.sourceId,
+										targetId: relationForm.targetId,
+										relationType: [...new Set(finalRelationType.concat(...existingRels.map(r => r.relationType || [])))],
+										sourceNickname: [...new Set(relationForm.sourceNickname.concat(...existingRels.flatMap(r => r.sourceNickname || [])))],
+										targetNickname: [...new Set(relationForm.targetNickname.concat(...existingRels.flatMap(r => r.targetNickname || [])))],
+									};
+
+									existingRels.forEach(r => removeRelationship(novelId, r.id));
+									updateRelationship(novelId, editingRelation!.id, mergedRelation);
+									alert(`已合并 ${existingRels.length + 1} 条关系`);
+								} else {
+									updateRelationship(novelId, editingRelation!.id, {
+										sourceId: relationForm.sourceId,
+										targetId: relationForm.targetId,
+										relationType: finalRelationType,
+										sourceNickname: relationForm.sourceNickname,
+										targetNickname: relationForm.targetNickname,
+									});
+									alert("关系已更新");
+								}
+								setEditingRelation(null);
+							}}
+						>
+							保存
+						</button>
 					</div>
 				</div>
 			</div>

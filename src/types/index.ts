@@ -201,6 +201,7 @@ export type RelationType =
 	| "co-parents-male" // 亲家公
 	| "co-parents-female" // 亲家母
 	| "lover" // 恋人
+	| "classmate" // 同学
 	| "friend" // 朋友
 	| "bestie" // 闺蜜
 	| "rival" // 竞争对手
