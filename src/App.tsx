@@ -504,14 +504,15 @@ export default function App() {
 
 			<ConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
 			{showCharacterSettings && (
-						<CharacterSettings
-							novelId={showCharacterSettings}
-							novelName={novels.find(n => n.id === showCharacterSettings)?.name || ""}
-							onClose={() => setShowCharacterSettings(null)}
-						/>
-					)}
-				</>
+				<CharacterSettings
+					novelId={showCharacterSettings}
+					novelName={novels.find(n => n.id === showCharacterSettings)?.name || ""}
+					onClose={() => setShowCharacterSettings(null)}
+				/>
 			)}
+		</>
+	)}
+
 		</div>
 	);
 }

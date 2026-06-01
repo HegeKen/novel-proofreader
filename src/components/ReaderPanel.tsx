@@ -1137,7 +1137,7 @@ export function ReaderPanel({
 					</div>
 				)}
 				<button
-					className={isMobile ? "btn-mobile" : "reader-search-btn"}
+					className={isMobile ? "btn-mobile" : "btn"}
 					onClick={() => setShowSearch(true)}
 				>
 					<Icons.search size={18} />

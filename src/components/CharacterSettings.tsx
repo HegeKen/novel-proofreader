@@ -2615,15 +2615,18 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		{/* 关系管理弹窗 */}
 		{showManageRelationsModal && (
 			<div className="modal-overlay" onClick={() => setShowManageRelationsModal(false)}>
-				<div className="modal-content manage-relations-modal" onClick={e => e.stopPropagation()}>
-					<div className="modal-header">
-						<h3>管理关系</h3>
-						<button className="modal-close" onClick={() => setShowManageRelationsModal(false)}>
-							<Icons.x size={18} />
+				<div className="config-modal" onClick={e => e.stopPropagation()}>
+					<div className="config-header">
+						<div className="config-title">
+							<span className="title-icon"><Icons.combine size={16} /></span>
+							<span>管理关系</span>
+						</div>
+						<button className="close-btn" onClick={() => setShowManageRelationsModal(false)}>
+							<Icons.x size={16} />
 						</button>
 					</div>
-					<div className="flex flex-col gap-2 px-4 pb-2">
-						<div className="flex items-center gap-2">
+					<div className="config-body">
+						<div className="flex items-center gap-2 mb-4">
 							<label className="text-sm text-neutral-400">查看角色的关系：</label>
 							<select
 								value={selectedCharacterForRelations || ""}
@@ -2637,7 +2640,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								))}
 							</select>
 						</div>
-						<div className="flex items-center gap-2 justify-between">
+						<div className="flex items-center gap-2 justify-between mb-4">
 							<div className="flex items-center gap-2">
 								<label className="text-sm text-neutral-400">只显示未知角色关系</label>
 								<button
@@ -2648,8 +2651,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								</button>
 							</div>
 						</div>
-					</div>
-					<div className="modal-body">
 						{(() => {
 							let filteredRels = showOnlyUnknown
 								? relationships.filter(rel => {
@@ -2684,7 +2685,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 												}
 											}
 											
-											console.log("[关系列表] relId:", rel.id, "sourceId:", rel.sourceId, "targetId:", rel.targetId, "源角色:", sourceChar?.name || "未知", "目标角色:", targetChar?.name || "未知");
+											logger.debug("[关系列表] relId:", rel.id, "sourceId:", rel.sourceId, "targetId:", rel.targetId, "源角色:", sourceChar?.name || "未知", "目标角色:", targetChar?.name || "未知");
 											return (
 										<div key={rel.id} className="manage-relation-item">
 											<div className="manage-relation-info">
@@ -2793,7 +2794,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								);
 						})()}
 					</div>
-					<div className="modal-footer">
+					<div className="config-footer">
 						<button
 							className="btn btn-secondary"
 							onClick={() => setShowManageRelationsModal(false)}
@@ -3101,25 +3102,30 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		{/* 导出结果弹窗 */}
 		{exportModal.show && (
 			<div className="modal-overlay" onClick={() => setExportModal({ ...exportModal, show: false })}>
-				<div className="export-result-modal" onClick={(e) => e.stopPropagation()}>
-					<div className="export-result-header">
-						<div className={`result-icon ${exportModal.success ? 'success' : 'error'}`}>
-							{exportModal.success ? <Icons.checkCircle size={24} /> : <Icons.alertCircle size={24} />}
+				<div className="config-modal export-result-modal" onClick={(e) => e.stopPropagation()}>
+					<div className="config-header">
+						<div className="config-title">
+							<span className={`result-icon ${exportModal.success ? 'success' : 'error'}`}>
+								{exportModal.success ? <Icons.checkCircle size={18} /> : <Icons.alertCircle size={18} />}
+							</span>
+							<span>{exportModal.success ? '保存成功' : '保存失败'}</span>
 						</div>
-						<h3>{exportModal.success ? '保存成功' : '保存失败'}</h3>
+						<button className="close-btn" onClick={() => setExportModal({ ...exportModal, show: false })}>
+							<Icons.x size={16} />
+						</button>
 					</div>
-					<div className="export-result-content">
+					<div className="config-body">
 						{exportModal.success ? (
 							<div className="space-y-2">
-								<p><strong>文件名:</strong> {exportModal.fileName}</p>
-								<p><strong>保存位置:</strong> Android/data/cn.helilab.proofreader/documents/characters/</p>
+								<p><strong>文件名:</strong> <span className="copyable" onClick={() => copyToClipboard(exportModal.fileName)} title="点击复制文件名">{exportModal.fileName}</span></p>
+								<p><strong>保存位置:</strong> <span style={{ wordWrap: "break-word" }}>Android/data/cn.helilab.proofreader/documents/characters/</span></p>
 								<p><strong>角色数量:</strong> {exportModal.characterCount}个</p>
 								<p><strong>关系数量:</strong> {exportModal.relationshipCount || 0}条</p>
 							</div>
 						) : (
 							<div className="space-y-2">
 								<p>无法自动保存到文件系统</p>
-								<p><strong>文件名:</strong> {exportModal.fileName}</p>
+								<p><strong>文件名:</strong> <span className="copyable" onClick={() => copyToClipboard(exportModal.fileName)} title="点击复制文件名">{exportModal.fileName}</span></p>
 								<p><strong>角色数量:</strong> {exportModal.characterCount}个</p>
 								<p><strong>关系数量:</strong> {exportModal.relationshipCount || 0}条</p>
 								<p><strong>数据大小:</strong> {exportModal.dataStr.length}字节</p>
@@ -3127,16 +3133,15 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 							</div>
 						)}
 					</div>
-					<div className="export-result-actions">
+					<div className="config-footer">
 						<button
-							className="action-btn secondary"
+							className="btn btn-secondary"
 							onClick={() => setExportModal({ ...exportModal, show: false })}
 						>
-							<Icons.x size={16} />
 							关闭
 						</button>
 						<button
-							className="action-btn primary"
+							className="btn btn-primary"
 							onClick={() => copyToClipboard(exportModal.dataStr)}
 						>
 							<Icons.copy size={16} />
