@@ -1,29 +1,28 @@
 # 小说 AI 排版与查错工具
 
-基于 Tauri 2 + React + TypeScript 的桌面端与移动端小说排版与查错应用。支持导入 TXT 小说文件，通过 AI 大模型自动检测错别字、排版问题和病句，并提供一键采纳修改。同时支持小说角色分析、剧本转换、TTS 情感朗读等丰富功能。
+基于 Tauri 2 + React + TypeScript 的桌面端与移动端小说排版与查错应用。支持导入 TXT 小说文件，通过 AI 大模型自动检测错别字、排版问题和病句，并提供一键采纳修改。同时支持小说角色分析、关系图谱可视化、剧本转换、TTS 情感朗读等丰富功能。
 
 ## ✨ 亮点特性
 
-- 🔍 **AI 智能校对** - 基于大模型检测错别字、排版问题和病句，支持段落/章节两种校对模式
-- 📖 **纯阅读模式** - 沉浸式阅读体验，支持调节字体、背景、行间距、首行缩进
-- 👥 **角色分析 & 关系图** - AI 自动分析整本小说，提取角色人物小传和关系图谱，支持可视化展示
-- 🎬 **剧本转换** - 一键将小说段落转换为剧本格式，支持自定义改编指令
-- 🎙️ **TTS 情感朗读** - AI 自动为对话添加情感/音色标注，支持流式边生成边播放
-- 📚 **分卷支持** - 自动识别「第X卷」等分卷结构，支持折叠/展开导航
-- 🏠 **主页 & 多平台下载** - 启动页展示更新日志，支持 GitHub 镜像源多平台下载
-- 📱 **多端支持** - Windows/macOS/Linux 桌面端 + Android 移动端 + Web 端
-- 💾 **本地优先** - 文件存储在本地，数据安全可控
-- 🔄 **碎片化处理** - 突破大模型上下文限制，逐段处理超长文本，适合校对数百万字的网络小说
-- 🔔 **操作反馈** - Toast 消息提示，提供采纳修改、撤销、跳过等操作的明确反馈
-- 📝 **忽略单词管理** - 支持管理校对时需要跳过的单词（如人名、地名、特殊术语）
-- 🔎 **全局搜索** - 跨章节搜索小说内容，支持结果定位跳转
+- 🔍 **AI 智能校对** — 基于大模型检测错别字、排版问题和病句，支持段落/章节两种校对模式
+- 📖 **纯阅读模式** — 沉浸式阅读体验，支持调节字体、背景、行间距、首行缩进、自定义背景图
+- 👥 **角色分析 & 关系图谱** — AI 自动分析整本小说，提取角色人物小传和关系图谱，支持可视化拖拽展示
+- 🎬 **剧本转换** — 一键将小说段落转换为剧本格式，支持自定义改编指令
+- 🎙️ **TTS 情感朗读** — AI 自动为对话添加情感/音色标注，支持流式边生成边播放
+- 📚 **分卷支持** — 自动识别「第X卷」等分卷结构，支持折叠/展开导航
+- 🏠 **主页 & 版本检测** — 启动页展示更新日志，自动检测新版本，支持 GitHub 镜像源多平台下载
+- 📱 **多端支持** — Windows / macOS / Linux 桌面端 + Android 移动端
+- 💾 **本地优先** — 文件存储在本地，数据安全可控
+- 🔄 **碎片化处理** — 突破大模型上下文限制，逐段、逐章处理超长文本，适合校对数百万字的网络小说
+- 🔎 **全局搜索** — 跨章节搜索小说内容，支持结果定位跳转（Cmd/Ctrl+F）
+- 📝 **忽略单词管理** — 支持管理校对时需要跳过的单词（人名、地名、特殊术语）
 
 ## 功能特性
 
 ### 🏠 主页
 - 启动时展示应用主页，介绍核心功能
-- 实时获取 GitHub Release 更新日志
-- 多平台下载弹窗（macOS/Windows/Linux/Android），支持自动切换多个镜像源加速下载
+- 实时获取 GitHub Release 更新日志，支持版本对比与更新提示
+- 多平台下载弹窗（macOS / Windows / Linux / Android），支持自动切换多个镜像源加速下载
 
 ### 📖 左侧阅读区
 - 导入 TXT 小说文件，自动按 `第X章` 标题分割章节
@@ -32,18 +31,18 @@
 - 章节导航栏：上一章/下一章快捷切换，章节列表快速跳转
 - 双击编辑：双击任意段落直接修改原文
 - 段落高亮：校对结果中的问题段落自动高亮显示
-- 一键采纳：点击修改建议直接替换原文
-- 采纳动画：采纳修改时的流畅动画反馈
+- 一键采纳：点击修改建议直接替换原文，配流畅动画反馈
 - **阅读区-校对区联动**：点击阅读区段落时，校对区自动高亮对应行，反之亦然
 - **阅读进度记忆**：自动记录阅读进度，支持进度条显示
+- **隐藏已校对章节**：一键隐藏所有已完成的章节，聚焦未校对内容
 
 ### 📖 纯阅读模式
 - 一键切换纯阅读模式，隐藏校对功能，沉浸式阅读
-- **字体大小调节**：12px - 28px 滑块调节，实时预览
-- **行间距调节**：16px - 80px 精细调整
-- **首行缩进**：0 - 4 字符可选
-- **阅读背景**：白底/护眼/棕黄/薄荷/淡蓝/薰衣草/桃色/鼠尾草/石板/暗黑 10种主题
-- **自定义背景**：支持上传背景图片
+- **字体大小调节**：12px – 28px 滑块调节，实时预览
+- **行间距调节**：16px – 80px 精细调整
+- **首行缩进**：0 – 4 字符可选
+- **阅读背景**：白底 / 护眼 / 棕黄 / 薄荷 / 淡蓝 / 薰衣草 / 桃色 / 鼠尾草 / 石板 / 暗黑 10 种主题
+- **自定义背景**：支持网络图片 URL 作为阅读背景
 
 ### ✏️ 右侧校对区
 - **段落模式**：逐段发送给 AI 检测，适合精细校对
@@ -53,11 +52,10 @@
 - 已采纳/未采纳状态标记，支持撤销和跳过
 - **起始行选择**：从指定行开始校对，灵活控制检测范围
 - **取消检测**：支持随时中断 AI 请求，段落状态立即重置
-- **隐藏已校对章节**：一键隐藏所有已完成的章节，聚焦未校对内容
 - **忽略单词管理**：可添加人名、地名等特殊术语，避免误报
 
 ### 🔎 全局搜索
-- 跨章节搜索当前小说全部内容（Cmd/Ctrl + F 快速唤起）
+- 跨章节搜索当前小说全部内容（Cmd/Ctrl+F 快速唤起）
 - 搜索结果高亮显示，支持 prev/next 导航
 - 点击搜索结果自动跳转到对应章节和段落
 
@@ -76,7 +74,7 @@
 
 **关系图谱**
 - 可视化展示角色之间的关系网络
-- 支持多种关系类型：夫妻、父子、恋人、朋友、竞争对手、师徒等
+- 支持多种关系类型：夫妻、父子、恋人、同学、朋友、竞争对手、师徒等
 - **聚焦模式**：点击角色筛选下拉框，聚焦特定角色的关系网络，视图自动缩放
 - 节点位置持久化：拖拽调整节点位置后自动保存
 
@@ -111,11 +109,6 @@
   - **阅读模式 TTS 增强 Prompt**
 - 每个 Prompt 支持一键复制、一键重置为默认值
 
-### 🔔 操作反馈
-- Toast 消息提示组件，支持成功、错误、警告、信息四种类型
-- 采纳修改、撤销、跳过等操作提供明确的成功/失败反馈
-- 自动 3 秒后消失
-
 ### 🗑️ 删除确认
 - 删除小说前弹出二次确认弹窗，防止误操作导致数据丢失
 
@@ -127,61 +120,66 @@
 | 前端 | React 19 + TypeScript |
 | 构建 | Vite 8 |
 | 状态管理 | Zustand |
-| 样式 | Tailwind CSS 4 |
+| 样式 | Tailwind CSS 4 + CSS Variables |
 | 图标 | Lucide React |
 
 ## 项目结构
 
 ```
 novel-proofreader/
-├── src/                          # React 前端
+├── src/                              # React 前端
 │   ├── components/
-│   │   ├── App.tsx               # 主布局（左右分栏）
-│   │   ├── HomePage.tsx          # 主页（更新日志、多平台下载）
-│   │   ├── ReaderPanel.tsx       # 左侧阅读区
-│   │   ├── ChapterNav.tsx        # 章节导航栏（支持分卷折叠）
-│   │   ├── ProofreadPanel.tsx    # 右侧校对区
-│   │   ├── TaskPanel.tsx         # 剧本转换面板
-│   │   ├── ConfigModal.tsx       # AI 配置弹窗（含自定义 Prompt）
-│   │   ├── CharacterSettings.tsx # 角色管理 & AI 角色分析
-│   │   ├── RelationshipGraph.tsx # 角色关系图可视化
-│   │   ├── GlobalSearch.tsx      # 全局搜索
-│   │   ├── NovelList.tsx         # 小说列表
-│   │   ├── IgnoredWordsManager.tsx # 忽略单词管理
-│   │   ├── EmptyState.tsx        # 空状态占位
-│   │   ├── Toast.tsx             # Toast 消息提示组件
-│   │   ├── Select.tsx            # 自定义选择组件
-│   │   └── Icons.tsx             # Lucide 图标封装
+│   │   ├── App.tsx                   # 主布局（左右三栏 + 移动端 Tab）
+│   │   ├── HomePage.tsx              # 主页（更新日志、版本检测、多平台下载）
+│   │   ├── ReaderPanel.tsx           # 左侧阅读区
+│   │   ├── ChapterNav.tsx            # 章节导航栏（支持分卷折叠）
+│   │   ├── ProofreadPanel.tsx        # 右侧校对区
+│   │   ├── ProofreadQueuePanel.tsx   # 校对任务队列
+│   │   ├── TaskPanel.tsx             # 剧本转换面板
+│   │   ├── ConfigModal.tsx           # AI 配置弹窗（含自定义 Prompt）
+│   │   ├── CharacterSettings.tsx     # 角色管理 & AI 角色分析
+│   │   ├── RelationshipGraph.tsx     # 角色关系图可视化
+│   │   ├── GlobalSearch.tsx          # 全局搜索
+│   │   ├── NovelList.tsx             # 小说列表
+│   │   ├── IgnoredWordsManager.tsx   # 忽略单词管理
+│   │   ├── ErrorBoundary.tsx         # 全局错误边界
+│   │   ├── EmptyState.tsx            # 空状态占位
+│   │   ├── Toast.tsx                 # Toast 消息提示组件
+│   │   ├── Select.tsx                # 自定义下拉选择组件
+│   │   └── Icons.tsx                 # Lucide 图标封装
 │   ├── hooks/
-│   │   ├── useFileImport.ts      # 文件导入
-│   │   ├── useAICheck.ts         # AI 校对逻辑
-│   │   ├── useScriptTask.ts      # 剧本转换逻辑
-│   │   └── useSwipeGesture.ts    # 移动端滑动手势
+│   │   ├── useFileImport.ts          # 文件导入
+│   │   ├── useAICheck.ts             # AI 校对逻辑
+│   │   ├── useScriptTask.ts          # 剧本转换逻辑
+│   │   ├── useMobile.ts              # 移动端状态管理
+│   │   └── useSwipeGesture.ts        # 移动端滑动手势
 │   ├── stores/
-│   │   ├── appStore.ts           # 全局状态（文件、章节、角色、关系图）
-│   │   ├── configStore.ts        # AI/TTS/Prompt 配置状态
-│   │   └── proofreadStore.ts     # 校对结果状态
+│   │   ├── appStore.ts               # 全局状态（小说、章节、角色、关系图）
+│   │   ├── configStore.ts            # AI / TTS / Prompt 配置状态
+│   │   └── proofreadStore.ts         # 校对结果状态
 │   ├── types/
-│   │   └── index.ts              # TypeScript 类型定义（含角色、关系等）
+│   │   └── index.ts                  # TypeScript 类型定义
 │   ├── utils/
-│   │   ├── chapterSplit.ts       # 章节分割算法（支持分卷）
-│   │   ├── aiClient.ts           # AI API 客户端 & Prompt 模板
-│   │   ├── fileExport.ts         # 文件导出 & 角色检测工具
-│   │   ├── formatters.tsx        # 格式化工具（含 JSX 输出）
-│   │   ├── ttsService.ts         # TTS 语音合成 & 音频队列
-│   │   ├── githubApi.ts          # GitHub Release API 工具
-│   │   ├── logger.ts             # 日志系统
-│   │   ├── scrollUtils.ts        # 滚动工具
-│   │   ├── decodeText.ts         # 文本编码检测
-│   │   └── urlParams.ts          # URL 参数解析
-│   ├── styles/
-│   │   └── styles.css            # 全局样式
-│   ├── main.tsx                  # 入口
-│   └── vite-env.d.ts
-├── src-tauri/                    # Tauri Rust 后端
+│   │   ├── chapterSplit.ts           # 章节分割算法（支持分卷）
+│   │   ├── aiClient.ts               # AI API 客户端 & Prompt 模板
+│   │   ├── fileExport.ts             # 文件导出 & 角色检测工具
+│   │   ├── formatters.tsx            # 格式化工具
+│   │   ├── ttsService.ts             # TTS 语音合成 & 音频队列
+│   │   ├── githubApi.ts              # GitHub Release API & 镜像源下载
+│   │   ├── logger.ts                 # 可开关的日志系统
+│   │   ├── scrollUtils.ts            # 滚动工具
+│   │   ├── mobile.ts                 # 移动端判断函数
+│   │   ├── decodeText.ts             # 文本编码检测
+│   │   └── urlParams.ts              # URL 参数解析
+│   ├── App.css                       # 全局样式（CSS Variables + 组件样式）
+│   ├── main.tsx                      # 入口文件
+│   └── vite-env.d.ts                 # Vite 类型声明
+├── src-tauri/                        # Tauri Rust 后端
 │   ├── Cargo.toml
 │   ├── tauri.conf.json
+│   ├── icons/                        # 各平台应用图标
 │   └── src/lib.rs
+├── public/icons/                     # Web 图标
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
@@ -216,8 +214,8 @@ pnpm tauri dev
 ### 构建发布版
 
 ```bash
-pnpm tauri build
-pnpm tauri android build
+pnpm tauri build              # 桌面端
+pnpm tauri android build      # Android 端
 ```
 
 构建产物位于 `src-tauri/target/release/bundle/`。
@@ -225,8 +223,8 @@ pnpm tauri android build
 ## 使用流程
 
 1. **启动应用** → 进入主页，可查看更新日志或直接进入应用
-2. **导入小说** → 点击左上角「导入文件」选择 TXT 小说，自动识别章节和分卷
-3. **配置 AI** → 点击右上角 ⚙️ 图标，填入 API Base URL、Key 和模型名，亦可自定义 Prompt
+2. **导入小说** → 点击左上角「导入 TXT 文件」选择小说，自动识别章节和分卷
+3. **配置 AI** → 点击右上角 ⚡ 图标，填入 API Base URL、Key 和模型名，亦可自定义 Prompt
 4. **校对** → 选择段落/章节模式，点击「开始校对」，问题段落自动高亮
 5. **修改** → 在右侧查看错误列表，点击「采纳修改」应用到原文
 6. **角色分析** → 进入角色设置，使用 AI 自动分析整本小说的人物和关系
@@ -247,18 +245,3 @@ pnpm tauri android build
 ## 更新日志
 
 查看 [CHANGELOG.md](CHANGELOG.md) 获取详细的版本更新记录。
-
-### 最近更新（v0.9.8）
-
-- 🗑️ **删除确认** - 删除小说前增加二次确认弹窗，防止误操作
-- 📚 **分卷小说支持** - 支持「第X卷」等分卷格式识别，章节列表分卷折叠展示
-- 👥 **角色分析功能** - AI 自动检测角色（高频词汇、共现网络、别名归并），支持关系图可视化
-- ⬇️ **下载体验优化** - 新增 GitHub 镜像源下载支持，优化移动端下载交互
-- 🎙️ **TTS 流式播放** - 支持边生成边播放，音频队列实现平滑连续播放
-- 🏠 **主页页面** - 新增主页，展示更新日志和多平台下载入口
-- 📝 **自定义 Prompt** - 支持校对、剧本、TTS 等场景的自定义系统提示词
-- 🔎 **全局搜索** - 跨章节搜索小说内容，支持结果定位跳转
-
-## License
-
-GNU General Public License v3.0

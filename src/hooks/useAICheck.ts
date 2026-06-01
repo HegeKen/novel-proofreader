@@ -23,6 +23,119 @@ import type {
 
 const MAX_CONCURRENT_BATCHES = 5;
 
+/** 在段落文本中定位 AI 返回的错误位置 */
+function locateTextInParagraph(
+	para: string,
+	matchText: string,
+	column?: number,
+): { start: number; end: number } | null {
+	// 1. column 定位（1-based，Prompt 要求 AI 返回此字段）
+	if (column !== undefined && column > 0 && column <= para.length) {
+		const endIdx = column - 1 + matchText.length;
+		if (endIdx <= para.length && para.slice(column - 1, endIdx) === matchText) {
+			return { start: column - 1, end: endIdx };
+		}
+	}
+
+	// 2. 精确匹配
+	const exactIdx = para.indexOf(matchText);
+	if (exactIdx >= 0) return { start: exactIdx, end: exactIdx + matchText.length };
+
+	// 3. 模糊匹配：若 AI 补充的上下文与原文略有出入，渐进缩短 find 再试
+	if (matchText.length > 4) {
+		let shortened = matchText;
+		while (shortened.length >= 4) {
+			shortened = shortened.slice(1, -1);
+			const idx = para.indexOf(shortened);
+			if (idx >= 0) return { start: idx, end: idx + shortened.length };
+		}
+	}
+
+	return null;
+}
+
+/** 当 AI 返回的 find 过长（>20 字）时，或 replace 与原文长度相近时，diff 找出实际差异部分并截取 */
+function truncateFind(
+	find: string,
+	replace: string,
+	originalPara?: string,
+): { find: string; replace: string } | null {
+	const MAX_LEN = 20;
+	const CONTEXT = 5;
+	const MIN_LEN = 6;
+
+	// 1. 当 replace 与原文长度相近（>70%）时，diff 原文 vs replace 找出实际改动位置
+	if (originalPara && originalPara.length > 0 && replace.length > 0) {
+		const lengthRatio = Math.min(originalPara.length, replace.length) / Math.max(originalPara.length, replace.length);
+		if (lengthRatio > 0.7) {
+			const minLen = Math.min(originalPara.length, replace.length);
+			let diffStart = 0;
+			while (diffStart < minLen && originalPara[diffStart] === replace[diffStart]) diffStart++;
+			let diffEndFromEnd = 0;
+			while (
+				diffEndFromEnd < minLen - diffStart &&
+				originalPara[originalPara.length - 1 - diffEndFromEnd] === replace[replace.length - 1 - diffEndFromEnd]
+			) diffEndFromEnd++;
+
+			const diffLen = originalPara.length - diffStart - diffEndFromEnd;
+			if (diffLen > 0 && diffLen < originalPara.length) {
+				const ctxStart = Math.max(0, diffStart - CONTEXT);
+				const ctxEnd = originalPara.length - diffEndFromEnd + CONTEXT;
+				const newFind = originalPara.slice(ctxStart, ctxEnd);
+				const newReplace = replace.slice(ctxStart, ctxEnd);
+				if (newFind.length >= MIN_LEN && newFind !== newReplace) {
+					find = newFind;
+					replace = newReplace;
+				}
+			}
+		}
+	}
+
+	// 2. find 和 replace 都在范围内，直接返回（任一超长则继续截取）
+	if (find.length <= MAX_LEN && replace.length <= MAX_LEN) return { find, replace };
+
+	// 3. find/replace 仍过长，做字符级 diff 截取
+	// 先找出所有独立的 diff 段
+	const diffs: { start: number; end: number }[] = [];
+	const scanLen = Math.min(find.length, replace.length);
+	let inDiff = false;
+	let segStart = 0;
+	for (let i = 0; i < scanLen; i++) {
+		const isDiff = find[i] !== replace[i];
+		if (isDiff && !inDiff) { segStart = i; inDiff = true; }
+		else if (!isDiff && inDiff) { diffs.push({ start: segStart, end: i }); inDiff = false; }
+	}
+	if (inDiff) diffs.push({ start: segStart, end: scanLen });
+
+	if (diffs.length === 0) return null;
+
+	// 4. 若外沿范围仍过长，取最长或最具代表性的独立 diff 段
+ 	if (diffs.length > 1 || (find.slice(diffs[0].start, diffs[0].end).length > MAX_LEN)) {
+ 		// 优先选差异字符数最多的段
+ 		const best = diffs.reduce((a, b) => (b.end - b.start) > (a.end - a.start) ? b : a);
+		const ctxStart = Math.max(0, best.start - CONTEXT);
+		const ctxEnd = Math.min(find.length, best.end + CONTEXT);
+		const segFind = find.slice(ctxStart, ctxEnd);
+		const segReplace = replace.slice(ctxStart, ctxEnd);
+		if (segFind.length >= MIN_LEN && segFind !== segReplace) return { find: segFind, replace: segReplace };
+		// 如果最佳段仍超长，递归一次（用更小 CONTEXT）
+		if (segFind.length > MAX_LEN) {
+			const tightFind = find.slice(best.start, best.end);
+			const tightReplace = replace.slice(best.start, best.end);
+			if (tightFind.length >= MIN_LEN && tightFind !== tightReplace) return { find: tightFind, replace: tightReplace };
+		}
+	}
+
+	// 5. 只有一个 diff 段且不长，补两侧上下文
+	const diff = diffs[0];
+	const ctxStart = Math.max(0, diff.start - CONTEXT);
+	const ctxEnd = Math.min(find.length, diff.end + CONTEXT);
+	const newFind = find.slice(ctxStart, ctxEnd);
+	const newReplace = replace.slice(ctxStart, ctxEnd);
+	if (newFind.length < MIN_LEN) return null;
+	return { find: newFind, replace: newReplace };
+}
+
 export function useAICheck() {
 	const aiConfig = useAppStore((s) => s.aiConfig);
 	const chapters = useAppStore((s) => s.chapters);
@@ -170,12 +283,13 @@ export function useAICheck() {
 							const suggest = String(obj.reason ?? obj.suggestion ?? "");
 							const aiStart = obj.start !== undefined ? Number(obj.start) : -1;
 							const aiEnd = obj.end !== undefined ? Number(obj.end) : -1;
+							const aiColumn = obj.column !== undefined ? Number(obj.column) : undefined;
 
 							// 优先使用新格式的 find/replace，其次使用旧格式的 original/corrected
 							const matchText = find || orig;
 							const correctText = replace || corr;
 
-							logger.proofread(`解析错误: matchText="${matchText}", correctText="${correctText}", lineNumber=${lineNumber}, aiStart=${aiStart}, aiEnd=${aiEnd}`);
+							logger.proofread(`解析错误: matchText="${matchText}", correctText="${correctText}", lineNumber=${lineNumber}, aiStart=${aiStart}, aiEnd=${aiEnd}, column=${aiColumn}`);
 
 							if (!matchText) continue;
 
@@ -188,94 +302,39 @@ export function useAICheck() {
 
 							// 检查行号是否在该批次范围内
 							if (lineNumber < batch.start || lineNumber >= batch.end) {
-								// 行号不在该批次，可能是全局行号或其他原因，尝试查找该批次内是否包含
 								const foundLine = paragraphs.findIndex((p, idx) =>
-									idx >= batch.start && idx < batch.end && p.includes(matchText)
+									idx >= batch.start && idx < batch.end && locateTextInParagraph(p, matchText, aiColumn) !== null
 								);
 								logger.proofread(`行号检查: lineNumber=${lineNumber}, batch=${batch.start}-${batch.end}, foundLine=${foundLine}`);
 								if (foundLine < 0) {
-									console.warn(`[useAICheck] 批次 ${batch.start}-${batch.end} 中无法找到包含 "${matchText}" 的段落`);
+									logger.proofread(`[useAICheck] 批次 ${batch.start}-${batch.end} 中无法找到 "${matchText}"`);
 									continue;
 								}
 								lineNumber = foundLine;
 							}
 
 							// 确定错误在段落内的位置
-							let startIdx: number;
-							let endIdx: number;
 							const targetPara = paragraphs[lineNumber];
 
-							// 如果 AI 返回了 start/end（全局字符索引），需要转换为段落内索引
-							if (aiStart >= 0 && aiEnd > aiStart) {
-								// 先尝试将全局索引转换为段落索引和段落内索引
-								let charCount = 0;
-								let foundParaIdx = -1;
-								let paraStartIdx = -1;
+							const located = locateTextInParagraph(targetPara, matchText, aiColumn);
+							if (!located) {
+								logger.proofread(`[useAICheck] 段落 ${lineNumber} 中定位不到 "${matchText}"`);
+								continue;
+							}
+							let startIdx = located.start;
+							let endIdx = located.end;
+							let finalMatchText = matchText;
+							let finalCorrectText = correctText;
 
-								for (let i = 0; i < paragraphs.length; i++) {
-									const para = paragraphs[i];
-									// 检查全局索引是否在当前段落范围内
-									if (charCount <= aiStart && aiStart < charCount + para.length) {
-										foundParaIdx = i;
-										paraStartIdx = aiStart - charCount;
-										break;
-									}
-									charCount += para.length;
+							const truncated = truncateFind(finalMatchText, finalCorrectText, targetPara);
+							if (truncated) {
+								finalMatchText = truncated.find;
+								finalCorrectText = truncated.replace;
+								const relocated = locateTextInParagraph(targetPara, finalMatchText, aiColumn);
+								if (relocated) {
+									startIdx = relocated.start;
+									endIdx = relocated.end;
 								}
-
-								logger.proofread(`全局索引转换: aiStart=${aiStart}, aiEnd=${aiEnd}, foundParaIdx=${foundParaIdx}, paraStartIdx=${paraStartIdx}`);
-
-								// 如果找到对应的段落且与当前行号匹配
-								if (foundParaIdx === lineNumber && paraStartIdx >= 0) {
-									const paraEndIdx = paraStartIdx + (aiEnd - aiStart);
-									// 验证位置处的文本是否与 matchText 匹配
-									if (paraEndIdx <= targetPara.length) {
-										const actualText = targetPara.slice(paraStartIdx, paraEndIdx);
-										if (actualText === matchText) {
-											startIdx = paraStartIdx;
-											endIdx = paraEndIdx;
-										} else {
-											// 位置不匹配，降级使用 indexOf
-											logger.proofread(`全局索引位置不匹配: 期望 "${matchText}"，实际 "${actualText}"，降级使用 indexOf`);
-											const idx = targetPara.indexOf(matchText);
-											if (idx < 0) {
-												console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${matchText}"`);
-												continue;
-											}
-											startIdx = idx;
-											endIdx = startIdx + matchText.length;
-										}
-									} else {
-										// 位置超出段落范围，降级使用 indexOf
-										logger.proofread(`全局索引超出段落范围: paraEndIdx=${paraEndIdx}, paraLength=${targetPara.length}`);
-										const idx = targetPara.indexOf(matchText);
-										if (idx < 0) {
-											console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${matchText}"`);
-											continue;
-										}
-										startIdx = idx;
-										endIdx = startIdx + matchText.length;
-									}
-								} else {
-									// 全局索引转换失败或段落不匹配，降级使用 indexOf
-									logger.proofread(`全局索引转换失败: foundParaIdx=${foundParaIdx}, lineNumber=${lineNumber}`);
-									const idx = targetPara.indexOf(matchText);
-									if (idx < 0) {
-										console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${matchText}"`);
-										continue;
-									}
-									startIdx = idx;
-									endIdx = startIdx + matchText.length;
-								}
-							} else {
-								// 没有有效的位置信息，使用 indexOf 查找
-								if (!targetPara.includes(matchText)) {
-									console.warn(`[useAICheck] 段落 ${lineNumber} 中找不到 "${matchText}"`);
-									continue;
-								}
-								const idx = targetPara.indexOf(matchText);
-								startIdx = idx;
-								endIdx = startIdx + matchText.length;
 							}
 
 							errorsByLine[lineNumber].push({
@@ -284,8 +343,8 @@ export function useAICheck() {
 								endIndex: endIdx,
 								errorType: (errType as ProofreadError["errorType"]) || "typo",
 								suggestion: suggest,
-								originalText: matchText,
-								correctedText: correctText,
+								originalText: finalMatchText,
+								correctedText: finalCorrectText,
 								applied: false,
 								skipped: false,
 							});
@@ -476,8 +535,7 @@ export function useAICheck() {
 							
 							const errType = String(o.type ?? o.error_type ?? "");
 							const suggest = String(o.reason ?? o.suggestion ?? "");
-							const aiStart = o.start !== undefined ? Number(o.start) : -1;
-							const aiEnd = o.end !== undefined ? Number(o.end) : -1;
+							const aiColumn = o.column !== undefined ? Number(o.column) : undefined;
 
 							// 优先使用新格式的 find/replace，其次使用旧格式的 original/corrected
 							const matchText = find || orig;
@@ -495,20 +553,22 @@ export function useAICheck() {
 							});
 							if (isIgnored) continue;
 
-							// 优先使用AI返回的位置，否则用indexOf查找
-							let startIdx: number;
-							let endIdx: number;
+							const located = locateTextInParagraph(item, matchText, aiColumn);
+							if (!located) continue;
+							let startIdx = located.start;
+							let endIdx = located.end;
+							let finalMatchText = matchText;
+							let finalCorrectText = correctText;
 
-							if (aiStart >= 0 && aiEnd > aiStart) {
-								// 使用AI返回的精确位置
-								startIdx = aiStart;
-								endIdx = aiEnd;
-							} else {
-								// 降级使用indexOf查找
-								if (!item.includes(matchText)) continue;
-								const idx = item.indexOf(matchText);
-								startIdx = idx;
-								endIdx = startIdx + matchText.length;
+							const truncated = truncateFind(finalMatchText, finalCorrectText, item);
+							if (truncated) {
+								finalMatchText = truncated.find;
+								finalCorrectText = truncated.replace;
+								const relocated = locateTextInParagraph(item, finalMatchText, aiColumn);
+								if (relocated) {
+									startIdx = relocated.start;
+									endIdx = relocated.end;
+								}
 							}
 
 							errors.push({
@@ -518,8 +578,8 @@ export function useAICheck() {
 								errorType:
 									(errType as ProofreadError["errorType"]) || "typo",
 								suggestion: suggest,
-								originalText: matchText,
-								correctedText: correctText,
+								originalText: finalMatchText,
+								correctedText: finalCorrectText,
 								applied: false,
 								skipped: false,
 							});
@@ -689,8 +749,7 @@ export function useAICheck() {
 					
 					const errType = String(o.type ?? o.error_type ?? "");
 					const suggest = String(o.reason ?? o.suggestion ?? "");
-					const aiStart = o.start !== undefined ? Number(o.start) : -1;
-					const aiEnd = o.end !== undefined ? Number(o.end) : -1;
+					const aiColumn = o.column !== undefined ? Number(o.column) : undefined;
 
 					// 优先使用新格式的 find/replace，其次使用旧格式的 original/corrected
 					const matchText = find || orig;
@@ -703,18 +762,22 @@ export function useAICheck() {
 					const needsReplacement = errType === "typo" || errType === "grammar" || errType === "format";
 					if (needsReplacement && matchText === correctText) continue;
 
-					// 优先使用AI返回的位置，否则用indexOf查找
-					let startIdx: number;
-					let endIdx: number;
+					const located = locateTextInParagraph(lineText, matchText, aiColumn);
+					if (!located) continue;
+					let startIdx = located.start;
+					let endIdx = located.end;
+					let finalMatchText = matchText;
+					let finalCorrectText = correctText;
 
-					if (aiStart >= 0 && aiEnd > aiStart) {
-						startIdx = aiStart;
-						endIdx = aiEnd;
-					} else {
-						if (!lineText.includes(matchText)) continue;
-						const idx = lineText.indexOf(matchText);
-						startIdx = idx;
-						endIdx = startIdx + matchText.length;
+					const truncated = truncateFind(finalMatchText, finalCorrectText, lineText);
+					if (truncated) {
+						finalMatchText = truncated.find;
+						finalCorrectText = truncated.replace;
+						const relocated = locateTextInParagraph(lineText, finalMatchText, aiColumn);
+						if (relocated) {
+							startIdx = relocated.start;
+							endIdx = relocated.end;
+						}
 					}
 
 					errors.push({
@@ -723,8 +786,8 @@ export function useAICheck() {
 						endIndex: endIdx,
 						errorType: (errType as ProofreadError["errorType"]) || "typo",
 						suggestion: suggest,
-						originalText: matchText,
-						correctedText: correctText,
+						originalText: finalMatchText,
+						correctedText: finalCorrectText,
 						applied: false,
 						skipped: false,
 					});

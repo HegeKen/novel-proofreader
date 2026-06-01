@@ -192,12 +192,37 @@ export async function testConnection(
 // ============================================================
 
 /** 校对系统 prompt（段落级别） */
-export const PROOFREAD_SYSTEM_PROMPT = `你是小说文字编辑。输出JSON数组，每个错误含：line(行号从1)、find(原文连续片段，含错误及前后至少3字符，10-20字)、replace(修正后片段)、type(typo/format/punctuation/grammar)、reason(≤10汉字)。
-示例：[{"line":3,"find":"他很高兴地笑了","replace":"他很高兴地笑了","type":"typo","reason":"的/地混用"}]
-约束：find精确复制且唯一；同行的find不重叠；无法定位则跳过；无错返回[]。`;
+export const PROOFREAD_SYSTEM_PROMPT = `你是小说文字编辑。输出JSON数组，每个错误含：line(行号从1)、find(原文连续片段，含错误及前后至少3字符，**10-20字，严禁超20字**)、replace(修正后片段，长度与find相近)、type(typo/format/punctuation/grammar)、reason(≤10汉字)。
+示例：[{"line":3,"find":"他很高兴地笑了","replace":"他很高興地笑了","type":"typo","reason":"繁简混用"}]
+约束：find精确复制且唯一；同行的find不重叠；无法定位则跳过；无错返回[]。find字段**不能**超过20个字符，若错误本身较短则总长度控制在10-15字。`;
 
-/** 校对系统 prompt（章节级别 - 按行号返回） */
-export const PROOFREAD_SYSTEM_PROMPT_CHAPTER = `你是小说文字编辑，校对整章JSON（key为行号，value为段落文本）。逐行检查typo(错别字)/format(排版空格空行)/punctuation(标点致命错误)/grammar(病句)。输出JSON数组，字段：lineNumber(与输入key一致，string)、column(错误起始列，从1计数)、find(原文连续片段，含错误及前后各≥3字符，8-20字)、replace(修正后)、type、reason(≤10汉字)。严格约束：lineNumber须存在；column基于该行逐字符计算(含空格标点)；find精确复制；不跨行；无错返回[]；只输出JSON数组，无markdown。示例输入{"0":"第一章","1":"倾盘大雨"} → [{"lineNumber":"1","column":5,"find":"倾盘大雨","replace":"倾盆大雨","type":"typo","reason":"错别字"}]。的/地/得错误：find含错误及前后各≥2字符。优先级：错别字>语法>排版>标点。不修改风格化/口语化表达。`;
+/** 校对系统 prompt（章节级别 - 每行返回一条错误） */
+export const PROOFREAD_SYSTEM_PROMPT_CHAPTER = `你是小说文字编辑。校对输入的JSON对象（key=行号数字，value=段落文本）。
+
+## 输出要求
+输出JSON数组，每个元素表示一个错误，字段：
+- line: 行号（数字，与输入key一致）
+- column: 错误起始列（数字，从1计数，基于该行逐字符计算，含空格和标点）
+- find: 原文错误片段（**10-20字，严禁超20字**，含错误及前后各至少3字符作为上下文，严禁返回整段全文）
+- replace: 修正后的对应文本片段（长度与find相近）
+- type: 错误类型（typo错别字/format排版空格/punctuation标点/grammar病句）
+- reason: 原因（≤10汉字）
+
+## 严格约束
+1. find字段**必须**是10-20个字符的错误片段，**绝对不能**超过20字，也**绝对不能**返回整段原文
+2. 每个JSON对象只包含 **一个错误**，多个错误拆成多个对象
+3. find必须与原文精确匹配，column基于该行逐字符定位
+4. 不跨行
+5. 无错误返回空数组 []
+6. 只输出JSON数组，无markdown标记、无解释、无代码块
+
+## 示例
+输入示例：{"0":"第一章 风雨欲来","1":"倾盘大雨，窗外街上穿流不息的人群"}
+正确输出：[{"line":1,"column":1,"find":"倾盘大雨，窗外","replace":"倾盆大雨，窗外","type":"typo","reason":"错别字"},{"line":1,"column":10,"find":"街上穿流不息的人群","replace":"街上川流不息的人群","type":"typo","reason":"错别字"}]
+错误输出（find超长）：[{"line":1,"column":1,"find":"倾盘大雨，窗外街上穿流不息的人群","replace":"..."}]
+
+## 优先级
+错别字 > 语法 > 排版 > 标点。不修改风格化、口语化表达。的/地/得错误：find含前后各≥2字符。`;
 
 /** 构建带忽略词的系统 prompt */
 export function buildProofreadSystemPrompt(
@@ -665,19 +690,19 @@ export const CHAPTER_TITLE_SYSTEM_PROMPT = `你是小说编辑专家。根据提
 
 ## 输出格式
 请返回一个JSON数组，包含3-5个建议的章节名选项：
-[{"title":"第一章 标题内容"},{"title":"第一章 另一个标题"},{"title":"第一章 备选标题"}]
+[{"title":"标题内容"},{"title":"另一个标题"},{"title":"备选标题"}]
 
 ## 要求
 1. 章节名必须符合中文小说的命名习惯
 2. 标题要能概括章节主要内容或核心事件
 3. 避免剧透但要有吸引力
 4. 保持与已有章节名风格一致
-5. 格式为"第X章 标题"或"第X回 标题"
+5. 生成的标题**不要**包含"第X章"或"第X回"前缀，只需纯标题内容
 
 ## 示例
 输入章节内容："林辰走出家门，来到了繁华的京城大街上。他此行的目的是寻找传说中的铁匠铺..."
-已有章节名：{"第1章 初入江湖":"第一章内容..."}
-输出：[{"title":"第2章 京城寻踪"},{"title":"第2章 铁匠传说"},{"title":"第2章 繁华都市"}]`;
+已有章节名：{"初入江湖":"第一章内容..."}
+输出：[{"title":"京城寻踪"},{"title":"铁匠传说"},{"title":"繁华都市"}]`;
 
 /**
  * 生成章节名建议
@@ -690,7 +715,7 @@ export const CHAPTER_TITLE_SYSTEM_PROMPT = `你是小说编辑专家。根据提
 export async function generateChapterTitle(
 	chapterContent: string,
 	previousChapters: Record<string, string>,
-	chapterNumber: number,
+	_chapterNumber: number,
 	config: AIConfig,
 	signal?: AbortSignal,
 ): Promise<string[]> {
@@ -705,9 +730,6 @@ ${chapterContent.slice(0, 1000)}...
 
 【前几章章节名参考】
 ${titlesText || "无"}
-
-【当前章节编号】
-第${chapterNumber}章
 
 请生成3-5个合适的章节名建议。`;
 
@@ -728,10 +750,13 @@ ${titlesText || "无"}
 		logger.warn("[ChapterTitle] 解析JSON失败");
 	}
 	
-	// 如果解析失败，尝试提取文本中的章节名
-	const titleMatches = response.match(/第[\d一二三四五六七八九十]+[章回] .+/g);
+	// 如果解析失败，尝试提取引号或书名号中的标题
+	const titleMatches = response.match(/["""](\S[^"""]{1,20})["""]|《([^》]+)》/g);
 	if (titleMatches) {
-		return titleMatches.slice(0, 5);
+		return titleMatches
+			.map(t => t.replace(/["""《》]/g, "").trim())
+			.filter(Boolean)
+			.slice(0, 5);
 	}
 	
 	return [];

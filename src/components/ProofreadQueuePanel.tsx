@@ -106,9 +106,13 @@ export function ProofreadQueuePanel() {
 		const chapter = chapters[chapterIndex];
 		if (!chapter) return;
 
-		// 更新章节标题
+		const newTitle = chapter.title ? `${chapter.title} ${title}` : title;
+		const newContent = chapter.title
+			? chapter.content.replace(chapter.title, newTitle)
+			: chapter.content;
+
 		const updatedChapters = [...chapters];
-		updatedChapters[chapterIndex] = { ...chapter, title };
+		updatedChapters[chapterIndex] = { ...chapter, title: newTitle, content: newContent };
 		useAppStore.getState().setChapters(updatedChapters);
 
 		// 清除推荐状态

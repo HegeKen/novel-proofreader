@@ -291,8 +291,13 @@ export function ChapterNav({
 		if (chapterIndexInChapters < 0) return;
 
 		const chapter = chapters[chapterIndexInChapters];
+		const newTitle = chapter.title ? `${chapter.title} ${title}` : title;
+		const newContent = chapter.title
+			? chapter.content.replace(chapter.title, newTitle)
+			: chapter.content;
+
 		const updatedChapters = [...chapters];
-		updatedChapters[chapterIndexInChapters] = { ...chapter, title };
+		updatedChapters[chapterIndexInChapters] = { ...chapter, title: newTitle, content: newContent };
 		useAppStore.getState().setChapters(updatedChapters);
 
 		setChapterTitleSuggestions(prev => {

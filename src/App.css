@@ -2489,6 +2489,50 @@ color: var(--text-primary);
 	animation: pageFlipPrev 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
 }
 
+/* ============================================================
+   Chapter Navigation Buttons (底部上一章/下一章)
+   ============================================================ */
+.chapter-nav-buttons {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 16px 0 24px;
+	border-top: 1px solid var(--border);
+	margin-top: 8px;
+}
+
+.chapter-nav-buttons .btn {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	padding: 10px 16px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	min-width: 0;
+}
+
+.chapter-nav-buttons .btn:first-child {
+	justify-content: flex-start;
+}
+
+.chapter-nav-buttons .btn:last-child {
+	justify-content: flex-end;
+}
+
+.chapter-nav-buttons .btn span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.chapter-nav-buttons .btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
 @keyframes pageFlipNext {
 	0% {
 		transform: rotateY(0deg) scale(1);
@@ -7172,6 +7216,220 @@ color: var(--text-primary);
 }
 
 /* ============================================================
+   Proofread Test Modal
+   ============================================================ */
+.proofread-test-modal {
+	width: 640px;
+}
+
+.test-description {
+	font-size: 13px;
+	color: var(--text-secondary);
+	line-height: 1.6;
+	margin-bottom: 16px;
+}
+.test-description strong {
+	color: var(--text-primary);
+}
+
+.test-text-preview {
+	margin-bottom: 16px;
+}
+
+.test-section-label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-muted);
+	margin-bottom: 8px;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.test-section-hint {
+	font-weight: 400;
+	text-transform: none;
+	letter-spacing: normal;
+	color: var(--text-muted);
+	margin-left: 6px;
+}
+
+.test-text-content {
+	background: var(--bg-surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	padding: 12px;
+	max-height: 200px;
+	overflow-y: auto;
+	font-size: 12px;
+	line-height: 1.8;
+	font-family: inherit;
+}
+
+.test-line {
+	display: flex;
+	gap: 8px;
+}
+
+.test-line-num {
+	color: var(--text-muted);
+	min-width: 20px;
+	text-align: right;
+	flex-shrink: 0;
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+}
+
+.test-line-text {
+	color: var(--text-primary);
+	word-break: break-all;
+}
+
+.test-actions {
+	display: flex;
+	gap: 10px;
+	margin-bottom: 16px;
+}
+
+.test-summary {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 16px;
+	padding: 12px 16px;
+	background: var(--bg-surface);
+	border-radius: var(--r-md);
+	border: 1px solid var(--border);
+}
+
+.test-summary-badge {
+	font-size: 14px;
+	font-weight: 600;
+	padding: 4px 12px;
+	border-radius: var(--r-full);
+}
+.test-summary-badge.pass {
+	background: var(--green-dim);
+	color: var(--green);
+}
+.test-summary-badge.fail {
+	background: var(--red-dim);
+	color: var(--red);
+}
+
+.test-summary-extra {
+	font-size: 12px;
+	color: var(--yellow);
+}
+
+.test-results {
+	margin-top: 8px;
+}
+
+.test-error-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-bottom: 16px;
+}
+
+.test-error-item {
+	padding: 10px 12px;
+	border-radius: var(--r-md);
+	border: 1px solid var(--border);
+	background: var(--bg-surface);
+}
+.test-error-item.found {
+	border-left: 3px solid var(--green);
+}
+.test-error-item.missed {
+	border-left: 3px solid var(--red);
+}
+
+.test-error-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 6px;
+}
+
+.test-error-status {
+	display: flex;
+	align-items: center;
+}
+.test-error-status.found {
+	color: var(--green);
+}
+.test-error-status.missed {
+	color: var(--red);
+}
+
+.test-error-type {
+	font-size: 11px;
+	font-weight: 600;
+	padding: 1px 6px;
+	border-radius: 3px;
+	background: var(--bg-overlay);
+	color: var(--text-muted);
+	text-transform: uppercase;
+}
+
+.test-error-reason {
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+
+.test-error-detail {
+	display: flex;
+	gap: 6px;
+	font-size: 12px;
+	line-height: 1.6;
+}
+
+.test-error-label {
+	color: var(--text-muted);
+	flex-shrink: 0;
+	min-width: 36px;
+}
+
+.test-error-text {
+	color: var(--text-primary);
+	word-break: break-all;
+}
+.test-error-text.missed {
+	color: var(--red);
+	text-decoration: line-through;
+}
+
+.test-raw {
+	margin-top: 12px;
+}
+
+.test-raw-summary {
+	font-size: 12px;
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: 6px 0;
+	user-select: none;
+}
+
+.test-raw-content {
+	font-size: 11px;
+	font-family: monospace;
+	background: var(--bg-surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	padding: 12px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	word-break: break-all;
+	max-height: 300px;
+	overflow-y: auto;
+	color: var(--text-secondary);
+	line-height: 1.6;
+	margin-top: 6px;
+}
+
+/* ============================================================
    Toast Messages
    ============================================================ */
 .toast-container {
@@ -7782,6 +8040,72 @@ color: var(--text-primary);
 		min-height: 0;
 		padding: 12px;
 		overflow-y: auto;
+	}
+
+	/* Mobile Chapter Nav (浮动在 proofread-panel 顶部) */
+	.mobile-chapter-nav {
+		position: sticky;
+		top: 0;
+		z-index: 102;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 12px;
+		margin: 0 12px;
+		background: var(--glass-bg-strong);
+		backdrop-filter: blur(var(--glass-blur-strong));
+		-webkit-backdrop-filter: blur(var(--glass-blur-strong));
+		border-radius: var(--r-xl);
+		border: 1px solid var(--border);
+		box-shadow: var(--shadow-lg);
+		animation: slideDown 0.3s var(--ease);
+	}
+
+	.chapter-nav-btn {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 8px 12px;
+		border: none;
+		border-radius: var(--r-lg);
+		background: transparent;
+		color: var(--text-primary);
+		font-size: 13px;
+		cursor: pointer;
+		transition: all var(--duration) var(--ease);
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		min-width: 0;
+	}
+
+	.chapter-nav-btn:first-child {
+		justify-content: flex-start;
+	}
+
+	.chapter-nav-btn:last-child {
+		justify-content: flex-end;
+	}
+
+	.chapter-nav-btn span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.chapter-nav-btn:active:not(:disabled) {
+		background: var(--bg-hover);
+		transform: scale(0.97);
+	}
+
+	.chapter-nav-btn:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
+
+	.chapter-nav-btn svg {
+		flex-shrink: 0;
 	}
 
 	/* Task Panel Mobile */
@@ -9989,6 +10313,10 @@ color: var(--text-primary);
 	to {
 		transform: rotate(360deg);
 	}
+}
+
+.spin {
+	animation: spin 1s linear infinite;
 }
 
 .queue-item.done .queue-item-status {

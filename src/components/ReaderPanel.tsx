@@ -225,11 +225,15 @@ export function ReaderPanel({
 		const chapter = chapters[chapterIndex];
 		if (!chapter) return;
 
-		// 更新章节标题
+		const newTitle = chapter.title ? `${chapter.title} ${title}` : title;
+		const newContent = chapter.title
+			? chapter.content.replace(chapter.title, newTitle)
+			: chapter.content;
+
 		const updatedChapters = [...chapters];
-		updatedChapters[chapterIndex] = { ...chapter, title };
+		updatedChapters[chapterIndex] = { ...chapter, title: newTitle, content: newContent };
 		useAppStore.getState().setChapters(updatedChapters);
-		
+
 		// 清除推荐状态
 		setChapterTitleSuggestions([]);
 		setSuggestingChapterId(null);
@@ -1422,6 +1426,28 @@ export function ReaderPanel({
 					);
 				})}
 			</div>
+
+			{/* 上一章 / 下一章 导航按钮（仅桌面端） */}
+			{!isMobile && !readingMode && chapters.length > 1 && (
+				<div className="chapter-nav-buttons">
+					<button
+						className="btn"
+						disabled={currentChapterIndex <= 0}
+						onClick={() => setCurrentChapterIndex(currentChapterIndex - 1)}
+					>
+						<Icons.skipBack size={16} />
+						<span>{currentChapterIndex > 0 ? (chapters[currentChapterIndex - 1]?.title || `第 ${currentChapterIndex} 章`) : "已是第一章"}</span>
+					</button>
+					<button
+						className="btn"
+						disabled={currentChapterIndex >= chapters.length - 1}
+						onClick={() => setCurrentChapterIndex(currentChapterIndex + 1)}
+					>
+						<span>{currentChapterIndex < chapters.length - 1 ? (chapters[currentChapterIndex + 1]?.title || `第 ${currentChapterIndex + 2} 章`) : "已是最后一章"}</span>
+						<Icons.skipForward size={16} />
+					</button>
+				</div>
+			)}
 
 			{/* 阅读模式下显示悬浮设置按钮和面板 */}
 			{readingMode && (
