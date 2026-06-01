@@ -9,11 +9,14 @@ import { decodeTextBuffer } from "../utils/decodeText";
 import { formatFileSize, formatDateTime } from "../utils/formatters";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
+import { useMobile } from "../hooks/useMobile";
 import type { Novel } from "../types";
 
 export function NovelList({
 	onNovelSelect,
 }: { onNovelSelect?: () => void } = {}) {
+	const { isMobile } = useMobile();
+	
 	const novels = useAppStore((s) => s.novels);
 	const currentNovelId = useAppStore((s) => s.currentNovelId);
 	const addNovel = useAppStore((s) => s.addNovel);
@@ -111,7 +114,7 @@ export function NovelList({
 					小说库
 				</span>
 				<button
-					className="btn-import-novel"
+					className={isMobile ? "btn-mobile" : "btn-import-novel"}
 					onClick={handleImport}
 					title="导入新小说"
 				>
@@ -150,7 +153,7 @@ export function NovelList({
 							</div>
 							<div className="novel-item-actions">
 								<button
-									className="novel-item-btn novel-item-btn-characters"
+									className={isMobile ? "btn-mobile" : "novel-item-btn novel-item-btn-characters"}
 									onClick={(e) => {
 										e.stopPropagation();
 										e.preventDefault();
@@ -161,7 +164,7 @@ export function NovelList({
 									<Icons.settings size={16} />
 								</button>
 								<button
-									className="novel-item-btn novel-item-btn-remove"
+									className={isMobile ? "btn-mobile" : "novel-item-btn novel-item-btn-remove"}
 									onClick={(e) => handleRemove(e, novel.id)}
 									title="删除"
 								>

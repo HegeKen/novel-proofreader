@@ -1,10 +1,11 @@
 // ============================================================
 // 右侧校对区（带按行检测 + 采纳动画）
 // ============================================================
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useProofreadStore } from "../stores/proofreadStore";
 import { useAICheck } from "../hooks/useAICheck";
+import { useMobile } from "../hooks/useMobile";
 import { buildParagraphIndexMap } from "../utils/formatters";
 import { EmptyState } from "./EmptyState";
 import { splitParagraphs } from "../utils/chapterSplit";
@@ -40,6 +41,8 @@ const ANIM_REPLACE_MS = 300;
 const ANIM_NEW_MS = 1200;
 
 export function ProofreadPanel() {
+	const { isMobile } = useMobile();
+	
 	const chapters = useAppStore((s) => s.chapters);
 	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
 	const replaceParagraphText = useAppStore((s) => s.replaceParagraphText);
@@ -500,26 +503,26 @@ export function ProofreadPanel() {
 						</span>
 					)}
 					<button
-						className="btn-queue"
+						className={isMobile ? "btn-mobile" : "btn"}
 						onClick={() => setShowQueuePanel(!showQueuePanel)}
 						title="批量校对队列"
 					>
 						<Icons.listTodo size={16} />
 					</button>
 					<button
-						className="btn-settings"
+						className={isMobile ? "btn-mobile" : "btn"}
 						onClick={() => setShowIgnoredWordsModal(true)}
 						title="管理忽略单词"
 					>
 						<Icons.settings size={16} />
 					</button>
 					{checking ? (
-						<button className="btn-settings" onClick={cancelCheck}>
+						<button className={isMobile ? "btn-mobile" : "btn"} onClick={cancelCheck}>
 							<Icons.close size={16} />
 							取消检测
 						</button>
 					) : (
-						<button className="btn-check" onClick={handleStartCheck}>
+						<button className="btn btn-check" onClick={handleStartCheck}>
 							开始检测
 						</button>
 					)}

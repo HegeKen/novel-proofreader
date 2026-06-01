@@ -5,14 +5,9 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useAppStore } from "../stores/appStore";
 import { useProofreadStore } from "../stores/proofreadStore";
+import { useMobile } from "../hooks/useMobile";
 import { splitParagraphs } from "../utils/chapterSplit";
 import { Icons } from "./Icons";
-
-// 判断是否为移动端
-function isMobile(): boolean {
-	if (typeof window === "undefined") return false;
-	return window.innerWidth < 768;
-}
 
 export interface SearchResult {
 	novelId: string;
@@ -162,17 +157,17 @@ export function GlobalSearch() {
 		}
 	}, [showSearch]);
 
-	const mobile = isMobile();
+	const { isMobile } = useMobile();
 
 	return (
 		<>
 			<button
-				className={mobile ? "btn-search-mobile" : "global-search-btn"}
+				className={isMobile ? "btn-mobile" : "btn"}
 				onClick={() => setShowSearch(true)}
 				title="跨小说搜索 (Ctrl+F)"
 			>
 				<Icons.search size={18} />
-				{!mobile && <span>全局搜索</span>}
+				{!isMobile && <span>全局搜索</span>}
 			</button>
 
 			{showSearch && createPortal(

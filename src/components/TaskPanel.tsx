@@ -181,7 +181,7 @@ function TaskPanelContent({
 		} finally {
 			setTtsProcessing(false);
 		}
-	}, [result, ttsConfig, aiConfig, getVoiceForCharacter]);
+	}, [result, ttsConfig, aiConfig, getVoiceForCharacter, promptConfig]);
 
 	const handleScriptTTSStop = useCallback(() => {
 		if (scriptTTSRef.current) {
@@ -249,7 +249,7 @@ function TaskPanelContent({
 		} finally {
 			setProcessing(false);
 		}
-	}, [chapter, prompt, aiConfig, setScriptResult]);
+	}, [chapter, prompt, aiConfig, setScriptResult, promptConfig]);
 
 	const handleExport = useCallback(async () => {
 		if (result.length === 0) return;
@@ -380,7 +380,7 @@ function TaskPanelContent({
 							</div>
 							{/* 右下角固定保存按钮 */}
 							<div className="task-export-bar">
-								<button className="btn-export" onClick={handleExport}>
+								<button className="btn btn-primary" onClick={handleExport}>
 									💾 导出剧本
 								</button>
 							</div>

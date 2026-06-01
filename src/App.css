@@ -10,6 +10,246 @@
 	display: none !important;
 }
 
+/* ── Unified Base Styles ── */
+
+/* Button Base Style */
+.btn {
+	padding: 10px 18px;
+	border-radius: var(--r-lg);
+	font-size: 14px;
+	font-weight: 500;
+	background: var(--glass-bg);
+	color: var(--text-primary);
+	border: 1px solid var(--border);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+	transition: all var(--duration) var(--ease);
+	box-shadow: var(--shadow-sm);
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+}
+
+.btn svg {
+	flex-shrink: 0;
+	display: block;
+	width: 18px;
+	height: 18px;
+}
+
+.btn:hover {
+	background: var(--bg-hover);
+	border-color: var(--border-strong);
+	transform: translateY(-1px);
+	box-shadow: var(--shadow-md);
+}
+
+.btn:active {
+	transform: scale(0.98);
+}
+
+.btn-primary {
+	background: var(--accent);
+	color: white;
+	border-color: var(--accent);
+}
+
+.btn-primary:hover {
+	background: var(--accent-hover);
+	border-color: var(--accent-hover);
+}
+
+.btn-danger {
+	background: var(--red);
+	color: white;
+	border-color: var(--red);
+}
+
+.btn-danger:hover {
+	background: rgba(255, 107, 122, 0.85);
+	border-color: rgba(255, 107, 122, 0.85);
+}
+
+.btn-small {
+	padding: 8px 12px;
+	font-size: 13px;
+}
+
+.btn-large {
+	padding: 12px 24px;
+	font-size: 15px;
+}
+
+/* Mobile Button Style - 圆形移动端按钮 */
+.btn-mobile {
+	width: 36px;
+	height: 36px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	font-size: 18px;
+	background: var(--glass-bg);
+	color: var(--text-primary);
+	border: 1px solid var(--border);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+	transition: all var(--duration) var(--ease);
+	box-shadow: var(--shadow-sm);
+	cursor: pointer;
+}
+
+.btn-mobile:hover {
+	background: var(--bg-hover);
+	border-color: var(--border-strong);
+	transform: scale(1.08);
+	box-shadow: var(--shadow-md);
+}
+
+/* Glass Panel Base Style */
+.glass-panel {
+	background: var(--glass-bg);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+	border-radius: var(--r-xl);
+	box-shadow: var(--shadow-lg);
+	border: 1px solid var(--glass-border);
+	padding: 16px;
+	animation: slideDown 0.3s ease;
+}
+
+.glass-panel-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding-bottom: 12px;
+	border-bottom: 1px solid var(--glass-border);
+	margin-bottom: 12px;
+}
+
+.glass-panel-title {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.glass-panel-body {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+/* List Item Base Style */
+.list-item {
+	display: flex;
+	align-items: center;
+	padding: 12px 16px;
+	border-radius: var(--r-md);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+	border: 1px solid transparent;
+	background: transparent;
+}
+
+.list-item:hover {
+	background: var(--bg-hover);
+	transform: translateX(2px);
+}
+
+.list-item.active {
+	background: var(--accent-dim);
+	border-color: rgba(10, 132, 255, 0.4);
+	box-shadow: 0 0 20px rgba(10, 132, 255, 0.15);
+}
+
+.list-item-title {
+	flex: 1;
+	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.list-item.active .list-item-title {
+	color: var(--accent);
+	font-weight: 600;
+}
+
+/* Modal Base Style */
+.modal-overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.5);
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 1000;
+	animation: fade-in 0.25s var(--ease);
+}
+
+.modal-container {
+	position: relative;
+	z-index: 1001;
+	width: 80%;
+	max-width: 400px;
+	max-height: 70vh;
+	background: var(--glass-bg-strong);
+	backdrop-filter: blur(var(--glass-blur-strong));
+	-webkit-backdrop-filter: blur(var(--glass-blur-strong));
+	border: 1px solid var(--glass-border);
+	border-radius: 20px;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	box-shadow: var(--shadow-lg);
+	animation: modal-in 0.3s var(--ease-bounce);
+}
+
+.modal-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 18px 22px;
+	border-bottom: 1px solid var(--border);
+}
+
+.modal-title {
+	font-size: 16px;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.modal-close {
+	width: 32px;
+	height: 32px;
+	border: none;
+	background: transparent;
+	color: var(--text-secondary);
+	cursor: pointer;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: all 0.2s var(--ease);
+}
+
+.modal-close:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+}
+
+.modal-content {
+	flex: 1;
+	overflow-y: auto;
+	padding: 16px 22px;
+}
+
 /* ── Apple Liquid Glass Design Tokens ── */
 :root {
 	/* Liquid Glass Surface - 深色模式更柔和协调 */
@@ -394,126 +634,12 @@ select {
 }
 
 /* ── Liquid Glass Buttons ── */
-.btn-import,
-.btn-export,
-.btn-save-original,
-.btn-save-cache,
-.btn-export-all,
-.global-search-btn {
-	padding: 10px 18px;
-	border-radius: var(--r-lg);
-	font-size: 14px;
-	font-weight: 500;
-	background: var(--glass-bg);
-	color: var(--text-primary);
-	border: 1px solid var(--border);
-	backdrop-filter: blur(20px);
-	-webkit-backdrop-filter: blur(20px);
-	transition: all var(--duration) var(--ease);
-	box-shadow: var(--shadow-sm);
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-
-.btn-import svg,
-.btn-export svg,
-.btn-save-original svg,
-.btn-save-cache svg,
-.btn-export-all svg,
-.global-search-btn svg {
-	flex-shrink: 0;
-	display: block;
-	width: 18px;
-	height: 18px;
-}
-
-.btn-import:hover,
-.btn-export:hover,
-.btn-save-original:hover,
-.btn-save-cache:hover,
-.btn-export-all:hover,
-.global-search-btn:hover {
-	background: var(--bg-hover);
-	border-color: var(--border-strong);
-	transform: translateY(-1px);
-	box-shadow: var(--shadow-md);
-}
-
-.btn-import:active,
-.btn-export:active,
-.btn-save-original:active,
-.btn-save-cache:active,
-.btn-export-all:active,
-.global-search-btn:active {
-	transform: scale(0.98);
-}
+/* 使用统一的 .btn 基础样式 */
 
 .cache-time {
 	margin-left: 4px;
 	font-size: 12px;
 	opacity: 0.7;
-}
-
-.btn-settings {
-	padding: 10px 18px;
-	border-radius: var(--r-lg);
-	font-size: 14px;
-	font-weight: 500;
-	background: var(--glass-bg);
-	color: var(--text-primary);
-	border: 1px solid var(--border);
-	backdrop-filter: blur(20px);
-	-webkit-backdrop-filter: blur(20px);
-	transition: all var(--duration) var(--ease);
-	box-shadow: var(--shadow-sm);
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-
-.btn-settings svg {
-	flex-shrink: 0;
-	display: block;
-	width: 18px;
-	height: 18px;
-}
-.btn-settings:hover {
-	background: var(--bg-hover);
-	border-color: var(--border-strong);
-	transform: translateY(-1px);
-	box-shadow: var(--shadow-md);
-}
-
-.btn-theme-toggle {
-	padding: 10px 18px;
-	border-radius: var(--r-lg);
-	font-size: 14px;
-	font-weight: 500;
-	background: var(--glass-bg);
-	color: var(--text-primary);
-	border: 1px solid var(--border);
-	backdrop-filter: blur(20px);
-	-webkit-backdrop-filter: blur(20px);
-	transition: all var(--duration) var(--ease);
-	box-shadow: var(--shadow-sm);
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-
-.btn-theme-toggle svg {
-	flex-shrink: 0;
-	display: block;
-	width: 18px;
-	height: 18px;
-}
-
-.btn-theme-toggle:hover {
-	background: var(--bg-hover);
-	border-color: var(--border-strong);
-	transform: translateY(-1px);
-	box-shadow: var(--shadow-md);
 }
 
 /* API Mirror Selector */
@@ -555,43 +681,8 @@ select {
 	color: var(--text-primary);
 }
 
-.btn-start-web,
-.btn-download {
-	padding: 10px 18px;
-	border-radius: var(--r-lg);
-	font-size: 14px;
-	font-weight: 500;
-	background: var(--glass-bg);
-	color: var(--text-primary);
-	border: 1px solid var(--border);
-	backdrop-filter: blur(20px);
-	-webkit-backdrop-filter: blur(20px);
-	transition: all var(--duration) var(--ease);
-	box-shadow: var(--shadow-sm);
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	margin-left: 8px;
-}
-
-.btn-start-web:hover,
-.btn-download:hover {
-	background: var(--bg-hover);
-	border-color: var(--border-strong);
-	transform: translateY(-1px);
-	box-shadow: var(--shadow-md);
-}
-
-.btn-download {
-	background: var(--accent);
-	color: white;
-	border-color: var(--accent);
-}
-
-.btn-download:hover {
-	background: var(--accent-dark);
-	border-color: var(--accent-dark);
-}
+/* btn-start-web 使用统一的 .btn 基础样式 */
+/* btn-download 使用 .btn.btn-primary 组合样式 */
 
 /* ============================================================
    Body Layout - Liquid Glass 4 Columns
@@ -676,39 +767,41 @@ select {
 	padding: 0 12px 12px;
 }
 
+/* novel-item 使用统一的 .list-item 基础样式，保留特有布局 */
 .novel-item {
 	position: relative;
 	padding: 14px 16px;
 	margin-bottom: 6px;
-	border-radius: var(--r-md);
-	cursor: pointer;
-	transition: all var(--duration) var(--ease);
-	border: 1px solid transparent;
-	background: transparent;
-}
-.novel-item:hover {
-	background: var(--bg-overlay);
-	transform: translateX(2px);
-}
-.novel-item.active {
-	background: var(--accent-dim);
-	border-color: rgba(10, 132, 255, 0.4);
-	box-shadow: 0 0 20px rgba(10, 132, 255, 0.15);
-}
-.novel-item.active .novel-item-name {
-	color: var(--accent);
-	font-weight: 600;
-}
-.novel-item.active .novel-item-meta {
-	color: var(--text-muted);
-}
-
-.novel-item {
 	display: grid;
 	grid-template-columns: 1fr auto;
 	grid-template-rows: auto auto;
 	gap: 8px 12px;
 	align-items: center;
+	border-radius: var(--r-md);
+	border: 1px solid var(--border);
+	background: var(--glass-bg);
+	transition: all var(--duration) var(--ease);
+	cursor: pointer;
+}
+
+.novel-item:hover {
+	background: var(--bg-overlay);
+	border-color: var(--border-strong);
+}
+
+.novel-item.active {
+	background: var(--accent-dim);
+	border-color: rgba(10, 132, 255, 0.4);
+	box-shadow: 0 0 20px rgba(10, 132, 255, 0.15);
+}
+
+.novel-item.active .novel-item-name {
+	color: var(--accent);
+	font-weight: 600;
+}
+
+.novel-item.active .novel-item-meta {
+	color: var(--text-muted);
 }
 
 .novel-item-content {
@@ -1539,48 +1632,13 @@ font-weight: 500;
 color: var(--text-primary);
 }
 
-/* ============================================================
-   Unified Panel Styles (用于 tts-panel, reading-settings-panel)
-   ============================================================ */
-.panel-header {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	padding-bottom: 12px;
-	border-bottom: 1px solid var(--glass-border);
-	margin-bottom: 12px;
-}
-
-.panel-title {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	font-size: 14px;
-	font-weight: 600;
-	color: var(--text-primary);
-}
-
-.panel-body {
-	display: flex;
-	flex-direction: column;
-	gap: 12px;
-}
-
-/* TTS Panel */
+/* TTS Panel (使用统一的 .glass-panel 样式) */
 .tts-panel {
 	position: fixed;
 	bottom: 150px;
 	right: 24px;
 	width: 260px;
-	background: var(--glass-bg);
-	backdrop-filter: blur(20px);
-	-webkit-backdrop-filter: blur(20px);
-	border-radius: var(--r-xl);
-	box-shadow: var(--shadow-lg);
-	border: 1px solid var(--glass-border);
-	padding: 16px;
 	z-index: 101;
-	animation: slideDown 0.3s ease;
 }
 
 .tts-setting-item {
@@ -1663,21 +1721,13 @@ color: var(--text-primary);
 	text-align: right;
 }
 
-/* Reading Settings Panel (显示在按钮上方) */
+/* Reading Settings Panel (使用统一的 .glass-panel 样式) */
 .reading-settings-panel {
 	position: fixed;
 	bottom: 150px;
 	right: 24px;
 	width: 280px;
-	background: var(--glass-bg);
-	backdrop-filter: blur(20px);
-	-webkit-backdrop-filter: blur(20px);
-	border-radius: var(--r-xl);
-	box-shadow: var(--shadow-lg);
-	border: 1px solid var(--glass-border);
-	padding: 16px;
 	z-index: 101;
-	animation: slideDown 0.3s ease;
 }
 
 @keyframes slideDown {
@@ -2013,22 +2063,9 @@ color: var(--text-primary);
 	animation: fade-in 0.25s var(--ease);
 }
 
+/* chapter-list-modal 使用统一的 .modal-container 样式 */
 .chapter-list-modal {
 	position: relative;
-	z-index: 1001;
-	width: 80%;
-	max-width: 400px;
-	max-height: 70vh;
-	background: var(--glass-bg-strong);
-	backdrop-filter: blur(var(--glass-blur-strong));
-	-webkit-backdrop-filter: blur(var(--glass-blur-strong));
-	border: 1px solid var(--glass-border);
-	border-radius: 20px;
-	overflow: hidden;
-	display: flex;
-	flex-direction: column;
-	box-shadow: var(--shadow-lg);
-	animation: modal-in 0.3s var(--ease-bounce);
 }
 
 @keyframes fadeIn {
@@ -2250,6 +2287,7 @@ color: var(--text-primary);
 	border-color: var(--accent);
 }
 
+/* search-modal 使用统一的 .modal-container 样式，保留部分特有样式 */
 .search-modal {
 	position: fixed;
 	top: 50%;
@@ -2258,16 +2296,8 @@ color: var(--text-primary);
 	width: 85%;
 	max-width: 520px;
 	max-height: 65vh;
-	background: var(--glass-bg);
-	backdrop-filter: blur(var(--glass-blur));
-	-webkit-backdrop-filter: blur(var(--glass-blur));
-	border: 1px solid var(--glass-border);
-	border-radius: var(--r-xl);
-	box-shadow: var(--shadow-lg), var(--shadow-glow);
 	z-index: 201;
-	display: flex;
-	flex-direction: column;
-	overflow: hidden;
+	box-shadow: var(--shadow-lg), var(--shadow-glow);
 	animation: scaleIn 0.25s var(--ease);
 }
 
@@ -3026,29 +3056,7 @@ color: var(--text-primary);
 	box-shadow: 0 2px 8px rgba(94, 184, 255, 0.2);
 }
 
-.btn-queue {
-	padding: 6px 10px;
-	border-radius: var(--r-md);
-	font-size: 13px;
-	font-weight: 500;
-	background: var(--bg-hover);
-	color: var(--text-secondary);
-	border: 1px solid var(--border);
-	transition: all var(--duration) var(--ease);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 6px;
-	cursor: pointer;
-}
-
-.btn-queue:hover {
-	background: var(--bg-active);
-	color: var(--accent);
-	border-color: var(--accent);
-	transform: translateY(-1px);
-	box-shadow: 0 2px 8px rgba(94, 184, 255, 0.2);
-}
+/* btn-queue 使用统一的 .btn 基础样式 */
 
 .btn-cancel:hover {
 	opacity: 0.85;
@@ -7427,99 +7435,7 @@ color: var(--text-primary);
 		transform: none;
 	}
 
-	.btn-save-mobile {
-		width: 36px;
-		height: 36px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 50%;
-		font-size: 18px;
-		background: var(--glass-bg);
-		color: var(--text-primary);
-		border: 1px solid var(--border);
-		backdrop-filter: blur(20px);
-		-webkit-backdrop-filter: blur(20px);
-		transition: all var(--duration) var(--ease);
-		box-shadow: var(--shadow-sm);
-	}
-
-	.btn-save-mobile:hover {
-		background: var(--bg-hover);
-		border-color: var(--border-strong);
-		transform: scale(1.08);
-		box-shadow: var(--shadow-md);
-	}
-
-	.btn-save-cache-mobile {
-		width: 36px;
-		height: 36px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 50%;
-		font-size: 18px;
-		background: var(--glass-bg);
-		color: var(--text-primary);
-		border: 1px solid var(--border);
-		backdrop-filter: blur(20px);
-		-webkit-backdrop-filter: blur(20px);
-		transition: all var(--duration) var(--ease);
-		box-shadow: var(--shadow-sm);
-	}
-
-	.btn-save-cache-mobile:hover {
-		background: var(--bg-hover);
-		border-color: var(--border-strong);
-		transform: scale(1.08);
-		box-shadow: var(--shadow-md);
-	}
-
-	.btn-export-mobile {
-		width: 36px;
-		height: 36px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 50%;
-		font-size: 18px;
-		background: var(--glass-bg);
-		color: var(--text-primary);
-		border: 1px solid var(--border);
-		transition: all var(--duration) var(--ease);
-		box-shadow: var(--shadow-sm);
-	}
-
-	.btn-export-mobile:hover {
-		background: var(--bg-hover);
-		border-color: var(--border-strong);
-		transform: scale(1.08);
-		box-shadow: var(--shadow-md);
-	}
-
-	.btn-search-mobile {
-		width: 36px;
-		height: 36px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 50%;
-		font-size: 18px;
-		background: var(--glass-bg);
-		color: var(--text-primary);
-		border: 1px solid var(--border);
-		backdrop-filter: blur(20px);
-		-webkit-backdrop-filter: blur(20px);
-		transition: all var(--duration) var(--ease);
-		box-shadow: var(--shadow-sm);
-	}
-
-	.btn-search-mobile:hover {
-		background: var(--bg-hover);
-		border-color: var(--border-strong);
-		transform: scale(1.08);
-		box-shadow: var(--shadow-md);
-	}
+	/* 移动端按钮使用统一的 .btn-mobile 样式 */
 
 	/* Mobile Tab Bar */
 	.mobile-tab-bar {

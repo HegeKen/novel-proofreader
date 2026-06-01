@@ -21,6 +21,7 @@ import { Icons } from "./components/Icons";
 import { logger } from "./utils/logger";
 import { audioCache } from "./utils/ttsService";
 import { useConfigStore } from "./stores/configStore";
+import { useMobile } from "./hooks/useMobile";
 
 type RightTab = "proofread" | "task";
 type MobileTab = "novels" | "chapters" | "reader" | "task" | "settings";
@@ -65,20 +66,11 @@ export default function App() {
 	const [configOpen, setConfigOpen] = useState(false);
 	const [rightTab, setRightTab] = useState<RightTab>("proofread");
 	const [mobileTab, setMobileTab] = useState<MobileTab>("novels");
-	const [isMobile, setIsMobile] = useState(false);
+	const { isMobile } = useMobile();
 
 	const handleStartApp = useCallback(() => {
 		markAsVisited();
 		setShowHome(false);
-	}, []);
-
-	useEffect(() => {
-		const checkMobile = () => {
-			setIsMobile(window.innerWidth <= 768);
-		};
-		checkMobile();
-		window.addEventListener("resize", checkMobile);
-		return () => window.removeEventListener("resize", checkMobile);
 	}, []);
 
 	useEffect(() => {
@@ -316,56 +308,56 @@ export default function App() {
 					</h1>
 				</div>
 				<div className="header-center">
-					<button className="btn-import" onClick={handleImport}>
-						<Icons.import size={16} />
-						导入 TXT 文件
-					</button>
-					{currentNovelId && (
-						<>
-							<button className="btn-export" onClick={handleExportAsNew}>
-								<Icons.save size={16} />
-								导出修改版本
-							</button>
-							<button
-								className="btn-save-original"
-								onClick={handleSaveToOriginal}
-							>
-								<Icons.fileOutput size={16} />
-								保存到原文件
-							</button>
-							<button
-								className="btn-save-cache"
-								onClick={handleSaveCache}
-								title="手动保存当前进度到缓存"
-							>
-								<Icons.cache size={16} />
-								保存缓存
-								{lastCacheSaveTime && (
-									<span className="cache-time">
-										(
-										{new Date(lastCacheSaveTime).toLocaleTimeString("zh-CN", {
-											hour: "2-digit",
-											minute: "2-digit",
-										})}
-										)
-									</span>
-								)}
-							</button>
-							<button
-								className="btn-export-all"
-								onClick={handleExportAllData}
-								title="导出所有设置和校对结果"
-							>
-								<Icons.downloadCloud size={16} />
-								导出全部数据
-							</button>
-						</>
-					)}
+					<button className={isMobile ? "btn-mobile" : "btn"} onClick={handleImport}>
+							<Icons.import size={16} />
+							导入 TXT 文件
+						</button>
+						{currentNovelId && (
+							<>
+								<button className={isMobile ? "btn-mobile" : "btn"} onClick={handleExportAsNew}>
+									<Icons.save size={16} />
+									导出修改版本
+								</button>
+								<button
+									className={isMobile ? "btn-mobile" : "btn"}
+									onClick={handleSaveToOriginal}
+								>
+									<Icons.fileOutput size={16} />
+									保存到原文件
+								</button>
+								<button
+									className={isMobile ? "btn-mobile" : "btn"}
+									onClick={handleSaveCache}
+									title="手动保存当前进度到缓存"
+								>
+									<Icons.cache size={16} />
+									保存缓存
+									{lastCacheSaveTime && (
+										<span className="cache-time">
+											(
+											{new Date(lastCacheSaveTime).toLocaleTimeString("zh-CN", {
+												hour: "2-digit",
+												minute: "2-digit",
+											})}
+											)
+										</span>
+									)}
+								</button>
+								<button
+									className={isMobile ? "btn-mobile" : "btn"}
+									onClick={handleExportAllData}
+									title="导出所有设置和校对结果"
+								>
+									<Icons.downloadCloud size={16} />
+									导出全部数据
+								</button>
+							</>
+						)}
 				</div>
 				<div className="header-right">
 					{isMobile && currentNovelId && (
 						<button
-							className="btn-export-mobile"
+							className={isMobile ? "btn-mobile" : "btn"}
 							onClick={handleExportNovel}
 							title="导出整本小说"
 						>
@@ -374,7 +366,7 @@ export default function App() {
 					)}
 					{isMobile && currentNovelId && (
 						<button
-							className="btn-save-cache-mobile"
+							className={isMobile ? "btn-mobile" : "btn"}
 							onClick={handleSaveCache}
 							title="保存缓存"
 						>
@@ -383,7 +375,7 @@ export default function App() {
 					)}
 					{isMobile && currentNovelId && (
 						<button
-							className="btn-save-mobile"
+							className={isMobile ? "btn-mobile" : "btn"}
 							onClick={handleSaveToOriginal}
 							title="保存到原文件"
 						>
@@ -391,7 +383,7 @@ export default function App() {
 						</button>
 					)}
 					<button
-						className="btn-theme-toggle"
+						className={isMobile ? "btn-mobile" : "btn"}
 						onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
 						title={theme === "dark" ? "切换到亮色模式" : "切换到深色模式"}
 					>
@@ -399,7 +391,7 @@ export default function App() {
 						{!isMobile && (theme === "dark" ? "切换到亮色" : "切换到深色")}
 					</button>
 					<GlobalSearch />
-					<button className="btn-settings" onClick={() => setConfigOpen(true)}>
+					<button className={isMobile ? "btn-mobile" : "btn"} onClick={() => setConfigOpen(true)}>
 						<Icons.bolt size={18} />
 						{!isMobile && "设置"}
 					</button>

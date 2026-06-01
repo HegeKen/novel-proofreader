@@ -1137,11 +1137,11 @@ export function ReaderPanel({
 					</div>
 				)}
 				<button
-					className="reader-search-btn"
+					className={isMobile ? "btn-mobile" : "reader-search-btn"}
 					onClick={() => setShowSearch(true)}
 				>
 					<Icons.search size={18} />
-					<span>搜索</span>
+					{!isMobile && <span>搜索</span>}
 				</button>
 			</div>
 			<div className="reader-progress-bar">
@@ -1429,11 +1429,11 @@ export function ReaderPanel({
 					{/* 阅读设置面板（显示在按钮上方） */}
 					{showReadingSettings && (
 						<div
-							className="reading-settings-panel"
+							className="reading-settings-panel glass-panel"
 							onClick={(e) => e.stopPropagation()}
 						>
-							<div className="panel-header">
-								<div className="panel-title">
+							<div className="glass-panel-header">
+								<div className="glass-panel-title">
 									<Icons.book size={16} />
 									<span>阅读设置</span>
 								</div>
@@ -1673,9 +1673,9 @@ export function ReaderPanel({
 
 					{/* TTS 面板 */}
 					{showTTSPanel && readingMode && (
-						<div className="tts-panel">
-							<div className="panel-header">
-								<div className="panel-title">
+						<div className="tts-panel glass-panel">
+							<div className="glass-panel-header">
+								<div className="glass-panel-title">
 									<Icons.volume size={16} />
 									<span>语音朗读设置</span>
 								</div>
@@ -1688,7 +1688,7 @@ export function ReaderPanel({
 									</svg>
 								</button>
 							</div>
-							<div className="panel-body">
+							<div className="glass-panel-body">
 								<div className="tts-setting-item">
 									<label>音色</label>
 									<Select
@@ -1749,9 +1749,9 @@ export function ReaderPanel({
 					<button
 						className="tts-playback-btn play-pause"
 						onClick={handleTTSToggle}
-						title="暂停"
+						title={ttsPlaying ? "暂停" : "播放"}
 					>
-						<Icons.pause size={24} />
+						{ttsPlaying ? <Icons.pause size={24} /> : <Icons.play size={24} />}
 					</button>
 					<button
 						className="tts-playback-btn"
@@ -1829,9 +1829,9 @@ export function ReaderPanel({
 					<button
 						className="tts-playback-btn play-pause"
 						onClick={handleTTSToggle}
-						title="暂停"
+						title={ttsPlaying ? "暂停" : "播放"}
 					>
-						<Icons.pause size={22} />
+						{ttsPlaying ? <Icons.pause size={22} /> : <Icons.play size={22} />}
 					</button>
 					<button
 						className="tts-playback-btn"
@@ -1932,7 +1932,7 @@ export function ReaderPanel({
 								setShowReadingSettings(false);
 							}}
 						>
-							<div className="chapter-list-modal" onClick={(e) => e.stopPropagation()}>
+							<div className="chapter-list-modal modal-container" onClick={(e) => e.stopPropagation()}>
 								<div className="config-header">
 									<div className="config-title">
 										<Icons.list size={18} />

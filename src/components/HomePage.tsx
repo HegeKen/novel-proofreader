@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Users, Cloud, MessageSquare, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { Icons } from "./Icons";
+import { useMobile } from "../hooks/useMobile";
 
 import { fetchLatestReleaseWithAssets, fetchAllReleases, formatFileSize, getAllAssetsByPlatform, tryDownloadWithMirrors, downloadFromMirror, getMirrorUrl, GITHUB_MIRRORS, CORS_PROXIES, compareVersions, getCurrentVersion, type GitHubRelease, type MirrorSource } from "../utils/githubApi";
 
@@ -9,6 +10,8 @@ interface HomePageProps {
 }
 
 export function HomePage({ onStart }: HomePageProps) {
+	const { isMobile } = useMobile();
+	
 	const [release, setRelease] = useState<GitHubRelease | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [allReleases, setAllReleases] = useState<GitHubRelease[]>([]);
@@ -260,12 +263,12 @@ export function HomePage({ onStart }: HomePageProps) {
 				</div>
 				<div className="header-right">
 					{onStart && (
-						<button className="btn-start-web" onClick={handleStartApp}>
+						<button className={isMobile ? "btn-mobile" : "btn"} onClick={handleStartApp}>
 							<Icons.book size={16} />
 							<span>使用网页版</span>
 						</button>
 					)}
-					<button className="btn-download" onClick={() => setShowDownloadModal(true)}>
+					<button className={isMobile ? "btn-mobile btn-primary" : "btn btn-primary"} onClick={() => setShowDownloadModal(true)}>
 						<Icons.download size={16} />
 						<span>下载应用</span>
 					</button>

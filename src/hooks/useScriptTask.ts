@@ -54,7 +54,7 @@ export function useScriptTask() {
 				updateScriptTask(task.id, { status: "error", errorMessage: msg });
 			}
 		},
-		[chapters, aiConfig, addScriptTask, updateScriptTask],
+		[chapters, aiConfig, addScriptTask, updateScriptTask, promptConfig],
 	);
 
 	const convertRange = useCallback(
