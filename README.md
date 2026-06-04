@@ -68,13 +68,14 @@
 - 支持超大文本（1M+ tokens）的分批次处理
 
 **角色设置**
-- 管理角色信息：名称、别名、性别、角色类型（男主、女主、反派、男配、女配、导师等）
+- 管理角色信息：名称、别名、性别、角色类型（男主、女主、反派、男配、女配、导师、旁白等）
 - 自定义角色排序，支持拖拽排序
 - 角色忽略名单管理：将非角色词汇加入忽略列表，提高检测准确率
+- **角色重新分析**：支持更新角色信息，重新分析角色小传
 
 **关系图谱**
 - 可视化展示角色之间的关系网络
-- 支持多种关系类型：夫妻、父子、恋人、同学、朋友、竞争对手、师徒等
+- 支持多种关系类型：夫妻、父子、母女、恋人、同学、朋友、竞争对手、师徒、敌人、同事、兄妹、姐弟等
 - **聚焦模式**：点击角色筛选下拉框，聚焦特定角色的关系网络，视图自动缩放
 - 节点位置持久化：拖拽调整节点位置后自动保存
 
@@ -89,6 +90,7 @@
 
 ### 🎙️ TTS 情感朗读
 - **AI 情感/音色标注**：自动为对话添加情感（开心、悲伤、愤怒等）和音色标签，提升 TTS 表现力
+- **音色设计模型支持**：支持自定义音色设计，优化语音差异化体验
 - **流式播放**：支持边生成边播放，音频队列机制实现平滑的连续播放体验
 - **段落跳转**：支持上一段/下一段跳转，切换章节时自动重置段落索引
 - **播放控制**：支持播放中断和恢复
@@ -122,6 +124,7 @@
 | 状态管理 | Zustand |
 | 样式 | Tailwind CSS 4 + CSS Variables |
 | 图标 | Lucide React |
+| 工具库 | 安全存储、类型守卫、统一错误处理工具 |
 
 ## 项目结构
 
@@ -164,11 +167,14 @@ novel-proofreader/
 │   │   ├── aiClient.ts               # AI API 客户端 & Prompt 模板
 │   │   ├── fileExport.ts             # 文件导出 & 角色检测工具
 │   │   ├── formatters.tsx            # 格式化工具
+│   │   ├── errorHandler.ts           # 错误处理工具
 │   │   ├── ttsService.ts             # TTS 语音合成 & 音频队列
 │   │   ├── githubApi.ts              # GitHub Release API & 镜像源下载
 │   │   ├── logger.ts                 # 可开关的日志系统
+│   │   ├── secureStorage.ts          # 安全存储工具
 │   │   ├── scrollUtils.ts            # 滚动工具
 │   │   ├── mobile.ts                 # 移动端判断函数
+│   │   ├── typeGuards.ts             # 类型守卫
 │   │   ├── decodeText.ts             # 文本编码检测
 │   │   └── urlParams.ts              # URL 参数解析
 │   ├── App.css                       # 全局样式（CSS Variables + 组件样式）
@@ -239,7 +245,8 @@ pnpm tauri android build      # Android 端
 - DeepSeek（DeepSeek-V4 / DeepSeek-R1）
 - 通义千问（Qwen-Max / Qwen-Plus）
 - Ollama（本地模型）
-- SiliconFlow、Mimo 等
+- SiliconFlow
+- Xiaomi Mimo
 - 任何 OpenAI 兼容接口
 
 ## 更新日志

@@ -495,7 +495,7 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 	const handleWheel = useCallback((e: React.WheelEvent) => {
 		e.stopPropagation();
 		const delta = e.deltaY > 0 ? 0.9 : 1.1;
-		setScale((prev) => Math.min(Math.max(prev * delta, 0.3), 3));
+		setScale((prev) => Math.min(Math.max(prev * delta, 0.3), 5));
 	}, []);
 
 	const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -706,7 +706,7 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 				<div className="graph-zoom-controls">
 					<button
 						className="graph-zoom-btn"
-						onClick={() => setScale((s) => Math.min(s * 1.2, 3))}
+						onClick={() => setScale((s) => Math.min(s * 1.2, 5))}
 						title="放大"
 					>
 						<Icons.plus size={14} />
@@ -822,7 +822,7 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 								bestie: "闺蜜",
 								rival: "竞争对手",
 								"master-disciple": "师徒",
-								"employer-employee": "雇佣",
+								"employer-employee": "上下级",
 								colleague: "同事",
 								stranger: "陌生人",
 							};
@@ -1035,6 +1035,8 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 									<div className="relation-type-checkboxes">
 										{[
 											["couple", "夫妻"],
+											["lover", "恋人"],
+											["ex-lover", "前任"],
 											["father-son", "父子"],
 											["father-daughter", "父女"],
 											["mother-son", "母子"],
@@ -1049,14 +1051,18 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 											["father-son-in-law", "翁婿"],
 											["co-parents-male", "亲家公"],
 											["co-parents-female", "亲家母"],
-											["lover", "恋人"],
+											["relative", "亲戚"],
 											["classmate", "同学"],
 											["friend", "朋友"],
 											["bestie", "闺蜜"],
 											["rival", "竞争对手"],
+											["arch-enemy", "宿敌"],
+											["enemy", "仇人"],
 											["master-disciple", "师徒"],
-											["employer-employee", "雇佣"],
+											["teacher-student", "师生"],
+											["employer-employee", "上下级"],
 											["colleague", "同事"],
+											["neighbor", "邻居"],
 											["stranger", "陌生人"],
 											["other", "其他"],
 										].map(([value, label]) => (

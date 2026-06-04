@@ -3,6 +3,7 @@ import { useAppStore } from "../stores/appStore";
 import { useAICheck } from "../hooks/useAICheck";
 import { Icons } from "./Icons";
 import { generateChapterTitle } from "../utils/aiClient";
+import { logger } from "../utils/logger";
 
 export function ProofreadQueuePanel() {
 	const queue = useAppStore((s) => s.proofreadQueue);
@@ -94,8 +95,8 @@ export function ProofreadQueuePanel() {
 			);
 			setChapterTitleSuggestions(suggestions);
 		} catch (error) {
-			console.error("Failed to generate chapter title:", error);
-			alert("生成章节名失败，请检查AI配置");
+			logger.errorGeneric('ProofreadQueuePanel - Failed to generate chapter title:', error);
+			useAppStore.getState().showToast("生成章节名失败，请检查AI配置", "error");
 		} finally {
 			setSuggestingChapterIndex(null);
 		}

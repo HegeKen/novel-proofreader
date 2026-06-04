@@ -12,8 +12,9 @@ import { isMobileDevice, getDeviceType } from "../utils/mobile";
  * @returns checkMobile - 手动检查移动端状态
  */
 export function useMobile() {
-	const [isMobile, setIsMobile] = useState(isMobileDevice);
-	const [deviceType, setDeviceType] = useState(getDeviceType);
+	// 使用函数初始值来设置初始状态，避免在 useEffect 中同步调用 setState
+	const [isMobile, setIsMobile] = useState(() => isMobileDevice());
+	const [deviceType, setDeviceType] = useState(() => getDeviceType());
 
 	const checkMobile = useCallback(() => {
 		setIsMobile(isMobileDevice());
@@ -21,7 +22,6 @@ export function useMobile() {
 	}, []);
 
 	useEffect(() => {
-		checkMobile();
 		window.addEventListener("resize", checkMobile);
 		return () => window.removeEventListener("resize", checkMobile);
 	}, [checkMobile]);

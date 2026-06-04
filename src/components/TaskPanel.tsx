@@ -125,6 +125,9 @@ function TaskPanelContent({
 		setError("");
 
 		try {
+			// 获取当前小说的角色列表
+			const characters = currentNovelId ? getCharacters(currentNovelId) : [];
+			
 			const ttsEnhanceAiConfig = {
 				baseURL: aiConfig.baseURL,
 				apiKey: aiConfig.apiKey,
@@ -136,7 +139,7 @@ function TaskPanelContent({
 
 			const enhanceMessages: ChatMessage[] = [
 				{ role: "system", content: promptConfig.scriptTts || SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT },
-				{ role: "user", content: buildScriptTTSEnhanceUserPrompt(result[0].content) },
+				{ role: "user", content: buildScriptTTSEnhanceUserPrompt(result[0].content, characters) },
 			];
 
 			const enhancedScript = await sendChatCompletion(

@@ -11,6 +11,7 @@ import { ConfigModal } from "./components/ConfigModal";
 import { CharacterSettings } from "./components/CharacterSettings";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { HomePage } from "./components/HomePage";
+import { ToastContainer } from "./components/Toast";
 import { useAppStore } from "./stores/appStore";
 import { splitChapters } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
@@ -40,7 +41,7 @@ function markAsVisited(): void {
 	try {
 		localStorage.setItem(VISITED_KEY, "true");
 	} catch {
-		console.warn("Failed to save visited state to localStorage");
+		logger.warn('App - Failed to save visited state to localStorage');
 	}
 }
 
@@ -240,9 +241,9 @@ export default function App() {
 			`${novel.name}.txt`,
 		);
 		if (result === "success") {
-			alert("文件已成功保存！");
+			useAppStore.getState().showToast("文件已成功保存！", "success");
 		} else if (result === "fallback") {
-			alert("文件已下载！请手动覆盖原文件。");
+			useAppStore.getState().showToast("文件已下载！请手动覆盖原文件。", "success");
 		}
 	};
 
@@ -423,27 +424,7 @@ export default function App() {
 							<div className="mobile-reader-section">
 								<ReaderPanel showReadingModeToggle={true} isMobile={isMobile} />
 							</div>
-							{/* 移动端章节切换浮动条 */}
-							{!readingMode && chapters.length > 1 && (
-								<div className="mobile-chapter-nav">
-									<button
-										className="chapter-nav-btn"
-										disabled={currentChapterIndex <= 0}
-										onClick={() => setCurrentChapterIndex(currentChapterIndex - 1)}
-									>
-										<Icons.skipBack size={18} />
-										<span>{currentChapterIndex > 0 ? (chapters[currentChapterIndex - 1]?.title || `第 ${currentChapterIndex} 章`) : "已是第一章"}</span>
-									</button>
-									<button
-										className="chapter-nav-btn"
-										disabled={currentChapterIndex >= chapters.length - 1}
-										onClick={() => setCurrentChapterIndex(currentChapterIndex + 1)}
-									>
-										<span>{currentChapterIndex < chapters.length - 1 ? (chapters[currentChapterIndex + 1]?.title || `第 ${currentChapterIndex + 2} 章`) : "已是最后一章"}</span>
-										<Icons.skipForward size={18} />
-									</button>
-								</div>
-							)}
+
 							{!readingMode && (
 								<div className="mobile-proofread-section">
 									<div className="right-content">
@@ -487,7 +468,7 @@ export default function App() {
 				</aside>
 			</div>
 
-			{isMobile && (
+			{isMobile && !readingMode && (
 				<>
 					<div className="mobile-tab-bar">
 						<button
@@ -531,6 +512,10 @@ export default function App() {
 					onClose={() => setShowCharacterSettings(null)}
 				/>
 			)}
+			<ToastContainer 
+				messages={useAppStore.getState().toastMessages} 
+				onClose={(id) => useAppStore.getState().hideToast(id)} 
+			/>
 		</>
 	)}
 

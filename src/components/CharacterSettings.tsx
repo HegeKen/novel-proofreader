@@ -4,16 +4,290 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useConfigStore } from "../stores/configStore";
-import type { CharacterInfo, CharacterRelationship, CharacterRole, NovelCategory, ProofreadProgress, RelationType } from "../types";
+import type { CharacterInfo, CharacterRelationship, CharacterRole, NovelCategory, RelationType } from "../types";
 import { synthesizeSpeechWithVoice } from "../utils/ttsService";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { logger } from "../utils/logger";
 import { saveCharacterConfigToStorage, loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
 import type { DetectedCharacter } from "../utils/fileExport";
-import { analyzeCharactersInBatches } from "../utils/aiClient";
+import { analyzeCharactersInBatches, reanalyzeCharacterBiography } from "../utils/aiClient";
 import { formatDateTime } from "../utils/formatters";
 import { RelationshipGraph } from "./RelationshipGraph";
+
+// ============================================================
+// 角色排序组件 - 使用 Pointer Events 实现跨平台拖拽
+// ============================================================
+interface CharacterSortingSectionProps {
+	novelId: string;
+	characters: CharacterInfo[];
+	updateCharacter: (novelId: string, charId: string, updates: Partial<CharacterInfo>) => void;
+}
+
+export function CharacterSortingSection({ novelId, characters, updateCharacter }: CharacterSortingSectionProps) {
+	const [dragState, setDragState] = useState<{
+		isDragging: boolean;
+		draggedIndex: number | null;
+		dragOverIndex: number | null;
+		startY: number;
+		currentY: number;
+	}>({
+		isDragging: false,
+		draggedIndex: null,
+		dragOverIndex: null,
+		startY: 0,
+		currentY: 0,
+	});
+	
+	const containerRef = useRef<HTMLDivElement>(null);
+	const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+	const dragThresholdRef = useRef(10); // 拖拽触发阈值
+	const isDraggingRef = useRef(false);
+	
+	// 排序后的角色列表
+	const sortedCharacters = useMemo(() => {
+		const sorted = [...characters];
+		sorted.sort((a, b) => {
+			const aOrder = a.order ?? 9999;
+			const bOrder = b.order ?? 9999;
+			if (aOrder !== bOrder) {
+				return aOrder - bOrder;
+			}
+			return a.name.localeCompare(b.name, 'zh-CN');
+		});
+		return sorted;
+	}, [characters]);
+	
+	// 重新排序角色
+	const reorderCharacters = useCallback((fromIndex: number, toIndex: number) => {
+		if (fromIndex === toIndex) return;
+		
+		const newCharacters = [...sortedCharacters];
+		const [removed] = newCharacters.splice(fromIndex, 1);
+		newCharacters.splice(toIndex, 0, removed);
+		
+		// 更新所有角色的 order 字段
+		newCharacters.forEach((char, index) => {
+			updateCharacter(novelId, char.id, { order: index });
+		});
+	}, [sortedCharacters, novelId, updateCharacter]);
+	
+	// 计算拖拽目标位置
+	const calculateDropIndex = useCallback((currentIndex: number, deltaY: number) => {
+		if (!containerRef.current) return currentIndex;
+		
+		const items = Array.from(itemRefs.current.values());
+		if (items.length === 0) return currentIndex;
+		
+		// 计算当前拖拽位置
+		const draggedItem = items[currentIndex];
+		if (!draggedItem) return currentIndex;
+		
+		const draggedRect = draggedItem.getBoundingClientRect();
+		const draggedCenterY = draggedRect.top + draggedRect.height / 2 + deltaY;
+		
+		// 找到最接近的位置
+		let newIndex = currentIndex;
+		for (let i = 0; i < items.length; i++) {
+			if (i === currentIndex) continue;
+			
+			const item = items[i];
+			const rect = item.getBoundingClientRect();
+			const centerY = rect.top + rect.height / 2;
+			
+			// 判断是否应该交换位置
+			if (i < currentIndex && draggedCenterY < centerY) {
+				newIndex = i;
+				break;
+			} else if (i > currentIndex && draggedCenterY > centerY) {
+				newIndex = i;
+			}
+		}
+		
+		return newIndex;
+	}, []);
+	
+	// Pointer 事件处理
+	const handlePointerDown = useCallback((e: React.PointerEvent, index: number) => {
+		// 记录初始位置
+		setDragState({
+			isDragging: false,
+			draggedIndex: index,
+			dragOverIndex: null,
+			startY: e.clientY,
+			currentY: e.clientY,
+		});
+		
+		// 设置 pointer capture，确保后续事件都能被捕获
+		const target = e.currentTarget as HTMLDivElement;
+		target.setPointerCapture(e.pointerId);
+		
+		// 阻止默认行为（如文本选择）
+		e.preventDefault();
+	}, []);
+	
+	const handlePointerMove = useCallback((e: React.PointerEvent) => {
+		if (dragState.draggedIndex === null) return;
+		
+		const deltaY = e.clientY - dragState.startY;
+		
+		// 检测是否开始拖拽（需要超过阈值）
+		if (!dragState.isDragging && Math.abs(deltaY) > dragThresholdRef.current) {
+			setDragState(prev => ({
+				...prev,
+				isDragging: true,
+				currentY: e.clientY,
+			}));
+			isDraggingRef.current = true;
+		} else if (dragState.isDragging) {
+			// 计算新的目标位置
+			const newIndex = calculateDropIndex(dragState.draggedIndex, deltaY);
+			
+			setDragState(prev => ({
+				...prev,
+				currentY: e.clientY,
+				dragOverIndex: newIndex !== prev.draggedIndex ? newIndex : null,
+			}));
+		}
+	}, [dragState, calculateDropIndex]);
+	
+	const handlePointerUp = useCallback((e: React.PointerEvent) => {
+		if (dragState.isDragging && dragState.draggedIndex !== null && dragState.dragOverIndex !== null) {
+			reorderCharacters(dragState.draggedIndex, dragState.dragOverIndex);
+		}
+		
+		// 释放 pointer capture
+		const target = e.currentTarget as HTMLDivElement;
+		target.releasePointerCapture(e.pointerId);
+		
+		setDragState({
+			isDragging: false,
+			draggedIndex: null,
+			dragOverIndex: null,
+			startY: 0,
+			currentY: 0,
+		});
+		isDraggingRef.current = false;
+	}, [dragState, reorderCharacters]);
+	
+	const handlePointerCancel = useCallback((e: React.PointerEvent) => {
+		// 释放 pointer capture
+		const target = e.currentTarget as HTMLDivElement;
+		try {
+			target.releasePointerCapture(e.pointerId);
+		} catch {
+			// ignore
+		}
+		
+		setDragState({
+			isDragging: false,
+			draggedIndex: null,
+			dragOverIndex: null,
+			startY: 0,
+			currentY: 0,
+		});
+		isDraggingRef.current = false;
+	}, []);
+	
+	// 注册 item ref
+	const setItemRef = useCallback((charId: string, el: HTMLDivElement | null) => {
+		if (el) {
+			itemRefs.current.set(charId, el);
+		} else {
+			itemRefs.current.delete(charId);
+		}
+	}, []);
+	
+	// 获取角色类型显示名称
+	const getRoleName = useCallback((role?: CharacterRole) => {
+		if (!role) return "NPC";
+		const roleMap: Record<CharacterRole, string> = {
+			protagonist: "男主",
+			heroine: "女主",
+			antagonist: "反派",
+			supportingMale: "男配",
+			supportingFemale: "女配",
+			mentor: "导师",
+			rival: "对手",
+			loveInterest: "爱慕对象",
+			family: "家人",
+			friend: "朋友",
+			narrator: "旁白",
+			npc: "NPC",
+		};
+		return roleMap[role] || "NPC";
+	}, []);
+	
+	// 计算拖拽偏移样式
+	const getDragStyle = useCallback((index: number) => {
+		if (!dragState.isDragging || dragState.draggedIndex !== index) {
+			return {};
+		}
+		
+		const deltaY = dragState.currentY - dragState.startY;
+		return {
+			transform: `translateY(${deltaY}px) scale(1.02)`,
+			zIndex: 100,
+		};
+	}, [dragState]);
+	
+	return (
+		<div className="character-sorting-section" ref={containerRef}>
+			<div className="sorting-header">
+				<div className="section-label">
+					<Icons.list size={16} />
+					角色排序
+				</div>
+				<span className="sorting-hint">拖拽调整顺序</span>
+			</div>
+			
+			<div className="sorting-list">
+				{sortedCharacters.map((char, index) => (
+					<div
+						key={char.id}
+						ref={(el) => setItemRef(char.id, el)}
+						className={`sorting-item ${dragState.draggedIndex === index && dragState.isDragging ? 'dragging' : ''} ${dragState.dragOverIndex === index ? 'drag-over' : ''}`}
+						style={getDragStyle(index)}
+						onPointerDown={(e) => handlePointerDown(e, index)}
+						onPointerMove={handlePointerMove}
+						onPointerUp={handlePointerUp}
+						onPointerCancel={handlePointerCancel}
+					>
+						<div className="sorting-grip">
+							<Icons.listOrdered size={16} />
+						</div>
+						
+						<div className="sorting-order">
+							{index + 1}
+						</div>
+						
+						<div className="sorting-info">
+							<div className="sorting-name">{char.name}</div>
+							{char.role && (
+								<div className="sorting-role">{getRoleName(char.role)}</div>
+							)}
+						</div>
+						
+						<div className="sorting-actions">
+							{char.gender && (
+								<span className={`gender-badge ${char.gender}`}>
+									{char.gender === "male" ? "♂" : char.gender === "female" ? "♀" : "⚧"}
+								</span>
+							)}
+						</div>
+					</div>
+				))}
+			</div>
+			
+			{dragState.isDragging && (
+				<div className="sorting-tip">
+					<Icons.alertCircle size={14} />
+					<span>正在拖拽，松开完成排序</span>
+				</div>
+			)}
+		</div>
+	);
+}
 
 interface CharacterSettingsProps {
 	novelId: string;
@@ -41,6 +315,7 @@ interface OrganizeRelationItemProps {
 const RELATION_TYPE_OPTIONS: Array<{ value: RelationType; label: string }> = [
 	{ value: "couple", label: "夫妻" },
 	{ value: "lover", label: "恋人" },
+	{ value: "ex-lover", label: "前任" },
 	{ value: "father-son", label: "父子" },
 	{ value: "father-daughter", label: "父女" },
 	{ value: "mother-son", label: "母子" },
@@ -55,13 +330,18 @@ const RELATION_TYPE_OPTIONS: Array<{ value: RelationType; label: string }> = [
 	{ value: "father-son-in-law", label: "翁婿" },
 	{ value: "co-parents-male", label: "亲家公" },
 	{ value: "co-parents-female", label: "亲家母" },
+	{ value: "relative", label: "亲戚" },
 	{ value: "classmate", label: "同学" },
 	{ value: "friend", label: "朋友" },
 	{ value: "bestie", label: "闺蜜" },
 	{ value: "rival", label: "竞争对手" },
+	{ value: "arch-enemy", label: "宿敌" },
+	{ value: "enemy", label: "仇人" },
 	{ value: "master-disciple", label: "师徒" },
-	{ value: "employer-employee", label: "雇佣" },
+	{ value: "teacher-student", label: "师生" },
+	{ value: "employer-employee", label: "上下级" },
 	{ value: "colleague", label: "同事" },
+	{ value: "neighbor", label: "邻居" },
 	{ value: "stranger", label: "陌生人" },
 	{ value: "other", label: "其他" },
 ];
@@ -77,11 +357,11 @@ function OrganizeRelationItem({ rel, characters, novelId, onAdded }: OrganizeRel
 
 	const handleAdd = () => {
 		if (!sourceId || !targetId) {
-			alert("请选择源角色和目标角色");
+			useAppStore.getState().showToast("请选择源角色和目标角色", "warning");
 			return;
 		}
 		if (sourceId === targetId) {
-			alert("源角色和目标角色不能相同");
+			useAppStore.getState().showToast("源角色和目标角色不能相同", "warning");
 			return;
 		}
 
@@ -269,7 +549,7 @@ function MergeConfigPanel({ sourceChars, onExecute, onBack }: MergeConfigPanelPr
 
 	const handleExecute = () => {
 		if (!mergedName.trim()) {
-			alert("请输入合并后的角色名称");
+			useAppStore.getState().showToast("请输入合并后的角色名称", "warning");
 			return;
 		}
 
@@ -476,11 +756,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 	// 拖拽排序模式
 	const [isDragMode, setIsDragMode] = useState(false);
-	const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-	const touchStartIndexRef = useRef<number | null>(null);
-	const touchCurrentIndexRef = useRef<number | null>(null);
-	const touchStartYRef = useRef(0);
-	const touchIsDraggingRef = useRef(false);
 	const allRelationships = useAppStore((s) => s.characterRelationships);
 	const relationships = useMemo(() => allRelationships[novelId] ?? [], [allRelationships, novelId]);
 	const storeNodePositions = useAppStore((s) => s.nodePositions);
@@ -495,7 +770,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const updateRelationship = useAppStore((s) => s.updateRelationship);
 	const setNodePositions = useAppStore((s) => s.setNodePositions);
 	const setIgnoredWords = useAppStore((s) => s.setIgnoredWords);
-	const setProofreadProgress = useAppStore((s) => s.setProofreadProgress);
 	const setNovelCategory = useAppStore((s) => s.setNovelCategory);
 	const getIgnoredWords = useAppStore((s) => s.getIgnoredWords);
 	const addIgnoredCharacterName = useAppStore((s) => s.addIgnoredCharacterName);
@@ -503,7 +777,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const setIgnoredCharacterNames = useAppStore((s) => s.setIgnoredCharacterNames);
 	const ignoredCharacterNames = useMemo(() => getIgnoredCharacterNames(novelId), [getIgnoredCharacterNames, novelId]);
 	const ignoredWords = useMemo(() => getIgnoredWords(novelId), [getIgnoredWords, novelId]);
-	const proofreadProgress = useAppStore((s) => s.proofreadProgress[novelId]);
 	const novelCategories = useAppStore((s) => s.novelCategories);
 	const novelCategory = useMemo(() => novelCategories[novelId], [novelCategories, novelId]);
 	const novels = useAppStore((s) => s.novels);
@@ -650,7 +923,15 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	}, []);
 
 	// 角色设置标签页状态：'list' | 'graph'
-	const [activeTab, setActiveTab] = useState<"list" | "graph">("graph");
+	const [activeTab, setActiveTab] = useState<"list" | "graph">("list");
+
+	// 角色小传重新分析状态
+	const [showReanalyzeModal, setShowReanalyzeModal] = useState(false);
+	const [reanalyzingCharacterId, setReanalyzingCharacterId] = useState<string | null>(null);
+	const [oldBiography, setOldBiography] = useState<string>("");
+	const [newBiography, setNewBiography] = useState<string>("");
+	const [isReanalyzing, setIsReanalyzing] = useState(false);
+	const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
 
 	// 检测是否为移动端
 	const [isMobile, setIsMobile] = useState(false);
@@ -831,16 +1112,46 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		characterCount: 0,
 	});
 
-	// 复制JSON数据到剪贴板
+	// 复制JSON数据到剪贴板（移动端超过25KB时分段复制）
 	const copyToClipboard = useCallback(async (data: string) => {
+		const CHUNK_SIZE = 25 * 1024; // 25KB 分段大小
+		
 		try {
-			await navigator.clipboard.writeText(data);
-			alert("已复制到剪贴板！");
+			if (isMobile && data.length > CHUNK_SIZE) {
+				// 移动端：分段复制
+				const totalChunks = Math.ceil(data.length / CHUNK_SIZE);
+				useAppStore.getState().showToast(`数据较大，将分 ${totalChunks} 次复制到剪贴板，请依次粘贴`, "info");
+				
+				for (let i = 0; i < totalChunks; i++) {
+					const start = i * CHUNK_SIZE;
+					const end = Math.min(start + CHUNK_SIZE, data.length);
+					const chunk = data.substring(start, end);
+					
+					await navigator.clipboard.writeText(chunk);
+					
+					if (i < totalChunks - 1) {
+						// 等待用户确认后继续下一段
+						await new Promise<void>((resolve) => {
+							const proceed = confirm(`已复制第 ${i + 1}/${totalChunks} 部分，点击确定继续复制下一部分`);
+							if (!proceed) {
+								useAppStore.getState().showToast(`已取消复制，共复制了 ${i + 1}/${totalChunks} 部分`, "warning");
+							}
+							resolve();
+						});
+					}
+				}
+				
+				useAppStore.getState().showToast(`成功复制全部 ${totalChunks} 部分数据到剪贴板！`, "success");
+			} else {
+				// 桌面端或数据较小：直接复制
+				await navigator.clipboard.writeText(data);
+				useAppStore.getState().showToast("已复制到剪贴板！", "success");
+			}
 		} catch (err) {
-			console.error('[CharacterSettings] 复制失败:', err);
-			alert("复制失败，请手动选择复制");
+			logger.errorGeneric('CharacterSettings - 复制失败:', err);
+			useAppStore.getState().showToast("复制失败，请手动选择复制", "error");
 		}
-	}, []);
+	}, [isMobile]);
 
 	// 导出小说设置（包含角色、关系、忽略词等）
 	const handleExportCharacters = useCallback(async () => {
@@ -849,7 +1160,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			novelId,
 			novelName,
 			exportTime: formatDateTime(new Date()),
-			characters: characters.map(char => ({
+			characters: sortedCharacters.map(char => ({
 				id: char.id,
 				name: char.name,
 				gender: char.gender,
@@ -872,7 +1183,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			nodePositions,
 			ignoredWords,
 			ignoredCharacterNames,
-			proofreadProgress,
 			novelCategory,
 		};
 		
@@ -884,13 +1194,13 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		if (isMobile) {
 			// 移动端：使用 Tauri API 保存到 Android/data/cn.helilab.proofreader/documents/characters/ 目录
 			const success = await saveCharacterConfigToStorage(fileName, dataStr);
-			logger.file('小说设置导出结果:', { success, fileName, characterCount: characters.length, dataSize: dataStr.length, isMobile });
+			logger.file('小说设置导出结果:', { success, fileName, characterCount: sortedCharacters.length, dataSize: dataStr.length, isMobile });
 			setExportModal({
 				show: true,
 				success,
 				fileName,
 				dataStr,
-				characterCount: characters.length,
+				characterCount: sortedCharacters.length,
 				relationshipCount: relationships.length,
 			});
 		} else {
@@ -907,11 +1217,11 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				success: true,
 				fileName,
 				dataStr,
-				characterCount: characters.length,
+				characterCount: sortedCharacters.length,
 				relationshipCount: relationships.length,
 			});
 		}
-	}, [characters, relationships, novelName, novelId, isMobile, nodePositions, ignoredWords, ignoredCharacterNames, proofreadProgress, novelCategory, setExportModal]);
+	}, [sortedCharacters, relationships, novelName, novelId, isMobile, nodePositions, ignoredWords, ignoredCharacterNames, novelCategory, setExportModal]);
 
 	// 导入角色
 	const handleImportCharacters = useCallback(async () => {
@@ -931,25 +1241,23 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					let importedRelationships: CharacterRelationship[] = [];
 					let importedNodePositions: Record<string, { x: number; y: number }> = {};
 					let importedIgnoredWords: string[] = [];
-					let importedProofreadProgress: Record<number, ProofreadProgress> = {};
 					let importedNovelCategory: NovelCategory | null = null;
 					let importedIgnoredCharacterNames: string[] = [];
 
 					// 兼容新旧格式
 					if (imported.version && Array.isArray(imported.characters)) {
-						// 新格式：{ version, characters, relationships, nodePositions, ignoredWords, proofreadProgress, novelCategory, ignoredCharacterNames }
+						// 新格式：{ version, characters, relationships, nodePositions, ignoredWords,  novelCategory, ignoredCharacterNames }
 						importedChars = imported.characters;
 						importedRelationships = imported.relationships || [];
 						importedNodePositions = imported.nodePositions || {};
 						importedIgnoredWords = imported.ignoredWords || [];
-						importedProofreadProgress = imported.proofreadProgress || {};
 						importedNovelCategory = imported.novelCategory || null;
 						importedIgnoredCharacterNames = imported.ignoredCharacterNames || [];
 					} else if (Array.isArray(imported)) {
 						// 旧格式：CharacterInfo[]
 						importedChars = imported;
 					} else {
-						alert("文件格式错误：无法识别的数据格式");
+						useAppStore.getState().showToast("文件格式错误：无法识别的数据格式", "error");
 						return;
 					}
 
@@ -960,7 +1268,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					);
 
 					if (!valid) {
-						alert("文件格式错误：角色数据格式不正确");
+						useAppStore.getState().showToast("文件格式错误：角色数据格式不正确", "error");
 						return;
 					}
 
@@ -1048,11 +1356,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						setIgnoredWords(novelId, importedIgnoredWords);
 					}
 
-					// --- 导入校对进度 ---
-					if (Object.keys(importedProofreadProgress).length > 0) {
-						setProofreadProgress(novelId, importedProofreadProgress);
-					}
-
 					// --- 导入小说分类 ---
 					if (importedNovelCategory) {
 						setNovelCategory(novelId, importedNovelCategory);
@@ -1067,28 +1370,27 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						(importedRelCount > 0 ? `，导入 ${importedRelCount} 条关系` : "") +
 						(Object.keys(importedNodePositions).length > 0 ? "，导入节点位置" : "") +
 						(importedIgnoredWords.length > 0 ? `，导入 ${importedIgnoredWords.length} 个忽略词` : "") +
-						(Object.keys(importedProofreadProgress).length > 0 ? "，导入校对进度" : "") +
 						(importedNovelCategory ? "，导入小说分类" : "") +
 						(importedIgnoredCharacterNames.length > 0 ? `，导入 ${importedIgnoredCharacterNames.length} 个忽略角色` : "");
-					alert(msg);
+					useAppStore.getState().showToast(msg, "success");
 				} catch (err) {
-					alert("文件解析失败：" + (err instanceof Error ? err.message : String(err)));
+					useAppStore.getState().showToast("文件解析失败：" + (err instanceof Error ? err.message : String(err)), "error");
 				}
 			};
 			reader.readAsText(file);
 		};
 		input.click();
-	}, [novelId, novelCharacters, updateCharacter, setCharactersForNovel, setRelationshipsForNovel, setNodePositions, setIgnoredWords, setProofreadProgress, setNovelCategory, setIgnoredCharacterNames]);
+	}, [novelId, novelCharacters, updateCharacter, setCharactersForNovel, setRelationshipsForNovel, setNodePositions, setIgnoredWords, setNovelCategory, setIgnoredCharacterNames]);
 
 	// 使用AI分析整本小说提取角色和关系
 	const handleAnalyzeCharacters = async () => {
 		if (!currentNovel?.fullText) {
-			alert("无法获取小说内容");
+			useAppStore.getState().showToast("无法获取小说内容", "error");
 			return;
 		}
 
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			alert("请先在设置中配置AI模型");
+			useAppStore.getState().showToast("请先在设置中配置AI模型", "warning");
 			return;
 		}
 
@@ -1264,7 +1566,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					setShowAnalyzeModal(false);
 				}
 			} else {
-				alert(`分析完成！新增 ${newCharactersWithIds.length} 个角色和 ${newRelationships.length} 条关系`);
+				useAppStore.getState().showToast(`分析完成！新增 ${newCharactersWithIds.length} 个角色和 ${newRelationships.length} 条关系`, "success");
 				setShowAnalyzeModal(false);
 			}
 		} catch (err) {
@@ -1300,7 +1602,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 进入配置模式，准备合并
 	const handleProceedToMergeConfig = () => {
 		if (selectedForMerge.length < 2) {
-			alert("请至少选择2个角色进行合并");
+			useAppStore.getState().showToast("请至少选择2个角色进行合并", "warning");
 			return;
 		}
 		const chars = characters.filter(c => selectedForMerge.includes(c.id));
@@ -1318,7 +1620,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		addCharacter(novelId, mergedChar);
 		// 关闭弹窗
 		setShowMergeModal(false);
-		alert(`成功合并 ${deleteIds.length + 1} 个角色为 "${mergedChar.name}"`);
+		useAppStore.getState().showToast(`成功合并 ${deleteIds.length + 1} 个角色为 "${mergedChar.name}"`, "success");
 	};
 
 	// 全选/取消全选
@@ -1378,10 +1680,77 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		const messages = [];
 		if (addedCount > 0) messages.push(`新增 ${addedCount} 个角色`);
 		if (mergedCount > 0) messages.push(`合并 ${mergedCount} 个到已有角色`);
-		alert(messages.join('\n'));
+		useAppStore.getState().showToast(messages.join('，'), "success");
 	}, [detectedCharacters, detectedSelections, novelId, characters, addCharacter, updateCharacter, setShowDetectModal]);
 
 	
+	// 重新分析角色小传
+	const handleReanalyzeBiography = useCallback(async (character: CharacterInfo) => {
+		if (!currentNovel?.fullText) {
+			useAppStore.getState().showToast("无法获取小说内容", "error");
+			return;
+		}
+
+		if (!aiConfig.apiKey || !aiConfig.baseURL) {
+			useAppStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			return;
+		}
+
+		setReanalyzingCharacterId(character.id);
+		setOldBiography(character.notes || "");
+		setNewBiography("");
+		setIsReanalyzing(true);
+		setReanalyzeError(null);
+		setShowReanalyzeModal(true);
+
+		try {
+			const config = {
+				baseURL: aiConfig.baseURL,
+				apiKey: aiConfig.apiKey,
+				model: aiConfig.model,
+				customHeaders: {},
+				maxCharsPerRequest: 0,
+				enableLogging: false,
+			};
+
+			const result = await reanalyzeCharacterBiography(
+				currentNovel.fullText,
+				character.name,
+				character.aliases || [],
+				character.relationTerms || [],
+				config,
+				character.notes || ""
+			);
+
+			setNewBiography(result);
+		} catch (error) {
+			setReanalyzeError(error instanceof Error ? error.message : "分析失败");
+			logger.errorGeneric("重新分析角色小传失败", { error });
+		} finally {
+			setIsReanalyzing(false);
+		}
+	}, [currentNovel, aiConfig]);
+
+	// 替换角色小传
+	const handleReplaceBiography = useCallback(() => {
+		if (!reanalyzingCharacterId || !newBiography) return;
+
+		updateCharacter(novelId, reanalyzingCharacterId, { notes: newBiography });
+		setShowReanalyzeModal(false);
+		setReanalyzingCharacterId(null);
+		setOldBiography("");
+		setNewBiography("");
+	}, [reanalyzingCharacterId, newBiography, novelId, updateCharacter]);
+
+	// 关闭重新分析弹窗
+	const handleCloseReanalyzeModal = useCallback(() => {
+		setShowReanalyzeModal(false);
+		setReanalyzingCharacterId(null);
+		setOldBiography("");
+		setNewBiography("");
+		setReanalyzeError(null);
+	}, []);
+
 	// 播放备注
 	const handlePlayNote = useCallback(async (character: CharacterInfo) => {
 		if (!character.notes) return;
@@ -1468,11 +1837,12 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 	return (<>
 		<div className="modal-overlay" onClick={onClose}>
-			<div className="character-settings-modal" onClick={(e) => e.stopPropagation()}>
+			<div className={`character-settings-modal ${isDragMode ? "drag-mode-full-height" : ""}`} onClick={(e) => e.stopPropagation()}>
 				<div className="config-header">
 					<div className="config-title">
 						<span className="title-icon"><Icons.user size={16} /></span>
 						<span>角色设置</span>
+						{novelName && <span className="title-novel-name">《{novelName}》</span>}
 					</div>
 					<button className="close-btn" onClick={onClose}>
 						<svg
@@ -1505,7 +1875,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					</button>
 				</div>
 
-				<div className={`config-body${draggedIndex !== null ? ' dragging' : ''}`}>
+				<div className="config-body">
 					{activeTab === "graph" && !showAddForm && (
 						<RelationshipGraph
 							novelId={novelId}
@@ -1687,83 +2057,11 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 							</div>
 
 							{isDragMode ? (
-								<div className="space-y-2">
-									{sortedCharacters.map((char, index) => (
-										<div
-											key={char.id}
-											className={`drag-item ${draggedIndex === index ? 'dragging' : ''}`}
-											draggable
-											onDragStart={() => setDraggedIndex(index)}
-											onDragOver={(e) => {
-												e.preventDefault();
-												if (draggedIndex !== null && draggedIndex !== index) {
-													const newCharacters = [...sortedCharacters];
-													const [removed] = newCharacters.splice(draggedIndex, 1);
-													newCharacters.splice(index, 0, removed);
-													const updatedOrders = newCharacters.map((c, i) => ({ ...c, order: i }));
-													updatedOrders.forEach((c) => {
-														updateCharacter(novelId, c.id, { order: c.order });
-													});
-													setDraggedIndex(index);
-												}
-											}}
-											onDragEnd={() => setDraggedIndex(null)}
-											onTouchStart={(e) => {
-												touchStartIndexRef.current = index;
-												touchCurrentIndexRef.current = index;
-												touchStartYRef.current = e.touches[0].clientY;
-												touchIsDraggingRef.current = true;
-												setDraggedIndex(index);
-											}}
-											onTouchMove={(e) => {
-												if (!touchIsDraggingRef.current) return;
-												const currentIdx = touchCurrentIndexRef.current;
-												if (currentIdx === null) return;
-												const deltaY = e.touches[0].clientY - touchStartYRef.current;
-												const itemHeight = 48;
-												if (Math.abs(deltaY) > itemHeight / 2) {
-													const direction = deltaY > 0 ? 1 : -1;
-													const newIndex = currentIdx + direction;
-													if (newIndex >= 0 && newIndex < sortedCharacters.length && newIndex !== currentIdx) {
-														const newCharacters = [...sortedCharacters];
-														const [removed] = newCharacters.splice(currentIdx, 1);
-														newCharacters.splice(newIndex, 0, removed);
-														const updatedOrders = newCharacters.map((c, i) => ({ ...c, order: i }));
-														updatedOrders.forEach((c) => {
-															updateCharacter(novelId, c.id, { order: c.order });
-														});
-														touchStartYRef.current = e.touches[0].clientY;
-														touchCurrentIndexRef.current = newIndex;
-														setDraggedIndex(newIndex);
-													}
-												}
-											}}
-											onTouchEnd={() => {
-												touchIsDraggingRef.current = false;
-												touchStartIndexRef.current = null;
-												touchCurrentIndexRef.current = null;
-												setDraggedIndex(null);
-											}}
-										>
-											<span className="drag-order">{index + 1}</span>
-											<span className="drag-name">{char.name}</span>
-											{char.role && (
-												<span className="drag-role">
-													{char.role === "protagonist" ? "男主" :
-													 char.role === "heroine" ? "女主" :
-													 char.role === "antagonist" ? "反派" :
-													 char.role === "supportingMale" ? "男配" :
-													 char.role === "supportingFemale" ? "女配" :
-													 char.role === "mentor" ? "导师" :
-													 char.role === "rival" ? "对手" :
-													 char.role === "loveInterest" ? "爱慕对象" :
-													 char.role === "family" ? "家人" :
-													 char.role === "friend" ? "朋友" : "NPC"}
-												</span>
-											)}
-										</div>
-									))}
-								</div>
+								<CharacterSortingSection
+									novelId={novelId}
+									characters={characters}
+									updateCharacter={updateCharacter}
+								/>
 							) : (
 								<div>
 									{sortedCharacters.map((char) => (
@@ -2038,22 +2336,36 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 												{char.notes && (
 													<div className="character-notes-section">
 														<div className="notes-label">
-															<Icons.punctuation size={14} />
-															备注
-															<button
-																className={`notes-play-btn ${playingNoteCharacterId === char.id ? 'playing' : ''}`}
-																onClick={(e) => {
-																	e.stopPropagation();
-																	handlePlayNote(char);
-																}}
-																title={playingNoteCharacterId === char.id ? '停止播放' : '播放备注'}
-															>
-																{playingNoteCharacterId === char.id ? (
-																	<Icons.pause size={14} />
-																) : (
-																	<Icons.volume size={14} />
-																)}
-															</button>
+															<div className="notes-label-left">
+																<Icons.punctuation size={14} />
+																备注
+															</div>
+															<div className="notes-label-right">
+																<button
+																	className="notes-refresh-btn"
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		handleReanalyzeBiography(char);
+																	}}
+																	title="重新分析角色小传"
+																>
+																	<Icons.refreshCw size={14} />
+																</button>
+																<button
+																	className={`notes-play-btn ${playingNoteCharacterId === char.id ? 'playing' : ''}`}
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		handlePlayNote(char);
+																	}}
+																	title={playingNoteCharacterId === char.id ? '停止播放' : '播放备注'}
+																>
+																	{playingNoteCharacterId === char.id ? (
+																		<Icons.pause size={14} />
+																	) : (
+																		<Icons.volume size={14} />
+																	)}
+																</button>
+															</div>
 														</div>
 														<div className="notes-content">{char.notes}</div>
 													</div>
@@ -2148,8 +2460,11 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		{showDetectModal && (
 			<div className="modal-overlay" onClick={() => setShowDetectModal(false)}>
 				<div className="modal-content detect-characters-modal" onClick={e => e.stopPropagation()}>
-					<div className="modal-header">
-						<h3>检测到的角色</h3>
+					<div className="config-header">
+						<div className="config-title">
+							<span className="title-icon"><Icons.user size={16} /></span>
+							检测到的角色
+						</div>
 						<div className="detect-search-wrapper">
 							<input
 								type="text"
@@ -2167,8 +2482,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								</button>
 							)}
 						</div>
-						<button className="modal-close" onClick={() => setShowDetectModal(false)}>
-							<Icons.close size={18} />
+						<button className="close-btn" onClick={() => setShowDetectModal(false)}>
+							<Icons.close size={16} />
 						</button>
 					</div>
 					<div className="modal-body">
@@ -2387,11 +2702,14 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		{showAnalyzeModal && (
 			<div className="modal-overlay" onClick={() => !isAnalyzing && setShowAnalyzeModal(false)}>
 				<div className="modal-content detect-characters-modal" onClick={e => e.stopPropagation()}>
-					<div className="modal-header">
-						<h3>AI 角色分析</h3>
+					<div className="config-header">
+						<div className="config-title">
+							<span className="title-icon"><Icons.sparkles size={16} /></span>
+							AI 角色分析
+						</div>
 						{!isAnalyzing && (
-							<button className="modal-close" onClick={() => setShowAnalyzeModal(false)}>
-								<Icons.close size={18} />
+							<button className="close-btn" onClick={() => setShowAnalyzeModal(false)}>
+								<Icons.close size={16} />
 							</button>
 						)}
 					</div>
@@ -2490,14 +2808,17 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		{/* 角色合并弹窗 */}
 		{showMergeModal && (
 			<div className="modal-overlay" onClick={() => setShowMergeModal(false)}>
-				<div className="modal-content merge-characters-modal" onClick={e => e.stopPropagation()}>
-					<div className="modal-header">
-						<h3>{mergeMode === "select" ? "选择要合并的角色" : "配置合并结果"}</h3>
-						<button className="modal-close" onClick={() => setShowMergeModal(false)}>
-							<Icons.x size={18} />
+				<div className="config-modal merge-characters-modal" onClick={e => e.stopPropagation()}>
+					<div className="config-header">
+						<div className="config-title">
+							<span className="title-icon"><Icons.combine size={16} /></span>
+							<span>{mergeMode === "select" ? "选择要合并的角色" : "配置合并结果"}</span>
+						</div>
+						<button className="close-btn" onClick={() => setShowMergeModal(false)}>
+							<Icons.x size={16} />
 						</button>
 					</div>
-					<div className="modal-body">
+					<div className="config-body">
 						{mergeMode === "select" ? (
 							<div className="merge-select-mode">
 								<p className="merge-hint">请选择至少2个角色进行合并：</p>
@@ -2540,7 +2861,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						)}
 					</div>
 					{mergeMode === "select" && (
-						<div className="modal-footer">
+						<div className="config-footer">
 							<button
 								className="btn btn-secondary"
 								onClick={() => setShowMergeModal(false)}
@@ -2600,7 +2921,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						<button
 							className="btn btn-primary"
 							onClick={() => {
-								alert(`成功添加 ${skippedRelationships.length} 条关系`);
+								useAppStore.getState().showToast(`成功添加 ${skippedRelationships.length} 条关系`, "success");
 								setShowOrganizeRelationsModal(false);
 							}}
 							disabled={skippedRelationships.length === 0}
@@ -2825,7 +3146,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 									onChange={(value) =>
 										setRelationForm((prev) => ({ ...prev, sourceId: value }))
 									}
-									options={characters.map((c) => ({ value: c.id, label: c.name }))}
+									options={sortedCharacters.map((c) => ({ value: c.id, label: c.name }))}
 								/>
 							</div>
 
@@ -2896,15 +3217,17 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 									onChange={(value) =>
 										setRelationForm((prev) => ({ ...prev, targetId: value }))
 									}
-									options={characters.map((c) => ({ value: c.id, label: c.name }))}
+									options={sortedCharacters.map((c) => ({ value: c.id, label: c.name }))}
 								/>
 							</div>
 
-							<div className="form-field">
-								<label>双人关系类型（可多选）</label>
+								<div className="form-field">
+									<label>双人关系类型（可多选）</label>
 								<div className="relation-type-checkboxes">
 									{[
 										["couple", "夫妻"],
+										["lover", "恋人"],
+										["ex-lover", "前任"],
 										["father-son", "父子"],
 										["father-daughter", "父女"],
 										["mother-son", "母子"],
@@ -2919,14 +3242,18 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 										["father-son-in-law", "翁婿"],
 										["co-parents-male", "亲家公"],
 										["co-parents-female", "亲家母"],
-										["lover", "恋人"],
+										["relative", "亲戚"],
 										["classmate", "同学"],
 										["friend", "朋友"],
 										["bestie", "闺蜜"],
 										["rival", "竞争对手"],
+										["arch-enemy", "宿敌"],
+										["enemy", "仇人"],
 										["master-disciple", "师徒"],
-										["employer-employee", "雇佣"],
+										["teacher-student", "师生"],
+										["employer-employee", "上下级"],
 										["colleague", "同事"],
+										["neighbor", "邻居"],
 										["stranger", "陌生人"],
 										["other", "其他"],
 									].map(([value, label]) => (
@@ -3045,15 +3372,15 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 							className="btn btn-primary"
 							onClick={() => {
 								if (!relationForm.sourceId || !relationForm.targetId) {
-									alert("请选择源角色和目标角色");
+									useAppStore.getState().showToast("请选择源角色和目标角色", "warning");
 									return;
 								}
 								if (relationForm.sourceId === relationForm.targetId) {
-									alert("源角色和目标角色不能相同");
+									useAppStore.getState().showToast("源角色和目标角色不能相同", "warning");
 									return;
 								}
 								if (relationForm.relationType.length === 0) {
-									alert("请至少选择一种关系类型");
+									useAppStore.getState().showToast("请至少选择一种关系类型", "warning");
 									return;
 								}
 
@@ -3078,7 +3405,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 									existingRels.forEach(r => removeRelationship(novelId, r.id));
 									updateRelationship(novelId, editingRelation!.id, mergedRelation);
-									alert(`已合并 ${existingRels.length + 1} 条关系`);
+									useAppStore.getState().showToast(`已合并 ${existingRels.length + 1} 条关系`, "success");
 								} else {
 									updateRelationship(novelId, editingRelation!.id, {
 										sourceId: relationForm.sourceId,
@@ -3087,7 +3414,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 										sourceNickname: relationForm.sourceNickname,
 										targetNickname: relationForm.targetNickname,
 									});
-									alert("关系已更新");
+									useAppStore.getState().showToast("关系已更新", "success");
 								}
 								setEditingRelation(null);
 							}}
@@ -3148,6 +3475,84 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 							复制JSON数据
 						</button>
 					</div>
+				</div>
+			</div>
+		)}
+
+		{/* 重新分析角色小传弹窗 */}
+		{showReanalyzeModal && (
+			<div className="modal-overlay" onClick={handleCloseReanalyzeModal}>
+				<div className="config-modal reanalyze-modal" onClick={(e) => e.stopPropagation()}>
+					<div className="config-header">
+						<div className="config-title">
+							<span className="title-icon"><Icons.refreshCw size={16} /></span>
+							<span>重新分析角色小传</span>
+						</div>
+						<button className="close-btn" onClick={handleCloseReanalyzeModal}>
+							<Icons.x size={16} />
+						</button>
+					</div>
+					<div className="config-body">
+						{isReanalyzing ? (
+							<div className="flex flex-col items-center justify-center py-8">
+								<span className="spinner large"></span>
+								<p className="mt-4 text-neutral-300">正在重新分析角色小传...</p>
+							</div>
+						) : reanalyzeError ? (
+							<div className="text-center py-8">
+								<Icons.alertCircle size={32} className="text-red-400 mx-auto mb-4" />
+								<p className="text-red-400">{reanalyzeError}</p>
+							</div>
+						) : (
+							<div className="space-y-6">
+								{/* 原小传 */}
+								<div className="biography-section">
+									<div className="biography-label">
+										<Icons.history size={14} />
+										<span>原角色小传</span>
+									</div>
+									<div className="biography-content">
+										{oldBiography || <span className="text-neutral-500 italic">暂无小传</span>}
+									</div>
+								</div>
+
+								{/* 分隔线 */}
+								<div className="flex items-center gap-4">
+									<div className="flex-1 h-px bg-neutral-700"></div>
+									<Icons.chevronRight size={16} className="text-neutral-500" />
+									<div className="flex-1 h-px bg-neutral-700"></div>
+								</div>
+
+								{/* 新小传 */}
+								<div className="biography-section">
+									<div className="biography-label">
+										<Icons.sparkles size={14} />
+										<span>新角色小传</span>
+									</div>
+									<div className="biography-content new">
+										{newBiography}
+									</div>
+								</div>
+							</div>
+						)}
+					</div>
+					{!isReanalyzing && !reanalyzeError && (
+						<div className="modal-footer">
+							<button
+								className="btn btn-secondary"
+								onClick={handleCloseReanalyzeModal}
+							>
+								取消
+							</button>
+							<button
+								className="btn btn-primary"
+								onClick={handleReplaceBiography}
+								disabled={!newBiography}
+							>
+								替换小传
+							</button>
+						</div>
+					)}
 				</div>
 			</div>
 		)}

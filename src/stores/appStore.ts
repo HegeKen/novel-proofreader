@@ -6,6 +6,8 @@ import { persist } from "zustand/middleware";
 import type { Novel, Chapter, AIConfig, AIProvider, AppTab, ProofreadQueueItem, ProofreadProgress, APIUsage, NovelCategory, CharacterInfo, CharacterRelationship } from "../types";
 import { setLoggerEnabled, logger } from "../utils/logger";
 import { saveNovelToStorage, saveCharacterConfigToStorage, getCharacterConfigFileName } from "../utils/fileExport";
+import { secureStorageSet, secureStorageGet } from "../utils/secureStorage";
+import type { ToastMessage } from "../components/Toast";
 
 // 剧本改编结果类型
 interface ScriptResult {
@@ -258,6 +260,13 @@ interface AppState {
 
 	// Actions — 缓存管理
 	saveCache: () => void;
+	clearAllCache: () => void;
+
+	// Toast 消息管理
+	toastMessages: ToastMessage[];
+	showToast: (message: string, type?: ToastMessage["type"], duration?: number) => void;
+	hideToast: (id: string) => void;
+	clearToasts: () => void;
 }
 
 const DEFAULT_AI_CONFIG: AIConfig = {
@@ -315,6 +324,7 @@ export const useAppStore = create<AppState>()(
 			readingReminderEnabled: true,
 			readingReminderMinutes: 30,
 			hideProofread: false,
+			toastMessages: [],
 
 			addNovel: (novel) =>
 				set((state) => {
@@ -768,10 +778,10 @@ export const useAppStore = create<AppState>()(
 										para = para.slice(0, realStart) + err.newText + para.slice(realEnd);
 										replacedCount++;
 									} else {
-										console.warn(`[appStore] 批量替换模糊匹配失败: "${err.oldText}"`);
+										logger.warn(`appStore - 批量替换模糊匹配失败: "${err.oldText}"`);
 									}
 								} else {
-									console.warn(`[appStore] 批量替换找不到文本: "${err.oldText}"`);
+									logger.warn(`appStore - 批量替换找不到文本: "${err.oldText}"`);
 								}
 							}
 						}
@@ -842,13 +852,27 @@ export const useAppStore = create<AppState>()(
 					return { aiConfig: next };
 				}),
 
-			setApiKeyForProvider: (provider, key) =>
+			setApiKeyForProvider: (provider, key) => {
+				secureStorageSet(`apiKey-${provider}`, key);
 				set((state) => ({
 					apiKeyMap: { ...state.apiKeyMap, [provider]: key },
-				})),
+				}));
+			},
 
 			getApiKeyForProvider: (provider) => {
-				return get().apiKeyMap[provider] ?? "";
+				const state = get();
+				// 优先从安全存储读取
+				const secureKey = secureStorageGet(`apiKey-${provider}`);
+				if (secureKey !== null) {
+					// 如果安全存储中有值，同步到状态中
+					if (state.apiKeyMap[provider] !== secureKey) {
+						set((s) => ({
+							apiKeyMap: { ...s.apiKeyMap, [provider]: secureKey },
+						}));
+					}
+					return secureKey;
+				}
+				return state.apiKeyMap[provider] ?? "";
 			},
 
 			setActiveTab: (tab) => set({ activeTab: tab }),
@@ -896,7 +920,7 @@ export const useAppStore = create<AppState>()(
 					if (novel) {
 						const fileName = getCharacterConfigFileName(novel.name);
 						saveCharacterConfigToStorage(fileName, JSON.stringify(updatedCharacters, null, 2)).catch(err => {
-							console.error('[appStore] Failed to save character config:', err);
+							logger.errorGeneric('appStore - Failed to save character config:', err);
 						});
 					}
 					return {
@@ -918,7 +942,7 @@ export const useAppStore = create<AppState>()(
 					if (novel) {
 						const fileName = getCharacterConfigFileName(novel.name);
 						saveCharacterConfigToStorage(fileName, JSON.stringify(updatedCharacters, null, 2)).catch(err => {
-							console.error('[appStore] Failed to save character config:', err);
+							logger.errorGeneric('appStore - Failed to save character config:', err);
 						});
 					}
 					return {
@@ -937,7 +961,7 @@ export const useAppStore = create<AppState>()(
 					if (novel) {
 						const fileName = getCharacterConfigFileName(novel.name);
 						saveCharacterConfigToStorage(fileName, JSON.stringify(updatedCharacters, null, 2)).catch(err => {
-							console.error('[appStore] Failed to save character config:', err);
+							logger.errorGeneric('appStore - Failed to save character config:', err);
 						});
 					}
 					return {
@@ -964,23 +988,85 @@ export const useAppStore = create<AppState>()(
 					id: `rel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
 					novelId,
 				};
-				set((state) => ({
-					characterRelationships: {
-						...state.characterRelationships,
-						[novelId]: [...(state.characterRelationships[novelId] ?? []), newRelationship]
+				set((state) => {
+					// 将关系中的称呼同步到角色的代称（relationTerms）中
+					const updatedCharacters = { ...state.novelCharacters };
+					const currentChars = updatedCharacters[novelId] ?? [];
+					
+					if (relationship.sourceNickname && relationship.sourceNickname.length > 0 && relationship.targetId) {
+						updatedCharacters[novelId] = currentChars.map(char => {
+							if (char.id === relationship.targetId) {
+								const existingTerms = char.relationTerms ?? [];
+								const newTerms = [...new Set([...existingTerms, ...relationship.sourceNickname])];
+								return { ...char, relationTerms: newTerms };
+							}
+							return char;
+						});
 					}
-				}));
+					
+					if (relationship.targetNickname && relationship.targetNickname.length > 0 && relationship.sourceId) {
+						updatedCharacters[novelId] = updatedCharacters[novelId].map(char => {
+							if (char.id === relationship.sourceId) {
+								const existingTerms = char.relationTerms ?? [];
+								const newTerms = [...new Set([...existingTerms, ...relationship.targetNickname])];
+								return { ...char, relationTerms: newTerms };
+							}
+							return char;
+						});
+					}
+					
+					return {
+						characterRelationships: {
+							...state.characterRelationships,
+							[novelId]: [...(state.characterRelationships[novelId] ?? []), newRelationship]
+						},
+						novelCharacters: updatedCharacters
+					};
+				});
 			},
 
 			updateRelationship: (novelId, relationshipId, relationship) =>
-				set((state) => ({
-					characterRelationships: {
-						...state.characterRelationships,
-						[novelId]: (state.characterRelationships[novelId] ?? []).map((r) =>
-							r.id === relationshipId ? { ...r, ...relationship } : r
-						)
+				set((state) => {
+					// 将关系中的称呼同步到角色的代称（relationTerms）中
+					const updatedCharacters = { ...state.novelCharacters };
+					const currentChars = updatedCharacters[novelId] ?? [];
+					
+					// 处理源角色对目标角色的称呼（添加到目标角色的代称中）
+					if (relationship.sourceNickname && relationship.sourceNickname.length > 0 && relationship.targetId) {
+						const sourceNicknames = relationship.sourceNickname;
+						updatedCharacters[novelId] = currentChars.map(char => {
+							if (char.id === relationship.targetId) {
+								const existingTerms = char.relationTerms ?? [];
+								const newTerms = [...new Set([...existingTerms, ...sourceNicknames])];
+								return { ...char, relationTerms: newTerms };
+							}
+							return char;
+						});
 					}
-				})),
+					
+					// 处理目标角色对源角色的称呼（添加到源角色的代称中）
+					if (relationship.targetNickname && relationship.targetNickname.length > 0 && relationship.sourceId) {
+						const targetNicknames = relationship.targetNickname;
+						updatedCharacters[novelId] = updatedCharacters[novelId].map(char => {
+							if (char.id === relationship.sourceId) {
+								const existingTerms = char.relationTerms ?? [];
+								const newTerms = [...new Set([...existingTerms, ...targetNicknames])];
+								return { ...char, relationTerms: newTerms };
+							}
+							return char;
+						});
+					}
+					
+					return {
+						characterRelationships: {
+							...state.characterRelationships,
+							[novelId]: (state.characterRelationships[novelId] ?? []).map((r) =>
+								r.id === relationshipId ? { ...r, ...relationship } : r
+							)
+						},
+						novelCharacters: updatedCharacters
+					};
+				}),
 
 			removeRelationship: (novelId, relationshipId) =>
 				set((state) => ({
@@ -1040,6 +1126,45 @@ export const useAppStore = create<AppState>()(
 						lastCacheSaveTime: now,
 					};
 				});
+			},
+
+			clearAllCache: () => {
+				set({
+					novels: [],
+					currentNovelId: null,
+					chapters: [],
+					currentChapterIndex: 0,
+					nextBookId: 1,
+					proofreadStatus: {},
+					scriptResults: {},
+					ignoredWords: {},
+					ignoredCharacterNames: {},
+					proofreadQueue: [],
+					currentProofreadingTaskId: null,
+					proofreadProgress: {},
+					novelCategories: {},
+					novelCharacters: {},
+					characterRelationships: {},
+					nodePositions: {},
+					readingProgress: {},
+				});
+			},
+
+			showToast: (message, type = "info", duration = 3000) => {
+				const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+				set((state) => ({
+					toastMessages: [...state.toastMessages, { id, type, message, duration }],
+				}));
+			},
+
+			hideToast: (id) => {
+				set((state) => ({
+					toastMessages: state.toastMessages.filter((msg) => msg.id !== id),
+				}));
+			},
+
+			clearToasts: () => {
+				set({ toastMessages: [] });
 			},
 		}),
 		{

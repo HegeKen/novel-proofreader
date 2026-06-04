@@ -33,7 +33,7 @@ export function ensureTxtFilename(fileName: string): string {
 
 export async function ensureNovelsDirectory(): Promise<boolean> {
   if (!isTauri()) {
-    console.warn('[fileExport] Not in Tauri environment, skipping ensureNovelsDirectory');
+    logger.warn('fileExport - Not in Tauri environment, skipping ensureNovelsDirectory');
     return false;
   }
   try {
@@ -45,14 +45,14 @@ export async function ensureNovelsDirectory(): Promise<boolean> {
     }
     return true;
   } catch (e) {
-    console.error('Failed to create novels directory:', e);
+    logger.errorGeneric('fileExport - Failed to create novels directory:', e);
     return false;
   }
 }
 
 export async function ensureCharactersDirectory(): Promise<boolean> {
   if (!isTauri()) {
-    console.warn('[fileExport] Not in Tauri environment, skipping ensureCharactersDirectory');
+    logger.warn('fileExport - Not in Tauri environment, skipping ensureCharactersDirectory');
     return false;
   }
   try {
@@ -64,7 +64,7 @@ export async function ensureCharactersDirectory(): Promise<boolean> {
     }
     return true;
   } catch (e) {
-    console.error('Failed to create characters directory:', e);
+    logger.errorGeneric('fileExport - Failed to create characters directory:', e);
     return false;
   }
 }
@@ -230,32 +230,32 @@ function isValidNameChars(str: string): boolean {
 
 function extractCandidates(text: string): Map<string, number> {
   const candidates = new Map<string, number>();
-
-  for (let i = 0; i < text.length - 1; i++) {
-    const char = text[i];
+  
+  // 优化：使用正则表达式批量提取，避免逐字符遍历
+  // 匹配复姓 + 2-4 个汉字 或 单姓 + 2-4 个汉字
+  const compoundSurnamePattern = Array.from(COMPOUND_SURNAMES).map(escapeRegex).join('|');
+  const surnamePattern = Array.from(SURNAME_SET).map(escapeRegex).join('');
+  const pattern = `([${surnamePattern}](?:[\\u4e00-\\u9fa5]{1,3})|(?:${compoundSurnamePattern})(?:[\\u4e00-\\u9fa5]{1,2}))`;
+  
+  try {
+    const regex = new RegExp(pattern, 'g');
+    let match;
     
-    let matched = false;
-    for (const cs of COMPOUND_SURNAMES) {
-      if (text.substring(i, i + cs.length) === cs && i + cs.length < text.length) {
-        for (let len = cs.length + 1; len <= cs.length + 2 && i + len <= text.length; len++) {
-          const name = text.substring(i, i + len);
-          if (isValidNameChars(name)) {
-            candidates.set(name, (candidates.get(name) || 0) + 1);
-          }
-        }
-        matched = true;
-        break;
+    while ((match = regex.exec(text)) !== null) {
+      const name = match[0];
+      if (isValidNameChars(name)) {
+        candidates.set(name, (candidates.get(name) || 0) + 1);
       }
     }
-    
-    if (matched) continue;
-    
-    if (SURNAME_SET.has(char)) {
-      for (let len = 2; len <= 4 && i + len <= text.length; len++) {
-        const name = text.substring(i, i + len);
-        if (isValidNameChars(name)) {
-          candidates.set(name, (candidates.get(name) || 0) + 1);
-        }
+  } catch {
+    // 如果正则表达式过于复杂（文本太长），回退到分块处理
+    logger.warn('[角色检测] 正则表达式过于复杂，启用分块处理');
+    const CHUNK_SIZE = 100000;
+    for (let i = 0; i < text.length; i += CHUNK_SIZE) {
+      const chunk = text.slice(i, i + CHUNK_SIZE);
+      const chunkCandidates = extractCandidates(chunk);
+      for (const [name, freq] of chunkCandidates) {
+        candidates.set(name, (candidates.get(name) || 0) + freq);
       }
     }
   }
@@ -263,19 +263,38 @@ function extractCandidates(text: string): Map<string, number> {
   return candidates;
 }
 
+// 辅助函数：转义正则表达式特殊字符
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // ==================== 第二层：上下文验证 ====================
 
 function validateByContext(text: string, candidates: Map<string, number>): Map<string, DetectedCharacter> {
   const results = new Map<string, DetectedCharacter>();
+  
+  // 优化：按频率排序，只处理高频候选项，避免对大量低频候选进行昂贵匹配
+  const sortedCandidates = Array.from(candidates.entries())
+    .filter(([, freq]) => freq >= 3)
+    .sort((a, b) => b[1] - a[1]);
+  
+  // 限制处理的候选数量，超过1000个高频候选时进行采样
+  const MAX_CANDIDATES = 1000;
+  const candidatesToProcess = sortedCandidates.length > MAX_CANDIDATES
+    ? sortedCandidates.slice(0, MAX_CANDIDATES)
+    : sortedCandidates;
+  
+  logger.debug(`[上下文验证] 需处理 ${candidatesToProcess.length} 个候选（原始 ${sortedCandidates.length} 个）`);
 
-  for (const [name, freq] of candidates) {
-    if (freq < 3) continue;
-    
+  // 预编译非角色指示词正则
+  const nonRoleRegexes = NON_ROLE_INDICATORS.map(ind => new RegExp(ind));
+  
+  for (const [name, freq] of candidatesToProcess) {
     const patterns: Record<string, number> = {};
     let confidence = 0;
     const evidence: string[] = [];
     
-    const regex = new RegExp(name, 'g');
+    const regex = new RegExp(escapeRegex(name), 'g');
     let match;
     let roleScore = 0;
     let nonRoleScore = 0;
@@ -295,12 +314,14 @@ function validateByContext(text: string, candidates: Map<string, number>): Map<s
         }
       }
       
-      for (const indicator of NON_ROLE_INDICATORS) {
-        const indRegex = new RegExp(indicator);
+      for (const indRegex of nonRoleRegexes) {
         if (indRegex.test(context)) {
           nonRoleScore++;
         }
       }
+      
+      // 优化：限制匹配次数，避免对高频词过度匹配
+      if (totalMatches >= 100) break;
     }
     
     if (totalMatches === 0) continue;
@@ -338,14 +359,35 @@ function enhanceByCooccurrence(
 ): Map<string, DetectedCharacter> {
   const enhanced = new Map(validated);
   
-  const segments = text.split(/[。！？\n]+/).filter(s => s.length > 10);
-  const cooccurrence = new Map<string, Set<string>>();
+  // 优化：分块处理大文本，避免一次性分割过长的文本
+  const CHUNK_SIZE = 500000;
+  const segments: string[] = [];
+  for (let i = 0; i < text.length; i += CHUNK_SIZE) {
+    const chunk = text.slice(i, i + CHUNK_SIZE);
+    segments.push(...chunk.split(/[。！？\n]+/).filter(s => s.length > 10));
+  }
   
-  for (const segment of segments) {
-    const present: string[] = [];
-    for (const [name] of validated) {
-      if (segment.includes(name)) present.push(name);
+  const cooccurrence = new Map<string, Set<string>>();
+  const names = Array.from(validated.keys());
+  
+  // 优化：限制处理的段落数量
+  const MAX_SEGMENTS = 5000;
+  const segmentsToProcess = segments.length > MAX_SEGMENTS
+    ? segments.slice(0, MAX_SEGMENTS)
+    : segments;
+  
+  logger.debug(`[共现增强] 处理 ${segmentsToProcess.length} 个段落`);
+  
+  for (const segment of segmentsToProcess) {
+    // 优化：使用 Set 快速去重
+    const presentSet = new Set<string>();
+    for (const name of names) {
+      if (segment.includes(name)) presentSet.add(name);
     }
+    const present = Array.from(presentSet);
+    
+    // 优化：只处理共现数量较多的段落
+    if (present.length < 2) continue;
     
     for (let i = 0; i < present.length; i++) {
       for (let j = i + 1; j < present.length; j++) {
@@ -548,40 +590,65 @@ export function detectHighFrequencyWords(text: string, minFrequency: number = 10
   const wordCount = new Map<string, number>();
   const wordContexts = new Map<string, string[]>();
   
-  const words = text.match(/[\u4e00-\u9fa5]{2,4}/g) || [];
-  
-  logger.debug(`[高频词汇检测] 提取了 ${words.length} 个词`);
-
-  for (let i = 0; i < words.length; i++) {
-    const word = words[i];
-
-    // 过滤包含常用词的词组
-    let containsCommonWord = false;
-    for (const particle of MODAL_PARTICLES) {
-      if (word.includes(particle)) {
-        containsCommonWord = true;
-        break;
+  // 大文本分块处理：每块 100KB，避免一次性处理过大文本
+  const CHUNK_SIZE = 100000;
+  const chunks: string[] = [];
+  for (let i = 0; i < text.length; i += CHUNK_SIZE) {
+    // 查找块边界，避免在词语中间切割
+    let end = Math.min(i + CHUNK_SIZE, text.length);
+    if (end < text.length) {
+      // 向前查找最近的 4 字符边界
+      const searchStart = Math.max(i, end - 10);
+      for (let j = end - 1; j >= searchStart; j--) {
+        if (/[\u4e00-\u9fa5]/.test(text[j])) {
+          end = j + 1;
+          break;
+        }
       }
     }
-    if (containsCommonWord) continue;
+    chunks.push(text.slice(i, end));
+  }
+  
+  logger.debug(`[高频词汇检测] 文本分为 ${chunks.length} 个块`);
+  
+  // 使用 Set 进行快速过滤
+  const modalParticleSet = new Set(MODAL_PARTICLES);
+  const surnameSet = SURNAME_SET;
+  const compoundSurnames = COMPOUND_SURNAMES;
+  
+  // 优化：预先编译正则表达式
+  const wordRegex = /[\u4e00-\u9fa5]{2,4}/g;
+  
+  for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+    const chunk = chunks[chunkIdx];
+    const words = chunk.match(wordRegex) || [];
     
-    wordCount.set(word, (wordCount.get(word) || 0) + 1);
-    
-    if (!wordContexts.has(word)) {
-      wordContexts.set(word, []);
-    }
-    if (wordContexts.get(word)!.length < 3) {
-      const start = Math.max(0, i - 2);
-      const end = Math.min(words.length, i + 3);
-      const context = words.slice(start, end).join('');
-      if (wordContexts.get(word)!.length < 3) {
-        wordContexts.get(word)!.push(context);
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      
+      // 快速过滤：检查首字符是否在常用词中
+      if (word.length >= 2 && modalParticleSet.has(word[0])) continue;
+      
+      // 优化：使用更快的计数方式
+      const prevCount = wordCount.get(word);
+      if (prevCount !== undefined) {
+        wordCount.set(word, prevCount + 1);
+      } else {
+        wordCount.set(word, 1);
+        wordContexts.set(word, []);
+      }
+      
+      // 上下文只保留最多 3 个样本
+      const contexts = wordContexts.get(word)!;
+      if (contexts.length < 3) {
+        const start = Math.max(0, i - 2);
+        const end = Math.min(words.length, i + 3);
+        contexts.push(words.slice(start, end).join(''));
       }
     }
   }
   
-  const surnameSet = SURNAME_SET;
-  const compoundSurnames = COMPOUND_SURNAMES;
+  logger.debug(`[高频词汇检测] 提取并统计完成，共 ${wordCount.size} 个不同词汇`);
   
   const results: HighFrequencyWord[] = [];
   for (const [word, freq] of wordCount) {
@@ -756,7 +823,7 @@ export async function exportCharactersToJson(_novelId: string, novelName: string
     }
     return false;
   } catch (e) {
-    console.error('[fileExport] Failed to export characters:', e);
+    logger.errorGeneric('fileExport - Failed to export characters:', e);
     return false;
   }
 }
@@ -802,7 +869,7 @@ export async function deleteNovelFromStorage(fileName: string): Promise<boolean>
     }
     return true;
   } catch (e) {
-    console.error('Failed to delete novel from storage:', e);
+    logger.errorGeneric('fileExport - Failed to delete novel from storage:', e);
     return false;
   }
 }

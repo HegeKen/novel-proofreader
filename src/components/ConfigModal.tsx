@@ -16,6 +16,8 @@ import {
 	SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT,
 	NOVEL_TTS_ENHANCE_SYSTEM_PROMPT,
 	READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT,
+	CHAPTER_TITLE_SYSTEM_PROMPT,
+	CHARACTER_REANALYSIS_SYSTEM_PROMPT,
 } from "../utils/aiClient";
 
 const PROVIDERS: {
@@ -239,45 +241,47 @@ function APIUsageSection() {
 }
 
 // 阅读设置组件
-function ReadingSettingsSection() {
-	const readingReminderEnabled = useAppStore((s) => s.readingReminderEnabled);
-	const readingReminderMinutes = useAppStore((s) => s.readingReminderMinutes);
-	const setReadingReminderEnabled = useAppStore((s) => s.setReadingReminderEnabled);
-	const setReadingReminderMinutes = useAppStore((s) => s.setReadingReminderMinutes);
+// 校对设置组件
+function ProofreadSettingsSection() {
+	const proofreadConfig = useConfigStore((s) => s.proofreadConfig);
+	const updateProofreadConfig = useConfigStore((s) => s.updateProofreadConfig);
 
 	return (
 		<div className="config-section">
 			<div className="section-label">
-				<Icons.book size={14} />
-				阅读设置
+				<Icons.bolt size={14} />
+				校对设置
 			</div>
 
-			<label className="toggle-label">
-				<div className="toggle-switch">
-					<input
-						type="checkbox"
-						checked={readingReminderEnabled}
-						onChange={(e) => setReadingReminderEnabled(e.target.checked)}
-					/>
-					<span className="toggle-slider"></span>
-				</div>
-				<span className="toggle-text">启用阅读时长提醒</span>
-			</label>
+			<div className="toggle-item">
+				<label className="toggle-label">
+					<div className="toggle-switch">
+						<input
+							type="checkbox"
+							checked={proofreadConfig.enableParallelProcessing}
+							onChange={(e) => updateProofreadConfig({ enableParallelProcessing: e.target.checked })}
+						/>
+						<span className="toggle-slider"></span>
+					</div>
+					<span className="toggle-text">启用多线程并发</span>
+				</label>
+				<span className="toggle-hint">启用后，校对将使用多线程并发处理，提高检测速度</span>
+			</div>
 
-			{readingReminderEnabled && (
+			{proofreadConfig.enableParallelProcessing && (
 				<div className="form-field">
-					<label>提醒间隔（分钟）</label>
+					<label>最大并发数</label>
 					<div className="input-wrapper">
 						<input
 							type="number"
-							min="5"
-							max="120"
-							step="5"
-							value={readingReminderMinutes}
-							onChange={(e) => setReadingReminderMinutes(parseInt(e.target.value) || 30)}
+							min="1"
+							max="10"
+							value={proofreadConfig.maxConcurrentBatches}
+							onChange={(e) => updateProofreadConfig({ maxConcurrentBatches: parseInt(e.target.value) || 4 })}
 							className="config-input"
 						/>
 					</div>
+					<p className="field-hint">建议根据您的 API 限制和网络状况调整（默认：4）</p>
 				</div>
 			)}
 		</div>
@@ -430,6 +434,72 @@ function TTSConfigSection() {
 	);
 }
 
+// 数据管理组件
+function DataManagementSection() {
+	const novels = useAppStore((s) => s.novels);
+	const novelCharacters = useAppStore((s) => s.novelCharacters);
+	
+	const totalNovels = novels.length;
+	const totalCharacters = Object.values(novelCharacters).reduce((acc, chars) => acc + chars.length, 0);
+
+	return (
+		<div className="config-section data-management-section">
+			<div className="section-header">
+				<div className="section-label">
+					<Icons.settings size={16} />
+					数据管理
+				</div>
+				<span className="section-hint">管理本地存储的小说和角色数据</span>
+			</div>
+
+			<div className="data-stats">
+				<div className="stat-item">
+					<Icons.book size={20} />
+					<div className="stat-info">
+						<span className="stat-value">{totalNovels}</span>
+						<span className="stat-label">小说数量</span>
+					</div>
+				</div>
+				<div className="stat-divider"></div>
+				<div className="stat-item">
+					<Icons.user size={20} />
+					<div className="stat-info">
+						<span className="stat-value">{totalCharacters}</span>
+						<span className="stat-label">角色数量</span>
+					</div>
+				</div>
+			</div>
+
+			<div className="data-action-card">
+				<div className="action-header">
+					<div className="action-icon warning">
+						<Icons.alertTriangle size={20} />
+					</div>
+					<div className="action-title">
+						<span className="action-label">清除所有数据</span>
+						<span className="action-desc">此操作将清除所有小说、角色信息和编号，恢复为初始状态。</span>
+					</div>
+				</div>
+				<div className="action-footer">
+					<span className="action-warning">⚠️ 此操作不可撤销，请谨慎操作！</span>
+					<button
+						className="clear-cache-btn"
+						onClick={() => {
+							if (window.confirm("确定要清除所有数据吗？此操作不可恢复！")) {
+								useAppStore.getState().clearAllCache();
+								window.location.reload();
+							}
+						}}
+					>
+						<Icons.trash2 size={14} />
+						确认清除
+					</button>
+				</div>
+			</div>
+		</div>
+	);
+}
+
 // PROMPT 设置组件
 function PromptSettingsSection({
 	initialPromptConfig,
@@ -442,6 +512,8 @@ function PromptSettingsSection({
 		scriptTts: string;
 		novelTts: string;
 		readingModeTts: string;
+		chapterTitle: string;
+		characterReanalysis: string;
 	};
 	onSave: (config: typeof initialPromptConfig) => void;
 }) {
@@ -452,6 +524,8 @@ function PromptSettingsSection({
 		scriptTts: initialPromptConfig.scriptTts || SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT,
 		novelTts: initialPromptConfig.novelTts || NOVEL_TTS_ENHANCE_SYSTEM_PROMPT,
 		readingModeTts: initialPromptConfig.readingModeTts || READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT,
+		chapterTitle: initialPromptConfig.chapterTitle || CHAPTER_TITLE_SYSTEM_PROMPT,
+		characterReanalysis: initialPromptConfig.characterReanalysis || CHARACTER_REANALYSIS_SYSTEM_PROMPT,
 	});
 
 	const handleCopy = async (text: string, label: string) => {
@@ -475,7 +549,7 @@ function PromptSettingsSection({
 		<div className="config-section prompt-section">
 			<div className="section-label">
 				<Icons.punctuation size={14} />
-				PROMPT 设置
+				PROMPT
 			</div>
 
 			<div className="prompt-item">
@@ -652,6 +726,64 @@ function PromptSettingsSection({
 				<p className="prompt-hint">用于阅读模式下分析段落、识别人物、判断情绪</p>
 			</div>
 
+			<div className="prompt-item">
+				<div className="prompt-header">
+					<label className="prompt-label">章节标题生成 Prompt</label>
+					<div className="prompt-actions">
+						<button
+							className="prompt-btn"
+							onClick={() => handleCopy(prompts.chapterTitle, '章节标题生成 Prompt')}
+							title="复制"
+						>
+							<Icons.copy size={14} />
+						</button>
+						<button
+							className="prompt-btn"
+							onClick={() => handleReset('chapterTitle', CHAPTER_TITLE_SYSTEM_PROMPT)}
+							title="重置"
+						>
+							<Icons.reset size={14} />
+						</button>
+					</div>
+				</div>
+				<textarea
+					className="prompt-textarea"
+					value={prompts.chapterTitle}
+					onChange={(e) => setPrompts((prev) => ({ ...prev, chapterTitle: e.target.value }))}
+					rows={6}
+				/>
+				<p className="prompt-hint">用于根据章节内容生成合适的章节标题</p>
+			</div>
+
+			<div className="prompt-item">
+				<div className="prompt-header">
+					<label className="prompt-label">角色重新分析 Prompt</label>
+					<div className="prompt-actions">
+						<button
+							className="prompt-btn"
+							onClick={() => handleCopy(prompts.characterReanalysis, '角色重新分析 Prompt')}
+							title="复制"
+						>
+							<Icons.copy size={14} />
+						</button>
+						<button
+							className="prompt-btn"
+							onClick={() => handleReset('characterReanalysis', CHARACTER_REANALYSIS_SYSTEM_PROMPT)}
+							title="重置"
+						>
+							<Icons.reset size={14} />
+						</button>
+					</div>
+				</div>
+				<textarea
+					className="prompt-textarea"
+					value={prompts.characterReanalysis}
+					onChange={(e) => setPrompts((prev) => ({ ...prev, characterReanalysis: e.target.value }))}
+					rows={6}
+				/>
+				<p className="prompt-hint">用于重新分析角色小传，结合角色名、别称和关系代称</p>
+			</div>
+
 			<button className="prompt-save-btn" onClick={handleSave}>
 				<Icons.save size={14} />
 				保存 PROMPT 设置
@@ -680,12 +812,14 @@ function ConfigModalContent({
 		scriptTts: string;
 		novelTts: string;
 		readingModeTts: string;
+		chapterTitle: string;
+		characterReanalysis: string;
 	};
 	onSavePrompt: (config: typeof promptConfig) => void;
 }) {
 	const [config, setConfig] = useState<ConfigState>(initialConfig);
 	const [showApiKey, setShowApiKey] = useState(false);
-	const [activeTab, setActiveTab] = useState<"model" | "prompt">("model");
+	const [activeTab, setActiveTab] = useState<"ai" | "tts" | "settings" | "prompt">("ai");
 
 	const handleProviderChange = useCallback(
 		(p: AIProvider) => {
@@ -736,23 +870,37 @@ function ConfigModalContent({
 				{/* Tab 切换 */}
 				<div className="config-tabs">
 					<button
-						className={`tab-btn ${activeTab === "model" ? "active" : ""}`}
-						onClick={() => setActiveTab("model")}
+						className={`tab-btn ${activeTab === "ai" ? "active" : ""}`}
+						onClick={() => setActiveTab("ai")}
 					>
 						<Icons.saveOriginal size={14} />
-						大模型配置
+						AI 配置
+					</button>
+					<button
+						className={`tab-btn ${activeTab === "tts" ? "active" : ""}`}
+						onClick={() => setActiveTab("tts")}
+					>
+						<Icons.volume size={14} />
+						TTS 配置
+					</button>
+					<button
+						className={`tab-btn ${activeTab === "settings" ? "active" : ""}`}
+						onClick={() => setActiveTab("settings")}
+					>
+						<Icons.settings size={14} />
+						设置
 					</button>
 					<button
 						className={`tab-btn ${activeTab === "prompt" ? "active" : ""}`}
 						onClick={() => setActiveTab("prompt")}
 					>
 						<Icons.punctuation size={14} />
-						PROMPT 设置
+						PROMPT
 					</button>
 				</div>
 
 				<div className="config-body">
-					{activeTab === "model" && (
+					{activeTab === "ai" && (
 						<>
 							<div className="config-section">
 								<div className="section-label">选择模型提供商</div>
@@ -847,9 +995,22 @@ function ConfigModalContent({
 									</div>
 								</div>
 							</div>
+						</>
+					)}
+
+					{activeTab === "tts" && (
+						<TTSConfigSection />
+					)}
+
+					{activeTab === "settings" && (
+						<>
+							<ProofreadSettingsSection />
 
 							<div className="config-section">
-								<div className="section-label">调试选项</div>
+								<div className="section-label">
+									<Icons.laptop size={14} />
+									调试选项
+								</div>
 								<label className="toggle-label">
 									<div className="toggle-switch">
 										<input
@@ -870,9 +1031,7 @@ function ConfigModalContent({
 
 							<APIUsageSection />
 
-							<ReadingSettingsSection />
-
-							<TTSConfigSection />
+							<DataManagementSection />
 						</>
 					)}
 

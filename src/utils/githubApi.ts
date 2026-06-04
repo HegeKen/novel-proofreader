@@ -1,3 +1,5 @@
+import { logger } from './logger';
+
 export interface GitHubRelease {
 	name: string;
 	tag_name: string;
@@ -101,7 +103,7 @@ export async function fetchApiWithFallback(
 			return response;
 		} catch (error) {
 			lastError = error as Error;
-			console.warn(`API request failed via ${proxy.name}:`, error);
+			logger.warn(`githubApi - API request failed via ${proxy.name}:`, error);
 		}
 	}
 
@@ -146,7 +148,7 @@ export async function tryDownloadWithMirrors(url: string, fileName: string): Pro
 			return;
 		} catch (error) {
 			lastError = error as Error;
-			console.warn(`Download failed from ${urls[i]} (${i + 1}/${urls.length}):`, error);
+			logger.warn(`githubApi - Download failed from ${urls[i]} (${i + 1}/${urls.length}):`, error);
 		}
 	}
 
@@ -162,7 +164,7 @@ export async function fetchLatestRelease(
 		const response = await fetchApiWithFallback(url, proxy);
 		return await response.json();
 	} catch (error) {
-		console.error("Error fetching GitHub release:", error);
+		logger.errorGeneric('githubApi - Error fetching GitHub release:', error);
 		return null;
 	}
 }
@@ -178,7 +180,7 @@ export async function fetchLatestReleaseWithAssets(
 		const releaseWithAssets = releases.find(r => r.assets && r.assets.length > 0);
 		return releaseWithAssets || null;
 	} catch (error) {
-		console.error("Error fetching releases:", error);
+		logger.errorGeneric('githubApi - Error fetching releases:', error);
 		return null;
 	}
 }
@@ -193,7 +195,7 @@ export async function fetchAllReleases(
 		const response = await fetchApiWithFallback(url, proxy);
 		return await response.json();
 	} catch (error) {
-		console.error("Error fetching releases:", error);
+		logger.errorGeneric('githubApi - Error fetching releases:', error);
 		return [];
 	}
 }

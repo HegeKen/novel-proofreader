@@ -31,18 +31,28 @@ export interface PromptConfig {
 	scriptTts: string;
 	novelTts: string;
 	readingModeTts: string;
+	chapterTitle: string;
+	characterReanalysis: string;
+}
+
+export interface ProofreadConfig {
+	enableParallelProcessing: boolean;
+	maxConcurrentBatches: number;
 }
 
 interface ConfigState {
 	config: AIModelConfig;
 	ttsConfig: TTSConfig;
 	promptConfig: PromptConfig;
+	proofreadConfig: ProofreadConfig;
 	setConfig: (config: AIModelConfig) => void;
 	updateConfig: (patch: Partial<AIModelConfig>) => void;
 	setTTSConfig: (config: TTSConfig) => void;
 	updateTTSConfig: (patch: Partial<TTSConfig>) => void;
 	setPromptConfig: (config: PromptConfig) => void;
 	updatePromptConfig: (patch: Partial<PromptConfig>) => void;
+	setProofreadConfig: (config: ProofreadConfig) => void;
+	updateProofreadConfig: (patch: Partial<ProofreadConfig>) => void;
 }
 
 const DEFAULT_CONFIG: AIModelConfig = {
@@ -71,6 +81,13 @@ const DEFAULT_PROMPT_CONFIG: PromptConfig = {
 	scriptTts: "",
 	novelTts: "",
 	readingModeTts: "",
+	chapterTitle: "",
+	characterReanalysis: "",
+};
+
+const DEFAULT_PROOFREAD_CONFIG: ProofreadConfig = {
+	enableParallelProcessing: true,
+	maxConcurrentBatches: 4,
 };
 
 export const useConfigStore = create<ConfigState>()(
@@ -79,6 +96,7 @@ export const useConfigStore = create<ConfigState>()(
 			config: DEFAULT_CONFIG,
 			ttsConfig: DEFAULT_TTS_CONFIG,
 			promptConfig: DEFAULT_PROMPT_CONFIG,
+			proofreadConfig: DEFAULT_PROOFREAD_CONFIG,
 			setConfig: (config) => set({ config }),
 			updateConfig: (patch) =>
 				set((state) => ({ config: { ...state.config, ...patch } })),
@@ -88,6 +106,9 @@ export const useConfigStore = create<ConfigState>()(
 			setPromptConfig: (config) => set({ promptConfig: config }),
 			updatePromptConfig: (patch) =>
 				set((state) => ({ promptConfig: { ...state.promptConfig, ...patch } })),
+			setProofreadConfig: (config) => set({ proofreadConfig: { ...DEFAULT_PROOFREAD_CONFIG, ...config } }),
+			updateProofreadConfig: (patch) =>
+				set((state) => ({ proofreadConfig: { ...DEFAULT_PROOFREAD_CONFIG, ...state.proofreadConfig, ...patch } })),
 		}),
 		{
 			name: "novel-proofreader-ai-config",

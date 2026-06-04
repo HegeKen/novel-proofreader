@@ -26,7 +26,9 @@ export function Select({
   style,
 }: SelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const selectedOption = options.find((opt) => opt.value === value);
 
   useEffect(() => {
@@ -39,9 +41,25 @@ export function Select({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (isOpen && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const dropdownWidth = Math.min(rect.width, 280);
+      const maxHeight = window.innerHeight - rect.bottom - 20;
+      
+      setDropdownStyle({
+        left: `${rect.left}px`,
+        top: `${rect.bottom + 8}px`,
+        width: `${dropdownWidth}px`,
+        maxHeight: `${Math.max(maxHeight, 100)}px`,
+      });
+    }
+  }, [isOpen]);
+
   return (
     <div ref={containerRef} className={`custom-select ${className}`} style={style}>
       <button
+        ref={triggerRef}
         type="button"
         className="custom-select-trigger"
         onClick={() => !disabled && setIsOpen(!isOpen)}
@@ -52,7 +70,7 @@ export function Select({
       </button>
 
       {isOpen && !disabled && (
-        <div className="custom-select-dropdown">
+        <div className="custom-select-dropdown" style={dropdownStyle}>
           <div className="custom-select-options">
             {options.map((option) => (
               <button

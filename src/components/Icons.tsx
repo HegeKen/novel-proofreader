@@ -65,6 +65,7 @@ import {
 	Server,
 	Smartphone,
 	CodeXml,
+	History,
 } from "lucide-react";
 
 export const Icons = {
@@ -89,6 +90,7 @@ export const Icons = {
 	eye: Eye,
 	eyeOff: EyeOffAlt,
 	refresh: RefreshCw,
+	refreshCw: RefreshCw,
 	close: X,
 	x: X,
 	check: CheckCircle,
@@ -108,6 +110,7 @@ export const Icons = {
 	alertCircle: AlertCircle,
 	alertTriangle: AlertTriangle,
 	sparkle: Sparkles,
+	sparkles: Sparkles,
 	user: User,
 	calendar: Clock,
 	clock: Clock,
@@ -138,6 +141,7 @@ export const Icons = {
 	server: Server,
 	smartphone: Smartphone,
 	codeXml: CodeXml,
+	history: History,
 };
 
 export type IconName = keyof typeof Icons;

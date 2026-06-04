@@ -168,6 +168,7 @@ export type CharacterRole =
 	| "loveInterest" // 爱慕对象
 	| "family" // 家人
 	| "friend" // 朋友
+	| "narrator" // 旁白
 	| "npc"; // NPC
 
 /** 角色信息 */
@@ -201,13 +202,19 @@ export type RelationType =
 	| "co-parents-male" // 亲家公
 	| "co-parents-female" // 亲家母
 	| "lover" // 恋人
+	| "ex-lover" // 前任
 	| "classmate" // 同学
 	| "friend" // 朋友
 	| "bestie" // 闺蜜
 	| "rival" // 竞争对手
+	| "arch-enemy" // 宿敌
+	| "enemy" // 仇人
 	| "master-disciple" // 师徒
-	| "employer-employee" // 雇佣
+	| "teacher-student" // 师生
+	| "employer-employee" // 上下级
 	| "colleague" // 同事
+	| "neighbor" // 邻居
+	| "relative" // 亲戚
 	| "stranger" // 陌生人
 	| "other"; // 其他
 

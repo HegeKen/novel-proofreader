@@ -15,6 +15,13 @@ const VOLUME_PATTERNS = [
 /** 章节名正则 */
 const CHAPTER_PATTERNS = [
 	/(?:^|\n)\s*(第[一二三四五六七八九十百千万零\d]+[章回节部篇](?:[ \t]+[^\n]+)?)/g,
+	// 支持不带"第"字的章节号，如"四十一章"、"四十五章"
+	// 注意：对于"回"这个词，要求至少两个数字字符以避免匹配"一回"等日常用语
+	/(?:^|\n)\s*([一二三四五六七八九十百千万零\d]{2,}[章回节部篇](?:[ \t]+[^\n]+)?)/g,
+	/(?:^|\n)\s*([二三四五六七八九十百千万零\d][一二三四五六七八九十百千万零\d]*[章节部篇](?:[ \t]+[^\n]+)?)/g,
+	// 支持章节号与"章"之间有空格的情况，如"第四十五 章与虎谋皮"
+	/(?:^|\n)\s*(第[一二三四五六七八九十百千万零\d]+)[ \t]+([章回节部篇][ \t]*[^\n]+)?/g,
+	/(?:^|\n)\s*([一二三四五六七八九十百千万零\d]{2,})[ \t]+([章回节部篇][ \t]*[^\n]+)?/g,
 	/(?:^|\n)\s*(序章|序言|前言|引子|楔子|尾声|后记|番外(?:[一二三四五六七八九十\d]+)?(?:[ \t]+[^\n]+)?|结局(?:[ \t]+[^\n]+)?)/g,
 	/(?:^|\n)\s*(Chapter\s+\d+(?:[ \t]+[^\n]+)?)/gi,
 	/(?:^|\n)\s*(PROLOGUE|EPILOGUE|AFTERWORD(?:[ \t]+[^\n]+)?)/gi,
@@ -56,8 +63,13 @@ export function splitChapters(
 		pattern.lastIndex = 0;
 		let m: RegExpExecArray | null;
 		while ((m = pattern.exec(fullText)) !== null) {
+			// 处理多捕获组的情况（如"第四十五 章"会匹配两个组）
+			let title = m[1].trim();
+			if (m[2]) {
+				title += m[2].trim();
+			}
 			matches.push({
-				title: m[1].trim(),
+				title: title,
 				index: m.index,
 				isVolume: false,
 			});

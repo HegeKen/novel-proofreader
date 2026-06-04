@@ -21,7 +21,11 @@ import type {
 	CheckGranularity,
 } from "../types";
 
-const MAX_CONCURRENT_BATCHES = 5;
+// 从配置中读取并发设置，默认为4
+const getMaxConcurrentBatches = (enableParallel: boolean, configuredMax: number): number => {
+	if (!enableParallel) return 1;
+	return configuredMax > 0 ? configuredMax : 4;
+};
 
 /** 在段落文本中定位 AI 返回的错误位置 */
 function locateTextInParagraph(
@@ -54,88 +58,6 @@ function locateTextInParagraph(
 	return null;
 }
 
-/** 当 AI 返回的 find 过长（>20 字）时，或 replace 与原文长度相近时，diff 找出实际差异部分并截取 */
-function truncateFind(
-	find: string,
-	replace: string,
-	originalPara?: string,
-): { find: string; replace: string } | null {
-	const MAX_LEN = 20;
-	const CONTEXT = 5;
-	const MIN_LEN = 6;
-
-	// 1. 当 replace 与原文长度相近（>70%）时，diff 原文 vs replace 找出实际改动位置
-	if (originalPara && originalPara.length > 0 && replace.length > 0) {
-		const lengthRatio = Math.min(originalPara.length, replace.length) / Math.max(originalPara.length, replace.length);
-		if (lengthRatio > 0.7) {
-			const minLen = Math.min(originalPara.length, replace.length);
-			let diffStart = 0;
-			while (diffStart < minLen && originalPara[diffStart] === replace[diffStart]) diffStart++;
-			let diffEndFromEnd = 0;
-			while (
-				diffEndFromEnd < minLen - diffStart &&
-				originalPara[originalPara.length - 1 - diffEndFromEnd] === replace[replace.length - 1 - diffEndFromEnd]
-			) diffEndFromEnd++;
-
-			const diffLen = originalPara.length - diffStart - diffEndFromEnd;
-			if (diffLen > 0 && diffLen < originalPara.length) {
-				const ctxStart = Math.max(0, diffStart - CONTEXT);
-				const ctxEnd = originalPara.length - diffEndFromEnd + CONTEXT;
-				const newFind = originalPara.slice(ctxStart, ctxEnd);
-				const newReplace = replace.slice(ctxStart, ctxEnd);
-				if (newFind.length >= MIN_LEN && newFind !== newReplace) {
-					find = newFind;
-					replace = newReplace;
-				}
-			}
-		}
-	}
-
-	// 2. find 和 replace 都在范围内，直接返回（任一超长则继续截取）
-	if (find.length <= MAX_LEN && replace.length <= MAX_LEN) return { find, replace };
-
-	// 3. find/replace 仍过长，做字符级 diff 截取
-	// 先找出所有独立的 diff 段
-	const diffs: { start: number; end: number }[] = [];
-	const scanLen = Math.min(find.length, replace.length);
-	let inDiff = false;
-	let segStart = 0;
-	for (let i = 0; i < scanLen; i++) {
-		const isDiff = find[i] !== replace[i];
-		if (isDiff && !inDiff) { segStart = i; inDiff = true; }
-		else if (!isDiff && inDiff) { diffs.push({ start: segStart, end: i }); inDiff = false; }
-	}
-	if (inDiff) diffs.push({ start: segStart, end: scanLen });
-
-	if (diffs.length === 0) return null;
-
-	// 4. 若外沿范围仍过长，取最长或最具代表性的独立 diff 段
- 	if (diffs.length > 1 || (find.slice(diffs[0].start, diffs[0].end).length > MAX_LEN)) {
- 		// 优先选差异字符数最多的段
- 		const best = diffs.reduce((a, b) => (b.end - b.start) > (a.end - a.start) ? b : a);
-		const ctxStart = Math.max(0, best.start - CONTEXT);
-		const ctxEnd = Math.min(find.length, best.end + CONTEXT);
-		const segFind = find.slice(ctxStart, ctxEnd);
-		const segReplace = replace.slice(ctxStart, ctxEnd);
-		if (segFind.length >= MIN_LEN && segFind !== segReplace) return { find: segFind, replace: segReplace };
-		// 如果最佳段仍超长，递归一次（用更小 CONTEXT）
-		if (segFind.length > MAX_LEN) {
-			const tightFind = find.slice(best.start, best.end);
-			const tightReplace = replace.slice(best.start, best.end);
-			if (tightFind.length >= MIN_LEN && tightFind !== tightReplace) return { find: tightFind, replace: tightReplace };
-		}
-	}
-
-	// 5. 只有一个 diff 段且不长，补两侧上下文
-	const diff = diffs[0];
-	const ctxStart = Math.max(0, diff.start - CONTEXT);
-	const ctxEnd = Math.min(find.length, diff.end + CONTEXT);
-	const newFind = find.slice(ctxStart, ctxEnd);
-	const newReplace = replace.slice(ctxStart, ctxEnd);
-	if (newFind.length < MIN_LEN) return null;
-	return { find: newFind, replace: newReplace };
-}
-
 export function useAICheck() {
 	const aiConfig = useAppStore((s) => s.aiConfig);
 	const chapters = useAppStore((s) => s.chapters);
@@ -144,6 +66,7 @@ export function useAICheck() {
 	const getIgnoredWords = useAppStore((s) => s.getIgnoredWords);
 	const getCharacters = useAppStore((s) => s.getCharacters);
 	const promptConfig = useConfigStore((s) => s.promptConfig);
+	const proofreadConfig = useConfigStore((s) => s.proofreadConfig);
 	const saveProofreadProgress = useAppStore((s) => s.saveProofreadProgress);
 	const setResults = useProofreadStore((s) => s.setResults);
 	const updateParagraphResult = useProofreadStore(
@@ -156,8 +79,15 @@ export function useAICheck() {
 			const chapter = chapters[currentChapterIndex];
 			if (!chapter) return;
 
+			// 获取并发配置
+			const maxConcurrent = getMaxConcurrentBatches(
+				proofreadConfig.enableParallelProcessing,
+				proofreadConfig.maxConcurrentBatches
+			);
+
 			logger.proofread(`checkChapter 开始: chapterIndex=${currentChapterIndex + 1}, granularity=${granularity}, startFrom=${startFrom} (第 ${startFrom + 1} 段)`);
 			logger.proofread(`开始校对第 ${currentChapterIndex + 1} 章, 粒度: ${granularity}, 从第 ${startFrom + 1} 段开始`);
+			logger.proofread(`并发模式: ${proofreadConfig.enableParallelProcessing ? '启用' : '禁用'}, 最大并发数: ${maxConcurrent}`);
 
 			// 取消之前的请求
 			abortRef.current?.abort();
@@ -321,21 +251,10 @@ export function useAICheck() {
 								logger.proofread(`[useAICheck] 段落 ${lineNumber} 中定位不到 "${matchText}"`);
 								continue;
 							}
-							let startIdx = located.start;
-							let endIdx = located.end;
-							let finalMatchText = matchText;
-							let finalCorrectText = correctText;
-
-							const truncated = truncateFind(finalMatchText, finalCorrectText, targetPara);
-							if (truncated) {
-								finalMatchText = truncated.find;
-								finalCorrectText = truncated.replace;
-								const relocated = locateTextInParagraph(targetPara, finalMatchText, aiColumn);
-								if (relocated) {
-									startIdx = relocated.start;
-									endIdx = relocated.end;
-								}
-							}
+							const startIdx = located.start;
+							const endIdx = located.end;
+							const finalMatchText = matchText;
+							const finalCorrectText = correctText;
 
 							errorsByLine[lineNumber].push({
 								id: `err-${chapter.id}-${lineNumber}-${errorsByLine[lineNumber].length}`,
@@ -391,7 +310,7 @@ export function useAICheck() {
 				for (const batch of batches) {
 					if (controller.signal.aborted) break;
 					// 等待直到有空闲槽位
-					while (activeCount >= MAX_CONCURRENT_BATCHES) {
+					while (activeCount >= maxConcurrent) {
 						await new Promise(resolve => setTimeout(resolve, 100));
 					}
 					activeCount++;
@@ -447,26 +366,25 @@ export function useAICheck() {
 				});
 				setResults(chapter.id, initial);
 
-				// 逐项检测（从 startFrom 开始）
-				for (let i = startFrom; i < filteredItems.length; i++) {
-					if (controller.signal.aborted) break;
+				// 多线程并发处理段落
+				const processParagraphItem = async (filteredIdx: number) => {
+					if (controller.signal.aborted) return;
 
-					// 使用原始段落索引（关键修复）
-					const originalIndex = indexMap[i];
+					const originalIndex = indexMap[filteredIdx];
 
-					logger.proofread(`检测第 ${i + 1} 项: filteredIndex=${i}, originalIndex=${originalIndex}, startFrom=${startFrom}`);
+					logger.proofread(`检测第 ${filteredIdx + 1} 项: filteredIndex=${filteredIdx}, originalIndex=${originalIndex}, startFrom=${startFrom}`);
 
 					updateParagraphResult(chapter.id, originalIndex, { status: "checking" });
 
 					try {
-						const item = filteredItems[i];
+						const item = filteredItems[filteredIdx];
 						// 如果太短，跳过
 						if (item.trim().length < 5) {
 							updateParagraphResult(chapter.id, originalIndex, { status: "done" });
-							continue;
+							return;
 						}
 
-						logger.proofread(`发送请求: filteredIndex=${i}, originalIndex=${originalIndex}, 文本长度=${item.length}`);
+						logger.proofread(`发送请求: filteredIndex=${filteredIdx}, originalIndex=${originalIndex}, 文本长度=${item.length}`);
 
 						// 只传输当前段落实际包含的 ignoredWords，减少 token 消耗
 						const relevantIgnoredWords = ignoredWords.filter(word => word && item.includes(word));
@@ -486,7 +404,7 @@ export function useAICheck() {
 
 						// 添加 5 秒超时
 						const timeoutPromise = new Promise<never>((_, reject) => {
-							setTimeout(() => reject(new Error('PROOFREAD_TIMEOUT')), 5000);
+							setTimeout(() => reject(new Error('PROOFREAD_TIMEOUT')), 10000);
 						});
 
 						let reply: string;
@@ -497,13 +415,13 @@ export function useAICheck() {
 							]);
 						} catch (timeoutErr) {
 							if ((timeoutErr as Error).message === 'PROOFREAD_TIMEOUT') {
-								const currentItem = filteredItems[i] || "";
+								const currentItem = filteredItems[filteredIdx] || "";
 								const timeoutError: ProofreadError = {
 									id: `err-${chapter.id}-${originalIndex}-timeout-${Date.now()}`,
 									startIndex: 0,
 									endIndex: 0,
 									errorType: "timeout",
-									suggestion: "请求超时（5秒），已跳过此段落",
+									suggestion: "请求超时（10秒），已跳过此段落",
 									originalText: currentItem.slice(0, 50),
 									correctedText: "",
 									applied: false,
@@ -512,9 +430,9 @@ export function useAICheck() {
 								updateParagraphResult(chapter.id, originalIndex, {
 									errors: [timeoutError],
 									status: "error",
-									errorMessage: "请求超时（5秒）",
+									errorMessage: "请求超时（10秒）",
 								});
-								continue;
+								return;
 							}
 							throw timeoutErr;
 						}
@@ -528,11 +446,11 @@ export function useAICheck() {
 							// 支持新格式：find/replace
 							const find = String(o.find ?? "");
 							const replace = String(o.replace ?? "");
-							
+
 							// 兼容旧格式：original/corrected
 							const orig = String(o.original ?? o.original_text ?? "");
 							const corr = String(o.corrected ?? o.corrected_text ?? "");
-							
+
 							const errType = String(o.type ?? o.error_type ?? "");
 							const suggest = String(o.reason ?? o.suggestion ?? "");
 							const aiColumn = o.column !== undefined ? Number(o.column) : undefined;
@@ -555,21 +473,10 @@ export function useAICheck() {
 
 							const located = locateTextInParagraph(item, matchText, aiColumn);
 							if (!located) continue;
-							let startIdx = located.start;
-							let endIdx = located.end;
-							let finalMatchText = matchText;
-							let finalCorrectText = correctText;
-
-							const truncated = truncateFind(finalMatchText, finalCorrectText, item);
-							if (truncated) {
-								finalMatchText = truncated.find;
-								finalCorrectText = truncated.replace;
-								const relocated = locateTextInParagraph(item, finalMatchText, aiColumn);
-								if (relocated) {
-									startIdx = relocated.start;
-									endIdx = relocated.end;
-								}
-							}
+							const startIdx = located.start;
+							const endIdx = located.end;
+							const finalMatchText = matchText;
+							const finalCorrectText = correctText;
 
 							errors.push({
 								id: `err-${chapter.id}-${originalIndex}-${errors.length}`,
@@ -592,14 +499,14 @@ export function useAICheck() {
 
 						// 保存校对进度
 						if (currentNovelId) {
-							saveProofreadProgress(currentNovelId, chapter.id, i, false);
+							saveProofreadProgress(currentNovelId, chapter.id, filteredIdx, false);
 						}
 					} catch (err: unknown) {
 						if (err instanceof DOMException && err.name === "AbortError")
 							return;
 						const msg = err instanceof Error ? err.message : String(err);
 						// 获取当前段落文本
-						const currentItem = filteredItems[i] || "";
+						const currentItem = filteredItems[filteredIdx] || "";
 						// 将网络错误添加到错误清单
 						const networkError: ProofreadError = {
 							id: `err-${chapter.id}-${originalIndex}-network-${Date.now()}`,
@@ -618,7 +525,23 @@ export function useAICheck() {
 							errorMessage: msg,
 						});
 					}
+				};
+
+				// 使用 Promise 池实现多线程并发处理
+				let activeCount = 0;
+				const paragraphTasks: Promise<void>[] = [];
+				for (let i = startFrom; i < filteredItems.length; i++) {
+					if (controller.signal.aborted) break;
+					while (activeCount >= maxConcurrent) {
+						await new Promise(resolve => setTimeout(resolve, 100));
+					}
+					activeCount++;
+					const promise = processParagraphItem(i).finally(() => {
+						activeCount--;
+					});
+					paragraphTasks.push(promise);
 				}
+				await Promise.all(paragraphTasks);
 
 				// 章节校对完成，标记为完成
 				if (currentNovelId) {
@@ -638,6 +561,7 @@ export function useAICheck() {
 			saveProofreadProgress,
 			promptConfig.proofread,
 			promptConfig.proofreadChapter,
+			proofreadConfig,
 		],
 	);
 
@@ -764,21 +688,10 @@ export function useAICheck() {
 
 					const located = locateTextInParagraph(lineText, matchText, aiColumn);
 					if (!located) continue;
-					let startIdx = located.start;
-					let endIdx = located.end;
-					let finalMatchText = matchText;
-					let finalCorrectText = correctText;
-
-					const truncated = truncateFind(finalMatchText, finalCorrectText, lineText);
-					if (truncated) {
-						finalMatchText = truncated.find;
-						finalCorrectText = truncated.replace;
-						const relocated = locateTextInParagraph(lineText, finalMatchText, aiColumn);
-						if (relocated) {
-							startIdx = relocated.start;
-							endIdx = relocated.end;
-						}
-					}
+					const startIdx = located.start;
+					const endIdx = located.end;
+					const finalMatchText = matchText;
+					const finalCorrectText = correctText;
 
 					errors.push({
 						id: `err-${chapter.id}-${originalIndex}-${errors.length}`,

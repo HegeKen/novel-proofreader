@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { Users, Cloud, MessageSquare, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { Icons } from "./Icons";
 import { useMobile } from "../hooks/useMobile";
+import { logger } from "../utils/logger";
+import { useAppStore } from "../stores/appStore";
 
 import { fetchLatestReleaseWithAssets, fetchAllReleases, formatFileSize, getAllAssetsByPlatform, tryDownloadWithMirrors, downloadFromMirror, getMirrorUrl, GITHUB_MIRRORS, CORS_PROXIES, compareVersions, getCurrentVersion, type GitHubRelease, type MirrorSource } from "../utils/githubApi";
 
@@ -70,8 +72,8 @@ export function HomePage({ onStart }: HomePageProps) {
 		try {
 			await tryDownloadWithMirrors(url, fileName);
 		} catch (error) {
-			console.error("Download failed:", error);
-			alert("下载失败，请稍后重试或尝试其他镜像源");
+			logger.errorGeneric('HomePage - Download failed:', error);
+			useAppStore.getState().showToast("下载失败，请稍后重试或尝试其他镜像源", "error");
 		} finally {
 			setDownloadingAsset(null);
 		}
@@ -99,7 +101,7 @@ export function HomePage({ onStart }: HomePageProps) {
 			await downloadFromMirror(mirrorUrl, mirrorPickerAsset.fileName);
 			setMirrorResults(prev => ({ ...prev, [mirrorKey]: "success" }));
 		} catch (error) {
-			console.error(`Download from ${mirror.name} failed:`, error);
+			logger.errorGeneric(`HomePage - Download from ${mirror.name} failed:`, error);
 			setMirrorResults(prev => ({ ...prev, [mirrorKey]: "error" }));
 		} finally {
 			setDownloadingMirror("");

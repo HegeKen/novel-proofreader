@@ -10,7 +10,6 @@ import { buildParagraphIndexMap } from "../utils/formatters";
 import { EmptyState } from "./EmptyState";
 import { splitParagraphs } from "../utils/chapterSplit";
 import { Icons } from "./Icons";
-import { Select } from "./Select";
 import { IgnoredWordsManager } from "./IgnoredWordsManager";
 import { ToastContainer } from "./Toast";
 import { ProofreadQueuePanel } from "./ProofreadQueuePanel";
@@ -45,6 +44,7 @@ export function ProofreadPanel() {
 	
 	const chapters = useAppStore((s) => s.chapters);
 	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
+	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
 	const replaceParagraphText = useAppStore((s) => s.replaceParagraphText);
 	const results = useProofreadStore((s) => s.results);
 	const setResults = useProofreadStore((s) => s.setResults);
@@ -450,42 +450,44 @@ export function ProofreadPanel() {
 					<div className="toolbar-left">
 					<label className="granularity-select">
 						检测项：
-						<div className="w-32">
-							<Select
-								value={granularity}
-								onChange={(value) => setGranularity(value as CheckGranularity)}
-								options={[
-									{ value: 'paragraph', label: '按段落' },
-									{ value: 'chapter', label: '按章节' },
-								]}
-							/>
+						<div className="detection-options">
+							<label className="detection-option">
+								<input
+									type="checkbox"
+									checked={granularity === 'chapter'}
+									onChange={() => setGranularity(granularity === 'chapter' ? 'paragraph' : 'chapter')}
+								/>
+								<span>按章节</span>
+							</label>
 						</div>
 					</label>
 					{granularity !== "chapter" && totalLines > 0 && (
-						<label className="start-line-select">
+						<label className="start-line-display">
 							起始行：
-							<div className="w-32">
-								<Select
-									value={startLine !== null ? String(startLine) : '0'}
-									onChange={(value) => {
-										const originalIndex = Number(value);
-										if (originalIndex === 0) {
-											setStartLine(null);
-										} else {
-											// 直接设置原始索引（ReaderPanel 使用原始索引进行比较）
-											setStartLine(originalIndex);
-										}
-									}}
-									options={[
-										{ value: '0', label: '从头开始' },
-										...paragraphIndexMap.slice(0, Math.min(totalLines, 500)).map((originalIndex) => ({
-											value: String(originalIndex),
-											label: `第 ${originalIndex + 1} 行`,
-										})),
-									]}
-								/>
-							</div>
+							<span className="start-line-value">
+								{startLine !== null ? `第 ${startLine + 1} 行` : '从头开始'}
+							</span>
 						</label>
+					)}
+					{chapters.length > 1 && (
+						<>
+							<button
+								className="btn-mobile"
+								disabled={currentChapterIndex <= 0}
+								onClick={() => setCurrentChapterIndex(currentChapterIndex - 1)}
+								title={currentChapterIndex > 0 ? (chapters[currentChapterIndex - 1]?.title || `第 ${currentChapterIndex} 章`) : "已是第一章"}
+							>
+								<Icons.skipBack size={16} />
+							</button>
+							<button
+								className="btn-mobile"
+								disabled={currentChapterIndex >= chapters.length - 1}
+								onClick={() => setCurrentChapterIndex(currentChapterIndex + 1)}
+								title={currentChapterIndex < chapters.length - 1 ? (chapters[currentChapterIndex + 1]?.title || `第 ${currentChapterIndex + 2} 章`) : "已是最后一章"}
+							>
+								<Icons.skipForward size={16} />
+							</button>
+						</>
 					)}
 				</div>
 				<div className="toolbar-right">
@@ -519,11 +521,12 @@ export function ProofreadPanel() {
 					{checking ? (
 						<button className={isMobile ? "btn-mobile" : "btn"} onClick={cancelCheck}>
 							<Icons.close size={16} />
-							取消检测
+							{!isMobile && <span>取消检测</span>}
 						</button>
 					) : (
-						<button className="btn btn-check" onClick={handleStartCheck}>
-							开始检测
+						<button className={isMobile ? "btn-mobile" : "btn btn-check"} onClick={handleStartCheck}>
+							<Icons.play size={16} />
+							{!isMobile && <span>开始检测</span>}
 						</button>
 					)}
 				</div>

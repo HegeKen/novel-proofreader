@@ -278,8 +278,8 @@ export function ChapterNav({
 			);
 			setChapterTitleSuggestions(prev => ({ ...prev, [chapterId]: suggestions }));
 		} catch (error) {
-			console.error("Failed to generate chapter title:", error);
-			alert("生成章节名失败，请检查AI配置");
+			logger.errorGeneric('ChapterNav - Failed to generate chapter title:', error);
+			useAppStore.getState().showToast("生成章节名失败，请检查AI配置", "error");
 		} finally {
 			setSuggestingChapterId(null);
 		}

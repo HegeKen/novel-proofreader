@@ -200,6 +200,7 @@ export interface TTSSentence {
 }
 
 const MIMO_TTS_MODEL = "mimo-v2.5-tts";
+const MIMO_VOICEDESIGN_MODEL = "mimo-v2.5-tts-voicedesign";
 
 interface MiMoAudioObject {
 	id: string;
@@ -237,7 +238,8 @@ interface MiMoTTSResponse {
 
 export async function synthesizeSpeech(
 	text: string,
-	config: TTSConfig
+	config: TTSConfig,
+	voiceDesignPrompt?: string
 ): Promise<ArrayBuffer> {
 	const apiKey = config.apiKey;
 	const voice = config.voice;
@@ -251,18 +253,38 @@ export async function synthesizeSpeech(
 	const baseUrl = config.baseUrl.replace(/\/$/, "");
 	const url = `${baseUrl}/chat/completions`;
 
-	const requestBody = {
-		model: MIMO_TTS_MODEL,
-		messages: [
-			{ role: "assistant", content: text },
-			{
-				role: "user",
-				content: `语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）\n你是专业小说有声书演播大神...`,
-			},
-		],
-		audio: { voice: voice },
+	// 判断是否使用音色设计模型
+	const useVoiceDesign = !!voiceDesignPrompt;
+	const model = useVoiceDesign ? MIMO_VOICEDESIGN_MODEL : MIMO_TTS_MODEL;
+
+	// 构建请求体
+	const messages: Array<{ role: string; content: string }> = [
+		{ role: "assistant", content: text },
+	];
+
+	if (useVoiceDesign) {
+		// 使用音色设计模型时，user消息中的文本就是音色设计描述
+		messages.push({
+			role: "user",
+			content: voiceDesignPrompt,
+		});
+	} else {
+		messages.push({
+			role: "user",
+			content: `语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）\n你是专业小说有声书演播大神...`,
+		});
+	}
+
+	const requestBody: Record<string, unknown> = {
+		model,
+		messages,
 		max_completion_tokens: 1024,
 	};
+
+	// 只有在不使用音色设计模型时才添加audio.voice
+	if (!useVoiceDesign) {
+		(requestBody as Record<string, unknown>).audio = { voice: voice };
+	}
 
 	logger.tts("发起 TTS 请求", { text: text.slice(0, 50) + "...", voice, speed, volume });
 	const startTime = Date.now();
@@ -328,7 +350,8 @@ export async function synthesizeSpeech(
 export async function synthesizeSpeechWithVoice(
 	text: string,
 	config: TTSConfig,
-	voice: string
+	voice: string,
+	voiceDesignPrompt?: string
 ): Promise<ArrayBuffer> {
 	const apiKey = config.apiKey;
 	const speed = config.speed;
@@ -341,18 +364,38 @@ export async function synthesizeSpeechWithVoice(
 	const baseUrl = config.baseUrl.replace(/\/$/, "");
 	const url = `${baseUrl}/chat/completions`;
 
-	const requestBody = {
-		model: MIMO_TTS_MODEL,
-		messages: [
-			{ role: "assistant", content: text },
-			{
-				role: "user",
-				content: `语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）\n你是专业小说有声书演播大神...`,
-			},
-		],
-		audio: { voice: voice },
+	// 判断是否使用音色设计模型
+	const useVoiceDesign = !!voiceDesignPrompt;
+	const model = useVoiceDesign ? MIMO_VOICEDESIGN_MODEL : MIMO_TTS_MODEL;
+
+	// 构建请求体
+	const messages: Array<{ role: string; content: string }> = [
+		{ role: "assistant", content: text },
+	];
+
+	if (useVoiceDesign) {
+		// 使用音色设计模型时，user消息中的文本就是音色设计描述
+		messages.push({
+			role: "user",
+			content: voiceDesignPrompt,
+		});
+	} else {
+		messages.push({
+			role: "user",
+			content: `语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）\n你是专业小说有声书演播大神...`,
+		});
+	}
+
+	const requestBody: Record<string, unknown> = {
+		model,
+		messages,
 		max_completion_tokens: 1024,
 	};
+
+	// 只有在不使用音色设计模型时才添加audio.voice
+	if (!useVoiceDesign) {
+		(requestBody as Record<string, unknown>).audio = { voice: voice };
+	}
 
 	logger.tts("发起 TTS 请求（角色配音）", { text: text.slice(0, 50) + "...", voice, speed, volume });
 	const startTime = Date.now();
@@ -886,6 +929,7 @@ export interface ScriptDialogue {
 	character: string;
 	text: string;
 	voice: string;
+	voiceDesignPrompt?: string; // 音色设计描述，用于 mimo-v2.5-tts-voicedesign 模型
 	audioBuffer?: ArrayBuffer;
 	isPlaying: boolean;
 	isCompleted: boolean;
@@ -1118,7 +1162,7 @@ export class ScriptTTSPlayer {
 	 * 流式添加对话并立即开始生成音频
 	 * 用于边分析边播放的场景
 	 */
-	async addDialogueStream(character: string, text: string, paragraphIndex?: number): Promise<void> {
+	async addDialogueStream(character: string, text: string, paragraphIndex?: number, voiceDesignPrompt?: string): Promise<void> {
 		const voiceMap: Record<string, string> = this.config.characterVoices || {};
 		const defaultVoice = this.config.voice || "冰糖";
 		const voice = voiceMap[character] || defaultVoice;
@@ -1128,13 +1172,14 @@ export class ScriptTTSPlayer {
 			character,
 			text,
 			voice,
+			voiceDesignPrompt,
 			isPlaying: false,
 			isCompleted: false,
 			paragraphIndex,
 		};
 
 		this.dialogues.push(newDialogue);
-		logger.tts("流式添加对话", { index: newDialogue.index, character, voice, paragraphIndex, text: text.slice(0, 30) + "..." });
+		logger.tts("流式添加对话", { index: newDialogue.index, character, voice, voiceDesign: !!voiceDesignPrompt, paragraphIndex, text: text.slice(0, 30) + "..." });
 		this.notifyUpdate();
 
 		await this.generateAndQueueAudio(newDialogue);
@@ -1173,8 +1218,8 @@ export class ScriptTTSPlayer {
 	 */
 	private async generateAndQueueAudio(dialogue: ScriptDialogue): Promise<void> {
 		try {
-			logger.tts("开始生成音频", { index: dialogue.index, character: dialogue.character });
-			const audioBuffer = await synthesizeSpeechWithVoice(dialogue.text, this.config, dialogue.voice);
+			logger.tts("开始生成音频", { index: dialogue.index, character: dialogue.character, voiceDesign: !!dialogue.voiceDesignPrompt });
+			const audioBuffer = await synthesizeSpeechWithVoice(dialogue.text, this.config, dialogue.voice, dialogue.voiceDesignPrompt);
 			
 			this.audioQueue.push({ buffer: audioBuffer, dialogueIndex: dialogue.index });
 			logger.tts("音频生成完成并加入队列", { index: dialogue.index, queueLength: this.audioQueue.length });
