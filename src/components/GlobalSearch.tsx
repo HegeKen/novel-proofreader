@@ -3,7 +3,8 @@
 // ============================================================
 import { useState, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useAppStore } from "../stores/appStore";
+import { useNovelStore } from "../stores/novelStore";
+import { useUIStore } from "../stores/uiStore";
 import { useProofreadStore } from "../stores/proofreadStore";
 import { useMobile } from "../hooks/useMobile";
 import { splitParagraphs } from "../utils/chapterSplit";
@@ -28,11 +29,11 @@ export function GlobalSearch() {
 	const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 	const inputRef = useRef<HTMLInputElement>(null);
 
-	const novels = useAppStore((s) => s.novels);
-	const selectNovel = useAppStore((s) => s.selectNovel);
-	const setChapters = useAppStore((s) => s.setChapters);
-	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
-	const setReadingMode = useAppStore((s) => s.setReadingMode);
+	const novels = useNovelStore((s) => s.novels);
+	const selectNovel = useNovelStore((s) => s.selectNovel);
+	const setChapters = useNovelStore((s) => s.setChapters);
+	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
+	const setReadingMode = useUIStore((s) => s.setReadingMode);
 	const setHighlightedParagraph = useProofreadStore((s) => s.setHighlightedParagraph);
 
 	// 执行跨小说搜索

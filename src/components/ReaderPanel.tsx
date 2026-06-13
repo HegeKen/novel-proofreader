@@ -1,59 +1,92 @@
-// ============================================================
-// 左侧阅读区（带行号 + 采纳动画 + 双击编辑）
-// ============================================================
 import { useRef, useEffect, useCallback, useState, useMemo } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useNovelStore } from "../stores/novelStore";
+import { useUIStore } from "../stores/uiStore";
+import { useCharacterStore } from "../stores/characterStore";
 import { useProofreadStore } from "../stores/proofreadStore";
 import { useConfigStore } from "../stores/configStore";
+import { useAppMetaStore } from "../stores/appMetaStore";
 import { splitParagraphs } from "../utils/chapterSplit";
 import { buildParagraphIndexMap, buildOriginalToFilteredMap } from "../utils/formatters";
-
-import { TTSPlayer, ScriptTTSPlayer, type TTSSentence } from "../utils/ttsService";
+import { useTTS } from "../hooks/useTTS";
+import { useSearch } from "../hooks/useSearch";
+import { useReadingProgress } from "../hooks/useReadingProgress";
+import { useChapterTitleSuggestion } from "../hooks/useChapterTitleSuggestion";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { logger } from "../utils/logger";
-import { sendChatCompletion, type ChatMessage, generateChapterTitle } from "../utils/aiClient";
-import { READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT, buildReadingModeTTSEnhanceUserPrompt, type ParagraphEmotionResult } from "../utils/aiClient";
-import type { CharacterInfo } from "../types";
 
 export function ReaderPanel({
 	showReadingModeToggle = false,
 	isMobile = false,
 }: { showReadingModeToggle?: boolean; isMobile?: boolean } = {}) {
-	const chapters = useAppStore((s) => s.chapters);
-	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
-	const currentNovelId = useAppStore((s) => s.currentNovelId);
-	const getCharacters = useAppStore((s) => s.getCharacters);
-	const addCharacter = useAppStore((s) => s.addCharacter);
-	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
-	const fontSize = useAppStore((s) => s.fontSize);
-	const setFontSize = useAppStore((s) => s.setFontSize);
-	const readingMode = useAppStore((s) => s.readingMode);
-	const setReadingMode = useAppStore((s) => s.setReadingMode);
-	const lineSpacing = useAppStore((s) => s.lineSpacing);
-	const setLineSpacing = useAppStore((s) => s.setLineSpacing);
-
-	const paragraphIndent = useAppStore((s) => s.paragraphIndent);
-	const setParagraphIndent = useAppStore((s) => s.setParagraphIndent);
-	const readingBackground = useAppStore((s) => s.readingBackground);
-	const setReadingBackground = useAppStore((s) => s.setReadingBackground);
-	const customTextColor = useAppStore((s) => s.customTextColor);
-	const customBgColor = useAppStore((s) => s.customBgColor);
-	const setCustomColors = useAppStore((s) => s.setCustomColors);
-	const bgImageUrl = useAppStore((s) => s.bgImageUrl);
-	const setBgImageUrl = useAppStore((s) => s.setBgImageUrl);
-	const replaceLine = useAppStore((s) => s.replaceLine);
+	const chapters = useNovelStore((s) => s.chapters);
+	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
+	const currentNovelId = useNovelStore((s) => s.currentNovelId);
+	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
+	const replaceLine = useNovelStore((s) => s.replaceLine);
+	const fontSize = useUIStore((s) => s.fontSize);
+	const setFontSize = useUIStore((s) => s.setFontSize);
+	const readingMode = useUIStore((s) => s.readingMode);
+	const setReadingMode = useUIStore((s) => s.setReadingMode);
+	const lineSpacing = useUIStore((s) => s.lineSpacing);
+	const setLineSpacing = useUIStore((s) => s.setLineSpacing);
+	const paragraphIndent = useUIStore((s) => s.paragraphIndent);
+	const setParagraphIndent = useUIStore((s) => s.setParagraphIndent);
+	const readingBackground = useUIStore((s) => s.readingBackground);
+	const setReadingBackground = useUIStore((s) => s.setReadingBackground);
+	const customTextColor = useUIStore((s) => s.customTextColor);
+	const customBgColor = useUIStore((s) => s.customBgColor);
+	const setCustomColors = useUIStore((s) => s.setCustomColors);
+	const bgImageUrl = useUIStore((s) => s.bgImageUrl);
+	const setBgImageUrl = useUIStore((s) => s.setBgImageUrl);
+	const addCharacter = useCharacterStore((s) => s.addCharacter);
 	const highlightedParagraph = useProofreadStore((s) => s.highlightedParagraph);
-	const setHighlightedParagraph = useProofreadStore(
-		(s) => s.setHighlightedParagraph,
-	);
+	const setHighlightedParagraph = useProofreadStore((s) => s.setHighlightedParagraph);
 	const applyAnimation = useProofreadStore((s) => s.applyAnimation);
 	const startLine = useProofreadStore((s) => s.startLine);
 	const setStartLine = useProofreadStore((s) => s.setStartLine);
+	const readingReminderEnabled = useAppMetaStore((s) => s.readingReminderEnabled);
+	const setReadingReminderEnabled = useAppMetaStore((s) => s.setReadingReminderEnabled);
+	const readingReminderMinutes = useAppMetaStore((s) => s.readingReminderMinutes);
+	const setReadingReminderMinutes = useAppMetaStore((s) => s.setReadingReminderMinutes);
+	const ttsConfig = useConfigStore((s) => s.ttsConfig);
+	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
+
+	const tts = useTTS();
+	const search = useSearch([], []);
+	const readingProgress = useReadingProgress();
+	const chapterTitleSuggestion = useChapterTitleSuggestion();
+
+	const setTtsPlaying = useProofreadStore((s) => s.setTtsPlaying);
+	const setTtsHighlightedPara = useProofreadStore((s) => s.setTtsHighlightedPara);
+
+	useEffect(() => {
+		setTtsPlaying(tts.ttsPlaying || tts.isStreamTTSPlaying);
+	}, [tts.ttsPlaying, tts.isStreamTTSPlaying, setTtsPlaying]);
+
+	useEffect(() => {
+		setTtsHighlightedPara(tts.ttsHighlightedPara);
+	}, [tts.ttsHighlightedPara, setTtsHighlightedPara]);
 
 	const containerRef = useRef<HTMLDivElement>(null);
 	const paragraphRefs = useRef<(HTMLDivElement | null)[]>([]);
+	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const chapterListContentRef = useRef<HTMLDivElement>(null);
+	const activeChapterItemRef = useRef<HTMLDivElement>(null);
+
+	const chapter = chapters[currentChapterIndex];
+	const paragraphs = useMemo(() => {
+		return chapter ? splitParagraphs(chapter.content).filter((p) => p.trim() !== "") : [];
+	}, [chapter]);
+
+	const paragraphIndexMap = useMemo(() => {
+		return chapter ? buildParagraphIndexMap(chapter.content) : [];
+	}, [chapter]);
+
+	const originalToFilteredMap = useMemo(() => {
+		return chapter ? buildOriginalToFilteredMap(chapter.content) : {};
+	}, [chapter]);
 
 	const readingTextColor = useMemo(() => {
 		if (!readingMode) return undefined;
@@ -89,241 +122,74 @@ export function ReaderPanel({
 		}
 	}, [lineSpacing, fontSize, paragraphIndent, readingTextColor, readingMode]);
 
-	// 滑动翻页相关
 	const touchStartY = useRef(0);
 	const touchStartX = useRef(0);
 	const touchStartScrollTop = useRef(0);
 	const isDragging = useRef(false);
 	const isScrolling = useRef(false);
 
-	// 双击编辑状态：正在编辑的行索引
 	const [editingIndex, setEditingIndex] = useState<number | null>(null);
 	const [editValue, setEditValue] = useState("");
-
-	// 阅读设置面板状态
 	const [showReadingSettings, setShowReadingSettings] = useState(false);
-
-	// 章节列表弹窗状态
 	const [showChapterList, setShowChapterList] = useState(false);
-	const textareaRef = useRef<HTMLTextAreaElement>(null);
-	const chapterListContentRef = useRef<HTMLDivElement>(null);
-	const activeChapterItemRef = useRef<HTMLDivElement>(null);
+	const [showTTSPanel, setShowTTSPanel] = useState(false);
+	const [pageFlipping, setPageFlipping] = useState<'none' | 'next' | 'prev'>('none');
+	const [showPageShadow, setShowPageShadow] = useState(false);
+	const [detectedNewCharacters, setDetectedNewCharacters] = useState<string[]>([]);
+	const [showNewCharacterModal, setShowNewCharacterModal] = useState(false);
 
-	// 章节名推荐状态
-	const [suggestingChapterIndex, setSuggestingChapterIndex] = useState<number | null>(null);
-	const [chapterTitleSuggestions, setChapterTitleSuggestions] = useState<string[]>([]);
-	const [suggestingChapterId, setSuggestingChapterId] = useState<number | null>(null);
+	const {
+		ttsPlaying, ttsHighlightedPara, isStreamTTSPlaying, enhancedTTSPreparing,
+		isStreamTTSWaitingForStart, currentPlayingCharacter,
+		handleTTSToggle, handleTTSPrev, handleTTSNext, handleTTSStop,
+		startTTSFromParagraph, handleEnterStreamTTSSelectionMode, handleEnhancedChapterTTS,
+		setIsStreamTTSWaitingForStart, setParagraphEmotionCache,
+	} = tts;
+
+	const {
+		showSearch, setShowSearch, searchQuery, setSearchQuery,
+		searchResults, currentMatchIndex, performSearch,
+		prevMatch, nextMatch, handleSearchResultClick, closeSearch,
+	} = search;
+
+	const {
+		setCurrentParagraphIndex,
+		readingTimeElapsed,
+		showReadingReminder, setShowReadingReminder,
+		readingProgressPercent, estimatedRemainingMinutes,
+		startReadingTimer, stopReadingTimer,
+	} = readingProgress;
+
+	const {
+		suggestingChapterId: suggestingId, chapterTitleSuggestions,
+		handleSuggestChapterTitle, handleApplyChapterTitle,
+	} = chapterTitleSuggestion;
 
 	// 当章节列表弹窗打开时，滚动到 active 项并居中
 	useEffect(() => {
 		if (showChapterList && activeChapterItemRef.current && chapterListContentRef.current) {
-			// 使用 setTimeout 确保 DOM 已渲染
 			setTimeout(() => {
 				if (activeChapterItemRef.current && chapterListContentRef.current) {
 					const container = chapterListContentRef.current;
 					const activeItem = activeChapterItemRef.current;
-					
 					const containerRect = container.getBoundingClientRect();
 					const itemRect = activeItem.getBoundingClientRect();
-					
 					const relativeTop = itemRect.top - containerRect.top;
 					const targetScrollTop = container.scrollTop + relativeTop - container.offsetHeight / 2 + itemRect.height / 2;
-					
-					container.scrollTo({
-						top: Math.max(0, targetScrollTop),
-						behavior: 'smooth'
-					});
+					container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
 				}
 			}, 50);
 		}
 	}, [showChapterList]);
 
-	// 搜索功能状态
-	const [showSearch, setShowSearch] = useState(false);
-	const [searchQuery, setSearchQuery] = useState("");
-	const [searchResults, setSearchResults] = useState<{ paraIndex: number; matchStart: number; matchEnd: number; text: string }[]>([]);
-	const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
-
-	// TTS 功能状态
-	const [ttsPlaying, setTtsPlaying] = useState(false);
-	const [ttsHighlightedPara, setTtsHighlightedPara] = useState(-1);
-	const [showTTSPanel, setShowTTSPanel] = useState(false);
-	const [, setTtsSentences] = useState<TTSSentence[]>([]);
-	const ttsPlayerRef = useRef<TTSPlayer | null>(null);
-	const ttsConfig = useConfigStore((s) => s.ttsConfig);
-	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
-	const promptConfig = useConfigStore((s) => s.promptConfig);
-	const setTtsPlayingGlobal = useProofreadStore((s) => s.setTtsPlaying);
-	const setTtsHighlightedParaGlobal = useProofreadStore((s) => s.setTtsHighlightedPara);
-	
-	// 整章TTS增强功能
-	const [enhancedTTSPreparing, setEnhancedTTSPreparing] = useState(false);
-	const [paragraphEmotionCache, setParagraphEmotionCache] = useState<Map<number, ParagraphEmotionResult>>(new Map());
-	
-	// 流式TTS播放状态（用于控制条显示）
-	const [isStreamTTSPlaying, setIsStreamTTSPlaying] = useState(false);
-	const scriptTTSRef = useRef<ScriptTTSPlayer | null>(null);
-	const aiConfig = useAppStore((s) => s.aiConfig);
-	
-	// 当前播放的角色名称（用于播放控制条显示）
-	const [currentPlayingCharacter, setCurrentPlayingCharacter] = useState<string | undefined>(undefined);
-	
-	// 流式AI情感增强TTS等待选择开始段落模式
-	const [isStreamTTSWaitingForStart, setIsStreamTTSWaitingForStart] = useState(false);
-
-	// 仿真翻页动画状态
-	const [pageFlipping, setPageFlipping] = useState<'none' | 'next' | 'prev'>('none');
-	const [showPageShadow, setShowPageShadow] = useState(false);
-
-	// 阅读进度状态
-	const [currentParagraphIndex, setCurrentParagraphIndex] = useState(0);
-	const [readingTimeElapsed, setReadingTimeElapsed] = useState(0);
-	const [showReadingReminder, setShowReadingReminder] = useState(false);
-	
-	// 切换章节时重置阅读进度
-	useEffect(() => {
-		queueMicrotask(() => {
-			setCurrentParagraphIndex(0);
+	const handleAddNewCharacters = useCallback((names: string[]) => {
+		if (!currentNovelId) return;
+		names.forEach(name => {
+			addCharacter(currentNovelId, { name, gender: "other", notes: "自动检测创建", voice: "", aliases: [], relationTerms: [] });
 		});
-	}, [currentChapterIndex]);
-
-	// 章节名推荐处理函数
-	const handleSuggestChapterTitle = async (chapterIndex: number) => {
-		if (suggestingChapterIndex === chapterIndex) return;
-		
-		const chapter = chapters[chapterIndex];
-		if (!chapter) return;
-
-		setSuggestingChapterIndex(chapterIndex);
-		setSuggestingChapterId(chapter.id);
-		setChapterTitleSuggestions([]);
-
-		try {
-			// 收集前几章的章节名和内容
-			const previousChapters: Record<string, string> = {};
-			for (let i = Math.max(0, chapterIndex - 5); i < chapterIndex; i++) {
-				const prevChapter = chapters[i];
-				if (prevChapter && prevChapter.title) {
-					previousChapters[prevChapter.title] = prevChapter.content.slice(0, 200);
-				}
-			}
-
-			const suggestions = await generateChapterTitle(
-				chapter.content,
-				previousChapters,
-				chapterIndex + 1,
-				aiConfig
-			);
-			setChapterTitleSuggestions(suggestions);
-		} catch (error) {
-			logger.errorGeneric('ReaderPanel - Failed to generate chapter title:', error);
-			useAppStore.getState().showToast("生成章节名失败，请检查AI配置", "error");
-		} finally {
-			setSuggestingChapterIndex(null);
-		}
-	};
-
-	// 应用推荐的章节名
-	const handleApplyChapterTitle = (chapterIndex: number, title: string) => {
-		const chapter = chapters[chapterIndex];
-		if (!chapter) return;
-
-		const newTitle = chapter.title ? `${chapter.title} ${title}` : title;
-		const newContent = chapter.title
-			? chapter.content.replace(chapter.title, newTitle)
-			: chapter.content;
-
-		const updatedChapters = [...chapters];
-		updatedChapters[chapterIndex] = { ...chapter, title: newTitle, content: newContent };
-		useAppStore.getState().setChapters(updatedChapters);
-
-		// 清除推荐状态
-		setChapterTitleSuggestions([]);
-		setSuggestingChapterId(null);
-	};
-
-	// 检测到的陌生角色状态
-	const [detectedNewCharacters, setDetectedNewCharacters] = useState<string[]>([]);
-	const [showNewCharacterModal, setShowNewCharacterModal] = useState(false);
-	const readingStartTimeRef = useRef<number>(0);
-	const readingTimerRef = useRef<number | null>(null);
-
-	// 初始化阅读开始时间
-	useEffect(() => {
-		readingStartTimeRef.current = Date.now();
-	}, []);
-
-	// 同步 TTS 状态到全局 store（供校对区使用）
-	useEffect(() => {
-		setTtsPlayingGlobal(ttsPlaying);
-	}, [ttsPlaying, setTtsPlayingGlobal]);
-
-	useEffect(() => {
-		setTtsHighlightedParaGlobal(ttsHighlightedPara);
-	}, [ttsHighlightedPara, setTtsHighlightedParaGlobal]);
-
-	const saveReadingProgress = useAppStore((s) => s.saveReadingProgress);
-	const readingReminderEnabled = useAppStore((s) => s.readingReminderEnabled);
-	const readingReminderMinutes = useAppStore((s) => s.readingReminderMinutes);
-	const setReadingReminderEnabled = useAppStore((s) => s.setReadingReminderEnabled);
-	const setReadingReminderMinutes = useAppStore((s) => s.setReadingReminderMinutes);
-
-	const chapter = chapters[currentChapterIndex];
-	const paragraphs = useMemo(() => {
-		return chapter
-			? splitParagraphs(chapter.content).filter((p) => p.trim() !== "")
-			: [];
-	}, [chapter]);
-
-	// 计算全书总段落数
-	const totalParagraphs = useMemo(() => {
-		return chapters.reduce((acc, ch) => {
-			if (!ch) return acc;
-			return acc + splitParagraphs(ch.content).filter((p) => p.trim() !== "").length;
-		}, 0);
-	}, [chapters]);
-
-	// 计算当前阅读位置（全书范围）
-	const currentGlobalPosition = useMemo(() => {
-		let pos = currentParagraphIndex;
-		for (let i = 0; i < currentChapterIndex; i++) {
-			const chapter = chapters[i];
-			if (chapter) {
-				pos += splitParagraphs(chapter.content).filter((p) => p.trim() !== "").length;
-			}
-		}
-		return pos;
-	}, [currentChapterIndex, currentParagraphIndex, chapters]);
-
-	// 当前章节段落数
-	const currentChapterParagraphs = useMemo(() => {
-		if (!chapter) return 0;
-		return splitParagraphs(chapter.content).filter((p) => p.trim() !== "").length;
-	}, [chapter]);
-
-	// 当前章节阅读进度百分比
-	const readingProgressPercent = useMemo(() => {
-		if (currentChapterParagraphs === 0) return 0;
-		return Math.round((currentParagraphIndex / currentChapterParagraphs) * 100);
-	}, [currentParagraphIndex, currentChapterParagraphs]);
-
-	// 预计剩余时间（分钟）
-	const estimatedRemainingMinutes = useMemo(() => {
-		if (readingTimeElapsed === 0 || currentGlobalPosition === 0) return 0;
-		const paragraphsPerSecond = currentGlobalPosition / (readingTimeElapsed / 1000);
-		const remainingParagraphs = totalParagraphs - currentGlobalPosition;
-		return Math.round((remainingParagraphs / paragraphsPerSecond) / 60);
-	}, [readingTimeElapsed, currentGlobalPosition, totalParagraphs]);
-
-	// 建立过滤后索引到原始索引的映射
-	const paragraphIndexMap = useMemo(() => {
-		return chapter ? buildParagraphIndexMap(chapter.content) : [];
-	}, [chapter]);
-
-	// 建立原始索引到过滤后索引的反向映射
-	const originalToFilteredMap = useMemo(() => {
-		return chapter ? buildOriginalToFilteredMap(chapter.content) : {};
-	}, [chapter]);
+		setShowNewCharacterModal(false);
+		setDetectedNewCharacters([]);
+	}, [currentNovelId, addCharacter]);
 
 	/** 进入编辑模式 */
 	const startEditing = useCallback((index: number, currentText: string) => {
@@ -348,500 +214,7 @@ export function ReaderPanel({
 		paragraphIndexMap,
 	]);
 
-	/** TTS 控制 */
-	const handleTTSToggle = useCallback(() => {
-		if (ttsPlaying) {
-			logger.tts("暂停播放");
-			if (ttsPlayerRef.current) {
-				ttsPlayerRef.current.pause();
-				setTtsPlaying(false);
-			}
-		} else if (isStreamTTSPlaying) {
-			// 情感朗读暂停/恢复
-			if (scriptTTSRef.current) {
-				if (scriptTTSRef.current.getIsPaused()) {
-					scriptTTSRef.current.resume();
-				} else {
-					scriptTTSRef.current.pause();
-				}
-			}
-		} else {
-			// 如果正在等待段落选择模式或流式播放中，先停止
-			if (isStreamTTSWaitingForStart) {
-				setIsStreamTTSWaitingForStart(false);
-			}
-			if (scriptTTSRef.current) {
-				scriptTTSRef.current.stop();
-				scriptTTSRef.current = null;
-				setIsStreamTTSPlaying(false);
-				setEnhancedTTSPreparing(false);
-			}
-			logger.tts("开始播放, 段落数: " + paragraphs.length);
-			if (!ttsPlayerRef.current) {
-				ttsPlayerRef.current = new TTSPlayer(ttsConfig);
-				ttsPlayerRef.current.setOnUpdate((sentences) => {
-					setTtsSentences(sentences);
-					if (ttsPlayerRef.current) {
-						const currentPara = ttsPlayerRef.current.getCurrentParagraphIndex();
-						setTtsHighlightedPara(currentPara);
-					}
-				});
-				ttsPlayerRef.current.setOnComplete(() => {
-					logger.tts("播放完成");
-					setTtsPlaying(false);
-					setTtsHighlightedPara(-1);
-				});
-				ttsPlayerRef.current.loadText(paragraphs);
-				ttsPlayerRef.current.play();
-				setTtsPlaying(true);
-			} else if (ttsPlayerRef.current.getPaused()) {
-				// 如果是暂停状态，恢复播放
-				ttsPlayerRef.current.resume();
-				setTtsPlaying(true);
-			} else {
-				// 重新开始播放
-				ttsPlayerRef.current.updateConfig(ttsConfig);
-				ttsPlayerRef.current.loadText(paragraphs);
-				ttsPlayerRef.current.play();
-				setTtsPlaying(true);
-			}
-		}
-	}, [ttsPlaying, ttsConfig, paragraphs, isStreamTTSWaitingForStart, isStreamTTSPlaying]);
 
-	/** TTS 播放过程中实时更新配置（音色、语速、音量） */
-	useEffect(() => {
-		if (ttsPlaying && ttsPlayerRef.current) {
-			ttsPlayerRef.current.updateConfig(ttsConfig);
-		}
-	}, [ttsConfig, ttsPlaying]);
-
-	/** TTS 上一条 */
-	const handleTTSPrev = useCallback(() => {
-		logger.tts('handleTTSPrev called');
-		logger.tts('ttsPlayerRef exists:', !!ttsPlayerRef.current);
-		logger.tts('scriptTTSRef exists:', !!scriptTTSRef.current);
-		if (ttsPlayerRef.current) {
-			logger.tts('calling ttsPlayerRef.current.skipToPrev()');
-			ttsPlayerRef.current.skipToPrev();
-		} else if (scriptTTSRef.current) {
-			logger.tts('calling scriptTTSRef.current.skipToPrev()');
-			scriptTTSRef.current.skipToPrev();
-		} else {
-			logger.tts('no TTS player available');
-		}
-	}, []);
-
-	/** TTS 下一条 */
-	const handleTTSNext = useCallback(() => {
-		logger.tts('handleTTSNext called');
-		logger.tts('ttsPlayerRef exists:', !!ttsPlayerRef.current);
-		logger.tts('scriptTTSRef exists:', !!scriptTTSRef.current);
-		if (ttsPlayerRef.current) {
-			logger.tts('calling ttsPlayerRef.current.skipToNext()');
-			ttsPlayerRef.current.skipToNext();
-		} else if (scriptTTSRef.current) {
-			logger.tts('calling scriptTTSRef.current.skipToNext()');
-			scriptTTSRef.current.skipToNext();
-		} else {
-			logger.tts('no TTS player available');
-		}
-	}, []);
-
-	/** TTS 停止播放并退出服务 */
-	const handleTTSStop = useCallback(() => {
-		logger.tts('handleTTSStop called - stopping all TTS playback');
-		
-		// 停止流式 TTS
-		if (scriptTTSRef.current) {
-			scriptTTSRef.current.stop();
-			scriptTTSRef.current = null;
-		}
-		
-		// 停止普通 TTS
-		if (ttsPlayerRef.current) {
-			ttsPlayerRef.current.stop();
-			ttsPlayerRef.current = null;
-		}
-		
-		// 重置所有状态
-		setTtsPlaying(false);
-		setTtsHighlightedPara(-1);
-		setIsStreamTTSPlaying(false);
-		setEnhancedTTSPreparing(false);
-		setIsStreamTTSWaitingForStart(false);
-		setCurrentPlayingCharacter(undefined);
-	}, []);
-
-	/** TTS 从指定段落开始播放 */
-	const startTTSFromParagraph = useCallback(
-		(startParaIndex: number) => {
-			if (!ttsPlayerRef.current) {
-				ttsPlayerRef.current = new TTSPlayer(ttsConfig);
-				ttsPlayerRef.current.setOnUpdate((sentences) => {
-					setTtsSentences(sentences);
-					if (ttsPlayerRef.current) {
-						const currentPara = ttsPlayerRef.current.getCurrentParagraphIndex();
-						setTtsHighlightedPara(currentPara);
-					}
-				});
-				ttsPlayerRef.current.setOnComplete(() => {
-					setTtsPlaying(false);
-					setTtsHighlightedPara(-1);
-				});
-			}
-
-			ttsPlayerRef.current.updateConfig(ttsConfig);
-			ttsPlayerRef.current.loadText(paragraphs);
-			const filteredParaIndex = originalToFilteredMap[startParaIndex] ?? 0;
-			const startIndex = ttsPlayerRef.current.findSentenceIndexByParagraph(filteredParaIndex);
-			if (startIndex >= 0) {
-				ttsPlayerRef.current.skipTo(startIndex);
-				ttsPlayerRef.current.play();
-			} else {
-				ttsPlayerRef.current.play();
-			}
-			setTtsPlaying(true);
-		},
-		[ttsConfig, paragraphs, originalToFilteredMap],
-	);
-	
-	/** 根据角色信息获取音色 */
-	const getVoiceForCharacter = useCallback((characterName: string): string => {
-		if (!currentNovelId) return ttsConfig.voice || "冰糖";
-
-		const characters = getCharacters(currentNovelId);
-		let matchedCharacter: CharacterInfo | undefined;
-
-		// 首先尝试精确匹配角色名
-		matchedCharacter = characters.find(
-			(c) => c.name.toLowerCase() === characterName.toLowerCase()
-		);
-
-		// 如果没有匹配到，尝试通过别称匹配（特别是"我"）
-		if (!matchedCharacter) {
-			matchedCharacter = characters.find(
-				(c) => c.aliases?.some(alias => alias.toLowerCase() === characterName.toLowerCase())
-			);
-		}
-
-		// 如果找到匹配的角色且有设置音色，使用该音色
-		if (matchedCharacter?.voice) {
-			return matchedCharacter.voice;
-		}
-
-		// 否则使用默认音色
-		return ttsConfig.voice || "冰糖";
-	}, [currentNovelId, getCharacters, ttsConfig.voice]);
-
-	/** 根据角色信息获取音色描述（用于 mimo-v2.5-tts-voicedesign 模型） */
-	const getVoiceDesignPromptForCharacter = useCallback((characterName: string): string | undefined => {
-		if (!currentNovelId) return undefined;
-
-		const characters = getCharacters(currentNovelId);
-		let matchedCharacter: CharacterInfo | undefined;
-
-		// 首先尝试精确匹配角色名
-		matchedCharacter = characters.find(
-			(c) => c.name.toLowerCase() === characterName.toLowerCase()
-		);
-
-		// 如果没有匹配到，尝试通过别称匹配（特别是"我"）
-		if (!matchedCharacter) {
-			matchedCharacter = characters.find(
-				(c) => c.aliases?.some(alias => alias.toLowerCase() === characterName.toLowerCase())
-			);
-		}
-
-		// 如果找到匹配的角色且有设置音色描述（小砖备注），使用该描述
-		if (matchedCharacter?.notes && matchedCharacter.notes.trim()) {
-			return matchedCharacter.notes.trim();
-		}
-
-		return undefined;
-	}, [currentNovelId, getCharacters]);
-
-	/** 分析单个段落的情感 */
-	const analyzeParagraphEmotion = useCallback(async (
-		paraIndex: number,
-		paraText: string,
-		allParagraphs: string[]
-	): Promise<ParagraphEmotionResult | null> => {
-		if (!aiConfig.apiKey) return null;
-
-		// 获取上下文
-		const contextBefore = paraIndex > 0 ? allParagraphs[paraIndex - 1] : '';
-		const contextAfter = paraIndex < allParagraphs.length - 1 ? allParagraphs[paraIndex + 1] : '';
-
-		// 获取已配置的角色信息
-		const configuredCharacters = currentNovelId ? getCharacters(currentNovelId).map(c => ({
-			name: c.name,
-			aliases: c.aliases || [],
-			voice: c.voice,
-			role: c.role,
-			relationTerms: c.relationTerms || []
-		})) : [];
-
-		try {
-			const messages: ChatMessage[] = [
-				{ role: 'system', content: promptConfig.readingModeTts || READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT },
-				{ role: 'user', content: buildReadingModeTTSEnhanceUserPrompt(paraText, contextBefore, contextAfter, configuredCharacters) }
-			];
-
-			const response = await sendChatCompletion(messages, aiConfig);
-
-			// 解析JSON响应
-			const jsonMatch = response.match(/\{[\s\S]*\}/);
-			if (jsonMatch) {
-				const result = JSON.parse(jsonMatch[0]) as ParagraphEmotionResult;
-				logger.tts(`段落${paraIndex} AI响应解析结果`, { characters: result.characters, segments: result.segments.map(s => s.speaker) });
-				return result;
-			} else {
-				logger.tts(`段落${paraIndex} AI响应无法解析JSON`, { response: response.slice(0, 100) });
-			}
-			return null;
-		} catch (error) {
-			logger.tts(`段落${paraIndex}情感分析失败: ${(error as Error).message}`);
-			return null;
-		}
-	}, [aiConfig, currentNovelId, getCharacters, promptConfig.readingModeTts]);
-
-	/** 添加检测到的新角色到角色列表 */
-	const handleAddNewCharacters = useCallback((names: string[]) => {
-		if (!currentNovelId) {
-			logger.tts("无法添加角色：currentNovelId 为空");
-			return;
-		}
-		logger.tts(`开始添加 ${names.length} 个新角色`, { novelId: currentNovelId, names });
-		names.forEach(name => {
-			logger.tts(`添加角色: ${name}`, { novelId: currentNovelId });
-			addCharacter(currentNovelId, {
-				name,
-				gender: "other",
-				notes: "自动检测创建",
-				voice: "",
-				aliases: [],
-				relationTerms: [],
-			});
-			logger.tts(`已添加新角色: ${name}`);
-		});
-		setShowNewCharacterModal(false);
-		setDetectedNewCharacters([]);
-	}, [currentNovelId, addCharacter]);
-
-	/** 流式TTS增强播放 - 分析完一个段落立即提交TTS */
-	const handleEnhancedChapterTTS = useCallback(async (startFromParagraph?: number) => {
-		if (!ttsConfig.apiKey) {
-			logger.tts("请先配置TTS API Key");
-			return;
-		}
-		if (!aiConfig.apiKey) {
-			logger.tts("请先配置AI API Key");
-			return;
-		}
-		if (!chapter) return;
-
-		// 先停止当前播放
-		if (ttsPlayerRef.current && ttsPlaying) {
-			ttsPlayerRef.current.pause();
-			setTtsPlaying(false);
-			setTtsHighlightedPara(-1);
-		}
-		// 停止任何已有的流式播放
-		if (scriptTTSRef.current) {
-			scriptTTSRef.current.stop();
-			scriptTTSRef.current = null;
-		}
-
-		setEnhancedTTSPreparing(true);
-		setIsStreamTTSPlaying(true);
-		setIsStreamTTSWaitingForStart(false);
-
-		try {
-			const startPara = startFromParagraph ?? 0;
-			logger.tts(`开始流式AI情感增强处理... 起始段落: ${startPara}`);
-
-			// 获取所有段落
-			const allParagraphs = splitParagraphs(chapter.content).filter((p) => p.trim() !== "");
-			const allCharacters = new Set<string>();
-			const newCache = new Map<number, ParagraphEmotionResult>();
-
-			// 获取旁白角色名称（检查 role、aliases、relationTerms）
-			const allNovelCharacters = currentNovelId ? getCharacters(currentNovelId) : [];
-			const narratorCharacter = allNovelCharacters.find(c => 
-				c.role === 'narrator' || 
-				c.aliases?.some(a => a.includes('旁白')) ||
-				c.relationTerms?.some(r => r.includes('旁白'))
-			);
-			const narratorName = narratorCharacter?.name || '旁白';
-			logger.tts(`旁白角色: ${narratorName}`);
-
-			// 为每个角色分配音色
-			const characterVoices: Record<string, string> = { ...ttsConfig.characterVoices };
-
-			// 创建 ScriptTTSPlayer 来支持流式角色音色
-			const customTTSConfig = {
-				...ttsConfig,
-				characterVoices,
-			};
-
-			const scriptTTS = new ScriptTTSPlayer(customTTSConfig);
-			scriptTTSRef.current = scriptTTS;
-			scriptTTS.setOnUpdate(() => {
-				if (scriptTTSRef.current) {
-					const currentDialogueIndex = scriptTTSRef.current.getCurrentIndex();
-					const currentPara = scriptTTSRef.current.getCurrentParagraphIndex();
-					const dialogues = scriptTTSRef.current.getDialogues();
-					const currentDialogue = dialogues[currentDialogueIndex];
-					const currentCharacter = currentDialogue?.character;
-					logger.tts(`[情感朗读] 正在播放对话: ${currentDialogueIndex}, 角色: ${currentCharacter}, 正在高亮段落: ${currentPara}`);
-					setTtsHighlightedPara(currentPara);
-					setCurrentPlayingCharacter(currentCharacter);
-				}
-			});
-			scriptTTS.setOnComplete(() => {
-				logger.tts("流式播放完成");
-				setIsStreamTTSPlaying(false);
-				setTtsHighlightedPara(-1);
-				setEnhancedTTSPreparing(false);
-				setCurrentPlayingCharacter(undefined);
-				scriptTTSRef.current = null;
-			});
-
-			// 逐段分析并流式添加（从指定段落开始）
-			for (let i = startPara; i < allParagraphs.length; i++) {
-				const paraText = allParagraphs[i];
-
-				// 检查缓存
-				const cachedResult = paragraphEmotionCache.get(i);
-				if (cachedResult && cachedResult.segments && cachedResult.segments.length > 0) {
-					logger.tts(`段落${i}使用缓存`);
-					// 流式添加缓存的segments
-					for (const segment of cachedResult.segments) {
-						// 将"旁白"替换为旁白角色名称
-						const actualSpeaker = segment.speaker === '旁白' ? narratorName : segment.speaker;
-						// 确保角色有音色
-						if (!characterVoices[actualSpeaker]) {
-							characterVoices[actualSpeaker] = getVoiceForCharacter(actualSpeaker);
-						}
-						const voiceDesignPrompt = getVoiceDesignPromptForCharacter(actualSpeaker);
-						await scriptTTS.addDialogueStream(actualSpeaker, segment.text, i, voiceDesignPrompt);
-					}
-					cachedResult.characters.forEach(c => allCharacters.add(c));
-					newCache.set(i, cachedResult);
-					continue;
-				}
-
-				// 分析段落情感
-				logger.tts(`分析段落${i}...`);
-				const result = await analyzeParagraphEmotion(i, paraText, allParagraphs);
-
-				if (result && result.segments && result.segments.length > 0) {
-					logger.tts(`段落${i}情感分析返回`, { characters: result.characters, segmentsCount: result.segments.length });
-					// 流式添加segments，立即开始TTS生成
-					for (const segment of result.segments) {
-						// 将"旁白"替换为旁白角色名称
-						const actualSpeaker = segment.speaker === '旁白' ? narratorName : segment.speaker;
-						logger.tts(`段落${i}处理segment`, { speaker: actualSpeaker });
-						// 确保角色有音色
-						if (!characterVoices[actualSpeaker]) {
-							characterVoices[actualSpeaker] = getVoiceForCharacter(actualSpeaker);
-						}
-						const voiceDesignPrompt = getVoiceDesignPromptForCharacter(actualSpeaker);
-						logger.tts(`段落${i}流式添加对话`, { speaker: actualSpeaker, voiceDesign: !!voiceDesignPrompt, text: segment.text.slice(0, 30) + "..." });
-						await scriptTTS.addDialogueStream(actualSpeaker, segment.text, i, voiceDesignPrompt);
-						logger.tts(`段落${i}对话添加完成`, { speaker: actualSpeaker });
-					}
-					logger.tts(`段落${i}添加角色到集合`, { before: Array.from(allCharacters), newChars: result.characters });
-					result.characters.forEach(c => allCharacters.add(c));
-					// 兜底：如果 characters 为空但有 segments，也添加 segments 中的说话者
-					if (result.characters.length === 0 && result.segments.length > 0) {
-						const speakersFromSegments = result.segments.map(s => s.speaker).filter(s => s !== "旁白");
-						speakersFromSegments.forEach(s => allCharacters.add(s));
-						logger.tts(`段落${i}从segments兜底添加角色`, { speakers: speakersFromSegments });
-					}
-					logger.tts(`段落${i}添加后集合`, { after: Array.from(allCharacters) });
-					newCache.set(i, result);
-				} else {
-					// 如果分析失败，使用原文作为旁白
-					// 确保旁白角色有音色
-					if (!characterVoices[narratorName]) {
-						characterVoices[narratorName] = getVoiceForCharacter(narratorName);
-					}
-					await scriptTTS.addDialogueStream(narratorName, paraText, i);
-				}
-			}
-
-			// 更新缓存
-			setParagraphEmotionCache(newCache);
-
-			// 标记流式添加完成，这样音频队列处理器才知道所有对话都已添加
-			scriptTTS.markStreamComplete();
-
-			const detectedChars = Array.from(allCharacters);
-			logger.tts("流式AI情感增强完成", {
-				totalParagraphs: allParagraphs.length,
-				characters: detectedChars
-			});
-
-			// 检测陌生角色
-			if (currentNovelId && detectedChars.length > 0) {
-				const existingCharacters = getCharacters(currentNovelId);
-				const existingNames = new Set(existingCharacters.map(c => c.name.toLowerCase()));
-				const existingAliases = new Set(existingCharacters.flatMap(c => (c.aliases || []).map(a => a.toLowerCase())));
-
-				const newChars = detectedChars.filter(name => {
-					const lowerName = name.toLowerCase();
-					return !existingNames.has(lowerName) && !existingAliases.has(lowerName) && name !== narratorName;
-				});
-
-				if (newChars.length > 0) {
-					logger.tts(`检测到 ${newChars.length} 个新角色`, { newChars });
-					setDetectedNewCharacters(newChars);
-					setShowNewCharacterModal(true);
-				}
-			}
-
-		} catch (error) {
-			logger.tts("流式TTS增强播放失败: " + (error as Error).message);
-			setIsStreamTTSPlaying(false);
-			setEnhancedTTSPreparing(false);
-			scriptTTSRef.current = null;
-		}
-	}, [chapter, ttsConfig, aiConfig, ttsPlaying, getVoiceForCharacter, paragraphEmotionCache, analyzeParagraphEmotion, getCharacters, currentNovelId, getVoiceDesignPromptForCharacter]);
-
-	/** 进入流式AI情感增强的"等待选择段落"模式 */
-	const handleEnterStreamTTSSelectionMode = useCallback(() => {
-		if (isStreamTTSWaitingForStart) {
-			setIsStreamTTSWaitingForStart(false);
-			return;
-		}
-		if (!ttsConfig.apiKey) {
-			logger.tts("请先配置TTS API Key");
-			return;
-		}
-		if (!aiConfig.apiKey) {
-			logger.tts("请先配置AI API Key");
-			return;
-		}
-		if (!chapter) return;
-
-		// 停止所有正在播放的音频
-		if (ttsPlayerRef.current) {
-			ttsPlayerRef.current.stop();
-			ttsPlayerRef.current = null;
-			setTtsPlaying(false);
-			setTtsHighlightedPara(-1);
-		}
-		if (scriptTTSRef.current) {
-			scriptTTSRef.current.stop();
-			scriptTTSRef.current = null;
-			setIsStreamTTSPlaying(false);
-			setEnhancedTTSPreparing(false);
-		}
-
-		setIsStreamTTSWaitingForStart(true);
-		logger.tts("进入情感朗读段落选择模式，请点击段落开始朗读");
-	}, [isStreamTTSWaitingForStart, ttsConfig.apiKey, aiConfig.apiKey, chapter, ttsPlayerRef, scriptTTSRef]);
 
 	/** textarea 键盘事件：Ctrl+Enter 保存，Escape 取消 */
 	const cancelEditing = useCallback(() => {
@@ -863,29 +236,13 @@ export function ReaderPanel({
 	// 阅读计时器
 	useEffect(() => {
 		if (readingMode) {
-			readingStartTimeRef.current = Date.now();
-			readingTimerRef.current = window.setInterval(() => {
-				setReadingTimeElapsed((prev) => {
-					const newElapsed = prev + 1000;
-					// 检查阅读时长提醒
-					if (readingReminderEnabled) {
-						const minutesElapsed = Math.floor(newElapsed / 60000);
-						if (minutesElapsed > 0 && minutesElapsed % readingReminderMinutes === 0) {
-							setShowReadingReminder(true);
-						}
-					}
-					return newElapsed;
-				});
-			}, 1000);
+			startReadingTimer(readingReminderEnabled, readingReminderMinutes);
 		}
 
 		return () => {
-			if (readingTimerRef.current) {
-				clearInterval(readingTimerRef.current);
-				readingTimerRef.current = null;
-			}
+			stopReadingTimer();
 		};
-	}, [readingMode, readingReminderEnabled, readingReminderMinutes]);
+	}, [readingMode, readingReminderEnabled, readingReminderMinutes, startReadingTimer, stopReadingTimer]);
 
 	/** textarea 内容变化时自动撑高 */
 	const handleTextareaInput = useCallback(
@@ -983,77 +340,7 @@ export function ReaderPanel({
 		}
 	}, [applyAnimation, scrollToParagraph]);
 
-	/** 执行搜索 */
-	const performSearch = useCallback((query: string) => {
-		if (!query.trim()) {
-			setSearchResults([]);
-			return;
-		}
-		logger.search(`搜索: "${query}"`);
-		const results: typeof searchResults = [];
-		const lowerQuery = query.toLowerCase();
-		paragraphs.forEach((para, filteredIndex) => {
-			// 获取原始段落索引（用于行号显示和滚动定位）
-			const originalIndex = paragraphIndexMap[filteredIndex];
-			let startIndex = 0;
-			const lowerPara = para.toLowerCase();
-			while (startIndex < lowerPara.length) {
-				const matchIndex = lowerPara.indexOf(lowerQuery, startIndex);
-				if (matchIndex === -1) break;
-				results.push({
-					paraIndex: originalIndex,
-					matchStart: matchIndex,
-					matchEnd: matchIndex + query.length,
-					text: para.slice(Math.max(0, matchIndex - 20), matchIndex) + "【" + para.slice(matchIndex, matchIndex + query.length) + "】" + para.slice(matchIndex + query.length, Math.min(para.length, matchIndex + query.length + 20)),
-				});
-				startIndex = matchIndex + 1;
-			}
-		});
-		setSearchResults(results);
-		setCurrentMatchIndex(results.length > 0 ? 0 : -1);
-		logger.search(`搜索完成, 找到 ${results.length} 个匹配`);
-	}, [paragraphs, paragraphIndexMap]);
 
-	/** 点击搜索结果：跳转并关闭 */
-	const handleSearchResultClick = useCallback((index: number) => {
-		setCurrentMatchIndex(index);
-		const match = searchResults[index];
-		if (match) {
-			setHighlightedParagraph(match.paraIndex);
-		}
-		setShowSearch(false);
-		setSearchResults([]);
-		setCurrentMatchIndex(0);
-		setSearchQuery("");
-	}, [searchResults, setHighlightedParagraph]);
-
-	/** 搜索导航：上一个 */
-	const prevMatch = useCallback(() => {
-		if (searchResults.length === 0) return;
-		setCurrentMatchIndex((prev) => {
-			const newIndex = prev > 0 ? prev - 1 : searchResults.length - 1;
-			setHighlightedParagraph(searchResults[newIndex].paraIndex);
-			return newIndex;
-		});
-	}, [searchResults, setHighlightedParagraph]);
-
-	/** 搜索导航：下一个 */
-	const nextMatch = useCallback(() => {
-		if (searchResults.length === 0) return;
-		setCurrentMatchIndex((prev) => {
-			const newIndex = prev < searchResults.length - 1 ? prev + 1 : 0;
-			setHighlightedParagraph(searchResults[newIndex].paraIndex);
-			return newIndex;
-		});
-	}, [searchResults, setHighlightedParagraph]);
-
-	/** 关闭搜索 */
-	const closeSearch = useCallback(() => {
-		setShowSearch(false);
-		setSearchResults([]);
-		setCurrentMatchIndex(0);
-		setSearchQuery("");
-	}, []);
 
 	useEffect(() => {
 		const container = containerRef.current;
@@ -1063,7 +350,7 @@ export function ReaderPanel({
 		// 清除段落情感缓存，避免不同章节之间的缓存混淆
 		setParagraphEmotionCache(new Map());
 		logger.tts("切换章节，清除段落情感缓存");
-	}, [currentChapterIndex]);
+	}, [currentChapterIndex, setParagraphEmotionCache]);
 
 	// 阅读模式下，监听滚动自动更新阅读进度
 	useEffect(() => {
@@ -1109,7 +396,7 @@ export function ReaderPanel({
 			clearTimeout(observerTimer);
 			observer.disconnect();
 		};
-	}, [readingMode, currentChapterIndex, paragraphIndexMap]);
+	}, [readingMode, currentChapterIndex, paragraphIndexMap, setCurrentParagraphIndex]);
 
 	// 滑动翻页功能
 	const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -1445,7 +732,6 @@ export function ReaderPanel({
 							}}
 							className={`reader-paragraph${readingMode ? " reading-mode" : ""}${highlightedParagraph === originalIndex && !readingMode ? " highlighted" : ""}${isTTSHighlighted ? " tts-highlighted" : ""}${animClass}${isEditing ? " editing" : ""}${isStreamTTSWaitingForStart && readingMode ? " clickable-para" : ""}`}
 							onClick={() => {
-								// 如果是滚动操作，不触发点击事件
 								if (isScrolling.current) return;
 								if (!isEditing) {
 									if (readingMode) {
@@ -1459,11 +745,7 @@ export function ReaderPanel({
 										setHighlightedParagraph(originalIndex);
 									}
 								}
-								// 更新阅读进度
-								setCurrentParagraphIndex(filteredIndex);
-								if (currentNovelId) {
-									saveReadingProgress(currentNovelId, currentChapterIndex, filteredIndex);
-								}
+								readingProgress.handleParagraphClick(filteredIndex);
 							}}
 							onDoubleClick={() => {
 								if (!isEditing && !readingMode) startEditing(filteredIndex, para);
@@ -2032,9 +1314,9 @@ export function ReaderPanel({
 									{chapters.map((ch, index) => {
 										const isActive = index === currentChapterIndex;
 										const hasNoTitle = !ch.title || /^第[\d一二三四五六七八九十]+[章回]$/.test(ch.title);
-										const isSuggesting = suggestingChapterIndex === index;
-										const showSuggestions = suggestingChapterId === ch.id && chapterTitleSuggestions.length > 0;
-										
+										const isSuggestingLocal = suggestingId === ch.id;
+										const showSuggestionsLocal = suggestingId === ch.id && (chapterTitleSuggestions[ch.id]?.length ?? 0) > 0;
+
 										return (
 											<div key={ch.id}>
 												<div
@@ -2054,15 +1336,15 @@ export function ReaderPanel({
 															className="suggest-title-btn"
 															onClick={(e) => {
 																e.stopPropagation();
-																handleSuggestChapterTitle(index);
+																handleSuggestChapterTitle(ch.id, index);
 															}}
-															disabled={isSuggesting}
+															disabled={isSuggestingLocal}
 														>
 															<Icons.sparkle size={14} />
 														</button>
 													)}
 												</div>
-												{showSuggestions && (
+												{showSuggestionsLocal && (
 													<div className="chapter-title-suggestions">
 														<div className="suggestions-header">
 															<span>AI推荐章节名</span>
@@ -2070,20 +1352,19 @@ export function ReaderPanel({
 																className="close-suggestions"
 																onClick={(e) => {
 																	e.stopPropagation();
-																	setChapterTitleSuggestions([]);
-																	setSuggestingChapterId(null);
+																	chapterTitleSuggestion.handleCloseSuggestions(ch.id);
 																}}
 															>
 																<Icons.x size={14} />
 															</button>
 														</div>
-														{chapterTitleSuggestions.map((title, idx) => (
+														{(chapterTitleSuggestions[ch.id] || []).map((title, idx) => (
 															<button
 																key={idx}
 																className="suggestion-item"
 																onClick={(e) => {
 																	e.stopPropagation();
-																	handleApplyChapterTitle(index, title);
+																	handleApplyChapterTitle(ch.id, title);
 																}}
 															>
 																{title}
@@ -2137,7 +1418,8 @@ export function ReaderPanel({
 									}}
 									onKeyDown={(e) => {
 										if (e.key === "Enter") {
-											nextMatch();
+											const idx = nextMatch();
+											if (idx !== null) setHighlightedParagraph(idx);
 										} else if (e.key === "Escape") {
 											closeSearch();
 										}
@@ -2160,11 +1442,17 @@ export function ReaderPanel({
 								{searchResults.length > 0 ? `${currentMatchIndex + 1}/${searchResults.length}` : searchQuery ? "无匹配" : ""}
 							</span>
 						</div>
-						<div className="search-nav">
-							<button className="search-nav-btn" onClick={prevMatch} disabled={searchResults.length === 0} title="上一个">
+								<div className="search-nav">
+							<button className="search-nav-btn" onClick={() => {
+								const idx = prevMatch();
+								if (idx !== null) setHighlightedParagraph(idx);
+							}} disabled={searchResults.length === 0} title="上一个">
 								<Icons.chevronUp size={16} />
 							</button>
-							<button className="search-nav-btn" onClick={nextMatch} disabled={searchResults.length === 0} title="下一个">
+							<button className="search-nav-btn" onClick={() => {
+								const idx = nextMatch();
+								if (idx !== null) setHighlightedParagraph(idx);
+							}} disabled={searchResults.length === 0} title="下一个">
 								<Icons.chevronDown size={16} />
 							</button>
 						</div>
@@ -2173,7 +1461,10 @@ export function ReaderPanel({
 								<div
 									key={index}
 									className={`search-result-item${index === currentMatchIndex ? " current" : ""}`}
-									onClick={() => handleSearchResultClick(index)}
+									onClick={() => {
+										const idx = handleSearchResultClick(index);
+										if (idx !== null) setHighlightedParagraph(idx);
+									}}
 								>
 									{result.text}
 								</div>

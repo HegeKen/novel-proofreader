@@ -1,6 +1,6 @@
 import type { TTSConfig } from "../stores/configStore";
 import { logger } from "./logger";
-import { useAppStore } from "../stores/appStore";
+import { useAppMetaStore } from "../stores/appMetaStore";
 
 interface AudioCacheEntry {
 	audioBuffer: ArrayBuffer;
@@ -303,7 +303,7 @@ export async function synthesizeSpeech(
 	if (!response.ok) {
 		const errorText = await response.text();
 		logger.errorGeneric("TTS API 请求失败", { status: response.status, error: errorText, elapsed });
-		useAppStore.getState().incrementAPIUsage("mimo", false);
+		useAppMetaStore.getState().incrementAPIUsage("mimo", false);
 		throw new Error(`TTS API 错误: ${response.status} - ${errorText}`);
 	}
 
@@ -325,18 +325,18 @@ export async function synthesizeSpeech(
 
 	if (data.error) {
 		logger.errorGeneric("TTS 错误", { error: data.error });
-		useAppStore.getState().incrementAPIUsage("mimo", false);
+		useAppMetaStore.getState().incrementAPIUsage("mimo", false);
 		throw new Error(`TTS 错误: ${data.error.message}`);
 	}
 
 	const audioData = data.choices?.[0]?.message?.audio?.data;
 	if (!audioData) {
 		logger.warn("TTS 响应缺少 audio 字段");
-		useAppStore.getState().incrementAPIUsage("mimo", false);
+		useAppMetaStore.getState().incrementAPIUsage("mimo", false);
 		throw new Error("TTS 响应中缺少 audio 字段");
 	}
 
-	useAppStore.getState().incrementAPIUsage("mimo", true);
+	useAppMetaStore.getState().incrementAPIUsage("mimo", true);
 
 	logger.tts("TTS 音频数据", { audioDataLength: audioData.length });
 	const binaryString = atob(audioData);
@@ -414,7 +414,7 @@ export async function synthesizeSpeechWithVoice(
 	if (!response.ok) {
 		const errorText = await response.text();
 		logger.errorGeneric("TTS API 请求失败", { status: response.status, error: errorText, elapsed });
-		useAppStore.getState().incrementAPIUsage("mimo", false);
+		useAppMetaStore.getState().incrementAPIUsage("mimo", false);
 		throw new Error(`TTS API 错误: ${response.status} - ${errorText}`);
 	}
 
@@ -436,18 +436,18 @@ export async function synthesizeSpeechWithVoice(
 
 	if (data.error) {
 		logger.errorGeneric("TTS 错误", { error: data.error });
-		useAppStore.getState().incrementAPIUsage("mimo", false);
+		useAppMetaStore.getState().incrementAPIUsage("mimo", false);
 		throw new Error(`TTS 错误: ${data.error.message}`);
 	}
 
 	const audioData = data.choices?.[0]?.message?.audio?.data;
 	if (!audioData) {
 		logger.warn("TTS 响应缺少 audio 字段");
-		useAppStore.getState().incrementAPIUsage("mimo", false);
+		useAppMetaStore.getState().incrementAPIUsage("mimo", false);
 		throw new Error("TTS 响应中缺少 audio 字段");
 	}
 
-	useAppStore.getState().incrementAPIUsage("mimo", true);
+	useAppMetaStore.getState().incrementAPIUsage("mimo", true);
 
 	logger.tts("TTS 音频数据", { audioDataLength: audioData.length });
 	const binaryString = atob(audioData);
@@ -576,9 +576,9 @@ export class TTSPlayer {
 		this.onComplete = callback;
 	}
 
-	async loadText(text: string): Promise<void>;
-	async loadText(paragraphs: string[]): Promise<void>;
-	async loadText(textOrParagraphs: string | string[]): Promise<void> {
+	async loadText(text: string, startParaIndex?: number): Promise<void>;
+	async loadText(paragraphs: string[], startParaIndex?: number): Promise<void>;
+	async loadText(textOrParagraphs: string | string[], startParaIndex: number = 0): Promise<void> {
 		if (typeof textOrParagraphs === "string") {
 			const rawSentences = splitTextIntoSentences(textOrParagraphs);
 			this.sentences = rawSentences.map((text, index) => ({
@@ -588,6 +588,7 @@ export class TTSPlayer {
 				isPlaying: false,
 				isCompleted: false,
 			}));
+			this.currentIndex = startParaIndex === 0 ? 0 : Math.min(startParaIndex, this.sentences.length - 1);
 		} else {
 			const paragraphs = textOrParagraphs;
 			const sentences: TTSSentence[] = [];
@@ -606,8 +607,13 @@ export class TTSPlayer {
 				}
 			}
 			this.sentences = sentences;
+			if (startParaIndex > 0) {
+				this.currentIndex = sentences.findIndex(s => s.paragraphIndex >= startParaIndex);
+				if (this.currentIndex < 0) this.currentIndex = 0;
+			} else {
+				this.currentIndex = 0;
+			}
 		}
-		this.currentIndex = 0;
 		this.isPlaying = false;
 		this.isPaused = false;
 		logger.tts("加载文本", { sentenceCount: this.sentences.length, type: typeof textOrParagraphs === "string" ? "string" : "paragraphs" });

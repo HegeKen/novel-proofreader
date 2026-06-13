@@ -8,7 +8,7 @@
 - 📖 **纯阅读模式** — 沉浸式阅读体验，支持调节字体、背景、行间距、首行缩进、自定义背景图
 - 👥 **角色分析 & 关系图谱** — AI 自动分析整本小说，提取角色人物小传和关系图谱，支持可视化拖拽展示
 - 🎬 **剧本转换** — 一键将小说段落转换为剧本格式，支持自定义改编指令
-- 🎙️ **TTS 情感朗读** — AI 自动为对话添加情感/音色标注，支持流式边生成边播放
+- 🎙️ **TTS 情感朗读** — AI 自动为对话添加情感/音色标注，支持流式边生成边播放，含角色音色设计
 - 📚 **分卷支持** — 自动识别「第X卷」等分卷结构，支持折叠/展开导航
 - 🏠 **主页 & 版本检测** — 启动页展示更新日志，自动检测新版本，支持 GitHub 镜像源多平台下载
 - 📱 **多端支持** — Windows / macOS / Linux 桌面端 + Android 移动端
@@ -16,6 +16,8 @@
 - 🔄 **碎片化处理** — 突破大模型上下文限制，逐段、逐章处理超长文本，适合校对数百万字的网络小说
 - 🔎 **全局搜索** — 跨章节搜索小说内容，支持结果定位跳转（Cmd/Ctrl+F）
 - 📝 **忽略单词管理** — 支持管理校对时需要跳过的单词（人名、地名、特殊术语）
+- 🎭 **角色音色设计** — AI 根据角色小传自动生成音色描述（含地域/方言特征），用于 TTS 情感朗读
+- 🧪 **AI 连接测试** — 支持自定义测试文本，实时验证 API 连通性与响应速度
 
 ## 功能特性
 
@@ -91,6 +93,7 @@
 ### 🎙️ TTS 情感朗读
 - **AI 情感/音色标注**：自动为对话添加情感（开心、悲伤、愤怒等）和音色标签，提升 TTS 表现力
 - **音色设计模型支持**：支持自定义音色设计，优化语音差异化体验
+- **角色音色设计**：AI 根据角色人物小传自动生成音色设计描述，包含地域特征、方言特征等信息
 - **流式播放**：支持边生成边播放，音频队列机制实现平滑的连续播放体验
 - **段落跳转**：支持上一段/下一段跳转，切换章节时自动重置段落索引
 - **播放控制**：支持播放中断和恢复
@@ -99,6 +102,7 @@
 ### ⚙️ AI 配置
 - 支持 OpenAI 兼容接口（OpenAI、DeepSeek、通义千问、Ollama、SiliconFlow、Mimo 等）
 - 可配置：API Base URL、API Key、模型名称、自定义请求头
+- **AI 连接测试**：支持自定义测试文本，实时验证 API 连通性与响应速度
 - API Key 支持显示/隐藏切换
 - 配置持久化保存在本地
 
@@ -139,7 +143,7 @@ novel-proofreader/
 │   │   ├── ProofreadPanel.tsx        # 右侧校对区
 │   │   ├── ProofreadQueuePanel.tsx   # 校对任务队列
 │   │   ├── TaskPanel.tsx             # 剧本转换面板
-│   │   ├── ConfigModal.tsx           # AI 配置弹窗（含自定义 Prompt）
+│   │   ├── ConfigModal.tsx           # AI 配置弹窗入口
 │   │   ├── CharacterSettings.tsx     # 角色管理 & AI 角色分析
 │   │   ├── RelationshipGraph.tsx     # 角色关系图可视化
 │   │   ├── GlobalSearch.tsx          # 全局搜索
@@ -150,16 +154,34 @@ novel-proofreader/
 │   │   ├── Toast.tsx                 # Toast 消息提示组件
 │   │   ├── Select.tsx                # 自定义下拉选择组件
 │   │   └── Icons.tsx                 # Lucide 图标封装
+│   │   └── config/                   # 配置弹窗子面板
+│   │       ├── AITestSection.tsx     # AI 连接测试
+│   │       ├── APIUsageSection.tsx   # API 用量统计
+│   │       ├── DataManagementSection.tsx  # 数据管理
+│   │       ├── PromptSettingsSection.tsx   # 自定义 Prompt 配置
+│   │       ├── ProofreadSettingsSection.tsx # 校对设置
+│   │       └── TTSConfigSection.tsx  # TTS 语音配置
 │   ├── hooks/
 │   │   ├── useFileImport.ts          # 文件导入
 │   │   ├── useAICheck.ts             # AI 校对逻辑
 │   │   ├── useScriptTask.ts          # 剧本转换逻辑
+│   │   ├── useTTS.ts                 # TTS 情感朗读
+│   │   ├── useAppUpdate.ts           # 应用更新检测
+│   │   ├── useChapterTitleSuggestion.ts  # AI 章节名推荐
+│   │   ├── useReadingProgress.ts     # 阅读进度管理
+│   │   ├── useSearch.ts              # 全局搜索逻辑
 │   │   ├── useMobile.ts              # 移动端状态管理
 │   │   └── useSwipeGesture.ts        # 移动端滑动手势
 │   ├── stores/
-│   │   ├── appStore.ts               # 全局状态（小说、章节、角色、关系图）
+│   │   ├── appStore.ts               # 全局状态聚合入口
+│   │   ├── novelStore.ts             # 小说/章节状态
+│   │   ├── characterStore.ts         # 角色状态
 │   │   ├── configStore.ts            # AI / TTS / Prompt 配置状态
-│   │   └── proofreadStore.ts         # 校对结果状态
+│   │   ├── aiConfigStore.ts          # AI 连接配置
+│   │   ├── uiStore.ts                # UI 状态（弹窗等）
+│   │   ├── proofreadStore.ts         # 校对结果状态
+│   │   ├── proofreadMetaStore.ts     # 校对元数据
+│   │   └── appMetaStore.ts           # 应用元数据
 │   ├── types/
 │   │   └── index.ts                  # TypeScript 类型定义
 │   ├── utils/
@@ -171,20 +193,24 @@ novel-proofreader/
 │   │   ├── ttsService.ts             # TTS 语音合成 & 音频队列
 │   │   ├── githubApi.ts              # GitHub Release API & 镜像源下载
 │   │   ├── logger.ts                 # 可开关的日志系统
-│   │   ├── secureStorage.ts          # 安全存储工具
+│   │   ├── secureStorage.ts          # 安全存储工具（AES-GCM）
 │   │   ├── scrollUtils.ts            # 滚动工具
 │   │   ├── mobile.ts                 # 移动端判断函数
 │   │   ├── typeGuards.ts             # 类型守卫
 │   │   ├── decodeText.ts             # 文本编码检测
 │   │   └── urlParams.ts              # URL 参数解析
 │   ├── App.css                       # 全局样式（CSS Variables + 组件样式）
-│   ├── main.tsx                      # 入口文件
+│   ├── App.tsx                       # Tauri 入口组件（路由/全局布局）
+│   ├── main.tsx                      # 应用入口文件
 │   └── vite-env.d.ts                 # Vite 类型声明
 ├── src-tauri/                        # Tauri Rust 后端
 │   ├── Cargo.toml
 │   ├── tauri.conf.json
 │   ├── icons/                        # 各平台应用图标
-│   └── src/lib.rs
+│   ├── capabilities/                 # 权限配置
+│   └── src/
+│       ├── lib.rs                    # Tauri 插件注册与应用入口
+│       └── commands.rs               # Tauri 命令（TTS、校对等）
 ├── public/icons/                     # Web 图标
 ├── package.json
 ├── tsconfig.json

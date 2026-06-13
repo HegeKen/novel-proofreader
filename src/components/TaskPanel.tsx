@@ -2,7 +2,9 @@
 // 剧本改编面板
 // ============================================================
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useNovelStore } from "../stores/novelStore";
+import { useAIConfigStore } from "../stores/aiConfigStore";
+import { useCharacterStore } from "../stores/characterStore";
 import { useConfigStore } from "../stores/configStore";
 import { sendChatCompletion, buildScriptUserPrompt, SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT, buildScriptTTSEnhanceUserPrompt, cleanEnhancedScript } from "../utils/aiClient";
 import { exportToFile } from "../utils/fileExport";
@@ -184,7 +186,7 @@ function TaskPanelContent({
 		} finally {
 			setTtsProcessing(false);
 		}
-	}, [result, ttsConfig, aiConfig, getVoiceForCharacter, promptConfig]);
+	}, [result, ttsConfig, aiConfig, getVoiceForCharacter, promptConfig, currentNovelId, getCharacters]);
 
 	const handleScriptTTSStop = useCallback(() => {
 		if (scriptTTSRef.current) {
@@ -402,13 +404,13 @@ function TaskPanelContent({
 
 // 主组件
 export function TaskPanel() {
-	const chapters = useAppStore((s) => s.chapters);
-	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
-	const currentNovelId = useAppStore((s) => s.currentNovelId);
-	const aiConfig = useAppStore((s) => s.aiConfig);
-	const setScriptResult = useAppStore((s) => s.setScriptResult);
-	const getScriptResult = useAppStore((s) => s.getScriptResult);
-	const getCharacters = useAppStore((s) => s.getCharacters);
+	const chapters = useNovelStore((s) => s.chapters);
+	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
+	const currentNovelId = useNovelStore((s) => s.currentNovelId);
+	const aiConfig = useAIConfigStore((s) => s.aiConfig);
+	const setScriptResult = useNovelStore((s) => s.setScriptResult);
+	const getScriptResult = useNovelStore((s) => s.getScriptResult);
+	const getCharacters = useCharacterStore((s) => s.getCharacters);
 
 	const chapter = chapters[currentChapterIndex];
 

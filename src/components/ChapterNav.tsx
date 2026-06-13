@@ -2,7 +2,10 @@
 // 章节导航侧栏（支持分卷小说）
 // ============================================================
 import { useEffect, useRef, forwardRef, useState, useCallback, useMemo } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useNovelStore } from "../stores/novelStore";
+import { useUIStore } from "../stores/uiStore";
+import { useAIConfigStore } from "../stores/aiConfigStore";
+import { useAppMetaStore } from "../stores/appMetaStore";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { useSwipeGesture } from "../hooks/useSwipeGesture";
@@ -35,8 +38,8 @@ const ChapterItem = forwardRef<HTMLButtonElement, {
 	onApplyTitle,
 	onCloseSuggestions
 }, ref) => {
-	const proofreadStatus = useAppStore((s) => s.proofreadStatus);
-	const toggleProofreadStatus = useAppStore((s) => s.toggleProofreadStatus);
+	const proofreadStatus = useNovelStore((s) => s.proofreadStatus);
+	const toggleProofreadStatus = useNovelStore((s) => s.toggleProofreadStatus);
 	const isProofread = proofreadStatus[chapter.id] ?? false;
 
 	const swipeHandlers = useSwipeGesture({
@@ -133,8 +136,8 @@ const VolumeItem = ({
 	onApplyChapterTitle?: (chapterId: number, chapterIndex: number, title: string) => void;
 	onCloseSuggestions?: (chapterId: number) => void;
 }) => {
-	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
-	const proofreadStatus = useAppStore((s) => s.proofreadStatus);
+	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
+	const proofreadStatus = useNovelStore((s) => s.proofreadStatus);
 
 	const volumeChapters = directChapters ?? chapters.filter(ch => ch.parentId === volume.id && !ch.isVolume);
 	const allProofread = volumeChapters.length > 0 && volumeChapters.every(ch => proofreadStatus[ch.id]);
@@ -195,12 +198,12 @@ const VolumeItem = ({
 export function ChapterNav({
 	onChapterSelect,
 }: { onChapterSelect?: () => void } = {}) {
-	const chapters = useAppStore((s) => s.chapters);
-	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
-	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
-	const proofreadStatus = useAppStore((s) => s.proofreadStatus);
-	const hideProofread = useAppStore((s) => s.hideProofread);
-	const setHideProofread = useAppStore((s) => s.setHideProofread);
+	const chapters = useNovelStore((s) => s.chapters);
+	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
+	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
+	const proofreadStatus = useNovelStore((s) => s.proofreadStatus);
+	const hideProofread = useUIStore((s) => s.hideProofread);
+	const setHideProofread = useUIStore((s) => s.setHideProofread);
 	const chapterListRef = useRef<HTMLDivElement>(null);
 	const activeItemRef = useRef<HTMLButtonElement>(null);
 
@@ -248,7 +251,7 @@ export function ChapterNav({
 	// AI 章节名推荐相关状态
 	const [suggestingChapterId, setSuggestingChapterId] = useState<number | null>(null);
 	const [chapterTitleSuggestions, setChapterTitleSuggestions] = useState<Record<number, string[]>>({});
-	const aiConfig = useAppStore((s) => s.aiConfig);
+	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 
 	// AI 推荐章节名处理函数
 	const handleSuggestChapterTitle = useCallback(async (chapterId: number, chapterIndex: number) => {
@@ -279,7 +282,7 @@ export function ChapterNav({
 			setChapterTitleSuggestions(prev => ({ ...prev, [chapterId]: suggestions }));
 		} catch (error) {
 			logger.errorGeneric('ChapterNav - Failed to generate chapter title:', error);
-			useAppStore.getState().showToast("生成章节名失败，请检查AI配置", "error");
+			useAppMetaStore.getState().showToast("生成章节名失败，请检查AI配置", "error");
 		} finally {
 			setSuggestingChapterId(null);
 		}
@@ -298,7 +301,7 @@ export function ChapterNav({
 
 		const updatedChapters = [...chapters];
 		updatedChapters[chapterIndexInChapters] = { ...chapter, title: newTitle, content: newContent };
-		useAppStore.getState().setChapters(updatedChapters);
+		useNovelStore.getState().setChapters(updatedChapters);
 
 		setChapterTitleSuggestions(prev => {
 			const newSuggestions = { ...prev };

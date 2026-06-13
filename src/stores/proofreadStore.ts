@@ -29,8 +29,6 @@ interface ProofreadState {
 	scriptTasks: ScriptTask[];
 	// 剧本转换进度
 	scriptRunning: boolean;
-	// 忽略单词列表（按小说存储）
-	ignoredWords: Record<string, string[]>;
 	// TTS 朗读状态
 	ttsPlaying: boolean;
 	ttsHighlightedPara: number;
@@ -60,12 +58,6 @@ interface ProofreadState {
 	setApplyAnimation: (anim: ApplyAnimation | null) => void;
 	updateErrorIndices: (chapterId: number, paragraphIndex: number, startIndex: number, lengthDiff: number) => void;
 
-	// Ignored words actions (novel-level)
-	addIgnoredWord: (novelId: string, word: string) => void;
-	removeIgnoredWord: (novelId: string, word: string) => void;
-	getIgnoredWords: (novelId: string) => string[];
-	clearIgnoredWords: (novelId: string) => void;
-
 	// Script actions
 	addScriptTask: (task: ScriptTask) => void;
 	updateScriptTask: (taskId: number, update: Partial<ScriptTask>) => void;
@@ -75,14 +67,22 @@ interface ProofreadState {
 	setTtsHighlightedPara: (paraIndex: number) => void;
 }
 
-export const useProofreadStore = create<ProofreadState>((set, get) => ({
+/** 获取章节结果副本，自动扩展数组长度 */
+function getChapterResults(results: Record<number, ParagraphResult[]>, chapterId: number, paragraphIndex: number): ParagraphResult[] {
+	const arr = [...(results[chapterId] ?? [])];
+	while (arr.length <= paragraphIndex) {
+		arr.push({ paragraphIndex: arr.length, originalText: "", errors: [], status: "pending" as const });
+	}
+	return arr;
+}
+
+export const useProofreadStore = create<ProofreadState>((set) => ({
 	results: {},
 	highlightedParagraph: null,
 	startLine: null,
 	applyAnimation: null,
 	scriptTasks: [],
 	scriptRunning: false,
-	ignoredWords: {},
 	ttsPlaying: false,
 	ttsHighlightedPara: -1,
 
@@ -93,48 +93,23 @@ export const useProofreadStore = create<ProofreadState>((set, get) => ({
 
 	updateParagraphResult: (chapterId, paragraphIndex, result) =>
 		set((state) => {
-			const chapterResults = state.results[chapterId] ?? [];
-			const updated = [...chapterResults];
-			// 确保数组长度足够，处理索引超出当前长度的情况
-			while (updated.length <= paragraphIndex) {
-				const newIndex = updated.length;
-				updated.push({
-					paragraphIndex: newIndex, // 这里应该使用实际的段落索引，而不是数组索引
-					originalText: "",
-					errors: [],
-					status: "pending" as const,
-				});
-			}
-			if (updated[paragraphIndex]) {
-				// 关键修复：确保 paragraphIndex 字段与实际索引一致
-				updated[paragraphIndex] = {
-					...updated[paragraphIndex],
-					...result,
-					paragraphIndex: paragraphIndex // 强制使用正确的段落索引
-				};
-			}
+			const updated = getChapterResults(state.results, chapterId, paragraphIndex);
+			updated[paragraphIndex] = {
+				...updated[paragraphIndex],
+				...result,
+				paragraphIndex,
+			};
 			return { results: { ...state.results, [chapterId]: updated } };
 		}),
 
 	toggleErrorApplied: (chapterId, paragraphIndex, errorId) =>
 		set((state) => {
-			const chapterResults = state.results[chapterId] ?? [];
-			const updated = [...chapterResults];
-			// 确保数组长度足够
-			while (updated.length <= paragraphIndex) {
-				const newIndex = updated.length;
-				updated.push({
-					paragraphIndex: newIndex,
-					originalText: "",
-					errors: [],
-					status: "pending" as const,
-				});
-			}
+			const updated = getChapterResults(state.results, chapterId, paragraphIndex);
 			const para = updated[paragraphIndex];
 			if (para) {
 				updated[paragraphIndex] = {
 					...para,
-					paragraphIndex: paragraphIndex, // 确保索引正确
+					paragraphIndex,
 					errors: para.errors.map((e: ProofreadError) =>
 						e.id === errorId ? { ...e, applied: !e.applied } : e,
 					),
@@ -145,13 +120,12 @@ export const useProofreadStore = create<ProofreadState>((set, get) => ({
 
 	applyAllErrors: (chapterId: number, paragraphIndex: number) =>
 		set((state) => {
-			const chapterResults = state.results[chapterId] ?? [];
-			const updated = [...chapterResults];
+			const updated = getChapterResults(state.results, chapterId, paragraphIndex);
 			const para = updated[paragraphIndex];
 			if (para) {
 				updated[paragraphIndex] = {
 					...para,
-					paragraphIndex: paragraphIndex, // 确保索引正确
+					paragraphIndex,
 					errors: para.errors.map((e: ProofreadError) => ({
 						...e,
 						applied: true,
@@ -164,13 +138,12 @@ export const useProofreadStore = create<ProofreadState>((set, get) => ({
 
 	toggleErrorSkipped: (chapterId, paragraphIndex, errorId) =>
 		set((state) => {
-			const chapterResults = state.results[chapterId] ?? [];
-			const updated = [...chapterResults];
+			const updated = getChapterResults(state.results, chapterId, paragraphIndex);
 			const para = updated[paragraphIndex];
 			if (para) {
 				updated[paragraphIndex] = {
 					...para,
-					paragraphIndex: paragraphIndex, // 确保索引正确
+					paragraphIndex,
 					errors: para.errors.map((e: ProofreadError) =>
 						e.id === errorId ? { ...e, skipped: !e.skipped } : e,
 					),
@@ -204,7 +177,6 @@ export const useProofreadStore = create<ProofreadState>((set, get) => ({
 				updated[paragraphIndex] = {
 					...para,
 					errors: para.errors.map((e: ProofreadError) => {
-						// 如果错误的位置在修改位置之后，需要调整索引
 						if (e.startIndex > startIndex) {
 							return {
 								...e,
@@ -217,44 +189,6 @@ export const useProofreadStore = create<ProofreadState>((set, get) => ({
 				};
 			}
 			return { results: { ...state.results, [chapterId]: updated } };
-		}),
-
-	addIgnoredWord: (chapterId, word) =>
-		set((state) => {
-			const currentWords = state.ignoredWords[chapterId] ?? [];
-			// 避免重复添加
-			if (currentWords.includes(word)) {
-				return state;
-			}
-			return {
-				ignoredWords: {
-					...state.ignoredWords,
-					[chapterId]: [...currentWords, word],
-				},
-			};
-		}),
-
-	removeIgnoredWord: (chapterId, word) =>
-		set((state) => {
-			const currentWords = state.ignoredWords[chapterId] ?? [];
-			return {
-				ignoredWords: {
-					...state.ignoredWords,
-					[chapterId]: currentWords.filter((w) => w !== word),
-				},
-			};
-		}),
-
-	getIgnoredWords: (chapterId) => {
-		const state = get();
-		return state.ignoredWords[chapterId] ?? [];
-	},
-
-	clearIgnoredWords: (chapterId) =>
-		set((state) => {
-			const newIgnoredWords = { ...state.ignoredWords };
-			delete newIgnoredWords[chapterId];
-			return { ignoredWords: newIgnoredWords };
 		}),
 
 	addScriptTask: (task) =>

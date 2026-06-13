@@ -2,9 +2,10 @@
 // 统一错误处理工具
 // ============================================================
 import { logger } from './logger';
-import { useAppStore } from '../stores/appStore';
+import { useAppMetaStore } from '../stores/appMetaStore';
+import { useAIConfigStore } from '../stores/aiConfigStore';
 
-export type ErrorType = 'network' | 'auth' | 'validation' | 'api' | 'unknown';
+export type ErrorType = 'network' | 'auth' | 'validation' | 'api' | 'timeout' | 'abort' | 'unknown';
 
 export interface ErrorInfo {
 	type: ErrorType;
@@ -13,59 +14,49 @@ export interface ErrorInfo {
 	code?: string;
 }
 
-/**
- * 获取错误类型
- */
-function getErrorType(error: unknown): ErrorType {
+export function getErrorType(error: unknown): ErrorType {
+	if (error instanceof DOMException && error.name === 'AbortError') return 'abort';
 	if (error instanceof Error) {
-		const message = error.message.toLowerCase();
-		if (message.includes('network') || message.includes('fetch') || message.includes('http')) {
-			return 'network';
-		}
-		if (message.includes('auth') || message.includes('api key') || message.includes('unauthorized')) {
-			return 'auth';
-		}
-		if (message.includes('validation') || message.includes('invalid')) {
-			return 'validation';
-		}
-		if (message.includes('api') || message.includes('response')) {
-			return 'api';
-		}
+		const msg = error.message.toLowerCase();
+		if (msg.includes('timeout') || msg.includes('timed out')) return 'timeout';
+		if (msg.includes('network') || msg.includes('fetch') || msg.includes('failed to fetch')) return 'network';
+		if (msg.includes('auth') || msg.includes('api key') || msg.includes('unauthorized') || msg.includes('401')) return 'auth';
+		if (msg.includes('rate') || msg.includes('429')) return 'api';
+		if (msg.includes('validation') || msg.includes('invalid')) return 'validation';
+		if (msg.includes('api') || msg.includes('response') || msg.includes('500') || msg.includes('502') || msg.includes('503')) return 'api';
 	}
 	return 'unknown';
 }
 
-/**
- * 获取用户友好的错误消息
- */
-function getFriendlyMessage(error: unknown, type: ErrorType): string {
+export function getFriendlyMessage(error: unknown, type: ErrorType): string {
+	if (error instanceof Error) {
+		const msg = error.message;
+		if (msg.includes('Failed to fetch')) return '网络请求失败，请检查网络连接或API配置';
+		if (msg.includes('401')) return 'API Key 无效或已过期，请检查配置';
+		if (msg.includes('429')) return '请求过于频繁，请稍后再试';
+		if (msg.includes('500')) return '服务器内部错误，请稍后再试';
+		if (msg.includes('502') || msg.includes('503')) return '服务暂时不可用，请稍后再试';
+	}
+
 	switch (type) {
-		case 'network':
-			return '网络连接失败，请检查网络设置';
-		case 'auth':
-			return '认证失败，请检查API密钥配置';
-		case 'validation':
-			return '数据验证失败，请检查输入内容';
-		case 'api':
-			return 'API请求失败，请稍后重试';
+		case 'network': return '网络连接失败，请检查网络设置';
+		case 'auth': return '认证失败，请检查API密钥配置';
+		case 'timeout': return '请求超时，请检查网络或稍后重试';
+		case 'abort': return '操作已取消';
+		case 'validation': return '数据验证失败，请检查输入内容';
+		case 'api': return 'API请求失败，请稍后重试';
 		default:
-			if (error instanceof Error) {
-				return error.message;
-			}
+			if (error instanceof Error) return error.message;
 			return '发生未知错误，请重试';
 	}
 }
 
-/**
- * 统一错误处理函数
- */
 export function handleError(error: unknown, context?: string): ErrorInfo {
 	const type = getErrorType(error);
 	const message = getFriendlyMessage(error, type);
-	
-	// 记录日志
+
 	logger.errorGeneric(context || 'Error', error);
-	
+
 	return {
 		type,
 		message,
@@ -73,17 +64,11 @@ export function handleError(error: unknown, context?: string): ErrorInfo {
 	};
 }
 
-/**
- * 处理错误并显示Toast
- */
 export function handleErrorWithToast(error: unknown, context?: string): void {
 	const errorInfo = handleError(error, context);
-	useAppStore.getState().showToast(errorInfo.message, 'error');
+	useAppMetaStore.getState().showToast(errorInfo.message, 'error');
 }
 
-/**
- * 安全执行异步操作，自动处理错误
- */
 export async function safeExecute<T>(
 	fn: () => Promise<T>,
 	context?: string,
@@ -101,18 +86,12 @@ export async function safeExecute<T>(
 	}
 }
 
-/**
- * API错误处理
- */
 export function handleApiError(error: unknown, context?: string): ErrorInfo {
 	const errorInfo = handleError(error, context);
-	
-	// 如果是认证错误，清除API密钥
+
 	if (errorInfo.type === 'auth') {
-		const appStore = useAppStore.getState();
-		// 清除所有API密钥
-		appStore.setAIConfig({ apiKey: '' });
+		useAIConfigStore.getState().setAIConfig({ apiKey: '' });
 	}
-	
+
 	return errorInfo;
 }

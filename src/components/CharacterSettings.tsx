@@ -2,7 +2,11 @@
 // 角色设置组件
 // ============================================================
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useNovelStore } from "../stores/novelStore";
+import { useAIConfigStore } from "../stores/aiConfigStore";
+import { useCharacterStore } from "../stores/characterStore";
+import { useProofreadMetaStore } from "../stores/proofreadMetaStore";
+import { useAppMetaStore } from "../stores/appMetaStore";
 import { useConfigStore } from "../stores/configStore";
 import type { CharacterInfo, CharacterRelationship, CharacterRole, NovelCategory, RelationType } from "../types";
 import { synthesizeSpeechWithVoice } from "../utils/ttsService";
@@ -347,7 +351,7 @@ const RELATION_TYPE_OPTIONS: Array<{ value: RelationType; label: string }> = [
 ];
 
 function OrganizeRelationItem({ rel, characters, novelId, onAdded }: OrganizeRelationItemProps) {
-	const addRelationship = useAppStore((s) => s.addRelationship);
+	const addRelationship = useCharacterStore((s) => s.addRelationship);
 	const [sourceId, setSourceId] = useState("");
 	const [targetId, setTargetId] = useState("");
 	const [relationType, setRelationType] = useState<RelationType>("friend");
@@ -357,11 +361,11 @@ function OrganizeRelationItem({ rel, characters, novelId, onAdded }: OrganizeRel
 
 	const handleAdd = () => {
 		if (!sourceId || !targetId) {
-			useAppStore.getState().showToast("请选择源角色和目标角色", "warning");
+			useAppMetaStore.getState().showToast("请选择源角色和目标角色", "warning");
 			return;
 		}
 		if (sourceId === targetId) {
-			useAppStore.getState().showToast("源角色和目标角色不能相同", "warning");
+			useAppMetaStore.getState().showToast("源角色和目标角色不能相同", "warning");
 			return;
 		}
 
@@ -549,7 +553,7 @@ function MergeConfigPanel({ sourceChars, onExecute, onBack }: MergeConfigPanelPr
 
 	const handleExecute = () => {
 		if (!mergedName.trim()) {
-			useAppStore.getState().showToast("请输入合并后的角色名称", "warning");
+			useAppMetaStore.getState().showToast("请输入合并后的角色名称", "warning");
 			return;
 		}
 
@@ -737,7 +741,7 @@ function MergeConfigPanel({ sourceChars, onExecute, onBack }: MergeConfigPanelPr
 }
 
 export function CharacterSettings({ novelId, novelName, onClose }: CharacterSettingsProps) {
-	const novelCharacters = useAppStore((s) => s.novelCharacters);
+	const novelCharacters = useCharacterStore((s) => s.novelCharacters);
 	const characters = useMemo(() => novelCharacters[novelId] ?? [], [novelCharacters, novelId]);
 
 	// 角色排序状态 - 按 order 字段排序，未设置的放在最后
@@ -756,30 +760,30 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 	// 拖拽排序模式
 	const [isDragMode, setIsDragMode] = useState(false);
-	const allRelationships = useAppStore((s) => s.characterRelationships);
+	const allRelationships = useCharacterStore((s) => s.characterRelationships);
 	const relationships = useMemo(() => allRelationships[novelId] ?? [], [allRelationships, novelId]);
-	const storeNodePositions = useAppStore((s) => s.nodePositions);
+	const storeNodePositions = useCharacterStore((s) => s.nodePositions);
 	const nodePositions = useMemo(() => storeNodePositions[novelId] ?? {}, [storeNodePositions, novelId]);
-	const addCharacter = useAppStore((s) => s.addCharacter);
-	const updateCharacter = useAppStore((s) => s.updateCharacter);
-	const removeCharacter = useAppStore((s) => s.removeCharacter);
-	const setCharactersForNovel = useAppStore((s) => s.setCharactersForNovel);
-	const setRelationshipsForNovel = useAppStore((s) => s.setRelationshipsForNovel);
-	const getRelationshipsForNovel = useAppStore((s) => s.getRelationshipsForNovel);
-	const removeRelationship = useAppStore((s) => s.removeRelationship);
-	const updateRelationship = useAppStore((s) => s.updateRelationship);
-	const setNodePositions = useAppStore((s) => s.setNodePositions);
-	const setIgnoredWords = useAppStore((s) => s.setIgnoredWords);
-	const setNovelCategory = useAppStore((s) => s.setNovelCategory);
-	const getIgnoredWords = useAppStore((s) => s.getIgnoredWords);
-	const addIgnoredCharacterName = useAppStore((s) => s.addIgnoredCharacterName);
-	const getIgnoredCharacterNames = useAppStore((s) => s.getIgnoredCharacterNames);
-	const setIgnoredCharacterNames = useAppStore((s) => s.setIgnoredCharacterNames);
+	const addCharacter = useCharacterStore((s) => s.addCharacter);
+	const updateCharacter = useCharacterStore((s) => s.updateCharacter);
+	const removeCharacter = useCharacterStore((s) => s.removeCharacter);
+	const setCharactersForNovel = useCharacterStore((s) => s.setCharactersForNovel);
+	const setRelationshipsForNovel = useCharacterStore((s) => s.setRelationshipsForNovel);
+	const getRelationshipsForNovel = useCharacterStore((s) => s.getRelationshipsForNovel);
+	const removeRelationship = useCharacterStore((s) => s.removeRelationship);
+	const updateRelationship = useCharacterStore((s) => s.updateRelationship);
+	const setNodePositions = useCharacterStore((s) => s.setNodePositions);
+	const setIgnoredWords = useProofreadMetaStore((s) => s.setIgnoredWords);
+	const setNovelCategory = useAppMetaStore((s) => s.setNovelCategory);
+	const getIgnoredWords = useProofreadMetaStore((s) => s.getIgnoredWords);
+	const addIgnoredCharacterName = useCharacterStore((s) => s.addIgnoredCharacterName);
+	const getIgnoredCharacterNames = useCharacterStore((s) => s.getIgnoredCharacterNames);
+	const setIgnoredCharacterNames = useCharacterStore((s) => s.setIgnoredCharacterNames);
 	const ignoredCharacterNames = useMemo(() => getIgnoredCharacterNames(novelId), [getIgnoredCharacterNames, novelId]);
 	const ignoredWords = useMemo(() => getIgnoredWords(novelId), [getIgnoredWords, novelId]);
-	const novelCategories = useAppStore((s) => s.novelCategories);
+	const novelCategories = useAppMetaStore((s) => s.novelCategories);
 	const novelCategory = useMemo(() => novelCategories[novelId], [novelCategories, novelId]);
-	const novels = useAppStore((s) => s.novels);
+	const novels = useNovelStore((s) => s.novels);
 	const currentNovel = useMemo(() => novels.find(n => n.id === novelId), [novels, novelId]);
 
 	// 检测新角色弹窗状态
@@ -995,7 +999,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const audioRef = useRef<HTMLAudioElement | null>(null);
 	const cancelPlayRef = useRef<(() => void) | null>(null);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
-	const aiConfig = useAppStore((s) => s.aiConfig);
+	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 
 	const voiceOptions = [
 		{ value: "冰糖", label: "冰糖 (女)" },
@@ -1123,7 +1127,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			if (isMobile && data.length > CHUNK_SIZE) {
 				// 移动端：分段复制
 				const totalChunks = Math.ceil(data.length / CHUNK_SIZE);
-				useAppStore.getState().showToast(`数据较大，将分 ${totalChunks} 次复制到剪贴板，请依次粘贴`, "info");
+				useAppMetaStore.getState().showToast(`数据较大，将分 ${totalChunks} 次复制到剪贴板，请依次粘贴`, "info");
 				
 				for (let i = 0; i < totalChunks; i++) {
 					const start = i * CHUNK_SIZE;
@@ -1137,22 +1141,22 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						await new Promise<void>((resolve) => {
 							const proceed = confirm(`已复制第 ${i + 1}/${totalChunks} 部分，点击确定继续复制下一部分`);
 							if (!proceed) {
-								useAppStore.getState().showToast(`已取消复制，共复制了 ${i + 1}/${totalChunks} 部分`, "warning");
+								useAppMetaStore.getState().showToast(`已取消复制，共复制了 ${i + 1}/${totalChunks} 部分`, "warning");
 							}
 							resolve();
 						});
 					}
 				}
 				
-				useAppStore.getState().showToast(`成功复制全部 ${totalChunks} 部分数据到剪贴板！`, "success");
+				useAppMetaStore.getState().showToast(`成功复制全部 ${totalChunks} 部分数据到剪贴板！`, "success");
 			} else {
 				// 桌面端或数据较小：直接复制
 				await navigator.clipboard.writeText(data);
-				useAppStore.getState().showToast("已复制到剪贴板！", "success");
+				useAppMetaStore.getState().showToast("已复制到剪贴板！", "success");
 			}
 		} catch (err) {
 			logger.errorGeneric('CharacterSettings - 复制失败:', err);
-			useAppStore.getState().showToast("复制失败，请手动选择复制", "error");
+			useAppMetaStore.getState().showToast("复制失败，请手动选择复制", "error");
 		}
 	}, [isMobile]);
 
@@ -1261,7 +1265,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						// 旧格式：CharacterInfo[]
 						importedChars = imported;
 					} else {
-						useAppStore.getState().showToast("文件格式错误：无法识别的数据格式", "error");
+						useAppMetaStore.getState().showToast("文件格式错误：无法识别的数据格式", "error");
 						return;
 					}
 
@@ -1272,7 +1276,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					);
 
 					if (!valid) {
-						useAppStore.getState().showToast("文件格式错误：角色数据格式不正确", "error");
+						useAppMetaStore.getState().showToast("文件格式错误：角色数据格式不正确", "error");
 						return;
 					}
 
@@ -1383,9 +1387,9 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						(importedIgnoredWords.length > 0 ? `，导入 ${importedIgnoredWords.length} 个忽略词` : "") +
 						(importedNovelCategory ? "，导入小说分类" : "") +
 						(importedIgnoredCharacterNames.length > 0 ? `，导入 ${importedIgnoredCharacterNames.length} 个忽略角色` : "");
-					useAppStore.getState().showToast(msg, "success");
+					useAppMetaStore.getState().showToast(msg, "success");
 				} catch (err) {
-					useAppStore.getState().showToast("文件解析失败：" + (err instanceof Error ? err.message : String(err)), "error");
+					useAppMetaStore.getState().showToast("文件解析失败：" + (err instanceof Error ? err.message : String(err)), "error");
 				}
 			};
 			reader.readAsText(file);
@@ -1396,12 +1400,12 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 使用AI分析整本小说提取角色和关系
 	const handleAnalyzeCharacters = async () => {
 		if (!currentNovel?.fullText) {
-			useAppStore.getState().showToast("无法获取小说内容", "error");
+			useAppMetaStore.getState().showToast("无法获取小说内容", "error");
 			return;
 		}
 
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
 			return;
 		}
 
@@ -1578,7 +1582,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					setShowAnalyzeModal(false);
 				}
 			} else {
-				useAppStore.getState().showToast(`分析完成！新增 ${newCharactersWithIds.length} 个角色和 ${newRelationships.length} 条关系`, "success");
+				useAppMetaStore.getState().showToast(`分析完成！新增 ${newCharactersWithIds.length} 个角色和 ${newRelationships.length} 条关系`, "success");
 				setShowAnalyzeModal(false);
 			}
 		} catch (err) {
@@ -1614,7 +1618,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 进入配置模式，准备合并
 	const handleProceedToMergeConfig = () => {
 		if (selectedForMerge.length < 2) {
-			useAppStore.getState().showToast("请至少选择2个角色进行合并", "warning");
+			useAppMetaStore.getState().showToast("请至少选择2个角色进行合并", "warning");
 			return;
 		}
 		const chars = characters.filter(c => selectedForMerge.includes(c.id));
@@ -1632,7 +1636,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		addCharacter(novelId, mergedChar);
 		// 关闭弹窗
 		setShowMergeModal(false);
-		useAppStore.getState().showToast(`成功合并 ${deleteIds.length + 1} 个角色为 "${mergedChar.name}"`, "success");
+		useAppMetaStore.getState().showToast(`成功合并 ${deleteIds.length + 1} 个角色为 "${mergedChar.name}"`, "success");
 	};
 
 	// 全选/取消全选
@@ -1692,19 +1696,19 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		const messages = [];
 		if (addedCount > 0) messages.push(`新增 ${addedCount} 个角色`);
 		if (mergedCount > 0) messages.push(`合并 ${mergedCount} 个到已有角色`);
-		useAppStore.getState().showToast(messages.join('，'), "success");
+		useAppMetaStore.getState().showToast(messages.join('，'), "success");
 	}, [detectedCharacters, detectedSelections, novelId, characters, addCharacter, updateCharacter, setShowDetectModal]);
 
 	
 	// 重新分析角色小传
 	const handleReanalyzeBiography = useCallback(async (character: CharacterInfo) => {
 		if (!currentNovel?.fullText) {
-			useAppStore.getState().showToast("无法获取小说内容", "error");
+			useAppMetaStore.getState().showToast("无法获取小说内容", "error");
 			return;
 		}
 
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
 			return;
 		}
 
@@ -1781,10 +1785,10 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				voiceDesignPrompt: result,
 			}));
 			
-			useAppStore.getState().showToast("音色设计生成成功", "success");
+			useAppMetaStore.getState().showToast("音色设计生成成功", "success");
 		} catch (error) {
 			logger.errorGeneric("生成音色设计失败", { error });
-			useAppStore.getState().showToast("生成音色设计失败", "error");
+			useAppMetaStore.getState().showToast("生成音色设计失败", "error");
 		} finally {
 			setIsGeneratingVoiceDesign(false);
 		}
@@ -2991,7 +2995,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						<button
 							className="btn btn-primary"
 							onClick={() => {
-								useAppStore.getState().showToast(`成功添加 ${skippedRelationships.length} 条关系`, "success");
+								useAppMetaStore.getState().showToast(`成功添加 ${skippedRelationships.length} 条关系`, "success");
 								setShowOrganizeRelationsModal(false);
 							}}
 							disabled={skippedRelationships.length === 0}
@@ -3442,15 +3446,15 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 							className="btn btn-primary"
 							onClick={() => {
 								if (!relationForm.sourceId || !relationForm.targetId) {
-									useAppStore.getState().showToast("请选择源角色和目标角色", "warning");
+									useAppMetaStore.getState().showToast("请选择源角色和目标角色", "warning");
 									return;
 								}
 								if (relationForm.sourceId === relationForm.targetId) {
-									useAppStore.getState().showToast("源角色和目标角色不能相同", "warning");
+									useAppMetaStore.getState().showToast("源角色和目标角色不能相同", "warning");
 									return;
 								}
 								if (relationForm.relationType.length === 0) {
-									useAppStore.getState().showToast("请至少选择一种关系类型", "warning");
+									useAppMetaStore.getState().showToast("请至少选择一种关系类型", "warning");
 									return;
 								}
 
@@ -3475,7 +3479,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 									existingRels.forEach(r => removeRelationship(novelId, r.id));
 									updateRelationship(novelId, editingRelation!.id, mergedRelation);
-									useAppStore.getState().showToast(`已合并 ${existingRels.length + 1} 条关系`, "success");
+									useAppMetaStore.getState().showToast(`已合并 ${existingRels.length + 1} 条关系`, "success");
 								} else {
 									updateRelationship(novelId, editingRelation!.id, {
 										sourceId: relationForm.sourceId,
@@ -3484,7 +3488,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 										sourceNickname: relationForm.sourceNickname,
 										targetNickname: relationForm.targetNickname,
 									});
-									useAppStore.getState().showToast("关系已更新", "success");
+									useAppMetaStore.getState().showToast("关系已更新", "success");
 								}
 								setEditingRelation(null);
 							}}

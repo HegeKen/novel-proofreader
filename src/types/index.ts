@@ -243,4 +243,5 @@ export type ReadingBackground =
 	| "sage"
 	| "slate"
 	| "dark"
-	| "custom";
+	| "custom"
+	| "image";

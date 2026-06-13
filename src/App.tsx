@@ -1,18 +1,19 @@
 // ============================================================
 // 主布局 - Apple Liquid Glass Design
 // ============================================================
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { NovelList } from "./components/NovelList";
 import { ChapterNav } from "./components/ChapterNav";
 import { ReaderPanel } from "./components/ReaderPanel";
 import { ProofreadPanel } from "./components/ProofreadPanel";
 import { TaskPanel } from "./components/TaskPanel";
-import { ConfigModal } from "./components/ConfigModal";
-import { CharacterSettings } from "./components/CharacterSettings";
 import { GlobalSearch } from "./components/GlobalSearch";
-import { HomePage } from "./components/HomePage";
 import { ToastContainer } from "./components/Toast";
-import { useAppStore } from "./stores/appStore";
+import { useNovelStore } from "./stores/novelStore";
+import { useUIStore } from "./stores/uiStore";
+import { useAppMetaStore } from "./stores/appMetaStore";
+import { useAIConfigStore } from "./stores/aiConfigStore";
+import { useProofreadMetaStore } from "./stores/proofreadMetaStore";
 import { splitChapters } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
 import { exportToFile, loadNovelsFromStorage, loadNovelContent, saveNovelToStorage, ensureTxtFilename, exportAllData } from "./utils/fileExport";
@@ -23,6 +24,10 @@ import { logger } from "./utils/logger";
 import { audioCache } from "./utils/ttsService";
 import { useConfigStore } from "./stores/configStore";
 import { useMobile } from "./hooks/useMobile";
+
+const ConfigModal = lazy(() => import("./components/ConfigModal").then(m => ({ default: m.ConfigModal })));
+const CharacterSettings = lazy(() => import("./components/CharacterSettings").then(m => ({ default: m.CharacterSettings })));
+const HomePage = lazy(() => import("./components/HomePage").then(m => ({ default: m.HomePage })));
 
 type RightTab = "proofread" | "task";
 type MobileTab = "novels" | "chapters" | "reader" | "task" | "settings";
@@ -49,21 +54,21 @@ export default function App() {
 	const urlParams = new URLSearchParams(window.location.search);
 	const hasBookIdParam = urlParams.has("bookId");
 	const [showHome, setShowHome] = useState(!hasVisited() && !hasBookIdParam);
-	const novels = useAppStore((s) => s.novels);
-	const currentNovelId = useAppStore((s) => s.currentNovelId);
-	const setChapters = useAppStore((s) => s.setChapters);
-	const theme = useAppStore((s) => s.theme);
-	const setTheme = useAppStore((s) => s.setTheme);
-	const saveCache = useAppStore((s) => s.saveCache);
-	const lastCacheSaveTime = useAppStore((s) => s.lastCacheSaveTime);
-	const chapters = useAppStore((s) => s.chapters);
-	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
-	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
-	const readingMode = useAppStore((s) => s.readingMode);
-	const setReadingMode = useAppStore((s) => s.setReadingMode);
-	const selectNovel = useAppStore((s) => s.selectNovel);
-	const showCharacterSettings = useAppStore((s) => s.showCharacterSettings);
-	const setShowCharacterSettings = useAppStore((s) => s.setShowCharacterSettings);
+	const novels = useNovelStore((s) => s.novels);
+	const currentNovelId = useNovelStore((s) => s.currentNovelId);
+	const setChapters = useNovelStore((s) => s.setChapters);
+	const theme = useUIStore((s) => s.theme);
+	const setTheme = useUIStore((s) => s.setTheme);
+	const saveCache = useNovelStore((s) => s.saveCache);
+	const lastCacheSaveTime = useNovelStore((s) => s.lastCacheSaveTime);
+	const chapters = useNovelStore((s) => s.chapters);
+	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
+	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
+	const readingMode = useUIStore((s) => s.readingMode);
+	const setReadingMode = useUIStore((s) => s.setReadingMode);
+	const selectNovel = useNovelStore((s) => s.selectNovel);
+	const showCharacterSettings = useUIStore((s) => s.showCharacterSettings);
+	const setShowCharacterSettings = useUIStore((s) => s.setShowCharacterSettings);
 	const [configOpen, setConfigOpen] = useState(false);
 	const [rightTab, setRightTab] = useState<RightTab>("proofread");
 	const [mobileTab, setMobileTab] = useState<MobileTab>("novels");
@@ -104,15 +109,15 @@ export default function App() {
 					
 					if (loadedNovels.length > 0) {
 						const firstNovel = loadedNovels[0];
-						useAppStore.setState({
+						useNovelStore.setState({
 							novels: loadedNovels,
 							currentNovelId: firstNovel.id,
 						});
 						const chapters = splitChapters(firstNovel.fullText);
-						const progress = useAppStore.getState().getReadingProgress(firstNovel.id);
-						useAppStore.setState({ chapters });
+						const progress = useAppMetaStore.getState().getReadingProgress(firstNovel.id);
+						useNovelStore.setState({ chapters });
 						if (progress) {
-							useAppStore.setState({ currentChapterIndex: progress.currentChapterIndex });
+							useNovelStore.setState({ currentChapterIndex: progress.currentChapterIndex });
 						}
 					}
 				}
@@ -125,7 +130,7 @@ export default function App() {
 		const bookId = params.bookId;
 		if (bookId === undefined) return;
 
-		const setChapters = useAppStore.getState().setChapters;
+		const setChapters = useNovelStore.getState().setChapters;
 		const trySelect = () => {
 			const novelIndex = bookId - 1;
 			if (novelIndex === undefined || novelIndex < 0) return false;
@@ -241,9 +246,9 @@ export default function App() {
 			`${novel.name}.txt`,
 		);
 		if (result === "success") {
-			useAppStore.getState().showToast("文件已成功保存！", "success");
+			useAppMetaStore.getState().showToast("文件已成功保存！", "success");
 		} else if (result === "fallback") {
-			useAppStore.getState().showToast("文件已下载！请手动覆盖原文件。", "success");
+			useAppMetaStore.getState().showToast("文件已下载！请手动覆盖原文件。", "success");
 		}
 	};
 
@@ -269,18 +274,21 @@ export default function App() {
 	};
 
 	const handleExportAllData = async () => {
-		const state = useAppStore.getState();
+		const novelState = useNovelStore.getState();
+		const aiConfigState = useAIConfigStore.getState();
+		const metaState = useAppMetaStore.getState();
+		const proofreadMetaState = useProofreadMetaStore.getState();
 		const includeSensitiveData = confirm("⚠️ 安全提示：导出包含 API 密钥后，任何获取该文件的人都能使用你的 API Key。\n\n选择「确定」包含敏感信息，选择「取消」则自动脱敏（推荐）。");
 		await exportAllData({
-			novels: state.novels,
+			novels: novelState.novels,
 			aiConfig: {
-				...state.aiConfig,
-				apiKey: includeSensitiveData ? state.aiConfig.apiKey : "[REDACTED]",
+				...aiConfigState.aiConfig,
+				apiKey: includeSensitiveData ? aiConfigState.aiConfig.apiKey : "[REDACTED]",
 			},
-			apiUsage: state.apiUsage,
-			novelCategories: state.novelCategories,
-			readingProgress: state.readingProgress,
-			ignoredWords: state.ignoredWords,
+			apiUsage: metaState.apiUsage,
+			novelCategories: metaState.novelCategories,
+			readingProgress: metaState.readingProgress,
+			ignoredWords: proofreadMetaState.ignoredWords,
 			exportTime: formatDateTime(Date.now()),
 			version: "0.10.1",
 		});
@@ -296,7 +304,9 @@ export default function App() {
 	return (
 		<div className="app">
 			{showHome ? (
-				<HomePage onStart={handleStartApp} />
+				<Suspense fallback={null}>
+					<HomePage onStart={handleStartApp} />
+				</Suspense>
 			) : (
 				<>
 					<header className="app-header">
@@ -309,7 +319,7 @@ export default function App() {
 					</h1>
 				</div>
 				<div className="header-center">
-					<button className={isMobile ? "btn-mobile" : "btn"} onClick={handleImport}>
+					<button className={isMobile ? "btn-mobile" : "btn"} onClick={handleImport} aria-label="导入 TXT 文件">
 							<Icons.import size={16} />
 							导入 TXT 文件
 						</button>
@@ -361,6 +371,7 @@ export default function App() {
 							className={isMobile ? "btn-mobile" : "btn"}
 							onClick={handleExportNovel}
 							title="导出整本小说"
+							aria-label="导出整本小说"
 						>
 							<Icons.download size={18} />
 						</button>
@@ -370,6 +381,7 @@ export default function App() {
 							className={isMobile ? "btn-mobile" : "btn"}
 							onClick={handleSaveCache}
 							title="保存缓存"
+							aria-label="保存缓存"
 						>
 							<Icons.cache size={18} />
 						</button>
@@ -379,6 +391,7 @@ export default function App() {
 							className={isMobile ? "btn-mobile" : "btn"}
 							onClick={handleSaveToOriginal}
 							title="保存到原文件"
+							aria-label="保存到原文件"
 						>
 							<Icons.fileOutput size={18} />
 						</button>
@@ -387,12 +400,13 @@ export default function App() {
 						className={isMobile ? "btn-mobile" : "btn"}
 						onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
 						title={theme === "dark" ? "切换到亮色模式" : "切换到深色模式"}
+						aria-label={theme === "dark" ? "切换到亮色模式" : "切换到深色模式"}
 					>
 						{theme === "dark" ? <Icons.sun size={18} /> : <Icons.moon size={18} />}
 						{!isMobile && (theme === "dark" ? "切换到亮色" : "切换到深色")}
 					</button>
 					<GlobalSearch />
-					<button className={isMobile ? "btn-mobile" : "btn"} onClick={() => setConfigOpen(true)}>
+					<button className={isMobile ? "btn-mobile" : "btn"} onClick={() => setConfigOpen(true)} aria-label="设置">
 						<Icons.bolt size={18} />
 						{!isMobile && "设置"}
 					</button>
@@ -417,7 +431,7 @@ export default function App() {
 				</aside>
 
 				<main
-					className={`app-main ${rightTab === "task" ? "task-mode" : ""} ${isMobile && mobileTab === "reader" ? "" : isMobile ? "hidden" : ""} ${!isMobile && readingMode ? "" : ""}`}
+					className={`app-main ${rightTab === "task" ? "task-mode" : ""} ${isMobile && mobileTab === "reader" ? "mobile-fullscreen" : isMobile ? "hidden" : ""} ${!isMobile && readingMode ? "" : ""}`}
 				>
 					{isMobile && mobileTab === "reader" && (
 						<div className="mobile-reader-proofread">
@@ -470,10 +484,13 @@ export default function App() {
 
 			{isMobile && !readingMode && (
 				<>
-					<div className="mobile-tab-bar">
+					<div className="mobile-tab-bar" role="tablist">
 						<button
 							className={`mobile-tab-btn ${mobileTab === "novels" ? "active" : ""}`}
 							onClick={() => handleMobileTabChange("novels")}
+							role="tab"
+							aria-selected={mobileTab === "novels"}
+							aria-label="小说列表"
 						>
 							<Icons.library size={18} />
 							<span>小说</span>
@@ -481,6 +498,9 @@ export default function App() {
 						<button
 							className={`mobile-tab-btn ${mobileTab === "chapters" ? "active" : ""}`}
 							onClick={() => handleMobileTabChange("chapters")}
+							role="tab"
+							aria-selected={mobileTab === "chapters"}
+							aria-label="章节导航"
 						>
 							<Icons.list size={18} />
 							<span>章节</span>
@@ -488,6 +508,9 @@ export default function App() {
 						<button
 							className={`mobile-tab-btn ${mobileTab === "reader" ? "active" : ""}`}
 							onClick={() => handleMobileTabChange("reader")}
+							role="tab"
+							aria-selected={mobileTab === "reader"}
+							aria-label="阅读校对"
 						>
 							<Icons.book size={18} />
 							<span>阅读</span>
@@ -495,6 +518,9 @@ export default function App() {
 						<button
 							className={`mobile-tab-btn ${mobileTab === "task" ? "active" : ""}`}
 							onClick={() => handleMobileTabChange("task")}
+							role="tab"
+							aria-selected={mobileTab === "task"}
+							aria-label="剧本改编"
 						>
 							<Icons.script size={18} />
 							<span>剧本</span>
@@ -504,17 +530,21 @@ export default function App() {
 				</>
 			)}
 
-			<ConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
+			<Suspense fallback={null}>
+				<ConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
+			</Suspense>
 			{showCharacterSettings && (
-				<CharacterSettings
-					novelId={showCharacterSettings}
-					novelName={novels.find(n => n.id === showCharacterSettings)?.name || ""}
-					onClose={() => setShowCharacterSettings(null)}
-				/>
+				<Suspense fallback={null}>
+					<CharacterSettings
+						novelId={showCharacterSettings}
+						novelName={novels.find(n => n.id === showCharacterSettings)?.name || ""}
+						onClose={() => setShowCharacterSettings(null)}
+					/>
+				</Suspense>
 			)}
 			<ToastContainer 
-				messages={useAppStore.getState().toastMessages} 
-				onClose={(id) => useAppStore.getState().hideToast(id)} 
+				messages={useAppMetaStore.getState().toastMessages} 
+				onClose={(id) => useAppMetaStore.getState().hideToast(id)} 
 			/>
 		</>
 	)}

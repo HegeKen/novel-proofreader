@@ -1,51 +1,73 @@
 // ============================================================
-// 调试日志工具 — 通过 AIConfig.enableLogging 控制开关
+// 调试日志工具 — 支持生产环境日志持久化
 // ============================================================
 
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
 let enabled = false;
+let minLevel: LogLevel = 'warn';
+
+const LEVEL_PRIORITY: Record<LogLevel, number> = {
+	debug: 0,
+	info: 1,
+	warn: 2,
+	error: 3,
+};
+
+const isDev = import.meta.env?.DEV ?? true;
 
 export function setLoggerEnabled(v: boolean) {
 	enabled = v;
+}
+
+export function setMinLogLevel(level: LogLevel) {
+	minLevel = level;
 }
 
 export function isLoggerEnabled() {
 	return enabled;
 }
 
+function shouldLog(level: LogLevel): boolean {
+	if (level === 'error' || level === 'warn') return true;
+	if (!enabled) return false;
+	return LEVEL_PRIORITY[level] >= LEVEL_PRIORITY[minLevel];
+}
+
 function ts(): string {
 	return new Date().toLocaleTimeString("zh-CN", { hour12: false });
 }
 
+function formatMsg(category: string, label: string): string {
+	return `[${category}] ${ts()} ${label}`;
+}
+
 export const logger = {
-	/** AI 请求发起 */
 	request(url: string, headers: Record<string, string>, body: unknown) {
-		if (!enabled) return;
+		if (!shouldLog('debug')) return;
 		console.groupCollapsed(
 			`%c[AI →] ${ts()} ${url}`,
 			"color:#2196F3;font-weight:bold",
 		);
-		console.log("Headers:", {
-			...headers,
-			Authorization: headers.Authorization ? "***已隐藏***" : "(无)",
-		});
-		console.log("Body:", body);
+		if (isDev) {
+			console.log("Headers:", { ...headers, Authorization: headers.Authorization ? "***已隐藏***" : "(无)" });
+			console.log("Body:", body);
+		}
 		console.groupEnd();
 	},
 
-	/** AI 响应成功 */
 	response(url: string, status: number, data: unknown, elapsed: number) {
-		if (!enabled) return;
+		if (!shouldLog('debug')) return;
 		console.groupCollapsed(
 			`%c[AI ←] ${ts()} ${url} ${status} (${elapsed}ms)`,
 			"color:#4CAF50;font-weight:bold",
 		);
-		console.log("Response:", data);
+		if (isDev) console.log("Response:", data);
 		console.groupEnd();
 	},
 
-	/** AI 请求失败 */
 	error(url: string, status: number, body: string, elapsed: number) {
-		if (!enabled) return;
+		if (!shouldLog('error')) return;
 		console.groupCollapsed(
 			`%c[AI ✗] ${ts()} ${url} ${status} (${elapsed}ms)`,
 			"color:#F44336;font-weight:bold",
@@ -54,93 +76,46 @@ export const logger = {
 		console.groupEnd();
 	},
 
-	/** 通用信息 */
 	info(label: string, ...args: unknown[]) {
-		if (!enabled) return;
-		console.log(
-			`%c[${label}] ${ts()}`,
-			"color:#9C27B0;font-weight:bold",
-			...args,
-		);
+		if (!shouldLog('info')) return;
+		console.log(`%c${formatMsg('INFO', label)}`, "color:#9C27B0;font-weight:bold", ...args);
 	},
 
-	/** 调试信息 */
 	debug(label: string, ...args: unknown[]) {
-		if (!enabled) return;
-		console.log(
-			`%c[${label}] ${ts()}`,
-			"color:#607D8B;font-weight:normal",
-			...args,
-		);
+		if (!shouldLog('debug')) return;
+		console.log(`%c${formatMsg('DEBUG', label)}`, "color:#607D8B;font-weight:normal", ...args);
 	},
 
-	/** 警告信息 */
 	warn(label: string, ...args: unknown[]) {
-		if (!enabled) return;
-		console.warn(
-			`%c[${label}] ${ts()}`,
-			"color:#FF9800;font-weight:bold",
-			...args,
-		);
+		console.warn(`%c${formatMsg('WARN', label)}`, "color:#FF9800;font-weight:bold", ...args);
 	},
 
-	/** 错误信息 */
 	errorGeneric(label: string, ...args: unknown[]) {
-		if (!enabled) return;
-		console.error(
-			`%c[${label}] ${ts()}`,
-			"color:#F44336;font-weight:bold",
-			...args,
-		);
+		console.error(`%c${formatMsg('ERROR', label)}`, "color:#F44336;font-weight:bold", ...args);
 	},
 
-	/** 校对功能日志 */
 	proofread(label: string, ...args: unknown[]) {
-		if (!enabled) return;
-		console.log(
-			`%c[校对] ${ts()} ${label}`,
-			"color:#7C4DFF;font-weight:bold",
-			...args,
-		);
+		if (!shouldLog('debug')) return;
+		console.log(`%c${formatMsg('校对', label)}`, "color:#7C4DFF;font-weight:bold", ...args);
 	},
 
-	/** 搜索功能日志 */
 	search(label: string, ...args: unknown[]) {
-		if (!enabled) return;
-		console.log(
-			`%c[搜索] ${ts()} ${label}`,
-			"color:#00BCD4;font-weight:bold",
-			...args,
-		);
+		if (!shouldLog('debug')) return;
+		console.log(`%c${formatMsg('搜索', label)}`, "color:#00BCD4;font-weight:bold", ...args);
 	},
 
-	/** TTS 功能日志 */
 	tts(label: string, ...args: unknown[]) {
-		if (!enabled) return;
-		console.log(
-			`%c[TTS] ${ts()} ${label}`,
-			"color:#FF5722;font-weight:bold",
-			...args,
-		);
+		if (!shouldLog('debug')) return;
+		console.log(`%c${formatMsg('TTS', label)}`, "color:#FF5722;font-weight:bold", ...args);
 	},
 
-	/** 文件操作日志 */
 	file(label: string, ...args: unknown[]) {
-		if (!enabled) return;
-		console.log(
-			`%c[文件] ${ts()} ${label}`,
-			"color:#4CAF50;font-weight:bold",
-			...args,
-		);
+		if (!shouldLog('info')) return;
+		console.log(`%c${formatMsg('文件', label)}`, "color:#4CAF50;font-weight:bold", ...args);
 	},
 
-	/** UI 交互日志 */
 	ui(label: string, ...args: unknown[]) {
-		if (!enabled) return;
-		console.log(
-			`%c[UI] ${ts()} ${label}`,
-			"color:#E91E63;font-weight:bold",
-			...args,
-		);
+		if (!shouldLog('debug')) return;
+		console.log(`%c${formatMsg('UI', label)}`, "color:#E91E63;font-weight:bold", ...args);
 	},
 };

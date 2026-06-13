@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useCharacterStore } from "../stores/characterStore";
 import type { CharacterInfo, CharacterRelationship, RelationType } from "../types";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
@@ -25,12 +25,12 @@ interface GraphEdge {
 }
 
 export function RelationshipGraph({ novelId, characters }: RelationshipGraphProps) {
-	const allRelationships = useAppStore((s) => s.characterRelationships);
+	const allRelationships = useCharacterStore((s) => s.characterRelationships);
 	const relationships = useMemo(() => allRelationships[novelId] ?? [], [allRelationships, novelId]);
-	const addRelationship = useAppStore((s) => s.addRelationship);
-	const updateRelationship = useAppStore((s) => s.updateRelationship);
-	const removeRelationship = useAppStore((s) => s.removeRelationship);
-	const storeNodePositions = useAppStore((s) => s.nodePositions);
+	const addRelationship = useCharacterStore((s) => s.addRelationship);
+	const updateRelationship = useCharacterStore((s) => s.updateRelationship);
+	const removeRelationship = useCharacterStore((s) => s.removeRelationship);
+	const storeNodePositions = useCharacterStore((s) => s.nodePositions);
 	const nodePositions = useMemo(() => storeNodePositions[novelId] ?? {}, [storeNodePositions, novelId]);
 
 	const [showAddModal, setShowAddModal] = useState(false);
@@ -480,8 +480,8 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 		if (isNodeDragging && draggingNodeId && nodeDragOriginRef.current) {
 			const finalX = nodeDragOriginRef.current.nodeX + dragOffsetRef.current.x;
 			const finalY = nodeDragOriginRef.current.nodeY + dragOffsetRef.current.y;
-			const currentPositions = useAppStore.getState().nodePositions[novelId] ?? {};
-			useAppStore.getState().setNodePositions(novelId, {
+			const currentPositions = useCharacterStore.getState().nodePositions[novelId] ?? {};
+			useCharacterStore.getState().setNodePositions(novelId, {
 				...currentPositions,
 				[draggingNodeId]: { x: finalX, y: finalY },
 			});
@@ -543,8 +543,8 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 		if (isNodeDragging && draggingNodeId && nodeDragOriginRef.current) {
 			const finalX = nodeDragOriginRef.current.nodeX + dragOffsetRef.current.x;
 			const finalY = nodeDragOriginRef.current.nodeY + dragOffsetRef.current.y;
-			const currentPositions = useAppStore.getState().nodePositions[novelId] ?? {};
-			useAppStore.getState().setNodePositions(novelId, {
+			const currentPositions = useCharacterStore.getState().nodePositions[novelId] ?? {};
+			useCharacterStore.getState().setNodePositions(novelId, {
 				...currentPositions,
 				[draggingNodeId]: { x: finalX, y: finalY },
 			});
@@ -596,8 +596,8 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 				const { novelId: nid, nodeId } = pendingNodeDragRef.current;
 				const finalX = nodeDragOriginRef.current.nodeX + dragOffsetRef.current.x;
 				const finalY = nodeDragOriginRef.current.nodeY + dragOffsetRef.current.y;
-				const currentPositions = useAppStore.getState().nodePositions[nid] ?? {};
-				useAppStore.getState().setNodePositions(nid, {
+				const currentPositions = useCharacterStore.getState().nodePositions[nid] ?? {};
+				useCharacterStore.getState().setNodePositions(nid, {
 					...currentPositions,
 					[nodeId]: { x: finalX, y: finalY },
 				});

@@ -1,26 +1,29 @@
 import { useState } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useNovelStore } from "../stores/novelStore";
+import { useAIConfigStore } from "../stores/aiConfigStore";
+import { useProofreadMetaStore } from "../stores/proofreadMetaStore";
+import { useAppMetaStore } from "../stores/appMetaStore";
 import { useAICheck } from "../hooks/useAICheck";
 import { Icons } from "./Icons";
 import { generateChapterTitle } from "../utils/aiClient";
 import { logger } from "../utils/logger";
 
 export function ProofreadQueuePanel() {
-	const queue = useAppStore((s) => s.proofreadQueue);
-	const currentTaskId = useAppStore((s) => s.currentProofreadingTaskId);
-	const currentNovelId = useAppStore((s) => s.currentNovelId);
-	const chapters = useAppStore((s) => s.chapters);
-	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
-	const addToQueue = useAppStore((s) => s.addToProofreadQueue);
-	const removeFromQueue = useAppStore((s) => s.removeFromProofreadQueue);
-	const updateQueueItemStatus = useAppStore((s) => s.updateQueueItemStatus);
-	const clearQueue = useAppStore((s) => s.clearProofreadQueue);
-	const setCurrentProofreadingTaskId = useAppStore((s) => s.setCurrentProofreadingTaskId);
-	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
+	const queue = useProofreadMetaStore((s) => s.proofreadQueue);
+	const currentTaskId = useProofreadMetaStore((s) => s.currentProofreadingTaskId);
+	const currentNovelId = useNovelStore((s) => s.currentNovelId);
+	const chapters = useNovelStore((s) => s.chapters);
+	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
+	const addToQueue = useProofreadMetaStore((s) => s.addToProofreadQueue);
+	const removeFromQueue = useProofreadMetaStore((s) => s.removeFromProofreadQueue);
+	const updateQueueItemStatus = useProofreadMetaStore((s) => s.updateQueueItemStatus);
+	const clearQueue = useProofreadMetaStore((s) => s.clearProofreadQueue);
+	const setCurrentProofreadingTaskId = useProofreadMetaStore((s) => s.setCurrentProofreadingTaskId);
+	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
 
 	const [selectedChapters, setSelectedChapters] = useState<number[]>([]);
 	const [isRunning, setIsRunning] = useState(false);
-	const aiConfig = useAppStore((s) => s.aiConfig);
+	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 
 	// 章节名推荐状态
 	const [suggestingChapterIndex, setSuggestingChapterIndex] = useState<number | null>(null);
@@ -96,7 +99,7 @@ export function ProofreadQueuePanel() {
 			setChapterTitleSuggestions(suggestions);
 		} catch (error) {
 			logger.errorGeneric('ProofreadQueuePanel - Failed to generate chapter title:', error);
-			useAppStore.getState().showToast("生成章节名失败，请检查AI配置", "error");
+			useAppMetaStore.getState().showToast("生成章节名失败，请检查AI配置", "error");
 		} finally {
 			setSuggestingChapterIndex(null);
 		}
@@ -114,7 +117,7 @@ export function ProofreadQueuePanel() {
 
 		const updatedChapters = [...chapters];
 		updatedChapters[chapterIndex] = { ...chapter, title: newTitle, content: newContent };
-		useAppStore.getState().setChapters(updatedChapters);
+		useNovelStore.getState().setChapters(updatedChapters);
 
 		// 清除推荐状态
 		setChapterTitleSuggestions([]);

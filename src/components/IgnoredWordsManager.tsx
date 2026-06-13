@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useNovelStore } from "../stores/novelStore";
+import { useProofreadMetaStore } from "../stores/proofreadMetaStore";
 import { Icons } from "./Icons";
 
 interface IgnoredWordsManagerProps {
@@ -7,11 +8,11 @@ interface IgnoredWordsManagerProps {
 }
 
 export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
-	const currentNovelId = useAppStore((s) => s.currentNovelId);
-	const novels = useAppStore((s) => s.novels);
-	const addIgnoredWord = useAppStore((s) => s.addIgnoredWord);
-	const removeIgnoredWord = useAppStore((s) => s.removeIgnoredWord);
-	const ignoredWordsMap = useAppStore((s) => s.ignoredWords);
+	const currentNovelId = useNovelStore((s) => s.currentNovelId);
+	const novels = useNovelStore((s) => s.novels);
+	const addIgnoredWord = useProofreadMetaStore((s) => s.addIgnoredWord);
+	const removeIgnoredWord = useProofreadMetaStore((s) => s.removeIgnoredWord);
+	const ignoredWordsMap = useProofreadMetaStore((s) => s.ignoredWords);
 
 	const [newWord, setNewWord] = useState("");
 	const inputRef = useRef<HTMLInputElement>(null);

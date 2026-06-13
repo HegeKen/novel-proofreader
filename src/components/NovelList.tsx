@@ -1,7 +1,9 @@
 // ============================================================
 // 最左侧小说列表
 // ============================================================
-import { useAppStore } from "../stores/appStore";
+import { useNovelStore } from "../stores/novelStore";
+import { useUIStore } from "../stores/uiStore";
+import { useAppMetaStore } from "../stores/appMetaStore";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { saveNovelToStorage, deleteNovelFromStorage, createCharacterTemplate } from "../utils/fileExport";
 import { splitChapters } from "../utils/chapterSplit";
@@ -17,15 +19,15 @@ export function NovelList({
 }: { onNovelSelect?: () => void } = {}) {
 	const { isMobile } = useMobile();
 	
-	const novels = useAppStore((s) => s.novels);
-	const currentNovelId = useAppStore((s) => s.currentNovelId);
-	const addNovel = useAppStore((s) => s.addNovel);
-	const removeNovel = useAppStore((s) => s.removeNovel);
-	const selectNovel = useAppStore((s) => s.selectNovel);
-	const setChapters = useAppStore((s) => s.setChapters);
-	const setShowCharacterSettings = useAppStore((s) => s.setShowCharacterSettings);
-	const getReadingProgress = useAppStore((s) => s.getReadingProgress);
-	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
+	const novels = useNovelStore((s) => s.novels);
+	const currentNovelId = useNovelStore((s) => s.currentNovelId);
+	const addNovel = useNovelStore((s) => s.addNovel);
+	const removeNovel = useNovelStore((s) => s.removeNovel);
+	const selectNovel = useNovelStore((s) => s.selectNovel);
+	const setChapters = useNovelStore((s) => s.setChapters);
+	const setShowCharacterSettings = useUIStore((s) => s.setShowCharacterSettings);
+	const getReadingProgress = useAppMetaStore((s) => s.getReadingProgress);
+	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
 	const [contextMenu, setContextMenu] = useState<{
 		x: number;
 		y: number;

@@ -2,7 +2,10 @@
 // AI 校对检测 Hook
 // ============================================================
 import { useCallback, useRef } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useNovelStore } from "../stores/novelStore";
+import { useAIConfigStore } from "../stores/aiConfigStore";
+import { useCharacterStore } from "../stores/characterStore";
+import { useProofreadMetaStore } from "../stores/proofreadMetaStore";
 import { useProofreadStore } from "../stores/proofreadStore";
 import { useConfigStore } from "../stores/configStore";
 import { splitParagraphs } from "../utils/chapterSplit";
@@ -15,6 +18,7 @@ import {
 	extractJSON,
 } from "../utils/aiClient";
 import { logger } from "../utils/logger";
+import { startProofreadService, stopProofreadService } from "../utils/androidService";
 import type {
 	ParagraphResult,
 	ProofreadError,
@@ -58,16 +62,65 @@ function locateTextInParagraph(
 	return null;
 }
 
+/** 解析 AI 校对响应，返回标准化的 ProofreadError 数组 */
+function parseAIProofreadResponse(
+	raw: unknown[],
+	chapterId: number,
+	paragraphIndex: number,
+	paragraph: string,
+	ignoredWords: string[],
+): ProofreadError[] {
+	const errors: ProofreadError[] = [];
+	for (const item of raw) {
+		if (typeof item !== "object" || item === null) continue;
+		const o = item as Record<string, unknown>;
+
+		const find = String(o.find ?? "");
+		const replace = String(o.replace ?? "");
+		const orig = String(o.original ?? o.original_text ?? "");
+		const corr = String(o.corrected ?? o.corrected_text ?? "");
+		const errType = String(o.type ?? o.error_type ?? "");
+		const suggest = String(o.reason ?? o.suggestion ?? "");
+		const aiColumn = o.column !== undefined ? Number(o.column) : undefined;
+
+		const matchText = find || orig;
+		const correctText = replace || corr;
+		if (!matchText) continue;
+
+		const needsReplacement = errType === "typo" || errType === "grammar" || errType === "format";
+		if (needsReplacement && (matchText === correctText || matchText.replace(/\s/g, '') === correctText.replace(/\s/g, ''))) continue;
+
+		const isIgnored = ignoredWords.some(word => word && (matchText.includes(word) || word.includes(matchText)));
+		if (isIgnored) continue;
+
+		const located = locateTextInParagraph(paragraph, matchText, aiColumn);
+		if (!located) continue;
+
+		errors.push({
+			id: `err-${chapterId}-${paragraphIndex}-${errors.length}`,
+			startIndex: located.start,
+			endIndex: located.end,
+			errorType: (errType as ProofreadError["errorType"]) || "typo",
+			suggestion: suggest,
+			originalText: matchText,
+			correctedText: correctText,
+			applied: false,
+			skipped: false,
+		});
+	}
+	return errors;
+}
+
 export function useAICheck() {
-	const aiConfig = useAppStore((s) => s.aiConfig);
-	const chapters = useAppStore((s) => s.chapters);
-	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
-	const currentNovelId = useAppStore((s) => s.currentNovelId);
-	const getIgnoredWords = useAppStore((s) => s.getIgnoredWords);
-	const getCharacters = useAppStore((s) => s.getCharacters);
+	const aiConfig = useAIConfigStore((s) => s.aiConfig);
+	const chapters = useNovelStore((s) => s.chapters);
+	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
+	const currentNovelId = useNovelStore((s) => s.currentNovelId);
+	const getIgnoredWords = useProofreadMetaStore((s) => s.getIgnoredWords);
+	const getCharacters = useCharacterStore((s) => s.getCharacters);
 	const promptConfig = useConfigStore((s) => s.promptConfig);
 	const proofreadConfig = useConfigStore((s) => s.proofreadConfig);
-	const saveProofreadProgress = useAppStore((s) => s.saveProofreadProgress);
+	const saveProofreadProgress = useProofreadMetaStore((s) => s.saveProofreadProgress);
 	const setResults = useProofreadStore((s) => s.setResults);
 	const updateParagraphResult = useProofreadStore(
 		(s) => s.updateParagraphResult,
@@ -78,6 +131,8 @@ export function useAICheck() {
 		async (granularity: CheckGranularity, startFrom: number = 0) => {
 			const chapter = chapters[currentChapterIndex];
 			if (!chapter) return;
+
+			startProofreadService().catch(() => {});
 
 			// 获取并发配置
 			const maxConcurrent = getMaxConcurrentBatches(
@@ -196,74 +251,45 @@ export function useAICheck() {
 							if (typeof item !== "object" || item === null) continue;
 							const obj = item as Record<string, unknown>;
 
-							// 获取行号（核心字段）- 使用原始段落索引
-							// 支持新格式的 line 字段和旧格式的 lineNumber 字段
 							let lineNumber = obj.line !== undefined ? Number(obj.line) :
 								(obj.lineNumber !== undefined ? Number(obj.lineNumber) : -1);
 
-							// 支持新格式：find/replace
 							const find = String(obj.find ?? "");
 							const replace = String(obj.replace ?? "");
-
-							// 兼容旧格式：original/corrected
 							const orig = String(obj.original ?? obj.original_text ?? "");
 							const corr = String(obj.corrected ?? obj.corrected_text ?? "");
-
 							const errType = String(obj.type ?? obj.error_type ?? "");
 							const suggest = String(obj.reason ?? obj.suggestion ?? "");
-							const aiStart = obj.start !== undefined ? Number(obj.start) : -1;
-							const aiEnd = obj.end !== undefined ? Number(obj.end) : -1;
 							const aiColumn = obj.column !== undefined ? Number(obj.column) : undefined;
 
-							// 优先使用新格式的 find/replace，其次使用旧格式的 original/corrected
 							const matchText = find || orig;
 							const correctText = replace || corr;
-
-							logger.proofread(`解析错误: matchText="${matchText}", correctText="${correctText}", lineNumber=${lineNumber}, aiStart=${aiStart}, aiEnd=${aiEnd}, column=${aiColumn}`);
-
 							if (!matchText) continue;
 
-							// 校验：对于 typo/grammar/format 类型，matchText 和 correctText 必须不同
-							// 但 punctuation 类型可能只是提示标点问题，不一定需要替换
 							const needsReplacement = errType === "typo" || errType === "grammar" || errType === "format";
-							if (needsReplacement && (matchText === correctText || matchText.replace(/\s/g, '') === correctText.replace(/\s/g, ''))) {
-								continue;
-							}
+							if (needsReplacement && (matchText === correctText || matchText.replace(/\s/g, '') === correctText.replace(/\s/g, ''))) continue;
 
 							// 检查行号是否在该批次范围内
 							if (lineNumber < batch.start || lineNumber >= batch.end) {
 								const foundLine = paragraphs.findIndex((p, idx) =>
 									idx >= batch.start && idx < batch.end && locateTextInParagraph(p, matchText, aiColumn) !== null
 								);
-								logger.proofread(`行号检查: lineNumber=${lineNumber}, batch=${batch.start}-${batch.end}, foundLine=${foundLine}`);
-								if (foundLine < 0) {
-									logger.proofread(`[useAICheck] 批次 ${batch.start}-${batch.end} 中无法找到 "${matchText}"`);
-									continue;
-								}
+								if (foundLine < 0) continue;
 								lineNumber = foundLine;
 							}
 
-							// 确定错误在段落内的位置
 							const targetPara = paragraphs[lineNumber];
-
 							const located = locateTextInParagraph(targetPara, matchText, aiColumn);
-							if (!located) {
-								logger.proofread(`[useAICheck] 段落 ${lineNumber} 中定位不到 "${matchText}"`);
-								continue;
-							}
-							const startIdx = located.start;
-							const endIdx = located.end;
-							const finalMatchText = matchText;
-							const finalCorrectText = correctText;
+							if (!located) continue;
 
 							errorsByLine[lineNumber].push({
 								id: `err-${chapter.id}-${lineNumber}-${errorsByLine[lineNumber].length}`,
-								startIndex: startIdx,
-								endIndex: endIdx,
+								startIndex: located.start,
+								endIndex: located.end,
 								errorType: (errType as ProofreadError["errorType"]) || "typo",
 								suggestion: suggest,
-								originalText: finalMatchText,
-								correctedText: finalCorrectText,
+								originalText: matchText,
+								correctedText: correctText,
 								applied: false,
 								skipped: false,
 							});
@@ -438,59 +464,7 @@ export function useAICheck() {
 						}
 						const raw = extractJSON(reply);
 
-						const errors: ProofreadError[] = [];
-						for (const obj of raw) {
-							if (typeof obj !== "object" || obj === null) continue;
-							const o = obj as Record<string, unknown>;
-
-							// 支持新格式：find/replace
-							const find = String(o.find ?? "");
-							const replace = String(o.replace ?? "");
-
-							// 兼容旧格式：original/corrected
-							const orig = String(o.original ?? o.original_text ?? "");
-							const corr = String(o.corrected ?? o.corrected_text ?? "");
-
-							const errType = String(o.type ?? o.error_type ?? "");
-							const suggest = String(o.reason ?? o.suggestion ?? "");
-							const aiColumn = o.column !== undefined ? Number(o.column) : undefined;
-
-							// 优先使用新格式的 find/replace，其次使用旧格式的 original/corrected
-							const matchText = find || orig;
-							const correctText = replace || corr;
-
-							if (!matchText) continue;
-
-							// 校验：matchText 和 correctText 必须不同（去除空白字符后也不能相同）
-							if (matchText === correctText || matchText.replace(/\s/g, '') === correctText.replace(/\s/g, '')) continue;
-
-							// 强约束：忽略词列表中的词语不标记为错误
-							const isIgnored = ignoredWords.some(word => {
-								if (!word) return false;
-								return matchText.includes(word) || word.includes(matchText);
-							});
-							if (isIgnored) continue;
-
-							const located = locateTextInParagraph(item, matchText, aiColumn);
-							if (!located) continue;
-							const startIdx = located.start;
-							const endIdx = located.end;
-							const finalMatchText = matchText;
-							const finalCorrectText = correctText;
-
-							errors.push({
-								id: `err-${chapter.id}-${originalIndex}-${errors.length}`,
-								startIndex: startIdx,
-								endIndex: endIdx,
-								errorType:
-									(errType as ProofreadError["errorType"]) || "typo",
-								suggestion: suggest,
-								originalText: finalMatchText,
-								correctedText: finalCorrectText,
-								applied: false,
-								skipped: false,
-							});
-						}
+						const errors = parseAIProofreadResponse(raw, chapter.id, originalIndex, item, ignoredWords);
 
 						updateParagraphResult(chapter.id, originalIndex, {
 							errors,
@@ -548,6 +522,8 @@ export function useAICheck() {
 					saveProofreadProgress(currentNovelId, chapter.id, filteredItems.length, true);
 				}
 			}
+
+			stopProofreadService().catch(() => {});
 		},
 		[
 			chapters,
@@ -580,6 +556,8 @@ export function useAICheck() {
 			});
 			logger.proofread(`已将所有段落状态重置为 pending`);
 		}
+
+		stopProofreadService().catch(() => {});
 	}, [chapters, currentChapterIndex, updateParagraphResult]);
 
 	const checkSingleLine = useCallback(
@@ -658,53 +636,7 @@ export function useAICheck() {
 				const reply = await sendChatCompletion(messages, aiConfig);
 				const raw = extractJSON(reply);
 
-				const errors: ProofreadError[] = [];
-				for (const obj of raw) {
-					if (typeof obj !== "object" || obj === null) continue;
-					const o = obj as Record<string, unknown>;
-
-					// 支持新格式：find/replace
-					const find = String(o.find ?? "");
-					const replace = String(o.replace ?? "");
-					
-					// 兼容旧格式：original/corrected
-					const orig = String(o.original ?? o.original_text ?? "");
-					const corr = String(o.corrected ?? o.corrected_text ?? "");
-					
-					const errType = String(o.type ?? o.error_type ?? "");
-					const suggest = String(o.reason ?? o.suggestion ?? "");
-					const aiColumn = o.column !== undefined ? Number(o.column) : undefined;
-
-					// 优先使用新格式的 find/replace，其次使用旧格式的 original/corrected
-					const matchText = find || orig;
-					const correctText = replace || corr;
-
-					if (!matchText) continue;
-					
-					// 校验：对于 typo/grammar/format 类型，matchText 和 correctText 必须不同
-					// 但 punctuation 类型可能只是提示标点问题，不一定需要替换
-					const needsReplacement = errType === "typo" || errType === "grammar" || errType === "format";
-					if (needsReplacement && matchText === correctText) continue;
-
-					const located = locateTextInParagraph(lineText, matchText, aiColumn);
-					if (!located) continue;
-					const startIdx = located.start;
-					const endIdx = located.end;
-					const finalMatchText = matchText;
-					const finalCorrectText = correctText;
-
-					errors.push({
-						id: `err-${chapter.id}-${originalIndex}-${errors.length}`,
-						startIndex: startIdx,
-						endIndex: endIdx,
-						errorType: (errType as ProofreadError["errorType"]) || "typo",
-						suggestion: suggest,
-						originalText: finalMatchText,
-						correctedText: finalCorrectText,
-						applied: false,
-						skipped: false,
-					});
-				}
+				const errors = parseAIProofreadResponse(raw, chapter.id, originalIndex, lineText, ignoredWords);
 
 				updateParagraphResult(chapter.id, originalIndex, {
 					errors,

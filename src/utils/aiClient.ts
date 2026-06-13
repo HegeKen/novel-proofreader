@@ -3,7 +3,7 @@
 // ============================================================
 import type { AIConfig } from "../types";
 import { logger } from "./logger";
-import { useAppStore } from "../stores/appStore";
+import { useAppMetaStore } from "../stores/appMetaStore";
 
 export interface ChatMessage {
 	role: "system" | "user" | "assistant";
@@ -136,7 +136,7 @@ export async function sendChatCompletion(
 		logger.error(url, resp.status, text, elapsed);
 
 		const provider = detectProvider(config.baseURL);
-		useAppStore.getState().incrementAPIUsage(provider, false);
+		useAppMetaStore.getState().incrementAPIUsage(provider, false);
 		const friendly = ERROR_MESSAGES[provider]?.[resp.status];
 		const detail = extractDetailError(text);
 
@@ -153,7 +153,7 @@ export async function sendChatCompletion(
 
 	const provider = detectProvider(config.baseURL);
 	const tokens = data.usage?.total_tokens ?? 0;
-	useAppStore.getState().incrementAPIUsage(provider, true, tokens);
+	useAppMetaStore.getState().incrementAPIUsage(provider, true, tokens);
 
 	// MiMo 内容拦截：返回 200 但 body 包含 high risk 拒绝文本
 	const content = data.choices?.[0]?.message?.content ?? "";

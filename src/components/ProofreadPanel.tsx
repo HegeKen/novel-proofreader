@@ -2,7 +2,7 @@
 // 右侧校对区（带按行检测 + 采纳动画）
 // ============================================================
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useNovelStore } from "../stores/novelStore";
 import { useProofreadStore } from "../stores/proofreadStore";
 import { useAICheck } from "../hooks/useAICheck";
 import { useMobile } from "../hooks/useMobile";
@@ -42,10 +42,10 @@ const ANIM_NEW_MS = 1200;
 export function ProofreadPanel() {
 	const { isMobile } = useMobile();
 	
-	const chapters = useAppStore((s) => s.chapters);
-	const currentChapterIndex = useAppStore((s) => s.currentChapterIndex);
-	const setCurrentChapterIndex = useAppStore((s) => s.setCurrentChapterIndex);
-	const replaceParagraphText = useAppStore((s) => s.replaceParagraphText);
+	const chapters = useNovelStore((s) => s.chapters);
+	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
+	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
+	const replaceParagraphText = useNovelStore((s) => s.replaceParagraphText);
 	const results = useProofreadStore((s) => s.results);
 	const setResults = useProofreadStore((s) => s.setResults);
 	const highlightedParagraph = useProofreadStore((s) => s.highlightedParagraph);
@@ -260,7 +260,7 @@ export function ProofreadPanel() {
 			if (animatingRef.current) return;
 
 			// 通过 getState() 获取最新 chapter，避免闭包过期
-			const state = useAppStore.getState();
+			const state = useNovelStore.getState();
 			const currentChapter = state.chapters[state.currentChapterIndex];
 			if (!currentChapter) return;
 			const chapterId = currentChapter.id;
@@ -376,7 +376,7 @@ export function ProofreadPanel() {
 	/** 忽略/取消忽略单个错误 */
 	const handleSkip = useCallback(
 		(paraResult: (typeof chapterResults)[number], err: ProofreadError) => {
-			const state = useAppStore.getState();
+			const state = useNovelStore.getState();
 			const currentChapter = state.chapters[state.currentChapterIndex];
 			if (!currentChapter) {
 				addToast("error", "无法忽略：未找到当前章节");

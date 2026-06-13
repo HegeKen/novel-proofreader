@@ -1,16 +1,6 @@
-// ============================================================
-// AI 模型配置状态（独立 store，持久化到 localStorage）
-// ============================================================
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { AIProvider } from "../types";
 
-export interface AIModelConfig {
-	provider: AIProvider;
-	baseUrl: string;
-	apiKey: string;
-	model: string;
-}
 
 export interface TTSConfig {
 	enabled: boolean;
@@ -40,13 +30,10 @@ export interface ProofreadConfig {
 	maxConcurrentBatches: number;
 }
 
-interface ConfigState {
-	config: AIModelConfig;
+export interface ConfigState {
 	ttsConfig: TTSConfig;
 	promptConfig: PromptConfig;
 	proofreadConfig: ProofreadConfig;
-	setConfig: (config: AIModelConfig) => void;
-	updateConfig: (patch: Partial<AIModelConfig>) => void;
 	setTTSConfig: (config: TTSConfig) => void;
 	updateTTSConfig: (patch: Partial<TTSConfig>) => void;
 	setPromptConfig: (config: PromptConfig) => void;
@@ -54,13 +41,6 @@ interface ConfigState {
 	setProofreadConfig: (config: ProofreadConfig) => void;
 	updateProofreadConfig: (patch: Partial<ProofreadConfig>) => void;
 }
-
-const DEFAULT_CONFIG: AIModelConfig = {
-	provider: "openai",
-	baseUrl: "https://api.openai.com/v1",
-	apiKey: "",
-	model: "gpt-4o",
-};
 
 const DEFAULT_TTS_CONFIG: TTSConfig = {
 	enabled: false,
@@ -93,13 +73,9 @@ const DEFAULT_PROOFREAD_CONFIG: ProofreadConfig = {
 export const useConfigStore = create<ConfigState>()(
 	persist(
 		(set) => ({
-			config: DEFAULT_CONFIG,
 			ttsConfig: DEFAULT_TTS_CONFIG,
 			promptConfig: DEFAULT_PROMPT_CONFIG,
 			proofreadConfig: DEFAULT_PROOFREAD_CONFIG,
-			setConfig: (config) => set({ config }),
-			updateConfig: (patch) =>
-				set((state) => ({ config: { ...state.config, ...patch } })),
 			setTTSConfig: (config) => set({ ttsConfig: { ...DEFAULT_TTS_CONFIG, ...config } }),
 			updateTTSConfig: (patch) =>
 				set((state) => ({ ttsConfig: { ...DEFAULT_TTS_CONFIG, ...state.ttsConfig, ...patch } })),
@@ -111,7 +87,7 @@ export const useConfigStore = create<ConfigState>()(
 				set((state) => ({ proofreadConfig: { ...DEFAULT_PROOFREAD_CONFIG, ...state.proofreadConfig, ...patch } })),
 		}),
 		{
-			name: "novel-proofreader-ai-config",
+			name: "novel-proofreader-app-config",
 		},
 	),
 );

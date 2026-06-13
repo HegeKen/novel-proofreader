@@ -2,7 +2,8 @@
 // 循环任务转剧本 Hook
 // ============================================================
 import { useCallback, useRef } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useNovelStore } from "../stores/novelStore";
+import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useProofreadStore } from "../stores/proofreadStore";
 import { useConfigStore } from "../stores/configStore";
 import {
@@ -13,8 +14,8 @@ import {
 import type { ScriptTask } from "../types";
 
 export function useScriptTask() {
-	const aiConfig = useAppStore((s) => s.aiConfig);
-	const chapters = useAppStore((s) => s.chapters);
+	const aiConfig = useAIConfigStore((s) => s.aiConfig);
+	const chapters = useNovelStore((s) => s.chapters);
 	const promptConfig = useConfigStore((s) => s.promptConfig);
 	const addScriptTask = useProofreadStore((s) => s.addScriptTask);
 	const updateScriptTask = useProofreadStore((s) => s.updateScriptTask);

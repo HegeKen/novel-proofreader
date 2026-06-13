@@ -2,7 +2,7 @@
 // 文件导入 Hook（支持 UTF-8 / GBK / GB18030 编码自动检测）
 // ============================================================
 import { useCallback } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useNovelStore } from "../stores/novelStore";
 import { splitChapters } from "../utils/chapterSplit";
 import { decodeTextBuffer } from "../utils/decodeText";
 import { saveNovelToStorage, ensureTxtFilename } from "../utils/fileExport";
@@ -14,8 +14,8 @@ import type { Novel } from "../types";
  * 自动检测 UTF-8 / GBK / GB18030 编码
  */
 export function useFileImport() {
-	const addNovel = useAppStore((s) => s.addNovel);
-	const clearFile = useAppStore((s) => s.clearFile);
+	const addNovel = useNovelStore((s) => s.addNovel);
+	const clearFile = useNovelStore((s) => s.clearFile);
 
 	const importFile = useCallback(() => {
 		return new Promise<void>((resolve) => {
