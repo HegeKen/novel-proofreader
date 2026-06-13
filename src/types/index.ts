@@ -179,6 +179,7 @@ export interface CharacterInfo {
 	role?: CharacterRole; // 角色类型
 	notes?: string;
 	voice?: string; // 为该角色指定的音色
+	voiceDesignPrompt?: string; // 音色设计描述，用于TTS情感朗读
 	aliases?: string[]; // 别称列表，如"我"、"主角"等
 	relationTerms?: string[]; // 关系代称列表，如"老婆"、"老公"等
 	order?: number; // 自定义排序顺序

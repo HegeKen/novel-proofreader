@@ -30,8 +30,8 @@ export const GITHUB_MIRRORS: MirrorSource[] = [
 /** CORS 代理源（用于 GitHub API 请求，这些代理会正确设置 CORS 头） */
 export const CORS_PROXIES: MirrorSource[] = [
 	{ name: "直连", url: "", description: "直接请求 GitHub API（推荐）" },
-	{ name: "代理 1", url: "https://api.allorigins.win/raw?url=", description: "allorigins.win CORS 代理" },
-	{ name: "代理 2", url: "https://corsproxy.io/?", description: "corsproxy.io CORS 代理" },
+	{ name: "代理 1", url: "https://api.allorigins.win/raw?url=", description: "allorigins.win CORS 代理（⚠️ 第三方代理，可能看到你的请求内容）" },
+	{ name: "代理 2", url: "https://corsproxy.io/?", description: "corsproxy.io CORS 代理（⚠️ 第三方代理，可能看到你的请求内容）" },
 ];
 
 export function getMirrorUrls(originalUrl: string): string[] {
@@ -110,12 +110,21 @@ export async function fetchApiWithFallback(
 	throw lastError || new Error("All API request attempts failed");
 }
 
+const MAX_DOWNLOAD_SIZE = 500 * 1024 * 1024; // 500 MB
+
 export async function downloadFromMirror(mirrorUrl: string, fileName: string): Promise<void> {
 	const response = await fetch(mirrorUrl);
 	if (!response.ok) {
 		throw new Error(`HTTP ${response.status}`);
 	}
+	const contentLength = Number(response.headers.get("content-length"));
+	if (contentLength > MAX_DOWNLOAD_SIZE) {
+		throw new Error(`文件过大 (${(contentLength / 1024 / 1024).toFixed(0)}MB)，超过 500MB 限制`);
+	}
 	const blob = await response.blob();
+	if (blob.size > MAX_DOWNLOAD_SIZE) {
+		throw new Error(`文件过大 (${(blob.size / 1024 / 1024).toFixed(0)}MB)，超过 500MB 限制`);
+	}
 	const downloadUrl = URL.createObjectURL(blob);
 	const a = document.createElement("a");
 	a.href = downloadUrl;
@@ -136,7 +145,14 @@ export async function tryDownloadWithMirrors(url: string, fileName: string): Pro
 			if (!response.ok) {
 				throw new Error(`HTTP ${response.status}`);
 			}
+			const contentLength = Number(response.headers.get("content-length"));
+			if (contentLength > MAX_DOWNLOAD_SIZE) {
+				throw new Error(`文件过大 (${(contentLength / 1024 / 1024).toFixed(0)}MB)，超过 500MB 限制`);
+			}
 			const blob = await response.blob();
+			if (blob.size > MAX_DOWNLOAD_SIZE) {
+				throw new Error(`文件过大 (${(blob.size / 1024 / 1024).toFixed(0)}MB)，超过 500MB 限制`);
+			}
 			const downloadUrl = URL.createObjectURL(blob);
 			const a = document.createElement("a");
 			a.href = downloadUrl;

@@ -270,7 +270,7 @@ export default function App() {
 
 	const handleExportAllData = async () => {
 		const state = useAppStore.getState();
-		const includeSensitiveData = confirm("是否在导出文件中包含 API 密钥等敏感信息？\n\n选择「确定」将包含敏感信息，选择「取消」则不包含。");
+		const includeSensitiveData = confirm("⚠️ 安全提示：导出包含 API 密钥后，任何获取该文件的人都能使用你的 API Key。\n\n选择「确定」包含敏感信息，选择「取消」则自动脱敏（推荐）。");
 		await exportAllData({
 			novels: state.novels,
 			aiConfig: {
@@ -282,7 +282,7 @@ export default function App() {
 			readingProgress: state.readingProgress,
 			ignoredWords: state.ignoredWords,
 			exportTime: formatDateTime(Date.now()),
-			version: "0.9.0",
+			version: "0.10.1",
 		});
 	};
 

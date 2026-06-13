@@ -11,7 +11,7 @@ import { Select } from "./Select";
 import { logger } from "../utils/logger";
 import { saveCharacterConfigToStorage, loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
 import type { DetectedCharacter } from "../utils/fileExport";
-import { analyzeCharactersInBatches, reanalyzeCharacterBiography } from "../utils/aiClient";
+import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign } from "../utils/aiClient";
 import { formatDateTime } from "../utils/formatters";
 import { RelationshipGraph } from "./RelationshipGraph";
 
@@ -981,12 +981,14 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		role: undefined,
 		notes: "",
 		voice: "",
+		voiceDesignPrompt: "",
 		aliases: [],
 		relationTerms: [],
 	});
 	const [showAddForm, setShowAddForm] = useState(false);
 	const [newAlias, setNewAlias] = useState("");
 	const [newRelationTerm, setNewRelationTerm] = useState("");
+	const [isGeneratingVoiceDesign, setIsGeneratingVoiceDesign] = useState(false);
 	
 	// TTS 功能状态
 	const [playingNoteCharacterId, setPlayingNoteCharacterId] = useState<string | null>(null);
@@ -1081,11 +1083,12 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			gender: editForm.gender || "other",
 			notes: editForm.notes,
 			voice: editForm.voice,
+			voiceDesignPrompt: editForm.voiceDesignPrompt,
 			aliases: editForm.aliases || [],
 			relationTerms: editForm.relationTerms || [],
 		});
 		setShowAddForm(false);
-		setEditForm({ name: "", gender: "other", notes: "", voice: "", aliases: [], relationTerms: [] });
+		setEditForm({ name: "", gender: "other", notes: "", voice: "", voiceDesignPrompt: "", aliases: [], relationTerms: [] });
 		setNewAlias("");
 		setNewRelationTerm("");
 	}, [editForm, novelId, addCharacter, setShowAddForm]);
@@ -1170,6 +1173,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				aliases: char.aliases || [],
 				notes: char.notes || "",
 				voice: char.voice || "",
+				voiceDesignPrompt: char.voiceDesignPrompt || "",
 			})),
 			relationships: relationships.map(rel => ({
 				id: rel.id,
@@ -1285,16 +1289,22 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						const existing = existingByName.get(importedChar.name);
 						if (existing) {
 							// 同名角色已存在，更新属性，保留现有 ID
-							updateCharacter(novelId, existing.id, {
-								name: importedChar.name,
-								gender: importedChar.gender,
-								role: importedChar.role,
-								order: importedChar.order,
-								notes: importedChar.notes || "",
-								voice: importedChar.voice || "",
-								aliases: importedChar.aliases || [],
-								relationTerms: importedChar.relationTerms || [],
-							});
+							// 直接在 mergedChars 中更新，而不是调用 updateCharacter
+							const existingIndex = mergedChars.findIndex(c => c.id === existing.id);
+							if (existingIndex >= 0) {
+								mergedChars[existingIndex] = {
+									...mergedChars[existingIndex],
+									name: importedChar.name,
+									gender: importedChar.gender,
+									role: importedChar.role,
+									order: importedChar.order,
+									notes: importedChar.notes || "",
+									voice: importedChar.voice || "",
+									voiceDesignPrompt: importedChar.voiceDesignPrompt || "",
+									aliases: importedChar.aliases || [],
+									relationTerms: importedChar.relationTerms || [],
+								};
+							}
 							idMapping.set(importedChar.id, existing.id);
 							updatedCount++;
 						} else {
@@ -1307,6 +1317,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								order: importedChar.order,
 								notes: importedChar.notes || "",
 								voice: importedChar.voice || "",
+								voiceDesignPrompt: importedChar.voiceDesignPrompt || "",
 								aliases: importedChar.aliases || [],
 								relationTerms: importedChar.relationTerms || [],
 							};
@@ -1380,7 +1391,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			reader.readAsText(file);
 		};
 		input.click();
-	}, [novelId, novelCharacters, updateCharacter, setCharactersForNovel, setRelationshipsForNovel, setNodePositions, setIgnoredWords, setNovelCategory, setIgnoredCharacterNames]);
+	}, [novelId, novelCharacters, setCharactersForNovel, setRelationshipsForNovel, setNodePositions, setIgnoredWords, setNovelCategory, setIgnoredCharacterNames]);
 
 	// 使用AI分析整本小说提取角色和关系
 	const handleAnalyzeCharacters = async () => {
@@ -1443,6 +1454,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						role: char.role as CharacterRole,
 						notes: char.description,
 						voice: "",
+						voiceDesignPrompt: char.voiceDesignPrompt,
 						aliases: char.aliases,
 						relationTerms: [] as string[],
 						order: newCharactersWithIds.length,
@@ -1751,6 +1763,33 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		setReanalyzeError(null);
 	}, []);
 
+	// AI生成音色设计
+	const handleGenerateVoiceDesign = useCallback(async () => {
+		if (!editForm.name) return;
+		
+		setIsGeneratingVoiceDesign(true);
+		try {
+			const result = await generateVoiceDesign({
+				name: editForm.name,
+				gender: editForm.gender || "other",
+				role: editForm.role,
+				notes: editForm.notes,
+			}, aiConfig);
+			
+			setEditForm(prev => ({
+				...prev,
+				voiceDesignPrompt: result,
+			}));
+			
+			useAppStore.getState().showToast("音色设计生成成功", "success");
+		} catch (error) {
+			logger.errorGeneric("生成音色设计失败", { error });
+			useAppStore.getState().showToast("生成音色设计失败", "error");
+		} finally {
+			setIsGeneratingVoiceDesign(false);
+		}
+	}, [editForm.name, editForm.gender, editForm.role, editForm.notes, aiConfig]);
+
 	// 播放备注
 	const handlePlayNote = useCallback(async (character: CharacterInfo) => {
 		if (!character.notes) return;
@@ -1793,10 +1832,10 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			// 构建播放文本：角色名 + 备注
 			const playText = `${character.name}。${character.notes}`;
 			
-			logger.tts("播放角色备注", { character: character.name, voice, text: playText.slice(0, 50) + "..." });
+			logger.tts("播放角色备注", { character: character.name, voice, text: playText.slice(0, 50) + "...", voiceDesign: !!character.voiceDesignPrompt });
 			
-			// 合成音频
-			const audioBuffer = await synthesizeSpeechWithVoice(playText, ttsConfig, voice);
+			// 合成音频（支持音色设计）
+			const audioBuffer = await synthesizeSpeechWithVoice(playText, ttsConfig, voice, character.voiceDesignPrompt);
 			
 			if (cancelled) {
 				logger.tts("播放已取消", { character: character.name });
@@ -2121,6 +2160,28 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 													/>
 												</div>
 
+												<div className="form-field">
+													<div className="flex justify-between items-center mb-2">
+														<label className="text-xs">音色设计</label>
+														<button
+															type="button"
+															className="text-xs text-blue-500 hover:text-blue-400 flex items-center gap-1"
+															onClick={handleGenerateVoiceDesign}
+															disabled={isGeneratingVoiceDesign || !editForm.name}
+														>
+															<Icons.sparkle size={12} />
+															{isGeneratingVoiceDesign ? "生成中..." : "AI生成"}
+														</button>
+													</div>
+													<textarea
+														value={editForm.voiceDesignPrompt || ""}
+														onChange={(e) => setEditForm({ ...editForm, voiceDesignPrompt: e.target.value })}
+														className="config-input"
+														placeholder="输入音色设计描述，如：温柔甜美，年轻女性，温婉知性，适合表达柔情、羞涩、关切等情感"
+														rows={3}
+													/>
+												</div>
+
 												{/* 别称 */}
 												<div className="form-field">
 													<div className="flex justify-between items-center mb-2">
@@ -2285,6 +2346,15 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 																{char.voice ? voiceOptions.find(o => o.value === char.voice)?.label || char.voice : "自动选择"}
 															</span>
 														</div>
+														{char.voiceDesignPrompt && (
+															<div className="detail-item voice-design-detail">
+																<Icons.sparkle size={14} />
+																<span className="detail-label">音色设计:</span>
+																<span className="detail-value truncate" title={char.voiceDesignPrompt}>
+																	{char.voiceDesignPrompt}
+																</span>
+															</div>
+														)}
 													</div>
 
 													{/* 操作按钮 */}

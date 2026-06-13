@@ -13,6 +13,11 @@ dist
 dist-ssr
 *.local
 
+# Signing keys (NEVER commit these)
+*.jks
+*.keystore
+keystore-base64.txt
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

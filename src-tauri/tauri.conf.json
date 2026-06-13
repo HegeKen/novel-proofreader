@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' http://localhost:* https://api.github.com https://*.githubusercontent.com https://allorigins.win https://corsproxy.io; media-src 'self' blob: data:"
     }
   },
   "bundle": {

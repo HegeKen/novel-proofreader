@@ -803,11 +803,15 @@ export class TTSPlayer {
 
 		// 创建新的 AbortController 用于取消本次播放
 		this.abortController = new AbortController();
-		const signal = this.abortController.signal;
 
 		let cancelled = false;
+		const audioRef = { current: null as HTMLAudioElement | null };
 		const cancelFn = () => {
 			cancelled = true;
+			if (audioRef.current) {
+				audioRef.current.pause();
+				audioRef.current.src = "";
+			}
 		};
 		this.cancelCurrentAudio = cancelFn;
 
@@ -818,7 +822,8 @@ export class TTSPlayer {
 		this.notifyUpdate();
 
 		for (let attempt = 0; attempt < 2; attempt++) {
-			if (cancelled || !this.isPlaying || signal.aborted) {
+			// 使用 this.abortController.signal 而不是缓存的 signal，确保检查最新的中止状态
+			if (cancelled || !this.isPlaying || this.abortController?.signal.aborted) {
 				logger.tts("句子播放被取消或停止", { index, cancelled, isPlaying: this.isPlaying });
 				return;
 			}
@@ -851,14 +856,14 @@ export class TTSPlayer {
 					logger.tts("使用本地缓存音频", { index, fromCache: true });
 				}
 
-				if (cancelled || !this.isPlaying || signal.aborted) {
+				if (cancelled || !this.isPlaying || this.abortController?.signal.aborted) {
 					logger.tts("句子播放被取消或停止（音频合成后）", { index, cancelled, isPlaying: this.isPlaying });
 					return;
 				}
 
-				await playAudio(audioBuffer, signal);
+				await playAudio(audioBuffer, this.abortController?.signal);
 
-				if (cancelled || !this.isPlaying || signal.aborted) {
+				if (cancelled || !this.isPlaying || this.abortController?.signal.aborted) {
 					logger.tts("句子播放被取消或停止（音频播放后）", { index, cancelled, isPlaying: this.isPlaying });
 					return;
 				}

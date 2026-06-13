@@ -447,90 +447,96 @@ export function ProofreadPanel() {
 		<div className="proofread-panel">
 			<div className="proofread-header">
 				<div className="proofread-toolbar">
-					<div className="toolbar-left">
-					<label className="granularity-select">
-						检测项：
-						<div className="detection-options">
-							<label className="detection-option">
-								<input
-									type="checkbox"
-									checked={granularity === 'chapter'}
-									onChange={() => setGranularity(granularity === 'chapter' ? 'paragraph' : 'chapter')}
-								/>
-								<span>按章节</span>
+					<div className="toolbar-row toolbar-row-1">
+						<div className="toolbar-row-left">
+							<label className="granularity-select">
+								检测项：
+								<div className="detection-options">
+									<label className="detection-option">
+										<input
+											type="checkbox"
+											checked={granularity === 'chapter'}
+											onChange={() => setGranularity(granularity === 'chapter' ? 'paragraph' : 'chapter')}
+										/>
+										<span>按章节</span>
+									</label>
+								</div>
 							</label>
+							{granularity !== "chapter" && totalLines > 0 && (
+								<label className="start-line-display">
+									起始行：
+									<span className="start-line-value">
+										{startLine !== null ? `第 ${startLine + 1} 行` : '从头开始'}
+									</span>
+								</label>
+							)}
 						</div>
-					</label>
-					{granularity !== "chapter" && totalLines > 0 && (
-						<label className="start-line-display">
-							起始行：
-							<span className="start-line-value">
-								{startLine !== null ? `第 ${startLine + 1} 行` : '从头开始'}
-							</span>
-						</label>
-					)}
-					{chapters.length > 1 && (
-						<>
-							<button
-								className="btn-mobile"
-								disabled={currentChapterIndex <= 0}
-								onClick={() => setCurrentChapterIndex(currentChapterIndex - 1)}
-								title={currentChapterIndex > 0 ? (chapters[currentChapterIndex - 1]?.title || `第 ${currentChapterIndex} 章`) : "已是第一章"}
-							>
-								<Icons.skipBack size={16} />
-							</button>
-							<button
-								className="btn-mobile"
-								disabled={currentChapterIndex >= chapters.length - 1}
-								onClick={() => setCurrentChapterIndex(currentChapterIndex + 1)}
-								title={currentChapterIndex < chapters.length - 1 ? (chapters[currentChapterIndex + 1]?.title || `第 ${currentChapterIndex + 2} 章`) : "已是最后一章"}
-							>
-								<Icons.skipForward size={16} />
-							</button>
-						</>
-					)}
-				</div>
-				<div className="toolbar-right">
-					{totalErrors > 0 && (
-						<span
-							className={`error-count${remainingErrors > 0 ? " clickable" : ""}`}
-							onClick={handleErrorCountClick}
-						>
-							发现 <strong>{totalErrors}</strong> 个问题
-							{remainingErrors < totalErrors && (
-								<span className="remaining-count">
-									，剩余 <strong>{remainingErrors}</strong> 个未处理
+						<div className="toolbar-row-right">
+							{chapters.length > 1 && (
+								<>
+									<button
+										className={isMobile ? "btn-mobile" : "btn"}
+										disabled={currentChapterIndex <= 0}
+										onClick={() => setCurrentChapterIndex(currentChapterIndex - 1)}
+										title={currentChapterIndex > 0 ? (chapters[currentChapterIndex - 1]?.title || `第 ${currentChapterIndex} 章`) : "已是第一章"}
+									>
+										<Icons.skipBack size={16} />
+									</button>
+									<button
+										className={isMobile ? "btn-mobile" : "btn"}
+										disabled={currentChapterIndex >= chapters.length - 1}
+										onClick={() => setCurrentChapterIndex(currentChapterIndex + 1)}
+										title={currentChapterIndex < chapters.length - 1 ? (chapters[currentChapterIndex + 1]?.title || `第 ${currentChapterIndex + 2} 章`) : "已是最后一章"}
+									>
+										<Icons.skipForward size={16} />
+									</button>
+								</>
+							)}
+						</div>
+					</div>
+					<div className="toolbar-row toolbar-row-2">
+						<div className="toolbar-row-left">
+							{totalErrors > 0 && (
+								<span
+									className={`error-count${remainingErrors > 0 ? " clickable" : ""}`}
+									onClick={handleErrorCountClick}
+								>
+									发现 <strong>{totalErrors}</strong> 个问题
+									{remainingErrors < totalErrors && (
+										<span className="remaining-count">
+											，剩余 <strong>{remainingErrors}</strong> 个未处理
+										</span>
+									)}
 								</span>
 							)}
-						</span>
-					)}
-					<button
-						className={isMobile ? "btn-mobile" : "btn"}
-						onClick={() => setShowQueuePanel(!showQueuePanel)}
-						title="批量校对队列"
-					>
-						<Icons.listTodo size={16} />
-					</button>
-					<button
-						className={isMobile ? "btn-mobile" : "btn"}
-						onClick={() => setShowIgnoredWordsModal(true)}
-						title="管理忽略单词"
-					>
-						<Icons.settings size={16} />
-					</button>
-					{checking ? (
-						<button className={isMobile ? "btn-mobile" : "btn"} onClick={cancelCheck}>
-							<Icons.close size={16} />
-							{!isMobile && <span>取消检测</span>}
-						</button>
-					) : (
-						<button className={isMobile ? "btn-mobile" : "btn btn-check"} onClick={handleStartCheck}>
-							<Icons.play size={16} />
-							{!isMobile && <span>开始检测</span>}
-						</button>
-					)}
+						</div>
+						<div className="toolbar-row-right">
+							<button
+								className={isMobile ? "btn-mobile" : "btn"}
+								onClick={() => setShowQueuePanel(!showQueuePanel)}
+								title="批量校对队列"
+							>
+								<Icons.listTodo size={16} />
+							</button>
+							<button
+								className={isMobile ? "btn-mobile" : "btn"}
+								onClick={() => setShowIgnoredWordsModal(true)}
+								title="管理忽略单词"
+							>
+								<Icons.settings size={16} />
+							</button>
+							{checking ? (
+								<button className={isMobile ? "btn-mobile" : "btn"} onClick={cancelCheck}>
+									<Icons.close size={16} />
+								</button>
+							) : (
+								<button className={isMobile ? "btn-mobile" : "btn"} onClick={handleStartCheck}>
+									<Icons.play size={16} />
+								</button>
+							)}
+						</div>
+					</div>
 				</div>
-			</div>
 
 			{/* 校对进度条 - 放在 toolbar 下面 */}
 			{(checking || checkedLines > 0) && (

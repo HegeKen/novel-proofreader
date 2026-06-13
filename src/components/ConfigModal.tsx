@@ -18,6 +18,7 @@ import {
 	READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT,
 	CHAPTER_TITLE_SYSTEM_PROMPT,
 	CHARACTER_REANALYSIS_SYSTEM_PROMPT,
+	testConnection,
 } from "../utils/aiClient";
 
 const PROVIDERS: {
@@ -117,6 +118,192 @@ const detectProvider = (url: string): AIProvider => {
 		return "vllm";
 	return "custom";
 };
+
+// AI 测试模块组件
+function AITestSection({ config }: { config: { baseUrl: string; apiKey: string; model: string } }) {
+	const [testText, setTestText] = useState("请回复\"测试成功\"这四个字。");
+	const [isTesting, setIsTesting] = useState(false);
+	const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+	const handleTest = async () => {
+		setIsTesting(true);
+		setTestResult(null);
+		
+		try {
+			const result = await testConnection({
+				baseURL: config.baseUrl,
+				apiKey: config.apiKey,
+				model: config.model,
+				maxCharsPerRequest: 5000,
+				enableLogging: true,
+				customHeaders: {},
+			}, testText);
+			setTestResult(result);
+		} catch (err) {
+			setTestResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
+		} finally {
+			setIsTesting(false);
+		}
+	};
+
+	// 安全的 HTML 消毒：只允许 <strong>、<em>、<code> 标签
+	const sanitizeHTML = (html: string): string => {
+		return html
+			.replace(/<script[\s\S]*?<\/script>/gi, '')
+			.replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+			.replace(/on\w+="[^"]*"/gi, '')
+			.replace(/on\w+='[^']*'/gi, '')
+			.replace(/javascript:/gi, '');
+	};
+
+	// 简单的 Markdown 转 JSX
+	const renderMarkdown = (text: string) => {
+		if (!text) return null;
+		
+		const lines = text.split('\n');
+		const elements: React.ReactNode[] = [];
+		let key = 0;
+		let inList = false;
+		let listItems: string[] = [];
+
+		const flushList = () => {
+			if (listItems.length > 0) {
+				elements.push(
+					<ul key={`list-${key++}`} className="md-list">
+						{listItems.map((item, i) => {
+							const safe = sanitizeHTML(item
+								.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+								.replace(/\*(.+?)\*/g, '<em>$1</em>')
+								.replace(/`(.+?)`/g, '<code>$1</code>'));
+							return <li key={i} dangerouslySetInnerHTML={{ __html: safe }} />;
+						})}
+					</ul>
+				);
+				listItems = [];
+			}
+			inList = false;
+		};
+
+		const renderInline = (line: string): string => {
+			const raw = line
+				.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+				.replace(/\*(.+?)\*/g, '<em>$1</em>')
+				.replace(/`(.+?)`/g, '<code>$1</code>');
+			return sanitizeHTML(raw);
+		};
+
+		for (let i = 0; i < lines.length; i++) {
+			const line = lines[i];
+			
+			// 水平线
+			if (line.match(/^---+$/) || line.match(/^\*\*\*+$/)) {
+				flushList();
+				elements.push(<hr key={key++} className="md-hr" />);
+				continue;
+			}
+
+			// 标题
+			const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
+			if (headingMatch) {
+				flushList();
+				const level = headingMatch[1].length;
+				const content = headingMatch[2];
+				const className = `md-heading md-h${level}`;
+				elements.push(
+					<div key={key++} className={className} dangerouslySetInnerHTML={{ __html: renderInline(content) }} />
+				);
+				continue;
+			}
+
+			// 列表项
+			const listMatch = line.match(/^([-*]|\d+\.)\s+(.+)$/);
+			if (listMatch) {
+				inList = true;
+				listItems.push(listMatch[2]);
+				continue;
+			} else if (inList) {
+				flushList();
+			}
+
+			// 引用块
+			const quoteMatch = line.match(/^>\s*(.*)$/);
+			if (quoteMatch) {
+				flushList();
+				elements.push(
+					<blockquote key={key++} className="md-quote" dangerouslySetInnerHTML={{ __html: renderInline(quoteMatch[1]) }} />
+				);
+				continue;
+			}
+
+			// 段落
+			const trimmed = line.trim();
+			if (trimmed) {
+				elements.push(
+					<p key={key++} className="md-paragraph" dangerouslySetInnerHTML={{ __html: renderInline(trimmed) }} />
+				);
+			}
+		}
+
+		flushList();
+		return elements;
+	};
+
+	return (
+		<div className="config-section">
+			<div className="section-label">
+				<Icons.bolt size={14} />
+				测试 AI 连接
+			</div>
+			
+			<div className="test-row test-row-1">
+				<input
+					type="text"
+					value={testText}
+					onChange={(e) => setTestText(e.target.value)}
+					placeholder="输入测试文本..."
+					className="test-input"
+				/>
+				<button
+					className="test-btn"
+					onClick={handleTest}
+					disabled={isTesting || !config.baseUrl || !config.apiKey || !config.model}
+				>
+					{isTesting ? (
+						<>
+							<Icons.loader2 size={14} className="spinning" />
+							测试中...
+						</>
+					) : (
+						<>
+							<Icons.play size={14} />
+							测试
+						</>
+					)}
+				</button>
+			</div>
+			
+			{testResult && (
+				<div className="test-row test-row-2">
+					<div className={`test-result ${testResult.ok ? "success" : "error"}`}>
+						<div className="result-header">
+							{testResult.ok ? (
+								<Icons.checkCircle size={16} />
+							) : (
+								<Icons.xCircle size={16} />
+							)}
+							<span className="result-status">
+								{testResult.ok ? "测试成功" : "测试失败"}
+							</span>
+						</div>
+						<div className="result-message">
+							{renderMarkdown(testResult.message)}
+						</div>
+					</div>
+				</div>
+			)}
+		</div>
+	);
+}
 
 // API 使用统计组件
 function APIUsageSection() {
@@ -995,6 +1182,8 @@ function ConfigModalContent({
 									</div>
 								</div>
 							</div>
+							
+							<AITestSection config={config} />
 						</>
 					)}
 
