@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { CharacterInfo, CharacterRelationship } from "../types";
+import type { CharacterInfo, CharacterRelationship, NovelWorldbuilding } from "../types";
 
 
 export interface CharacterState {
@@ -8,6 +8,7 @@ export interface CharacterState {
 	characterRelationships: Record<string, CharacterRelationship[]>;
 	nodePositions: Record<string, Record<string, { x: number; y: number }>>;
 	ignoredCharacterNames: Record<string, string[]>;
+	worldbuilding: Record<string, NovelWorldbuilding>;
 
 	addCharacter: (novelId: string, character: Omit<CharacterInfo, "id">) => void;
 	updateCharacter: (novelId: string, characterId: string, character: Partial<Omit<CharacterInfo, "id">>) => void;
@@ -28,6 +29,9 @@ export interface CharacterState {
 	addIgnoredCharacterName: (novelId: string, name: string) => void;
 	getIgnoredCharacterNames: (novelId: string) => string[];
 	setIgnoredCharacterNames: (novelId: string, names: string[]) => void;
+
+	getWorldbuilding: (novelId: string) => NovelWorldbuilding | null;
+	setWorldbuilding: (novelId: string, wb: NovelWorldbuilding) => void;
 }
 
 function syncNicknamesToCharacters(
@@ -50,6 +54,7 @@ export const useCharacterStore = create<CharacterState>()(
 			characterRelationships: {},
 			nodePositions: {},
 			ignoredCharacterNames: {},
+			worldbuilding: {},
 
 			addCharacter: (novelId, character) => {
 				const newCharacter = { ...character, id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` };
@@ -175,6 +180,13 @@ export const useCharacterStore = create<CharacterState>()(
 				set((state) => ({
 					ignoredCharacterNames: { ...state.ignoredCharacterNames, [novelId]: names },
 				})),
+
+			getWorldbuilding: (novelId) => get().worldbuilding[novelId] ?? null,
+
+			setWorldbuilding: (novelId, wb) =>
+				set((state) => ({
+					worldbuilding: { ...state.worldbuilding, [novelId]: wb },
+				})),
 		}),
 		{
 			name: "novel-proofreader-characters",
@@ -183,6 +195,7 @@ export const useCharacterStore = create<CharacterState>()(
 				characterRelationships: state.characterRelationships,
 				nodePositions: state.nodePositions,
 				ignoredCharacterNames: state.ignoredCharacterNames,
+				worldbuilding: state.worldbuilding,
 			}),
 		},
 	),

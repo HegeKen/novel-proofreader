@@ -245,3 +245,25 @@ export type ReadingBackground =
 	| "dark"
 	| "custom"
 	| "image";
+
+/** 小说世界观 */
+export interface NovelWorldbuilding {
+	/** 世界背景类型（如：玄幻世界、科幻未来、古代王朝、现代都市等） */
+	worldType: string;
+	/** 时代背景描述（如：架空古代、近未来、星际时代、中世纪等） */
+	eraDescription: string;
+	/** 地理环境（如：大陆格局、气候特征、重要地点等） */
+	geography: string;
+	/** 社会结构（如：政治体制、阶级划分、权力体系等） */
+	socialStructure: string;
+	/** 力量体系（如：修炼体系、魔法体系、科技水平等，无则为空） */
+	powerSystem: string;
+	/** 文明文化（如：种族、文化习俗、宗教信仰、语言等） */
+	civilization: string;
+	/** 历史背景（如：重大历史事件、传说、纪元等） */
+	history: string;
+	/** 核心设定（如：世界运行规则、特殊法则等） */
+	coreSettings: string;
+	/** 完整世界观描述（AI 综合生成的概述） */
+	description: string;
+}

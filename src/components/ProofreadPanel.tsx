@@ -266,6 +266,19 @@ export function ProofreadPanel() {
 			const chapterId = currentChapter.id;
 			const paraIndex = paraResult.paragraphIndex;
 
+			// 记录采纳前状态
+			const beforeState = {
+				currentNovelId: state.currentNovelId,
+				currentChapterIndex: state.currentChapterIndex,
+				chaptersLength: state.chapters.length,
+				chapterId,
+				paraIndex,
+				action: err.applied ? '撤销' : '采纳',
+				errorId: err.id,
+				timestamp: Date.now()
+			};
+			console.log('[handleApply] 采纳前状态:', JSON.stringify(beforeState, null, 2));
+
 			// 如果已采纳则撤销（把文本换回去）
 			if (err.applied) {
 				const ok = replaceParagraphText(
@@ -324,6 +337,16 @@ export function ProofreadPanel() {
 				);
 				logger.proofread(`采纳修改: chapterId=${chapterId}, paraIndex=${paraIndex}, original="${err.originalText}", corrected="${err.correctedText}", success=${replaced}`);
 				toggleErrorApplied(chapterId, paraIndex, err.id); // 使用原始段落索引
+
+				// 记录采纳后状态
+				const afterState = useNovelStore.getState();
+				console.log('[handleApply] 采纳后状态:', JSON.stringify({
+					currentNovelId: afterState.currentNovelId,
+					currentChapterIndex: afterState.currentChapterIndex,
+					chaptersLength: afterState.chapters.length,
+					replaced,
+					timestamp: Date.now()
+				}, null, 2));
 
 				// 更新同段落中剩余错误的索引（每次替换后都要更新，确保位置准确）
 				if (replaced) {

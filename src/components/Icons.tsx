@@ -67,6 +67,7 @@ import {
 	Smartphone,
 	CodeXml,
 	History,
+	Globe,
 } from "lucide-react";
 
 export const Icons = {
@@ -144,6 +145,7 @@ export const Icons = {
 	smartphone: Smartphone,
 	codeXml: CodeXml,
 	history: History,
+	globe: Globe,
 };
 
 export type IconName = keyof typeof Icons;

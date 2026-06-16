@@ -161,7 +161,7 @@ export function NovelList({
 										e.preventDefault();
 										setShowCharacterSettings(novel.id);
 									}}
-									title="角色设置"
+									title="小说设置"
 								>
 									<Icons.settings size={16} />
 								</button>

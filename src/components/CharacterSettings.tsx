@@ -1,5 +1,5 @@
 // ============================================================
-// 角色设置组件
+// 小说设置组件
 // ============================================================
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useNovelStore } from "../stores/novelStore";
@@ -8,14 +8,14 @@ import { useCharacterStore } from "../stores/characterStore";
 import { useProofreadMetaStore } from "../stores/proofreadMetaStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
 import { useConfigStore } from "../stores/configStore";
-import type { CharacterInfo, CharacterRelationship, CharacterRole, NovelCategory, RelationType } from "../types";
+import type { CharacterInfo, CharacterRelationship, CharacterRole, NovelCategory, NovelWorldbuilding, RelationType } from "../types";
 import { synthesizeSpeechWithVoice } from "../utils/ttsService";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { logger } from "../utils/logger";
 import { saveCharacterConfigToStorage, loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
 import type { DetectedCharacter } from "../utils/fileExport";
-import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign } from "../utils/aiClient";
+import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign, analyzeWorldbuilding } from "../utils/aiClient";
 import { formatDateTime } from "../utils/formatters";
 import { RelationshipGraph } from "./RelationshipGraph";
 
@@ -740,6 +740,235 @@ function MergeConfigPanel({ sourceChars, onExecute, onBack }: MergeConfigPanelPr
 	);
 }
 
+// ============================================================
+// 世界观编辑组件
+// ============================================================
+interface WorldbuildingSectionProps {
+	novelId: string;
+}
+
+function WorldbuildingSection({ novelId }: WorldbuildingSectionProps) {
+	const getWorldbuilding = useCharacterStore((s) => s.getWorldbuilding);
+	const setWorldbuilding = useCharacterStore((s) => s.setWorldbuilding);
+	const wb = useMemo(() => getWorldbuilding(novelId), [getWorldbuilding, novelId]);
+
+	const novels = useNovelStore((s) => s.novels);
+	const currentNovel = useMemo(() => novels.find(n => n.id === novelId), [novels, novelId]);
+	const aiConfig = useAIConfigStore((s) => s.aiConfig);
+
+	const [editMode, setEditMode] = useState(false);
+	const [isAnalyzing, setIsAnalyzing] = useState(false);
+	const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+	const [form, setForm] = useState<NovelWorldbuilding>(() => ({
+		worldType: wb?.worldType || "",
+		eraDescription: wb?.eraDescription || "",
+		geography: wb?.geography || "",
+		socialStructure: wb?.socialStructure || "",
+		powerSystem: wb?.powerSystem || "",
+		civilization: wb?.civilization || "",
+		history: wb?.history || "",
+		coreSettings: wb?.coreSettings || "",
+		description: wb?.description || "",
+	}));
+
+	const initFormFromWb = useCallback((data: typeof wb) => {
+		setForm({
+			worldType: data?.worldType || "",
+			eraDescription: data?.eraDescription || "",
+			geography: data?.geography || "",
+			socialStructure: data?.socialStructure || "",
+			powerSystem: data?.powerSystem || "",
+			civilization: data?.civilization || "",
+			history: data?.history || "",
+			coreSettings: data?.coreSettings || "",
+			description: data?.description || "",
+		});
+	}, []);
+
+	const handleSave = useCallback(() => {
+		setWorldbuilding(novelId, form);
+		setEditMode(false);
+	}, [novelId, form, setWorldbuilding]);
+
+	const handleAnalyzeWorldbuilding = useCallback(async () => {
+		if (!currentNovel?.fullText) {
+			useAppMetaStore.getState().showToast("无法获取小说内容", "error");
+			return;
+		}
+		if (!aiConfig.apiKey || !aiConfig.baseURL) {
+			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			return;
+		}
+
+		setIsAnalyzing(true);
+		setAnalyzeError(null);
+
+		const abortController = new AbortController();
+
+		try {
+			const config = {
+				baseURL: aiConfig.baseURL,
+				apiKey: aiConfig.apiKey,
+				model: aiConfig.model,
+				customHeaders: {},
+				maxCharsPerRequest: 0,
+				enableLogging: false,
+			};
+
+			const result = await analyzeWorldbuilding(
+				currentNovel.fullText,
+				config,
+				abortController.signal,
+			);
+
+			if (result) {
+				setWorldbuilding(novelId, result);
+				initFormFromWb(result);
+				useAppMetaStore.getState().showToast("世界观分析完成", "success");
+				logger.proofread("[Worldbuilding] AI分析完成:", result);
+			} else {
+				setAnalyzeError("未能从小说内容中提取世界观信息");
+			}
+		} catch (err) {
+			if (err instanceof Error && err.message === "分析已取消") {
+				logger.proofread("[Worldbuilding] 用户取消分析");
+			} else {
+				logger.warn("[Worldbuilding] AI分析失败:", err);
+				setAnalyzeError(err instanceof Error ? err.message : String(err));
+			}
+		} finally {
+			setIsAnalyzing(false);
+		}
+	}, [currentNovel, aiConfig, novelId, setWorldbuilding, initFormFromWb]);
+
+	const hasContent = wb && wb.worldType;
+
+	const fields = [
+		{ key: "worldType" as const, label: "世界背景类型", hint: "如：玄幻世界、科幻未来、古代王朝" },
+		{ key: "eraDescription" as const, label: "时代背景", hint: "如：架空古代、近未来、星际时代" },
+		{ key: "geography" as const, label: "地理环境", hint: "大陆格局、气候特征、重要地点" },
+		{ key: "socialStructure" as const, label: "社会结构", hint: "政治体制、阶级划分、权力体系" },
+		{ key: "powerSystem" as const, label: "力量体系", hint: "修炼体系、魔法体系、科技水平" },
+		{ key: "civilization" as const, label: "文明文化", hint: "种族、文化习俗、宗教信仰" },
+		{ key: "history" as const, label: "历史背景", hint: "重大历史事件、传说、纪元更替" },
+		{ key: "coreSettings" as const, label: "核心设定", hint: "世界运行规则、特殊法则" },
+	];
+
+	if (!hasContent && !editMode) {
+		return (
+			<div className="text-center py-12">
+				<div className="w-16 h-16 mx-auto mb-4 bg-neutral-700 rounded-full flex items-center justify-center">
+					<Icons.globe size={32} className="text-neutral-500" />
+				</div>
+				<p className="text-neutral-400 text-lg mb-2">暂无世界观设定</p>
+				<p className="text-neutral-500 text-sm mb-4">使用 AI 分析角色时将自动生成世界观，或单独分析</p>
+				<div className="flex flex-col items-center gap-3">
+					<button className="btn-primary" onClick={handleAnalyzeWorldbuilding} disabled={isAnalyzing}>
+						{isAnalyzing ? <Icons.loader2 size={14} className="animate-spin" /> : <Icons.sparkle size={14} />}
+						{isAnalyzing ? "AI 分析中..." : "AI 分析世界观"}
+					</button>
+					<button className="btn" onClick={() => setEditMode(true)}>
+						<Icons.plus size={14} />
+						手动添加
+					</button>
+				</div>
+				{analyzeError && (
+					<p className="text-red-400 text-sm mt-4">{analyzeError}</p>
+				)}
+			</div>
+		);
+	}
+
+	return (
+		<div className="space-y-4 p-4">
+			<div className="flex items-center justify-between flex-wrap gap-2">
+				<div className="section-label">
+					<Icons.globe size={14} />
+					世界观设定
+				</div>
+				<div className="flex items-center gap-2">
+					{!editMode && (
+						<button className="btn" onClick={handleAnalyzeWorldbuilding} disabled={isAnalyzing}>
+							{isAnalyzing ? <Icons.loader2 size={14} className="animate-spin" /> : <Icons.sparkle size={14} />}
+							{isAnalyzing ? "分析中..." : "AI 分析"}
+						</button>
+					)}
+					{!editMode ? (
+						<button className="btn" onClick={() => { initFormFromWb(wb); setEditMode(true); }}>
+							<Icons.edit size={14} />
+							编辑
+						</button>
+					) : (
+						<>
+							<button className="btn" onClick={() => { setEditMode(false); initFormFromWb(wb); }}>
+								取消
+							</button>
+							<button className="btn-primary" onClick={handleSave}>
+								<Icons.saveIcon size={14} />
+								保存
+							</button>
+						</>
+					)}
+				</div>
+			</div>
+
+			{analyzeError && (
+				<div className="text-red-400 text-sm">{analyzeError}</div>
+			)}
+
+			{editMode ? (
+				<div className="space-y-3">
+					{fields.map(({ key, label, hint }) => (
+						<div key={key} className="form-field">
+							<label>{label}</label>
+							<textarea
+								className="config-textarea"
+								value={form[key]}
+								onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+								placeholder={hint}
+								rows={2}
+							/>
+						</div>
+					))}
+					<div className="form-field">
+						<label>完整世界观概述</label>
+						<textarea
+							className="config-textarea"
+							value={form.description}
+							onChange={(e) => setForm({ ...form, description: e.target.value })}
+							placeholder="综合以上所有维度的完整世界观描述"
+							rows={4}
+						/>
+					</div>
+				</div>
+			) : (
+				<div className="space-y-4">
+					{/* 字段展示 */}
+					<div className="grid grid-cols-1 gap-3">
+						{fields.map(({ key, label }) => {
+							const value = form[key];
+							if (!value) return null;
+							return (
+								<div key={key} className="worldbuilding-field">
+									<div className="worldbuilding-field-label">{label}</div>
+									<div className="worldbuilding-field-value">{value}</div>
+								</div>
+							);
+						})}
+					</div>
+					{/* 完整概述 */}
+					{form.description && (
+						<div className="worldbuilding-field">
+							<div className="worldbuilding-field-label">世界观概述</div>
+							<div className="worldbuilding-field-value">{form.description}</div>
+						</div>
+					)}
+				</div>
+			)}
+		</div>
+	);
+}
+
 export function CharacterSettings({ novelId, novelName, onClose }: CharacterSettingsProps) {
 	const novelCharacters = useCharacterStore((s) => s.novelCharacters);
 	const characters = useMemo(() => novelCharacters[novelId] ?? [], [novelCharacters, novelId]);
@@ -773,6 +1002,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const removeRelationship = useCharacterStore((s) => s.removeRelationship);
 	const updateRelationship = useCharacterStore((s) => s.updateRelationship);
 	const setNodePositions = useCharacterStore((s) => s.setNodePositions);
+	const getWorldbuilding = useCharacterStore((s) => s.getWorldbuilding);
+	const setWorldbuilding = useCharacterStore((s) => s.setWorldbuilding);
 	const setIgnoredWords = useProofreadMetaStore((s) => s.setIgnoredWords);
 	const setNovelCategory = useAppMetaStore((s) => s.setNovelCategory);
 	const getIgnoredWords = useProofreadMetaStore((s) => s.getIgnoredWords);
@@ -926,8 +1157,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		}));
 	}, []);
 
-	// 角色设置标签页状态：'list' | 'graph'
-	const [activeTab, setActiveTab] = useState<"list" | "graph">("list");
+	// 小说设置标签页状态：'list' | 'graph' | 'worldbuilding'
+	const [activeTab, setActiveTab] = useState<"list" | "graph" | "worldbuilding">("list");
 
 	// 角色小传重新分析状态
 	const [showReanalyzeModal, setShowReanalyzeModal] = useState(false);
@@ -1192,6 +1423,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			ignoredWords,
 			ignoredCharacterNames,
 			novelCategory,
+			worldbuilding: getWorldbuilding(novelId) || null,
 		};
 		
 		const dataStr = JSON.stringify(exportData, null, 2);
@@ -1229,7 +1461,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				relationshipCount: relationships.length,
 			});
 		}
-	}, [sortedCharacters, relationships, novelName, novelId, isMobile, nodePositions, ignoredWords, ignoredCharacterNames, novelCategory, setExportModal]);
+	}, [sortedCharacters, relationships, novelName, novelId, isMobile, nodePositions, ignoredWords, ignoredCharacterNames, novelCategory, setExportModal, getWorldbuilding]);
 
 	// 导入角色
 	const handleImportCharacters = useCallback(async () => {
@@ -1251,16 +1483,18 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					let importedIgnoredWords: string[] = [];
 					let importedNovelCategory: NovelCategory | null = null;
 					let importedIgnoredCharacterNames: string[] = [];
+					let importedWorldbuilding: NovelWorldbuilding | null = null;
 
 					// 兼容新旧格式
 					if (imported.version && Array.isArray(imported.characters)) {
-						// 新格式：{ version, characters, relationships, nodePositions, ignoredWords,  novelCategory, ignoredCharacterNames }
+						// 新格式：{ version, characters, relationships, nodePositions, ignoredWords, novelCategory, ignoredCharacterNames, worldbuilding }
 						importedChars = imported.characters;
 						importedRelationships = imported.relationships || [];
 						importedNodePositions = imported.nodePositions || {};
 						importedIgnoredWords = imported.ignoredWords || [];
 						importedNovelCategory = imported.novelCategory || null;
 						importedIgnoredCharacterNames = imported.ignoredCharacterNames || [];
+						importedWorldbuilding = imported.worldbuilding || null;
 					} else if (Array.isArray(imported)) {
 						// 旧格式：CharacterInfo[]
 						importedChars = imported;
@@ -1381,6 +1615,11 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						setIgnoredCharacterNames(novelId, importedIgnoredCharacterNames);
 					}
 
+					// --- 导入世界观设定 ---
+					if (importedWorldbuilding) {
+						setWorldbuilding(novelId, importedWorldbuilding);
+					}
+
 					const msg = `导入完成！新增 ${addedCount} 个角色，更新 ${updatedCount} 个角色` +
 						(importedRelCount > 0 ? `，导入 ${importedRelCount} 条关系` : "") +
 						(Object.keys(importedNodePositions).length > 0 ? "，导入节点位置" : "") +
@@ -1395,10 +1634,10 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			reader.readAsText(file);
 		};
 		input.click();
-	}, [novelId, novelCharacters, setCharactersForNovel, setRelationshipsForNovel, setNodePositions, setIgnoredWords, setNovelCategory, setIgnoredCharacterNames]);
+	}, [novelId, novelCharacters, setCharactersForNovel, setRelationshipsForNovel, setNodePositions, setIgnoredWords, setNovelCategory, setIgnoredCharacterNames, setWorldbuilding]);
 
 	// 使用AI分析整本小说提取角色和关系
-	const handleAnalyzeCharacters = async () => {
+	const handleAnalyzeCharacters = useCallback(async () => {
 		if (!currentNovel?.fullText) {
 			useAppMetaStore.getState().showToast("无法获取小说内容", "error");
 			return;
@@ -1567,6 +1806,24 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			// 添加新关系
 			setRelationshipsForNovel(novelId, [...currentRelationships, ...newRelationships]);
 
+			// 保存世界观信息
+			const setWorldbuilding = useCharacterStore.getState().setWorldbuilding;
+			if (result.worldbuilding) {
+				const novelWorldbuilding = {
+					worldType: result.worldbuilding.worldType || "",
+					eraDescription: result.worldbuilding.eraDescription || "",
+					geography: result.worldbuilding.geography || "",
+					socialStructure: result.worldbuilding.socialStructure || "",
+					powerSystem: result.worldbuilding.powerSystem || "",
+					civilization: result.worldbuilding.civilization || "",
+					history: result.worldbuilding.history || "",
+					coreSettings: result.worldbuilding.coreSettings || "",
+					description: result.worldbuilding.description || "",
+				};
+				setWorldbuilding(novelId, novelWorldbuilding);
+				logger.proofread("[CharacterSettings] 世界观已保存");
+			}
+
 			// 保存跳过的关系供手动整理
 			setSkippedRelationships(currentSkippedRelationships);
 
@@ -1595,7 +1852,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		} finally {
 			setIsAnalyzing(false);
 		}
-	};
+	}, [currentNovel, aiConfig, novelId, characters, addCharacter, getRelationshipsForNovel, setRelationshipsForNovel, setSkippedRelationships, setShowAnalyzeModal, setShowOrganizeRelationsModal, setIsAnalyzing, setAnalyzeError, setAnalyzeProgress]);
 
 	// 打开角色合并弹窗
 	const handleOpenMergeModal = () => {
@@ -1884,7 +2141,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				<div className="config-header">
 					<div className="config-title">
 						<span className="title-icon"><Icons.user size={16} /></span>
-						<span>角色设置</span>
+						<span>小说设置</span>
 						{novelName && <span className="title-novel-name">《{novelName}》</span>}
 					</div>
 					<button className="close-btn" onClick={onClose}>
@@ -1910,12 +2167,19 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						角色列表
 					</button>
 					<button
-						className={`tab-btn ${activeTab === "graph" ? "active" : ""}`}
-						onClick={() => setActiveTab("graph")}
-					>
-						<Icons.sparkle size={14} />
-						关系图谱
-					</button>
+					className={`tab-btn ${activeTab === "graph" ? "active" : ""}`}
+					onClick={() => setActiveTab("graph")}
+				>
+					<Icons.sparkle size={14} />
+					关系图谱
+				</button>
+				<button
+					className={`tab-btn ${activeTab === "worldbuilding" ? "active" : ""}`}
+					onClick={() => setActiveTab("worldbuilding")}
+				>
+					<Icons.globe size={14} />
+					世界观
+				</button>
 				</div>
 
 				<div className="config-body">
@@ -2156,15 +2420,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 													</div>
 												</div>
 												<div className="form-field">
-													<label>音色</label>
-													<Select
-														value={editForm.voice || ""}
-														onChange={(v) => setEditForm({ ...editForm, voice: v })}
-														options={[{ value: "", label: "自动选择" }, ...voiceOptions]}
-													/>
-												</div>
-
-												<div className="form-field">
 													<div className="flex justify-between items-center mb-2">
 														<label className="text-xs">音色设计</label>
 														<button
@@ -2177,11 +2432,17 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 															{isGeneratingVoiceDesign ? "生成中..." : "AI生成"}
 														</button>
 													</div>
+													<Select
+														value={editForm.voice || ""}
+														onChange={(v) => setEditForm({ ...editForm, voice: v })}
+														options={[{ value: "", label: "选择预设音色" }, ...voiceOptions]}
+														className="mb-2"
+													/>
 													<textarea
 														value={editForm.voiceDesignPrompt || ""}
 														onChange={(e) => setEditForm({ ...editForm, voiceDesignPrompt: e.target.value })}
 														className="config-input"
-														placeholder="输入音色设计描述，如：温柔甜美，年轻女性，温婉知性，适合表达柔情、羞涩、关切等情感"
+														placeholder="输入音色设计描述（优先使用），如：温柔甜美，年轻女性，温婉知性..."
 														rows={3}
 													/>
 												</div>
@@ -2343,22 +2604,15 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 															)}
 														</div>
 
-														<div className="detail-item voice-detail">
-															<Icons.volume size={14} />
-															<span className="detail-label">音色:</span>
-															<span className="detail-value">
-																{char.voice ? voiceOptions.find(o => o.value === char.voice)?.label || char.voice : "自动选择"}
-															</span>
-														</div>
-														{char.voiceDesignPrompt && (
-															<div className="detail-item voice-design-detail">
-																<Icons.sparkle size={14} />
-																<span className="detail-label">音色设计:</span>
-																<span className="detail-value truncate" title={char.voiceDesignPrompt}>
-																	{char.voiceDesignPrompt}
-																</span>
-															</div>
-														)}
+														{(char.voiceDesignPrompt || char.voice) && (
+								<div className="detail-item voice-design-detail">
+									<Icons.sparkle size={14} />
+									<span className="detail-label">音色设计:</span>
+									<span className="detail-value truncate" title={char.voiceDesignPrompt || char.voice}>
+										{char.voiceDesignPrompt || (char.voice ? voiceOptions.find(o => o.value === char.voice)?.label || char.voice : "")}
+									</span>
+								</div>
+							)}
 													</div>
 
 													{/* 操作按钮 */}
@@ -2451,10 +2705,15 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 							</div>
 							)}
 						</div>
-					)}
+				)}
 
-					{/* 空状态 */}
-					{characters.length === 0 && !showAddForm && (
+				{/* 世界观 */}
+				{activeTab === "worldbuilding" && (
+					<WorldbuildingSection novelId={novelId} />
+				)}
+
+				{/* 空状态 */}
+				{characters.length === 0 && !showAddForm && (
 						<div className="text-center py-12">
 							<div className="w-16 h-16 mx-auto mb-4 bg-neutral-700 rounded-full flex items-center justify-center">
 								<Icons.user size={32} className="text-neutral-500" />
@@ -2838,6 +3097,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 									<div className="analyze-features-list">
 										<span className="analyze-feature-item">自动识别小说中的主要角色</span>
 										<span className="analyze-feature-item">提取角色外貌、性格、背景描述</span>
+										<span className="analyze-feature-item">分析小说世界观设定</span>
 										<span className="analyze-feature-item">分析角色之间的关系</span>
 										<span className="analyze-feature-item">支持超大文本（1M+ tokens）</span>
 									</div>

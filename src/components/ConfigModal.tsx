@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useConfigStore } from "../stores/configStore";
 import type { AIProvider } from "../types";
@@ -9,6 +9,7 @@ import { ProofreadSettingsSection } from "./config/ProofreadSettingsSection";
 import { TTSConfigSection } from "./config/TTSConfigSection";
 import { DataManagementSection } from "./config/DataManagementSection";
 import { PromptSettingsSection } from "./config/PromptSettingsSection";
+import { getLogHistory, clearLogHistory, type LogEntry } from "../utils/logger";
 
 const PROVIDERS: { value: AIProvider; label: string; logo: string; color: string }[] = [
 	{ value: "openai", label: "OpenAI", logo: "https://avatars.githubusercontent.com/u/14957082?s=200&v=4", color: "#0ea561" },
@@ -73,7 +74,40 @@ function ConfigModalContent({
 }) {
 	const [config, setConfig] = useState<ConfigState>(initialConfig);
 	const [showApiKey, setShowApiKey] = useState(false);
-	const [activeTab, setActiveTab] = useState<"ai" | "tts" | "settings" | "prompt">("ai");
+	const [activeTab, setActiveTab] = useState<"ai" | "tts" | "settings" | "prompt" | "logs">("ai");
+	const [logRefresh, setLogRefresh] = useState(0);
+	const logs = useMemo(() => {
+		void logRefresh;
+		return config.enableLogging ? getLogHistory() : [];
+	}, [config.enableLogging, logRefresh]);
+	const [copiedId, setCopiedId] = useState<string | null>(null);
+
+	const handleCopyLog = useCallback(async (log: LogEntry) => {
+		const logText = `[${new Date(log.timestamp).toLocaleString("zh-CN")}] [${log.level.toUpperCase()}] [${log.category}] ${log.message}${log.data ? "\n" + JSON.stringify(log.data, null, 2) : ""}`;
+		try {
+			await navigator.clipboard.writeText(logText);
+			setCopiedId(log.id);
+			setTimeout(() => setCopiedId(null), 2000);
+		} catch (err) {
+			console.error("复制日志失败:", err);
+		}
+	}, []);
+
+	const handleCopyAllLogs = useCallback(async () => {
+		const allLogs = logs.map(log => `[${new Date(log.timestamp).toLocaleString("zh-CN")}] [${log.level.toUpperCase()}] [${log.category}] ${log.message}${log.data ? "\n" + JSON.stringify(log.data, null, 2) : ""}`).join("\n\n");
+		try {
+			await navigator.clipboard.writeText(allLogs);
+			setCopiedId("all");
+			setTimeout(() => setCopiedId(null), 2000);
+		} catch (err) {
+			console.error("复制所有日志失败:", err);
+		}
+	}, [logs]);
+
+	const handleClearLogs = useCallback(() => {
+		clearLogHistory();
+		setLogRefresh((prev) => prev + 1);
+	}, []);
 
 	const handleProviderChange = useCallback((p: AIProvider) => {
 		setConfig((prev) => {
@@ -102,6 +136,11 @@ function ConfigModalContent({
 							<Icon size={14} />{label}
 						</button>
 					))}
+					{config.enableLogging && (
+						<button key="logs" className={`tab-btn ${activeTab === "logs" ? "active" : ""}`} onClick={() => setActiveTab("logs")}>
+							<Icons.punctuation size={14} />日志
+						</button>
+					)}
 				</div>
 				<div className="config-body">
 					{activeTab === "ai" && (
@@ -177,6 +216,57 @@ function ConfigModalContent({
 					)}
 					{activeTab === "prompt" && (
 						<PromptSettingsSection initialPromptConfig={promptConfig} onSave={onSavePrompt} />
+					)}
+					{activeTab === "logs" && (
+						<div className="config-section">
+							<div className="section-header">
+								<div className="section-label"><Icons.punctuation size={14} />调试日志</div>
+								<div className="section-actions">
+									<button className="btn btn-sm" onClick={handleCopyAllLogs}>
+										{copiedId === "all" ? <Icons.check size={14} /> : <Icons.copy size={14} />}
+										{copiedId === "all" ? "已复制" : "复制全部"}
+									</button>
+									<button className="btn btn-sm btn-secondary" onClick={handleClearLogs}>
+										<Icons.trash2 size={14} />清空
+									</button>
+								</div>
+							</div>
+							<div className="logs-container">
+								{logs.length === 0 ? (
+									<div className="empty-logs">
+										<Icons.punctuation size={48} className="empty-icon" />
+										<p>暂无日志记录</p>
+									</div>
+								) : (
+									<div className="logs-list">
+										{logs.map((log) => (
+											<div key={log.id} className={`log-item log-${log.level}`}>
+												<div className="log-header">
+													<span className={`log-level log-level-${log.level}`}>
+														{log.level === 'error' ? '✗' : log.level === 'warn' ? '⚠' : log.level === 'info' ? 'i' : '•'}
+													</span>
+													<span className="log-category">{log.category}</span>
+													<span className="log-time">{new Date(log.timestamp).toLocaleString("zh-CN")}</span>
+													<button 
+														className="log-copy-btn"
+														onClick={() => handleCopyLog(log)}
+														title="复制日志"
+													>
+														{copiedId === log.id ? <Icons.check size={12} /> : <Icons.copy size={12} />}
+													</button>
+												</div>
+												<div className="log-message">{log.message}</div>
+												{log.data && (
+													<div className="log-data">
+														<pre>{JSON.stringify(log.data, null, 2)}</pre>
+													</div>
+												)}
+											</div>
+										))}
+									</div>
+								)}
+							</div>
+						</div>
 					)}
 				</div>
 				<div className="config-footer">

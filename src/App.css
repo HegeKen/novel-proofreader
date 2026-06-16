@@ -4693,6 +4693,28 @@ color: var(--text-primary)}
 	font-size: 12px;
 	letter-spacing: 0.02em}
 
+/* ── Worldbuilding Fields ── */
+.worldbuilding-field {
+	background: var(--bg-raised);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	padding: 12px 14px;
+	transition: all var(--duration) var(--ease)}
+
+.worldbuilding-field-label {
+	font-size: 11px;
+	color: var(--text-muted);
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	margin-bottom: 6px}
+
+.worldbuilding-field-value {
+	font-size: 13px;
+	color: var(--text-primary);
+	line-height: 1.6;
+	white-space: pre-wrap}
+
 .detail-value {
 	color: var(--text-secondary)}
 
@@ -5145,13 +5167,13 @@ color: var(--text-primary)}
 	/* Vertical Stack Layout */
 	.app-body {
 		flex-direction: column;
-		padding-bottom: 64px;
+		padding-bottom: calc(64px + env(safe-area-inset-bottom, 0));
 		min-height: 0;
 		overflow: hidden}
 	
 	/* Reading mode: extra space for desktop-reader-bar */
 	.app-body.app-body-reading-mode {
-		padding-bottom: 140px}
+		padding-bottom: calc(64px + env(safe-area-inset-bottom, 0))}
 
 	/* Desktop Reader Bar - Mobile Adaptation */
 	.desktop-reader-bar {
@@ -5327,7 +5349,7 @@ color: var(--text-primary)}
 
 	.reader-content.reading-mode {
 		padding: 12px;
-		padding-bottom: 140px;
+		padding-bottom: calc(64px + env(safe-area-inset-bottom, 0) + 12px);
 		font-size: 14px;
 		line-height: var(--line-height, 32px)}
 
@@ -5893,6 +5915,123 @@ color: var(--text-primary)}
 
 .config-section .form-field:last-child {
 	margin-bottom: 0}
+
+/* 日志模块样式 */
+.section-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 12px}
+
+.section-actions {
+	display: flex;
+	gap: 8px}
+
+.logs-container {
+	max-height: 400px;
+	overflow-y: auto;
+	background: var(--bg-overlay);
+	border-radius: var(--r-md);
+	border: 1px solid var(--border)}
+
+.empty-logs {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 40px;
+	color: var(--text-muted)}
+
+.empty-icon {
+	opacity: 0.3;
+	margin-bottom: 8px}
+
+.logs-list {
+	padding: 8px}
+
+.log-item {
+	padding: 10px 12px;
+	border-bottom: 1px solid var(--border);
+	transition: background var(--duration) var(--ease)}
+
+.log-item:last-child {
+	border-bottom: none}
+
+.log-item:hover {
+	background: rgba(0,0,0,0.05)}
+
+.log-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 4px}
+
+.log-level {
+	width: 18px;
+	height: 18px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	font-size: 10px;
+	font-weight: bold}
+
+.log-level-error {
+	background: #fee2e2;
+	color: #dc2626}
+
+.log-level-warn {
+	background: #fef3c7;
+	color: #d97706}
+
+.log-level-info {
+	background: #dbeafe;
+	color: #2563eb}
+
+.log-level-debug {
+	background: #e5e7eb;
+	color: #6b7280}
+
+.log-category {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--text-muted)}
+
+.log-time {
+	font-size: 11px;
+	color: var(--text-muted);
+	margin-left: auto}
+
+.log-copy-btn {
+	padding: 4px;
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	border-radius: var(--r-sm);
+	transition: all var(--duration) var(--ease)}
+
+.log-copy-btn:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary)}
+
+.log-message {
+	font-size: 13px;
+	color: var(--text-primary);
+	margin-bottom: 4px}
+
+.log-data {
+	font-size: 12px;
+	background: rgba(0,0,0,0.05);
+	border-radius: var(--r-sm);
+	padding: 8px;
+	overflow-x: auto}
+
+.log-data pre {
+	margin: 0;
+	color: var(--text-muted);
+	white-space: pre-wrap;
+	word-break: break-all}
 
 /* 测试模块样式 */
 .test-row {
@@ -7195,7 +7334,7 @@ color: var(--text-primary)}
 		line-height: 1.5}
 
 	.reader-content.reading-mode {
-		padding-bottom: 140px}
+		padding-bottom: calc(64px + env(safe-area-inset-bottom, 0) + 12px)}
 
 	.reader-content.reading-mode .reader-paragraph:last-child {
 		margin-bottom: 0}

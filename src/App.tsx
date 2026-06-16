@@ -130,29 +130,39 @@ export default function App() {
 		const bookId = params.bookId;
 		if (bookId === undefined) return;
 
-		const setChapters = useNovelStore.getState().setChapters;
+		const currentState = useNovelStore.getState();
+		const setChapters = currentState.setChapters;
+
 		const trySelect = () => {
 			const novelIndex = bookId - 1;
 			if (novelIndex === undefined || novelIndex < 0) return false;
 			const novel = novels[novelIndex];
-			if (novel) {
-				selectNovel(novel.id);
-				if (novel.fullText) {
-					const chapters = splitChapters(novel.fullText);
-					setChapters(chapters);
-				}
-				if (params.chapter !== undefined && params.chapter >= 0) {
+			if (!novel) return false;
+
+			// 如果已经是当前选中的小说且章节已加载，不需要重新设置
+			if (currentState.currentNovelId === novel.id && currentState.chapters.length > 0) {
+				// 只有在 URL 参数明确指定了不同章节时才更新章节索引
+				if (params.chapter !== undefined && params.chapter >= 0 && params.chapter !== currentState.currentChapterIndex) {
 					setCurrentChapterIndex(params.chapter);
 				}
-				if (params.readingMode === "true") {
-					setReadingMode(true);
-				} else {
-					setReadingMode(false);
-				}
-				setShowHome(false);
 				return true;
 			}
-			return false;
+
+			selectNovel(novel.id);
+			if (novel.fullText) {
+				const chapters = splitChapters(novel.fullText);
+				setChapters(chapters);
+			}
+			if (params.chapter !== undefined && params.chapter >= 0) {
+				setCurrentChapterIndex(params.chapter);
+			}
+			if (params.readingMode === "true") {
+				setReadingMode(true);
+			} else {
+				setReadingMode(false);
+			}
+			setShowHome(false);
+			return true;
 		};
 
 		if (novels.length > 0) {
