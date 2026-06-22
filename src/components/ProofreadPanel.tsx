@@ -277,7 +277,7 @@ export function ProofreadPanel() {
 				errorId: err.id,
 				timestamp: Date.now()
 			};
-			console.log('[handleApply] 采纳前状态:', JSON.stringify(beforeState, null, 2));
+			logger.proofread('[handleApply] 采纳前状态:', JSON.stringify(beforeState, null, 2));
 
 			// 如果已采纳则撤销（把文本换回去）
 			if (err.applied) {
@@ -340,7 +340,7 @@ export function ProofreadPanel() {
 
 				// 记录采纳后状态
 				const afterState = useNovelStore.getState();
-				console.log('[handleApply] 采纳后状态:', JSON.stringify({
+				logger.proofread('[handleApply] 采纳后状态:', JSON.stringify({
 					currentNovelId: afterState.currentNovelId,
 					currentChapterIndex: afterState.currentChapterIndex,
 					chaptersLength: afterState.chapters.length,

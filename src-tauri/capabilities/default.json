@@ -11,6 +11,7 @@
     {
       "identifier": "fs:allow-exists",
       "allow": [
+        { "path": "$DOCUMENT/*" },
         { "path": "$DOCUMENT/novels/*" },
         { "path": "$DOCUMENT/characters/*" },
         { "path": "$DOCUMENT/characters" }
@@ -34,6 +35,7 @@
     {
       "identifier": "fs:allow-read-text-file",
       "allow": [
+        { "path": "$DOCUMENT/*" },
         { "path": "$DOCUMENT/novels/*" },
         { "path": "$DOCUMENT/characters/*" }
       ]
@@ -41,6 +43,7 @@
     {
       "identifier": "fs:allow-write-text-file",
       "allow": [
+        { "path": "$DOCUMENT/*" },
         { "path": "$DOCUMENT/novels/*" },
         { "path": "$DOCUMENT/characters/*" }
       ]

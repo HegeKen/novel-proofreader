@@ -1,5 +1,40 @@
 # Proof Reader Changelog
 
+## v0.11.0 (2026-06-22)
+
+### ✨ 功能更新
+
+**日志系统增强**
+- 为小说管理关键操作添加详细日志记录（打开小说、切换章节、替换段落文本等）
+- 新增 `novelStore.ts` 中 `selectNovel`、`setChapters`、`setCurrentChapter`、`addNovel`、`removeNovel`、`replaceParagraphText`、`clearFile` 等函数的日志输出
+- 新增 `App.tsx` 中 `trySelect` 函数的完整流程日志，便于追踪小说选择逻辑
+
+### 🐛 Bug 修复
+
+**安卓端章节跳转问题修复**
+- 修复点击采纳校对后跳转到第一个小说第一章的问题
+- 问题根因：`setChapters` 函数每次调用都会将 `currentChapterIndex` 重置为 0
+- 修复方案：修改 `setChapters` 保持当前章节索引，不重置
+- 修复文件：`src/stores/novelStore.ts`
+
+**非 Tauri 环境存储错误修复**
+- 修复 `saveNovelToStorage` 在非 Tauri 环境下调用 `invoke` 导致的错误
+- 添加环境检查，在非 Tauri 环境下跳过存储操作并记录警告日志
+- 修复文件：`src/utils/fileExport.ts`
+
+**按钮动画移除**
+- 移除 `btn-single-check` 按钮的悬浮下沉动画（`transform: translateY(-1px)`）
+- 移除按钮点击缩放效果（`transform: scale(0.98)`）
+- 修复文件：`src/App.css`
+
+### 🔧 改进优化
+
+**状态管理优化**
+- `setChapters` 函数改为使用函数式更新，保持当前章节索引
+- 优化 `trySelect` 函数中的状态检查逻辑，确保条件判断使用最新状态
+
+---
+
 ## v0.10.5 (2026-06-13)
 
 ### ✨ 功能更新

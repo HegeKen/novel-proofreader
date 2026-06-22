@@ -31,6 +31,30 @@ export function ensureTxtFilename(fileName: string): string {
   return fileName.toLowerCase().endsWith('.txt') ? fileName : `${fileName}.txt`;
 }
 
+async function migrateFromDocumentDir(subDir: string): Promise<void> {
+  try {
+    const oldBaseDir = BaseDirectory.Document;
+    const newBaseDir = getBaseDir();
+    if (oldBaseDir === newBaseDir) return;
+    const oldDirExists = await exists(subDir, { baseDir: oldBaseDir });
+    if (!oldDirExists) return;
+    const files = await readDir(subDir, { baseDir: oldBaseDir });
+    for (const file of files) {
+      if (!file.name || file.isDirectory) continue;
+      const filePath = `${subDir}/${file.name}`;
+      try {
+        const content = await readTextFile(filePath, { baseDir: oldBaseDir });
+        await writeTextFile(filePath, content, { baseDir: newBaseDir });
+        logger.file(`[migrate] Migrated ${filePath} from Document to LocalData`);
+      } catch (e) {
+        logger.errorGeneric(`[migrate] Failed to migrate ${filePath}:`, e);
+      }
+    }
+  } catch (e) {
+    logger.errorGeneric('[migrate] Migration from Document dir failed:', e);
+  }
+}
+
 export async function ensureNovelsDirectory(): Promise<boolean> {
   if (!isTauri()) {
     logger.warn('fileExport - Not in Tauri environment, skipping ensureNovelsDirectory');
@@ -43,6 +67,7 @@ export async function ensureNovelsDirectory(): Promise<boolean> {
     if (!dirExists) {
       await mkdir(novelsPath, { baseDir, recursive: true });
     }
+    await migrateFromDocumentDir(novelsPath);
     return true;
   } catch (e) {
     logger.errorGeneric('fileExport - Failed to create novels directory:', e);
@@ -62,6 +87,7 @@ export async function ensureCharactersDirectory(): Promise<boolean> {
     if (!dirExists) {
       await mkdir(charactersPath, { baseDir, recursive: true });
     }
+    await migrateFromDocumentDir(charactersPath);
     return true;
   } catch (e) {
     logger.errorGeneric('fileExport - Failed to create characters directory:', e);

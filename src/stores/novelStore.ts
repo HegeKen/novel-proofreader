@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Novel, Chapter } from "../types";
 import { saveNovelToStorage } from "../utils/fileExport";
+import { logger } from "../utils/logger";
 
 interface ScriptResult {
 	chapterId: number;
@@ -80,6 +81,7 @@ export const useNovelStore = create<NovelState>()(
 			addNovel: (novel) =>
 				set((state) => {
 					const bookId = state.nextBookId;
+					logger.info('[novelStore]', `添加小说: name=${novel.name}, id=${novel.id}, bookId=${bookId}`);
 					return {
 						novels: [...state.novels, { ...novel, bookId }],
 						currentNovelId: novel.id,
@@ -89,6 +91,7 @@ export const useNovelStore = create<NovelState>()(
 
 			removeNovel: (id) =>
 				set((state) => {
+					logger.info('[novelStore]', `删除小说: id=${id}`);
 					const novels = state.novels.filter((n) => n.id !== id);
 					return {
 						novels,
@@ -96,15 +99,30 @@ export const useNovelStore = create<NovelState>()(
 					};
 				}),
 
-			selectNovel: (id) => set({ currentNovelId: id }),
+			selectNovel: (id) => {
+				logger.info('[novelStore]', `选择小说: ${id ?? 'null'}`);
+				set({ currentNovelId: id });
+			},
 
-			setChapters: (chapters) => set({ chapters, currentChapterIndex: 0 }),
+			setChapters: (chapters) => {
+				logger.info('[novelStore]', `设置章节: 共 ${chapters.length} 章`);
+				set((state) => ({ chapters, currentChapterIndex: state.currentChapterIndex }));
+			},
 
-			setCurrentChapter: (index) => set({ currentChapterIndex: index }),
+			setCurrentChapter: (index) => {
+				logger.info('[novelStore]', `设置当前章节: ${index}`);
+				set({ currentChapterIndex: index });
+			},
 
-			setCurrentChapterIndex: (index) => set({ currentChapterIndex: index }),
+			setCurrentChapterIndex: (index) => {
+				logger.info('[novelStore]', `设置章节索引: ${index}`);
+				set({ currentChapterIndex: index });
+			},
 
-			clearFile: () => set({ chapters: [], currentChapterIndex: 0, scriptResults: {}, proofreadStatus: {} }),
+			clearFile: () => {
+				logger.info('[novelStore]', '清空文件状态');
+				set({ chapters: [], currentChapterIndex: 0, scriptResults: {}, proofreadStatus: {} });
+			},
 
 			toggleProofreadStatus: (chapterId) =>
 				set((state) => ({
@@ -112,6 +130,7 @@ export const useNovelStore = create<NovelState>()(
 				})),
 
 			replaceParagraphText: (chapterId, paragraphIndex, oldText, newText, startIndex?: number, endIndex?: number) => {
+				logger.info('[novelStore]', `替换段落文本: chapterId=${chapterId}, paragraphIndex=${paragraphIndex}, oldText="${oldText.slice(0, 20)}${oldText.length > 20 ? '...' : ''}", newText="${newText.slice(0, 20)}${newText.length > 20 ? '...' : ''}"`);
 				let replaced = false;
 				set((state) => {
 					const chapters = state.chapters.map((ch) => {

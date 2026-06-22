@@ -2845,10 +2845,8 @@ color: var(--text-primary)}
 	background: var(--bg-hover);
 	border-color: var(--border-strong);
 	color: var(--green);
-	transform: translateY(-1px);
 	box-shadow: var(--shadow-md)}
-.btn-single-check:active:not(:disabled) {
-	transform: scale(0.98)}
+.btn-single-check:active:not(:disabled) {}
 .btn-single-check:disabled {
 	opacity: 0.5;
 	cursor: not-allowed}
