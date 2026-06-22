@@ -7,6 +7,10 @@ import { Select } from "./Select";
 interface RelationshipGraphProps {
 	novelId: string;
 	characters: CharacterInfo[];
+	// 外部聚焦状态（由父组件控制）
+	externalFocusedId: string | null;
+	// 回调：聚焦状态改变时通知父组件
+	onFocusedChange: (id: string | null) => void;
 }
 
 interface GraphNode {
@@ -24,7 +28,12 @@ interface GraphEdge {
 	targetNode: GraphNode;
 }
 
-export function RelationshipGraph({ novelId, characters }: RelationshipGraphProps) {
+export function RelationshipGraph({
+	novelId,
+	characters,
+	externalFocusedId,
+	onFocusedChange,
+}: RelationshipGraphProps) {
 	const allRelationships = useCharacterStore((s) => s.characterRelationships);
 	const relationships = useMemo(() => allRelationships[novelId] ?? [], [allRelationships, novelId]);
 	const addRelationship = useCharacterStore((s) => s.addRelationship);
@@ -37,7 +46,7 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 	const [editingRelation, setEditingRelation] = useState<CharacterRelationship | null>(null);
 	const [showCharacterModal, setShowCharacterModal] = useState(false);
 	const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
-	const [focusedCharacterId, setFocusedCharacterId] = useState<string | null>(null);
+
 	const [relationForm, setRelationForm] = useState<{
 		sourceId: string;
 		targetId: string;
@@ -252,18 +261,18 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 	}, [relationships, graphNodes]);
 
 	const relatedCharacterIds = useMemo(() => {
-		if (!focusedCharacterId) return null;
+		if (!externalFocusedId) return null;
 		const relatedIds = new Set<string>();
-		relatedIds.add(focusedCharacterId);
+		relatedIds.add(externalFocusedId);
 		relationships.forEach((rel) => {
-			if (rel.sourceId === focusedCharacterId) {
+			if (rel.sourceId === externalFocusedId) {
 				relatedIds.add(rel.targetId);
-			} else if (rel.targetId === focusedCharacterId) {
+			} else if (rel.targetId === externalFocusedId) {
 				relatedIds.add(rel.sourceId);
 			}
 		});
 		return relatedIds;
-	}, [focusedCharacterId, relationships]);
+	}, [externalFocusedId, relationships]);
 
 	const filteredGraphNodes = useMemo(() => {
 		if (!relatedCharacterIds) return graphNodes;
@@ -273,15 +282,9 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 	const filteredGraphEdges = useMemo(() => {
 		if (!relatedCharacterIds) return graphEdges;
 		return graphEdges.filter(
-			(e) => e.relationship.sourceId === focusedCharacterId || e.relationship.targetId === focusedCharacterId
+			(e) => e.relationship.sourceId === externalFocusedId || e.relationship.targetId === externalFocusedId
 		);
-	}, [graphEdges, focusedCharacterId, relatedCharacterIds]);
-
-	const characterSelectWidth = useMemo(() => {
-		const allLabels = ["全部角色", ...characters.map((c) => c.name)];
-		const maxLen = Math.max(4, ...allLabels.map((l) => l.length));
-		return maxLen * 14 + 52;
-	}, [characters]);
+	}, [graphEdges, externalFocusedId, relatedCharacterIds]);
 
 	const getCharacterById = useCallback(
 		(id: string) => characters.find((c) => c.id === id),
@@ -311,10 +314,10 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 	const handleNodeClick = useCallback(
 		(character: CharacterInfo) => {
 			setSelectedCharacterId(character.id);
-			setFocusedCharacterId(character.id);
+			onFocusedChange(character.id);
 			setShowCharacterModal(true);
 		},
-		[]
+		[onFocusedChange]
 	);
 
 	const handleOpenAddModal = useCallback(
@@ -590,6 +593,15 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 		});
 	}, []);
 
+	// 焦点改变时自动适应窗口
+	useEffect(() => {
+		// 延迟一点执行，确保 DOM 已更新
+		const timer = setTimeout(() => {
+			handleResetLayout();
+		}, 100);
+		return () => clearTimeout(timer);
+	}, [externalFocusedId, handleResetLayout]);
+
 	useEffect(() => {
 		const handleGlobalUp = () => {
 			if (pendingNodeDragRef.current && nodeDragOriginRef.current) {
@@ -682,50 +694,6 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 				<div className="graph-toolbar-info">
 					<span>{filteredGraphNodes.length} 个角色</span>
 					<span>{filteredGraphEdges.length} 条关系</span>
-				</div>
-				<div className="graph-focus-controls">
-					<Select
-						value={focusedCharacterId || ""}
-						onChange={(value) => setFocusedCharacterId(value || null)}
-						options={[
-							{ value: "", label: "全部角色" },
-							...characters.map((c) => ({ value: c.id, label: c.name }))
-						]}
-						style={{ minWidth: characterSelectWidth }}
-					/>
-					{focusedCharacterId && (
-						<button
-							className="graph-toolbar-btn"
-							onClick={() => setFocusedCharacterId(null)}
-							title="取消聚焦"
-						>
-							<Icons.close size={14} />
-						</button>
-					)}
-				</div>
-				<div className="graph-zoom-controls">
-					<button
-						className="graph-zoom-btn"
-						onClick={() => setScale((s) => Math.min(s * 1.2, 5))}
-						title="放大"
-					>
-						<Icons.plus size={14} />
-					</button>
-					<span className="graph-zoom-level">{Math.round(scale * 100)}%</span>
-					<button
-						className="graph-zoom-btn"
-						onClick={() => setScale((s) => Math.max(s * 0.8, 0.3))}
-						title="缩小"
-					>
-						<Icons.minus size={14} />
-					</button>
-					<button
-						className="graph-zoom-btn"
-						onClick={handleResetLayout}
-						title="适应窗口"
-					>
-						<Icons.refresh size={14} />
-					</button>
 				</div>
 			</div>
 
@@ -887,7 +855,7 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 							return (
 							<g
 								key={node.character.id}
-								className={`graph-node ${isNodeDragging && draggingNodeId === node.character.id ? 'dragging' : ''} ${node.character.id === focusedCharacterId ? 'focused' : ''}`}
+								className={`graph-node ${isNodeDragging && draggingNodeId === node.character.id ? 'dragging' : ''} ${node.character.id === externalFocusedId ? 'focused' : ''}`}
 								transform={`translate(${displayX}, ${displayY})`}
 								onClick={() => {
 									if (!nodeDraggedRef.current) {
@@ -897,7 +865,7 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 								onMouseDown={(e) => handleNodeMouseDown(e, node.character.id, node.x, node.y)}
 								onTouchStart={(e) => handleNodeTouchStart(e, node.character.id, node.x, node.y)}
 							>
-								<circle r={`${node.radius}`} className={`node-circle ${node.character.gender} ${node.character.role || ''} ${node.character.id === focusedCharacterId ? 'focused' : ''}`} />
+								<circle r={`${node.radius}`} className={`node-circle ${node.character.gender} ${node.character.role || ''} ${node.character.id === externalFocusedId ? 'focused' : ''}`} />
 								<text className="node-name" textAnchor="middle" dominantBaseline="middle">
 									{node.character.name.length > Math.floor(node.radius / 7)
 										? node.character.name.slice(0, Math.floor(node.radius / 7)) + "..."
@@ -1175,7 +1143,7 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 									取消
 								</button>
 								<button
-									className="btn btn-primary"
+									className="btn"
 									onClick={handleSaveRelation}
 									disabled={
 										!relationForm.sourceId ||
@@ -1260,7 +1228,7 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 						</div>
 						<div className="modal-footer">
 							<button
-								className="btn btn-primary"
+								className="btn"
 								onClick={() => {
 									setShowCharacterModal(false);
 									handleOpenAddModal(selectedCharacterId);
@@ -1273,6 +1241,8 @@ export function RelationshipGraph({ novelId, characters }: RelationshipGraphProp
 					</div>
 				</div>
 			)}
+
+			{/* 按钮区域由父组件渲染 */}
 		</div>
 	);
 }

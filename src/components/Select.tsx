@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Icons } from "./Icons";
 
 interface Option {
@@ -31,6 +32,26 @@ export function Select({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const selectedOption = options.find((opt) => opt.value === value);
 
+  const updateDropdownPosition = useCallback(() => {
+    if (isOpen && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const dropdownWidth = Math.min(rect.width, 280);
+      const maxHeight = window.innerHeight - rect.bottom - 20;
+      const safeMaxHeight = Math.max(Math.min(maxHeight, 300), 100);
+      
+      const newStyle: React.CSSProperties = {
+        position: "fixed",
+        left: `${Math.max(rect.left, 16)}px`,
+        top: `${rect.bottom + 8}px`,
+        width: `${dropdownWidth}px`,
+        maxHeight: `${safeMaxHeight}px`,
+        zIndex: 9999,
+      };
+      
+      setDropdownStyle(newStyle);
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -42,19 +63,25 @@ export function Select({
   }, []);
 
   useEffect(() => {
-    if (isOpen && triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      const dropdownWidth = Math.min(rect.width, 280);
-      const maxHeight = window.innerHeight - rect.bottom - 20;
-      
-      setDropdownStyle({
-        left: `${rect.left}px`,
-        top: `${rect.bottom + 8}px`,
-        width: `${dropdownWidth}px`,
-        maxHeight: `${Math.max(maxHeight, 100)}px`,
-      });
+    updateDropdownPosition();
+  }, [isOpen, updateDropdownPosition]);
+
+  useEffect(() => {
+    if (isOpen) {
+      window.addEventListener("resize", updateDropdownPosition);
+      window.addEventListener("scroll", updateDropdownPosition);
+      return () => {
+        window.removeEventListener("resize", updateDropdownPosition);
+        window.removeEventListener("scroll", updateDropdownPosition);
+      };
     }
-  }, [isOpen]);
+  }, [isOpen, updateDropdownPosition]);
+
+  const handleOpen = useCallback(() => {
+    if (!disabled) {
+      setIsOpen(true);
+    }
+  }, [disabled]);
 
   return (
     <div ref={containerRef} className={`custom-select ${className}`} style={style}>
@@ -62,14 +89,14 @@ export function Select({
         ref={triggerRef}
         type="button"
         className="custom-select-trigger"
-        onClick={() => !disabled && setIsOpen(!isOpen)}
+        onClick={handleOpen}
         disabled={disabled}
       >
         <span>{selectedOption?.label || placeholder}</span>
         <Icons.chevronDown size={16} className={`custom-select-arrow ${isOpen ? "open" : ""}`} />
       </button>
 
-      {isOpen && !disabled && (
+      {isOpen && !disabled && createPortal(
         <div className="custom-select-dropdown" style={dropdownStyle}>
           <div className="custom-select-options">
             {options.map((option) => (
@@ -87,7 +114,8 @@ export function Select({
               </button>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -65,15 +65,6 @@
 .btn:active {
 	transform: scale(0.98)}
 
-.btn-primary {
-	background: var(--accent);
-	color: white;
-	border-color: var(--accent)}
-
-.btn-primary:hover {
-	background: var(--accent-hover);
-	border-color: var(--accent-hover)}
-
 .btn-danger {
 	background: var(--red);
 	color: white;
@@ -1279,6 +1270,20 @@ min-width: 200px}
 	overflow: hidden;
 	text-overflow: ellipsis;
 	max-width: 140px}
+
+.desktop-tts-playback-controls .tts-remaining-time {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 10px;
+	background: var(--glass-bg);
+	border-radius: var(--r-md);
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--text-secondary);
+	min-width: 60px;
+	text-align: center;
+	white-space: nowrap}
 
 @keyframes slide-up {
 	from {
@@ -2846,7 +2851,7 @@ color: var(--text-primary)}
 	border-color: var(--border-strong);
 	color: var(--green);
 	box-shadow: var(--shadow-md)}
-.btn-single-check:active:not(:disabled) {}
+/* .btn-single-check:active:not(:disabled) {} */
 .btn-single-check:disabled {
 	opacity: 0.5;
 	cursor: not-allowed}
@@ -4692,6 +4697,30 @@ color: var(--text-primary)}
 	letter-spacing: 0.02em}
 
 /* ── Worldbuilding Fields ── */
+/* 世界观组件布局 */
+.worldbuilding-section {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+	box-sizing: border-box;
+	flex-shrink: 0;
+	padding: 0;
+}
+
+.worldbuilding-header {
+	flex-shrink: 0;
+	padding: 12px 0;
+	border-bottom: 1px solid var(--glass-border);
+}
+
+.worldbuilding-content {
+	flex: 1;
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding: 16px 0;
+}
+
 .worldbuilding-field {
 	background: var(--bg-raised);
 	border: 1px solid var(--border);
@@ -4760,6 +4789,99 @@ color: var(--text-primary)}
 	display: block;
 	width: 18px;
 	height: 18px}
+
+.character-actions-fab-wrapper .action-btn.primary {
+	background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+	color: white;
+	border: none;
+	box-shadow: 0 4px 12px rgba(10, 132, 255, 0.3)}
+
+.character-actions-fab-wrapper .action-btn.primary:hover {
+	background: linear-gradient(135deg, var(--accent-hover), var(--accent));
+	transform: translateY(-1px);
+	box-shadow: 0 6px 16px rgba(10, 132, 255, 0.4)}
+
+/* character-actions-fab-wrapper 中的 btn 样式 */
+.character-actions-fab-wrapper .btn {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 18px;
+	border-radius: var(--r-lg);
+	font-size: 14px;
+	font-weight: 500;
+	background: var(--glass-bg);
+	color: var(--text-primary);
+	border: 1px solid var(--border);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+	transition: all var(--duration) var(--ease);
+	box-shadow: var(--shadow-sm)}
+
+.character-actions-fab-wrapper .btn:hover {
+	background: var(--bg-hover);
+	border-color: var(--border-strong);
+	transform: translateY(-1px);
+	box-shadow: var(--shadow-md)}
+
+.character-actions-fab-wrapper .btn svg {
+	flex-shrink: 0;
+	display: block;
+	width: 18px;
+	height: 18px}
+
+.character-actions-fab-wrapper .btn.primary {
+	background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+	color: white;
+	border: none;
+	box-shadow: 0 4px 12px rgba(10, 132, 255, 0.3)}
+
+.character-actions-fab-wrapper .btn.primary:hover {
+	background: linear-gradient(135deg, var(--accent-hover), var(--accent));
+	transform: translateY(-1px);
+	box-shadow: 0 6px 16px rgba(10, 132, 255, 0.4)}
+
+/* character-actions-fab-wrapper 中的 custom-select 样式 */
+.character-actions-fab-wrapper .custom-select {
+	position: relative;
+	z-index: 1;
+}
+
+.character-actions-fab-wrapper .custom-select-trigger {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 10px 16px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-lg);
+	background: var(--glass-bg);
+	color: var(--text-primary);
+	font-size: 14px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+	outline: none;
+	min-width: 120px;
+	max-width: 200px;
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+}
+
+.character-actions-fab-wrapper .custom-select-trigger:hover:not(:disabled) {
+	background: var(--bg-hover);
+	border-color: var(--border-strong);
+}
+
+.character-actions-fab-wrapper .custom-select-trigger:focus-visible {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.character-actions-fab-wrapper .custom-select-trigger:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+	color: var(--text-secondary);
+}
 
 /* 添加角色按钮 - 桌面端样式 */
 .action-btn.add-character {
@@ -4951,6 +5073,21 @@ color: var(--text-primary)}
 		display: none}
 	
 	.character-actions-fab-wrapper .action-btn svg {
+		width: 20px;
+		height: 20px}
+	
+	.character-actions-fab-wrapper .btn {
+		font-size: 0;
+		padding: 0;
+		width: 44px;
+		height: 44px;
+		border-radius: 50%;
+		justify-content: center}
+	
+	.character-actions-fab-wrapper .btn span {
+		display: none}
+	
+	.character-actions-fab-wrapper .btn svg {
 		width: 20px;
 		height: 20px}
 
@@ -6658,7 +6795,6 @@ color: var(--text-primary)}
 
 .config-input {
 	width: 100%;
-	min-height: 100px;
 	max-height: none;
 	padding: 10px 12px;
 	border: 2px solid var(--border);
@@ -6741,11 +6877,6 @@ color: var(--text-primary)}
 	transform: rotate(180deg)}
 
 .custom-select-dropdown {
-	position: fixed;
-	top: auto;
-	left: auto;
-	right: auto;
-	bottom: auto;
 	background: var(--bg-surface);
 	backdrop-filter: blur(24px);
 	-webkit-backdrop-filter: blur(24px);
@@ -6755,7 +6886,8 @@ color: var(--text-primary)}
 	z-index: 1000;
 	overflow: hidden;
 	animation: slideDown 0.2s ease;
-	max-height: 280px}
+	max-height: 280px;
+}
 
 .custom-select-options {
 	max-height: 240px;
@@ -8839,7 +8971,11 @@ color: var(--text-primary)}
 	display: flex;
 	flex-direction: column;
 	height: 100%;
-	min-height: 400px}
+	min-height: 300px;
+	overflow: hidden;
+	box-sizing: border-box;
+	flex-shrink: 0;
+}
 
 .relationship-graph-toolbar {
 	display: flex;
@@ -9533,3 +9669,137 @@ color: var(--text-primary)}
 	background: rgba(16, 185, 129, 0.05);
 	border-radius: var(--r-sm);
 	padding: 12px}
+
+/* 敏感词替换样式 */
+.word-replacement-add-row {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin-bottom: 16px}
+
+.word-replacement-add-row .config-input {
+	flex: 1}
+
+.word-replacement-arrow {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-secondary);
+	min-width: 32px}
+
+.word-replacement-list {
+	max-height: 400px;
+	overflow-y: auto}
+
+.word-replacement-table {
+	background: var(--bg-surface);
+	border-radius: var(--r-md);
+	border: 1px solid var(--border)}
+
+.word-replacement-table-header {
+	display: flex;
+	align-items: center;
+	padding: 12px 16px;
+	border-bottom: 1px solid var(--border);
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--text-secondary);
+	gap: 12px}
+
+.word-replacement-table-header span:first-child {
+	flex: 1}
+
+.word-replacement-table-header span:nth-child(2) {
+	width: 32px}
+
+.word-replacement-table-header span:nth-child(3) {
+	flex: 1}
+
+.word-replacement-table-header .table-arrow {
+	width: 24px}
+
+.word-replacement-table-header .table-actions {
+	width: 80px;
+	text-align: right}
+
+.word-replacement-table-body {
+	padding: 8px}
+
+.word-replacement-row {
+	display: flex;
+	align-items: center;
+	padding: 10px 8px;
+	border-bottom: 1px solid var(--border-light);
+	gap: 8px}
+
+.word-replacement-row:last-child {
+	border-bottom: none}
+
+.word-replacement-row:hover {
+	background: var(--bg-hover)}
+
+.word-replacement-row .word-original {
+	flex: 1;
+	font-size: 13px;
+	color: var(--text-primary)}
+
+.word-replacement-row .word-replacement {
+	flex: 1;
+	font-size: 13px;
+	color: var(--green)}
+
+.word-replacement-row .edit-input {
+	flex: 1;
+	font-size: 13px}
+
+.word-replacement-row-actions {
+	display: flex;
+	gap: 6px;}
+
+.action-btn-circle {
+	width: 28px;
+	height: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	background: transparent;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.action-btn-circle:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary)}
+
+.action-btn-circle.primary {
+	background: var(--accent);
+	color: white}
+
+.action-btn-circle.primary:hover {
+	background: var(--accent-hover)}
+
+.action-btn-circle.danger:hover {
+	background: rgba(239, 68, 68, 0.1);
+	color: #ef4444}
+
+.section-count {
+	font-size: 12px;
+	color: var(--text-muted);
+	padding: 4px 8px;
+	background: var(--bg-surface);
+	border-radius: var(--r-sm)}
+
+.word-replacement-tips {
+	margin: 0;
+	padding-left: 20px;
+	font-size: 13px;
+	color: var(--text-secondary);
+	line-height: 1.8}
+
+.word-replacement-tips li {
+	margin-bottom: 8px}
+
+.word-replacement-tips li:last-child {
+	margin-bottom: 0}

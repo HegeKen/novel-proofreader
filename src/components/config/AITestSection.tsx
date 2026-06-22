@@ -54,7 +54,7 @@ export function AITestSection({ config }: { config: { baseUrl: string; apiKey: s
 					className="test-input"
 				/>
 				<button
-					className="test-btn"
+					className="btn"
 					onClick={handleTest}
 					disabled={isTesting || !config.baseUrl || !config.apiKey || !config.model}
 				>

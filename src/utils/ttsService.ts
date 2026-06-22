@@ -1,6 +1,18 @@
 import type { TTSConfig } from "../stores/configStore";
 import { logger } from "./logger";
 import { useAppMetaStore } from "../stores/appMetaStore";
+import { applyWordReplacements } from "../stores/wordReplacementStore";
+
+// 有效的 MiMo 语音列表
+const VALID_VOICES = ["mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean"];
+
+function getValidVoice(voice: string): string {
+	if (VALID_VOICES.includes(voice)) {
+		return voice;
+	}
+	logger.warn("无效的语音角色，使用默认语音", { voice });
+	return "冰糖";
+}
 
 interface AudioCacheEntry {
 	audioBuffer: ArrayBuffer;
@@ -241,8 +253,11 @@ export async function synthesizeSpeech(
 	config: TTSConfig,
 	voiceDesignPrompt?: string
 ): Promise<ArrayBuffer> {
+	// 应用词组替换
+	const processedText = applyWordReplacements(text);
+
 	const apiKey = config.apiKey;
-	const voice = config.voice;
+	const voice = getValidVoice(config.voice);
 	const speed = config.speed;
 	const volume = config.volume;
 
@@ -259,7 +274,7 @@ export async function synthesizeSpeech(
 
 	// 构建请求体
 	const messages: Array<{ role: string; content: string }> = [
-		{ role: "assistant", content: text },
+		{ role: "assistant", content: processedText },
 	];
 
 	if (useVoiceDesign) {
@@ -353,7 +368,11 @@ export async function synthesizeSpeechWithVoice(
 	voice: string,
 	voiceDesignPrompt?: string
 ): Promise<ArrayBuffer> {
+	// 应用词组替换
+	const processedText = applyWordReplacements(text);
+
 	const apiKey = config.apiKey;
+	const validatedVoice = getValidVoice(voice);
 	const speed = config.speed;
 	const volume = config.volume;
 
@@ -370,7 +389,7 @@ export async function synthesizeSpeechWithVoice(
 
 	// 构建请求体
 	const messages: Array<{ role: string; content: string }> = [
-		{ role: "assistant", content: text },
+		{ role: "assistant", content: processedText },
 	];
 
 	if (useVoiceDesign) {
@@ -394,10 +413,10 @@ export async function synthesizeSpeechWithVoice(
 
 	// 只有在不使用音色设计模型时才添加audio.voice
 	if (!useVoiceDesign) {
-		(requestBody as Record<string, unknown>).audio = { voice: voice };
+		(requestBody as Record<string, unknown>).audio = { voice: validatedVoice };
 	}
 
-	logger.tts("发起 TTS 请求（角色配音）", { text: text.slice(0, 50) + "...", voice, speed, volume });
+	logger.tts("发起 TTS 请求（角色配音）", { text: text.slice(0, 50) + "...", voice: validatedVoice, speed, volume });
 	const startTime = Date.now();
 
 	const response = await fetch(url, {

@@ -145,6 +145,8 @@ export const useAppMetaStore = create<AppMetaState>()(
 				apiUsage: state.apiUsage,
 				novelCategories: state.novelCategories,
 				readingProgress: state.readingProgress,
+				readingReminderEnabled: state.readingReminderEnabled,
+				readingReminderMinutes: state.readingReminderMinutes,
 			}),
 		},
 	),

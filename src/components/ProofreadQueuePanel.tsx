@@ -163,36 +163,6 @@ export function ProofreadQueuePanel() {
 
 	return (
 		<div className="proofread-queue-panel">
-			<div className="config-section queue-section">
-				<div className="queue-section-header">
-					<div className="queue-section-icon">
-						<Icons.listTodo size={18} />
-					</div>
-					<span className="queue-section-title">批量校对</span>
-					<span className="queue-section-subtitle">
-						{pendingCount > 0 ? `待处理 ${pendingCount} 章` : "无可处理任务"}
-					</span>
-				</div>
-				<div className="queue-actions">
-					<button
-						onClick={clearQueue}
-						disabled={queue.length === 0}
-						className="btn-clear-queue"
-					>
-						<Icons.trash2 size={16} />
-						清空队列
-					</button>
-					<button
-						onClick={processQueue}
-						disabled={pendingCount === 0 || isRunning}
-						className={`btn-start-queue ${isRunning ? "running" : ""}`}
-					>
-						<Icons.play size={16} />
-						{isRunning ? "正在校对..." : `开始校对 (${pendingCount})`}
-					</button>
-				</div>
-			</div>
-
 			<div className="queue-stats">
 				<div className="usage-stat-card">
 					<div className="usage-stat-header">
@@ -245,14 +215,6 @@ export function ProofreadQueuePanel() {
 						/>
 						<span>全选</span>
 					</label>
-					<button
-						onClick={handleAddToQueue}
-						disabled={selectedChapters.length === 0}
-						className="btn-add-selected"
-					>
-						<Icons.plus size={16} />
-						添加选中 ({selectedChapters.length})
-					</button>
 				</div>
 
 				<div className="chapter-list">
@@ -345,6 +307,33 @@ export function ProofreadQueuePanel() {
 					))}
 				</div>
 			)}
+
+			<div className="character-actions-fab-wrapper">
+				<button
+					onClick={clearQueue}
+					disabled={queue.length === 0}
+					className="btn"
+				>
+					<Icons.trash2 size={18} />
+					<span>清空队列</span>
+				</button>
+				<button
+					onClick={handleAddToQueue}
+					disabled={selectedChapters.length === 0}
+					className="btn"
+				>
+					<Icons.plus size={18} />
+					<span>添加选中 ({selectedChapters.length})</span>
+				</button>
+				<button
+					onClick={processQueue}
+					disabled={pendingCount === 0 || isRunning}
+					className="btn"
+				>
+					<Icons.play size={18} />
+					<span>{isRunning ? "正在校对..." : `开始校对 (${pendingCount})`}</span>
+				</button>
+			</div>
 		</div>
 	);
 }

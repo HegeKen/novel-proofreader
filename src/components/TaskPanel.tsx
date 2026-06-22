@@ -385,7 +385,7 @@ function TaskPanelContent({
 							</div>
 							{/* 右下角固定保存按钮 */}
 							<div className="task-export-bar">
-								<button className="btn btn-primary" onClick={handleExport}>
+								<button className="btn" onClick={handleExport}>
 									💾 导出剧本
 								</button>
 							</div>

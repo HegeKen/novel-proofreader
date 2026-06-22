@@ -745,101 +745,29 @@ function MergeConfigPanel({ sourceChars, onExecute, onBack }: MergeConfigPanelPr
 // ============================================================
 interface WorldbuildingSectionProps {
 	novelId: string;
+	// 外部状态
+	editMode: boolean;
+	wbIsAnalyzing: boolean;
+	analyzeError: string | null;
+	form: NovelWorldbuilding;
+	// 外部处理函数
+	onEditModeChange: (editMode: boolean) => void;
+	onFormChange: (form: NovelWorldbuilding) => void;
+	onAnalyze: () => void;
 }
 
-function WorldbuildingSection({ novelId }: WorldbuildingSectionProps) {
+function WorldbuildingSection({
+	novelId,
+	editMode,
+	wbIsAnalyzing,
+	analyzeError,
+	form,
+	onEditModeChange,
+	onFormChange,
+	onAnalyze,
+}: WorldbuildingSectionProps) {
 	const getWorldbuilding = useCharacterStore((s) => s.getWorldbuilding);
-	const setWorldbuilding = useCharacterStore((s) => s.setWorldbuilding);
 	const wb = useMemo(() => getWorldbuilding(novelId), [getWorldbuilding, novelId]);
-
-	const novels = useNovelStore((s) => s.novels);
-	const currentNovel = useMemo(() => novels.find(n => n.id === novelId), [novels, novelId]);
-	const aiConfig = useAIConfigStore((s) => s.aiConfig);
-
-	const [editMode, setEditMode] = useState(false);
-	const [isAnalyzing, setIsAnalyzing] = useState(false);
-	const [analyzeError, setAnalyzeError] = useState<string | null>(null);
-	const [form, setForm] = useState<NovelWorldbuilding>(() => ({
-		worldType: wb?.worldType || "",
-		eraDescription: wb?.eraDescription || "",
-		geography: wb?.geography || "",
-		socialStructure: wb?.socialStructure || "",
-		powerSystem: wb?.powerSystem || "",
-		civilization: wb?.civilization || "",
-		history: wb?.history || "",
-		coreSettings: wb?.coreSettings || "",
-		description: wb?.description || "",
-	}));
-
-	const initFormFromWb = useCallback((data: typeof wb) => {
-		setForm({
-			worldType: data?.worldType || "",
-			eraDescription: data?.eraDescription || "",
-			geography: data?.geography || "",
-			socialStructure: data?.socialStructure || "",
-			powerSystem: data?.powerSystem || "",
-			civilization: data?.civilization || "",
-			history: data?.history || "",
-			coreSettings: data?.coreSettings || "",
-			description: data?.description || "",
-		});
-	}, []);
-
-	const handleSave = useCallback(() => {
-		setWorldbuilding(novelId, form);
-		setEditMode(false);
-	}, [novelId, form, setWorldbuilding]);
-
-	const handleAnalyzeWorldbuilding = useCallback(async () => {
-		if (!currentNovel?.fullText) {
-			useAppMetaStore.getState().showToast("无法获取小说内容", "error");
-			return;
-		}
-		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
-			return;
-		}
-
-		setIsAnalyzing(true);
-		setAnalyzeError(null);
-
-		const abortController = new AbortController();
-
-		try {
-			const config = {
-				baseURL: aiConfig.baseURL,
-				apiKey: aiConfig.apiKey,
-				model: aiConfig.model,
-				customHeaders: {},
-				maxCharsPerRequest: 0,
-				enableLogging: false,
-			};
-
-			const result = await analyzeWorldbuilding(
-				currentNovel.fullText,
-				config,
-				abortController.signal,
-			);
-
-			if (result) {
-				setWorldbuilding(novelId, result);
-				initFormFromWb(result);
-				useAppMetaStore.getState().showToast("世界观分析完成", "success");
-				logger.proofread("[Worldbuilding] AI分析完成:", result);
-			} else {
-				setAnalyzeError("未能从小说内容中提取世界观信息");
-			}
-		} catch (err) {
-			if (err instanceof Error && err.message === "分析已取消") {
-				logger.proofread("[Worldbuilding] 用户取消分析");
-			} else {
-				logger.warn("[Worldbuilding] AI分析失败:", err);
-				setAnalyzeError(err instanceof Error ? err.message : String(err));
-			}
-		} finally {
-			setIsAnalyzing(false);
-		}
-	}, [currentNovel, aiConfig, novelId, setWorldbuilding, initFormFromWb]);
 
 	const hasContent = wb && wb.worldType;
 
@@ -863,11 +791,11 @@ function WorldbuildingSection({ novelId }: WorldbuildingSectionProps) {
 				<p className="text-neutral-400 text-lg mb-2">暂无世界观设定</p>
 				<p className="text-neutral-500 text-sm mb-4">使用 AI 分析角色时将自动生成世界观，或单独分析</p>
 				<div className="flex flex-col items-center gap-3">
-					<button className="btn-primary" onClick={handleAnalyzeWorldbuilding} disabled={isAnalyzing}>
-						{isAnalyzing ? <Icons.loader2 size={14} className="animate-spin" /> : <Icons.sparkle size={14} />}
-						{isAnalyzing ? "AI 分析中..." : "AI 分析世界观"}
+					<button className="btn-primary" onClick={onAnalyze} disabled={wbIsAnalyzing}>
+						{wbIsAnalyzing ? <Icons.loader2 size={14} className="animate-spin" /> : <Icons.sparkle size={14} />}
+						{wbIsAnalyzing ? "AI 分析中..." : "AI 分析世界观"}
 					</button>
-					<button className="btn" onClick={() => setEditMode(true)}>
+					<button className="btn" onClick={() => onEditModeChange(true)}>
 						<Icons.plus size={14} />
 						手动添加
 					</button>
@@ -880,35 +808,11 @@ function WorldbuildingSection({ novelId }: WorldbuildingSectionProps) {
 	}
 
 	return (
-		<div className="space-y-4 p-4">
-			<div className="flex items-center justify-between flex-wrap gap-2">
+		<div className="worldbuilding-section">
+			<div className="worldbuilding-header">
 				<div className="section-label">
 					<Icons.globe size={14} />
 					世界观设定
-				</div>
-				<div className="flex items-center gap-2">
-					{!editMode && (
-						<button className="btn" onClick={handleAnalyzeWorldbuilding} disabled={isAnalyzing}>
-							{isAnalyzing ? <Icons.loader2 size={14} className="animate-spin" /> : <Icons.sparkle size={14} />}
-							{isAnalyzing ? "分析中..." : "AI 分析"}
-						</button>
-					)}
-					{!editMode ? (
-						<button className="btn" onClick={() => { initFormFromWb(wb); setEditMode(true); }}>
-							<Icons.edit size={14} />
-							编辑
-						</button>
-					) : (
-						<>
-							<button className="btn" onClick={() => { setEditMode(false); initFormFromWb(wb); }}>
-								取消
-							</button>
-							<button className="btn-primary" onClick={handleSave}>
-								<Icons.saveIcon size={14} />
-								保存
-							</button>
-						</>
-					)}
 				</div>
 			</div>
 
@@ -916,55 +820,57 @@ function WorldbuildingSection({ novelId }: WorldbuildingSectionProps) {
 				<div className="text-red-400 text-sm">{analyzeError}</div>
 			)}
 
-			{editMode ? (
-				<div className="space-y-3">
-					{fields.map(({ key, label, hint }) => (
-						<div key={key} className="form-field">
-							<label>{label}</label>
+			<div className="worldbuilding-content">
+				{editMode ? (
+					<div className="space-y-3">
+						{fields.map(({ key, label, hint }) => (
+							<div key={key} className="form-field">
+								<label>{label}</label>
+								<textarea
+									className="config-textarea"
+									value={form[key]}
+									onChange={(e) => onFormChange({ ...form, [key]: e.target.value })}
+									placeholder={hint}
+									rows={2}
+								/>
+							</div>
+						))}
+						<div className="form-field">
+							<label>完整世界观概述</label>
 							<textarea
 								className="config-textarea"
-								value={form[key]}
-								onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-								placeholder={hint}
-								rows={2}
+								value={form.description}
+								onChange={(e) => onFormChange({ ...form, description: e.target.value })}
+								placeholder="综合以上所有维度的完整世界观描述"
+								rows={4}
 							/>
 						</div>
-					))}
-					<div className="form-field">
-						<label>完整世界观概述</label>
-						<textarea
-							className="config-textarea"
-							value={form.description}
-							onChange={(e) => setForm({ ...form, description: e.target.value })}
-							placeholder="综合以上所有维度的完整世界观描述"
-							rows={4}
-						/>
 					</div>
-				</div>
-			) : (
-				<div className="space-y-4">
-					{/* 字段展示 */}
-					<div className="grid grid-cols-1 gap-3">
-						{fields.map(({ key, label }) => {
-							const value = form[key];
-							if (!value) return null;
-							return (
-								<div key={key} className="worldbuilding-field">
-									<div className="worldbuilding-field-label">{label}</div>
-									<div className="worldbuilding-field-value">{value}</div>
-								</div>
-							);
-						})}
-					</div>
-					{/* 完整概述 */}
-					{form.description && (
-						<div className="worldbuilding-field">
-							<div className="worldbuilding-field-label">世界观概述</div>
-							<div className="worldbuilding-field-value">{form.description}</div>
+				) : (
+					<div className="space-y-4">
+						{/* 字段展示 */}
+						<div className="grid grid-cols-1 gap-3">
+							{fields.map(({ key, label }) => {
+								const value = form[key];
+								if (!value) return null;
+								return (
+									<div key={key} className="worldbuilding-field">
+										<div className="worldbuilding-field-label">{label}</div>
+										<div className="worldbuilding-field-value">{value}</div>
+									</div>
+								);
+							})}
 						</div>
-					)}
-				</div>
-			)}
+						{/* 完整概述 */}
+						{form.description && (
+							<div className="worldbuilding-field">
+								<div className="worldbuilding-field-label">世界观概述</div>
+								<div className="worldbuilding-field-value">{form.description}</div>
+							</div>
+						)}
+					</div>
+				)}
+			</div>
 		</div>
 	);
 }
@@ -989,6 +895,9 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 	// 拖拽排序模式
 	const [isDragMode, setIsDragMode] = useState(false);
+
+	// 关系图谱状态 - 在父组件中管理
+	const [graphFocusedId, setGraphFocusedId] = useState<string | null>(null);
 	const allRelationships = useCharacterStore((s) => s.characterRelationships);
 	const relationships = useMemo(() => allRelationships[novelId] ?? [], [allRelationships, novelId]);
 	const storeNodePositions = useCharacterStore((s) => s.nodePositions);
@@ -1004,6 +913,99 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const setNodePositions = useCharacterStore((s) => s.setNodePositions);
 	const getWorldbuilding = useCharacterStore((s) => s.getWorldbuilding);
 	const setWorldbuilding = useCharacterStore((s) => s.setWorldbuilding);
+
+	// 世界观状态
+	const wb = useMemo(() => getWorldbuilding(novelId), [getWorldbuilding, novelId]);
+	const [wbEditMode, setWbEditMode] = useState(false);
+	const [wbIsAnalyzing, setWbIsAnalyzing] = useState(false);
+	const [wbAnalyzeError, setWbAnalyzeError] = useState<string | null>(null);
+	const [wbForm, setWbForm] = useState<NovelWorldbuilding>(() => ({
+		worldType: wb?.worldType || "",
+		eraDescription: wb?.eraDescription || "",
+		geography: wb?.geography || "",
+		socialStructure: wb?.socialStructure || "",
+		powerSystem: wb?.powerSystem || "",
+		civilization: wb?.civilization || "",
+		history: wb?.history || "",
+		coreSettings: wb?.coreSettings || "",
+		description: wb?.description || "",
+	}));
+
+	const initWbForm = useCallback(() => {
+		setWbForm({
+			worldType: wb?.worldType || "",
+			eraDescription: wb?.eraDescription || "",
+			geography: wb?.geography || "",
+			socialStructure: wb?.socialStructure || "",
+			powerSystem: wb?.powerSystem || "",
+			civilization: wb?.civilization || "",
+			history: wb?.history || "",
+			coreSettings: wb?.coreSettings || "",
+			description: wb?.description || "",
+		});
+	}, [wb]);
+
+	const handleWbSave = useCallback(() => {
+		setWorldbuilding(novelId, wbForm);
+		setWbEditMode(false);
+	}, [novelId, wbForm, setWorldbuilding]);
+
+	const handleWbAnalyze = useCallback(async () => {
+		const novels = useNovelStore.getState().novels;
+		const currentNovel = novels.find(n => n.id === novelId);
+		const aiConfig = useAIConfigStore.getState().aiConfig;
+
+		if (!currentNovel?.fullText) {
+			useAppMetaStore.getState().showToast("无法获取小说内容", "error");
+			return;
+		}
+		if (!aiConfig?.apiKey || !aiConfig?.baseURL) {
+			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			return;
+		}
+
+		setWbIsAnalyzing(true);
+		setWbAnalyzeError(null);
+
+		try {
+			const config = {
+				baseURL: aiConfig.baseURL,
+				apiKey: aiConfig.apiKey,
+				model: aiConfig.model,
+				customHeaders: {},
+				maxCharsPerRequest: 0,
+				enableLogging: false,
+			};
+
+			const result = await analyzeWorldbuilding(
+				currentNovel.fullText,
+				config,
+			);
+
+			if (result) {
+				setWorldbuilding(novelId, result);
+				setWbForm({
+					worldType: result.worldType || "",
+					eraDescription: result.eraDescription || "",
+					geography: result.geography || "",
+					socialStructure: result.socialStructure || "",
+					powerSystem: result.powerSystem || "",
+					civilization: result.civilization || "",
+					history: result.history || "",
+					coreSettings: result.coreSettings || "",
+					description: result.description || "",
+				});
+				useAppMetaStore.getState().showToast("世界观分析完成", "success");
+			} else {
+				setWbAnalyzeError("未能从小说内容中提取世界观信息");
+			}
+		} catch (err) {
+			setWbAnalyzeError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setWbIsAnalyzing(false);
+		}
+	}, [novelId, setWorldbuilding]);
+
 	const setIgnoredWords = useProofreadMetaStore((s) => s.setIgnoredWords);
 	const setNovelCategory = useAppMetaStore((s) => s.setNovelCategory);
 	const getIgnoredWords = useProofreadMetaStore((s) => s.getIgnoredWords);
@@ -2187,6 +2189,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						<RelationshipGraph
 							novelId={novelId}
 							characters={characters}
+							externalFocusedId={graphFocusedId}
+							onFocusedChange={setGraphFocusedId}
 						/>
 					)}
 					{showAddForm && (
@@ -2709,7 +2713,16 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 				{/* 世界观 */}
 				{activeTab === "worldbuilding" && (
-					<WorldbuildingSection novelId={novelId} />
+					<WorldbuildingSection
+						novelId={novelId}
+						editMode={wbEditMode}
+						wbIsAnalyzing={wbIsAnalyzing}
+						analyzeError={wbAnalyzeError}
+						form={wbForm}
+						onEditModeChange={setWbEditMode}
+						onFormChange={setWbForm}
+						onAnalyze={handleWbAnalyze}
+					/>
 				)}
 
 				{/* 空状态 */}
@@ -2784,6 +2797,75 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 							<Icons.userRoundPen size={18} />
 							<span>关系</span>
 						</button>
+					</div>
+				)}
+
+				{/* 关系图谱按钮区域 */}
+				{activeTab === "graph" && !showAddForm && (
+					<div className="character-actions-fab-wrapper">
+						{graphFocusedId ? (
+							<>
+								<button
+									className="btn"
+									onClick={() => setGraphFocusedId(null)}
+									title="取消聚焦"
+								>
+									<Icons.close size={18} />
+									<span>取消聚焦</span>
+								</button>
+							</>
+						) : (
+							<>
+								<Select
+									value={graphFocusedId || ""}
+									onChange={(value) => setGraphFocusedId(value || null)}
+									options={[
+										{ value: "", label: "全部角色" },
+										...characters.map((c) => ({ value: c.id, label: c.name }))
+									]}
+									style={{ minWidth: "120px", maxWidth: "200px" }}
+								/>
+							</>
+						)}
+					</div>
+				)}
+
+				{/* 世界观按钮区域 */}
+				{activeTab === "worldbuilding" && !showAddForm && (
+					<div className="character-actions-fab-wrapper">
+						{wbEditMode ? (
+							<>
+								<button
+									className="btn"
+									onClick={() => { initWbForm(); setWbEditMode(false); }}
+								>
+									<Icons.x size={18} />
+									<span>取消</span>
+								</button>
+								<button className="btn primary" onClick={handleWbSave}>
+									<Icons.saveIcon size={18} />
+									<span>保存</span>
+								</button>
+							</>
+						) : (
+							<>
+								<button
+									className="btn"
+									onClick={handleWbAnalyze}
+									disabled={wbIsAnalyzing}
+								>
+									{wbIsAnalyzing ? <Icons.loader2 size={18} className="animate-spin" /> : <Icons.sparkle size={18} />}
+									<span>{wbIsAnalyzing ? "分析中..." : "AI 分析"}</span>
+								</button>
+								<button
+									className="btn primary"
+									onClick={() => { initWbForm(); setWbEditMode(true); }}
+								>
+									<Icons.edit size={18} />
+									<span>编辑</span>
+								</button>
+							</>
+						)}
 					</div>
 				)}
 			</div>

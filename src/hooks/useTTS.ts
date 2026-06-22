@@ -32,9 +32,91 @@ export function useTTS() {
 	const [isStreamTTSWaitingForStart, setIsStreamTTSWaitingForStart] = useState(false);
 	const [currentPlayingCharacter, setCurrentPlayingCharacter] = useState<string | undefined>(undefined);
 	const [paragraphEmotionCache, setParagraphEmotionCache] = useState<Map<number, ParagraphEmotionResult>>(new Map());
+	const [remainingSeconds, setRemainingSeconds] = useState(0);
 
 	const ttsPlayerRef = useRef<TTSPlayer | null>(null);
 	const scriptTTSRef = useRef<ScriptTTSPlayer | null>(null);
+	const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+	const totalDurationRef = useRef(0);
+
+	// 计算文本的预计朗读时长（秒）
+	const calculateDuration = useCallback((text: string): number => {
+		const speed = ttsConfig.speed || 5;
+		// 平均语速约为每分钟150-200字，根据语速设置调整
+		const baseWpm = 180;
+		const adjustedWpm = Math.round(baseWpm * (speed / 5));
+		const charCount = text.length;
+		const avgCharsPerWord = 2.5;
+		const wordCount = charCount / avgCharsPerWord;
+		return Math.max(1, Math.round((wordCount / adjustedWpm) * 60));
+	}, [ttsConfig.speed]);
+
+	// 计算总时长（存储到 ref）
+	const updateTotalDuration = useCallback(() => {
+		if (!ttsSentences.length) {
+			totalDurationRef.current = 0;
+			return;
+		}
+
+		const currentIndex = ttsPlayerRef.current?.getCurrentIndex() ?? 0;
+		let total = 0;
+
+		ttsSentences.forEach((sentence, index) => {
+			if (index >= currentIndex) {
+				total += calculateDuration(sentence.text);
+			}
+		});
+
+		totalDurationRef.current = total;
+	}, [ttsSentences, calculateDuration]);
+
+	// 每秒更新剩余时长
+	useEffect(() => {
+		if (!ttsPlaying && !isStreamTTSPlaying) {
+			if (timerRef.current) {
+				clearInterval(timerRef.current);
+				timerRef.current = null;
+			}
+			totalDurationRef.current = 0;
+			return;
+		}
+
+		// 初始化总时长
+		updateTotalDuration();
+
+		timerRef.current = setInterval(() => {
+			// 每秒递减剩余时长
+			setRemainingSeconds(prev => {
+				if (prev <= 0) {
+					return 0;
+				}
+				return prev - 1;
+			});
+		}, 1000);
+
+		return () => {
+			if (timerRef.current) {
+				clearInterval(timerRef.current);
+				timerRef.current = null;
+			}
+		};
+	}, [ttsPlaying, isStreamTTSPlaying, updateTotalDuration]);
+
+	// 句子变化时重新计算总时长并更新剩余时长
+	useEffect(() => {
+		if (ttsPlaying || isStreamTTSPlaying) {
+			updateTotalDuration();
+			setRemainingSeconds(totalDurationRef.current);
+		}
+	}, [ttsSentences, ttsPlaying, isStreamTTSPlaying, updateTotalDuration]);
+
+	// 播放状态变化时初始化剩余时长
+	useEffect(() => {
+		if (ttsPlaying || isStreamTTSPlaying) {
+			updateTotalDuration();
+			setRemainingSeconds(totalDurationRef.current);
+		}
+	}, [ttsPlaying, isStreamTTSPlaying, updateTotalDuration]);
 
 	const chapter = chapters[currentChapterIndex];
 	const paragraphs = useMemo(() => {
@@ -308,6 +390,7 @@ export function useTTS() {
 		isStreamTTSWaitingForStart,
 		currentPlayingCharacter,
 		paragraphEmotionCache,
+		remainingSeconds,
 		handleTTSToggle,
 		handleTTSPrev,
 		handleTTSNext,

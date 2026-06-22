@@ -9,6 +9,13 @@
 - 新增 `novelStore.ts` 中 `selectNovel`、`setChapters`、`setCurrentChapter`、`addNovel`、`removeNovel`、`replaceParagraphText`、`clearFile` 等函数的日志输出
 - 新增 `App.tsx` 中 `trySelect` 函数的完整流程日志，便于追踪小说选择逻辑
 
+**敏感词替换功能**
+- 新增敏感词替换功能，用于规避 TTS 大模型敏感词拒绝生成的问题
+- 新增 `wordReplacementStore` 管理词组替换数据，支持持久化存储
+- 新增 `WordReplacementModal` 组件，采用 config-modal 窗体模版
+- 在 TTS 请求前自动进行词组替换（`synthesizeSpeech` 和 `synthesizeSpeechWithVoice` 函数）
+- 在顶部导航栏添加"敏感词"入口按钮
+
 ### 🐛 Bug 修复
 
 **安卓端章节跳转问题修复**
@@ -26,6 +33,11 @@
 - 移除 `btn-single-check` 按钮的悬浮下沉动画（`transform: translateY(-1px)`）
 - 移除按钮点击缩放效果（`transform: scale(0.98)`）
 - 修复文件：`src/App.css`
+
+**阅读提醒设置持久化修复**
+- 修复阅读模式阅读提醒开关设置没有做持久化存储的问题
+- 在 `appMetaStore.ts` 的 `partialize` 函数中添加 `readingReminderEnabled` 和 `readingReminderMinutes` 字段
+- 修复文件：`src/stores/appMetaStore.ts`
 
 ### 🔧 改进优化
 

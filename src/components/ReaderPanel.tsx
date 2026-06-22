@@ -140,7 +140,7 @@ export function ReaderPanel({
 
 	const {
 		ttsPlaying, ttsHighlightedPara, isStreamTTSPlaying, enhancedTTSPreparing,
-		isStreamTTSWaitingForStart, currentPlayingCharacter,
+		isStreamTTSWaitingForStart, currentPlayingCharacter, remainingSeconds,
 		handleTTSToggle, handleTTSPrev, handleTTSNext, handleTTSStop,
 		startTTSFromParagraph, handleEnterStreamTTSSelectionMode, handleEnhancedChapterTTS,
 		setIsStreamTTSWaitingForStart, setParagraphEmotionCache,
@@ -1172,6 +1172,12 @@ export function ReaderPanel({
 									<span>{currentPlayingCharacter}</span>
 								</div>
 							)}
+							{(ttsPlaying || isStreamTTSPlaying) && remainingSeconds > 0 && (
+								<div className="tts-remaining-time">
+									<Icons.clock size={14} />
+									<span>{Math.floor(remainingSeconds / 60).toString().padStart(2, '0')}:{(remainingSeconds % 60).toString().padStart(2, '0')}</span>
+								</div>
+							)}
 							<button
 								className="tts-playback-btn"
 								onClick={handleTTSPrev}
@@ -1480,7 +1486,7 @@ export function ReaderPanel({
 					<div className="config-modal" onClick={(e) => e.stopPropagation()}>
 						<div className="config-header">
 							<div className="config-title">
-								<Icons.eye size={18} />
+								<span className="title-icon"><Icons.eye size={16} /></span>
 								<span>温馨提醒</span>
 							</div>
 							<button className="close-btn" onClick={() => setShowReadingReminder(false)}>
@@ -1497,22 +1503,24 @@ export function ReaderPanel({
 							</button>
 						</div>
 						<div className="config-body">
-							<div className="reading-reminder-content">
-								<div className="reading-reminder-message">
+							<div className="config-section">
+								<p className="modal-description" style={{ textAlign: "center", fontSize: "14px", margin: "16px 0" }}>
 									您已阅读 {Math.floor(readingTimeElapsed / 60000)} 分钟，请注意休息，保护眼睛！
-								</div>
-								<div className="reading-reminder-actions">
-									<button className="action-btn primary" onClick={() => setShowReadingReminder(false)}>
-										继续阅读
-									</button>
-									<button className="action-btn secondary" onClick={() => {
-										setShowReadingReminder(false);
-										setReadingMode(false);
-									}}>
-										退出阅读模式
-									</button>
-								</div>
+								</p>
 							</div>
+						</div>
+						<div className="character-actions-fab-wrapper">
+							<button className="btn" onClick={() => {
+								setShowReadingReminder(false);
+								setReadingMode(false);
+							}}>
+								<Icons.x size={18} />
+								<span>退出阅读模式</span>
+							</button>
+							<button className="btn" onClick={() => setShowReadingReminder(false)}>
+								<Icons.eye size={18} />
+								<span>继续阅读</span>
+							</button>
 						</div>
 					</div>
 				</div>
@@ -1524,7 +1532,7 @@ export function ReaderPanel({
 					<div className="config-modal" onClick={(e) => e.stopPropagation()}>
 						<div className="config-header">
 							<div className="config-title">
-								<Icons.userRoundPlus size={18} />
+								<span className="title-icon"><Icons.userRoundPlus size={16} /></span>
 								<span>检测到新角色</span>
 							</div>
 							<button className="close-btn" onClick={() => setShowNewCharacterModal(false)}>
@@ -1541,10 +1549,12 @@ export function ReaderPanel({
 							</button>
 						</div>
 						<div className="config-body">
-							<div className="new-character-modal-content">
-								<div className="new-character-message">
+							<div className="config-section">
+								<p className="modal-description">
 									情感朗读时检测到 {detectedNewCharacters.length} 个新角色，是否添加到角色列表？
-								</div>
+								</p>
+							</div>
+							<div className="config-section">
 								<div className="new-character-list">
 									{detectedNewCharacters.map((name) => (
 										<div key={name} className="new-character-item">
@@ -1553,15 +1563,17 @@ export function ReaderPanel({
 										</div>
 									))}
 								</div>
-								<div className="new-character-actions">
-									<button className="action-btn primary" onClick={() => handleAddNewCharacters(detectedNewCharacters)}>
-										全部添加
-									</button>
-									<button className="action-btn secondary" onClick={() => setShowNewCharacterModal(false)}>
-										稍后再说
-									</button>
-								</div>
 							</div>
+						</div>
+						<div className="character-actions-fab-wrapper">
+							<button className="btn" onClick={() => setShowNewCharacterModal(false)}>
+								<Icons.x size={18} />
+								<span>稍后再说</span>
+							</button>
+							<button className="btn" onClick={() => handleAddNewCharacters(detectedNewCharacters)}>
+								<Icons.userRoundPlus size={18} />
+								<span>全部添加</span>
+							</button>
 						</div>
 					</div>
 				</div>

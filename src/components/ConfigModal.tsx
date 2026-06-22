@@ -9,6 +9,7 @@ import { ProofreadSettingsSection } from "./config/ProofreadSettingsSection";
 import { TTSConfigSection } from "./config/TTSConfigSection";
 import { DataManagementSection } from "./config/DataManagementSection";
 import { PromptSettingsSection } from "./config/PromptSettingsSection";
+import { WordReplacementModal } from "./WordReplacementModal";
 import { getLogHistory, clearLogHistory, type LogEntry } from "../utils/logger";
 
 const PROVIDERS: { value: AIProvider; label: string; logo: string; color: string }[] = [
@@ -76,6 +77,7 @@ function ConfigModalContent({
 	const [showApiKey, setShowApiKey] = useState(false);
 	const [activeTab, setActiveTab] = useState<"ai" | "tts" | "settings" | "prompt" | "logs">("ai");
 	const [logRefresh, setLogRefresh] = useState(0);
+	const [showWordReplacementModal, setShowWordReplacementModal] = useState(false);
 	const logs = useMemo(() => {
 		void logRefresh;
 		return config.enableLogging ? getLogHistory() : [];
@@ -195,7 +197,12 @@ function ConfigModalContent({
 							<AITestSection config={config} />
 						</>
 					)}
-					{activeTab === "tts" && <TTSConfigSection />}
+					{activeTab === "tts" && (
+						<>
+							<TTSConfigSection onOpenWordReplacement={() => setShowWordReplacementModal(true)} />
+							<WordReplacementModal open={showWordReplacementModal} onClose={() => setShowWordReplacementModal(false)} />
+						</>
+					)}
 					{activeTab === "settings" && (
 						<>
 							<ProofreadSettingsSection />
@@ -219,18 +226,7 @@ function ConfigModalContent({
 					)}
 					{activeTab === "logs" && (
 						<div className="config-section">
-							<div className="section-header">
-								<div className="section-label"><Icons.punctuation size={14} />调试日志</div>
-								<div className="section-actions">
-									<button className="btn btn-sm" onClick={handleCopyAllLogs}>
-										{copiedId === "all" ? <Icons.check size={14} /> : <Icons.copy size={14} />}
-										{copiedId === "all" ? "已复制" : "复制全部"}
-									</button>
-									<button className="btn btn-sm btn-secondary" onClick={handleClearLogs}>
-										<Icons.trash2 size={14} />清空
-									</button>
-								</div>
-							</div>
+							<div className="section-label"><Icons.punctuation size={14} />调试日志</div>
 							<div className="logs-container">
 								{logs.length === 0 ? (
 									<div className="empty-logs">
@@ -269,9 +265,53 @@ function ConfigModalContent({
 						</div>
 					)}
 				</div>
-				<div className="config-footer">
-					<button className="btn-cancel" onClick={onClose}>取消</button>
-					<button className="btn-save" onClick={() => onSave(config)}>保存配置</button>
+				<div className="character-actions-fab-wrapper">
+					<button className="btn" onClick={onClose}>
+						<Icons.x size={18} />
+						<span>关闭</span>
+					</button>
+					{activeTab === "ai" && (
+						<button className="btn" onClick={() => onSave(config)}>
+							<Icons.save size={18} />
+							<span>保存配置</span>
+						</button>
+					)}
+					{activeTab === "tts" && (
+						<>
+							<button className="btn" onClick={() => setShowWordReplacementModal(true)}>
+								<Icons.settings size={18} />
+								<span>管理词组</span>
+							</button>
+							<button className="btn" onClick={onClose}>
+								<Icons.checkCircle size={18} />
+								<span>完成</span>
+							</button>
+						</>
+					)}
+					{activeTab === "settings" && (
+						<button className="btn" onClick={() => onSave(config)}>
+							<Icons.save size={18} />
+							<span>保存设置</span>
+						</button>
+					)}
+					{activeTab === "prompt" && (
+						<button className="btn" onClick={onClose}>
+							<Icons.checkCircle size={18} />
+							<span>完成</span>
+						</button>
+					)}
+					{activeTab === "logs" && (
+						<>
+							<button className="btn" onClick={handleCopyAllLogs}>
+								{copiedId === "all" ? <Icons.check size={18} /> : <Icons.copy size={18} />}
+								<span>{copiedId === "all" ? "已复制" : "复制全部"}</span>
+							</button>
+							<button className="btn" onClick={handleClearLogs}>
+								<Icons.trash2 size={18} />
+								<span>清空</span>
+							</button>
+						</>
+					)}
 				</div>
 			</div>
 		</div>
