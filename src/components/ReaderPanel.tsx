@@ -54,7 +54,6 @@ export function ReaderPanel({
 	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
 
 	const tts = useTTS();
-	const search = useSearch([], []);
 	const readingProgress = useReadingProgress();
 	const chapterTitleSuggestion = useChapterTitleSuggestion();
 
@@ -83,6 +82,8 @@ export function ReaderPanel({
 	const paragraphIndexMap = useMemo(() => {
 		return chapter ? buildParagraphIndexMap(chapter.content) : [];
 	}, [chapter]);
+
+	const search = useSearch(paragraphs, paragraphIndexMap);
 
 	const originalToFilteredMap = useMemo(() => {
 		return chapter ? buildOriginalToFilteredMap(chapter.content) : {};

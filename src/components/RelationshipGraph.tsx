@@ -11,6 +11,9 @@ interface RelationshipGraphProps {
 	externalFocusedId: string | null;
 	// 回调：聚焦状态改变时通知父组件
 	onFocusedChange: (id: string | null) => void;
+	// 外部缩放控制（可选）
+	externalScale?: number;
+	onScaleChange?: (scale: number) => void;
 }
 
 interface GraphNode {
@@ -33,6 +36,8 @@ export function RelationshipGraph({
 	characters,
 	externalFocusedId,
 	onFocusedChange,
+	externalScale,
+	onScaleChange,
 }: RelationshipGraphProps) {
 	const allRelationships = useCharacterStore((s) => s.characterRelationships);
 	const relationships = useMemo(() => allRelationships[novelId] ?? [], [allRelationships, novelId]);
@@ -68,7 +73,16 @@ export function RelationshipGraph({
 	});
 
 	const [viewportOffset, setViewportOffset] = useState({ x: 0, y: 0 });
-	const [scale, setScale] = useState(1);
+	const [internalScale, setInternalScale] = useState(1);
+	const scale = externalScale ?? internalScale;
+	
+	// 缩放处理函数
+	const setScaleWithCallback = useCallback((newScale: number) => {
+		const clampedScale = Math.min(Math.max(newScale, 0.3), 5);
+		setInternalScale(clampedScale);
+		onScaleChange?.(clampedScale);
+	}, [onScaleChange]);
+	
 	const [isDragging, setIsDragging] = useState(false);
 	const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 	const [isNodeDragging, setIsNodeDragging] = useState(false);
@@ -76,6 +90,13 @@ export function RelationshipGraph({
 	const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 	const dragOffsetRef = useRef({ x: 0, y: 0 });
 	const nodeDragOriginRef = useRef<{ mouseX: number; mouseY: number; nodeX: number; nodeY: number } | null>(null);
+	// 双指缩放状态
+	const pinchStateRef = useRef<{
+		initialDistance: number;
+		initialScale: number;
+		initialCenter: { x: number; y: number };
+		initialOffset: { x: number; y: number };
+	} | null>(null);
 	useEffect(() => {
 		dragOffsetRef.current = dragOffset;
 	}, [dragOffset]);
@@ -498,14 +519,46 @@ export function RelationshipGraph({
 	const handleWheel = useCallback((e: React.WheelEvent) => {
 		e.stopPropagation();
 		const delta = e.deltaY > 0 ? 0.9 : 1.1;
-		setScale((prev) => Math.min(Math.max(prev * delta, 0.3), 5));
-	}, []);
+		const newScale = Math.min(Math.max(scale * delta, 0.3), 5);
+		setScaleWithCallback(newScale);
+	}, [scale, setScaleWithCallback]);
+
+	// 计算双指触摸距离
+	const getTouchDistance = (touches: React.TouchList): number => {
+		const dx = touches[0].clientX - touches[1].clientX;
+		const dy = touches[0].clientY - touches[1].clientY;
+		return Math.sqrt(dx * dx + dy * dy);
+	};
+
+	// 计算双指触摸中心点
+	const getTouchCenter = (touches: React.TouchList): { x: number; y: number } => {
+		return {
+			x: (touches[0].clientX + touches[1].clientX) / 2,
+			y: (touches[0].clientY + touches[1].clientY) / 2,
+		};
+	};
 
 	const handleTouchStart = useCallback((e: React.TouchEvent) => {
-		if (e.touches.length !== 1) return;
-		setIsDragging(true);
-		setDragStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
-	}, []);
+		if (e.touches.length === 2) {
+			// 双指触摸：开始缩放
+			const distance = getTouchDistance(e.touches);
+			const center = getTouchCenter(e.touches);
+			pinchStateRef.current = {
+				initialDistance: distance,
+				initialScale: scale,
+				initialCenter: center,
+				initialOffset: viewportOffset,
+			};
+			setIsDragging(false);
+		} else if (e.touches.length === 1) {
+			// 单指触摸：开始拖拽
+			if (pinchStateRef.current) {
+				pinchStateRef.current = null;
+			}
+			setIsDragging(true);
+			setDragStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
+		}
+	}, [scale, viewportOffset]);
 
 	const handleNodeTouchStart = useCallback(
 		(e: React.TouchEvent, nodeId: string, nodeX: number, nodeY: number) => {
@@ -523,26 +576,49 @@ export function RelationshipGraph({
 
 	const handleTouchMove = useCallback(
 		(e: React.TouchEvent) => {
-			if (e.touches.length !== 1) return;
-			if (isNodeDragging && draggingNodeId && nodeDragOriginRef.current) {
-				const dx = e.touches[0].clientX - nodeDragOriginRef.current.mouseX;
-				const dy = e.touches[0].clientY - nodeDragOriginRef.current.mouseY;
-				if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-					nodeDraggedRef.current = true;
+			// 双指缩放
+			if (e.touches.length === 2 && pinchStateRef.current) {
+				const currentDistance = getTouchDistance(e.touches);
+				const currentCenter = getTouchCenter(e.touches);
+				const scaleFactor = currentDistance / pinchStateRef.current.initialDistance;
+				const newScale = Math.min(Math.max(pinchStateRef.current.initialScale * scaleFactor, 0.3), 5);
+				
+				// 计算新的偏移，以保持中心点位置
+				const centerDx = currentCenter.x - pinchStateRef.current.initialCenter.x;
+				const centerDy = currentCenter.y - pinchStateRef.current.initialCenter.y;
+				const scaleDiff = newScale - pinchStateRef.current.initialScale;
+				
+				// 调整偏移以保持缩放中心
+				const newOffsetX = pinchStateRef.current.initialOffset.x + centerDx - (currentCenter.x - graphRef.current!.clientWidth / 2) * (scaleDiff / pinchStateRef.current.initialScale);
+				const newOffsetY = pinchStateRef.current.initialOffset.y + centerDy - (currentCenter.y - graphRef.current!.clientHeight / 2) * (scaleDiff / pinchStateRef.current.initialScale);
+				
+				setScaleWithCallback(newScale);
+				setViewportOffset({ x: newOffsetX, y: newOffsetY });
+			} else if (e.touches.length === 1) {
+				// 单指拖拽
+				if (isNodeDragging && draggingNodeId && nodeDragOriginRef.current) {
+					const dx = e.touches[0].clientX - nodeDragOriginRef.current.mouseX;
+					const dy = e.touches[0].clientY - nodeDragOriginRef.current.mouseY;
+					if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+						nodeDraggedRef.current = true;
+					}
+					setDragOffset({ x: dx / scale, y: dy / scale });
+					dragOffsetRef.current = { x: dx / scale, y: dy / scale };
+				} else if (isDragging && !pinchStateRef.current) {
+					const dx = e.touches[0].clientX - dragStart.x;
+					const dy = e.touches[0].clientY - dragStart.y;
+					setViewportOffset((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+					setDragStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
 				}
-				setDragOffset({ x: dx / scale, y: dy / scale });
-				dragOffsetRef.current = { x: dx / scale, y: dy / scale };
-			} else if (isDragging) {
-				const dx = e.touches[0].clientX - dragStart.x;
-				const dy = e.touches[0].clientY - dragStart.y;
-				setViewportOffset((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
-				setDragStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
 			}
 		},
-		[isDragging, dragStart, isNodeDragging, draggingNodeId, scale]
+		[isDragging, dragStart, isNodeDragging, draggingNodeId, scale, setScaleWithCallback]
 	);
 
 	const handleTouchEnd = useCallback(() => {
+		// 清除双指缩放状态
+		pinchStateRef.current = null;
+		
 		if (isNodeDragging && draggingNodeId && nodeDragOriginRef.current) {
 			const finalX = nodeDragOriginRef.current.nodeX + dragOffsetRef.current.x;
 			const finalY = nodeDragOriginRef.current.nodeY + dragOffsetRef.current.y;
@@ -559,9 +635,7 @@ export function RelationshipGraph({
 	}, [isNodeDragging, draggingNodeId, novelId]);
 
 	const handleResetLayout = useCallback(() => {
-		setScale(1);
-		setViewportOffset({ x: 0, y: 0 });
-
+		// 直接计算并设置正确的缩放和偏移，不先重置
 		requestAnimationFrame(() => {
 			if (!graphRef.current) return;
 			const svg = graphRef.current.querySelector("svg");
@@ -588,10 +662,10 @@ export function RelationshipGraph({
 			const offsetX = Math.round((containerWidth - scaledWidth) / 2);
 			const offsetY = Math.round((containerHeight - scaledHeight) / 2);
 
-			setScale(newScale);
+			setScaleWithCallback(newScale);
 			setViewportOffset({ x: offsetX, y: offsetY });
 		});
-	}, []);
+	}, [setScaleWithCallback]);
 
 	// 焦点改变时自动适应窗口
 	useEffect(() => {

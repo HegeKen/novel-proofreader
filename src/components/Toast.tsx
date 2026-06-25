@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Icons } from "./Icons";
 
 export interface ToastMessage {
@@ -15,13 +15,25 @@ interface ToastProps {
 
 function ToastItem({ message, onClose }: ToastProps) {
 	const duration = message.duration || 3000;
+	const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	useEffect(() => {
-		const timer = setTimeout(() => {
+		timerRef.current = setTimeout(() => {
 			onClose(message.id);
 		}, duration);
-		return () => clearTimeout(timer);
+		return () => {
+			if (timerRef.current) {
+				clearTimeout(timerRef.current);
+			}
+		};
 	}, [message.id, duration, onClose]);
+
+	const handleClose = () => {
+		if (timerRef.current) {
+			clearTimeout(timerRef.current);
+		}
+		onClose(message.id);
+	};
 
 	const iconMap = {
 		success: Icons.check,
@@ -46,7 +58,7 @@ function ToastItem({ message, onClose }: ToastProps) {
 		>
 			{IconComponent && <IconComponent size={16} />}
 			<span className="toast-message">{message.message}</span>
-			<button className="toast-close" onClick={() => onClose(message.id)}>
+			<button type="button" className="toast-close" onClick={handleClose}>
 				<Icons.close size={14} />
 			</button>
 		</div>

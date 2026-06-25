@@ -29,6 +29,7 @@ export function Select({
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const selectedOption = options.find((opt) => opt.value === value);
 
@@ -36,15 +37,25 @@ export function Select({
     if (isOpen && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
       const dropdownWidth = Math.min(rect.width, 280);
-      const maxHeight = window.innerHeight - rect.bottom - 20;
-      const safeMaxHeight = Math.max(Math.min(maxHeight, 300), 100);
+      const spaceBelow = window.innerHeight - rect.bottom - 20;
+      const spaceAbove = rect.top - 20;
+      
+      // 默认向下展开
+      let top = rect.bottom + 8;
+      let maxHeight = Math.max(Math.min(spaceBelow, 300), 100);
+      
+      // 如果下方空间不足，向上展开
+      if (spaceBelow < 150 && spaceAbove > spaceBelow) {
+        top = rect.top - 8;
+        maxHeight = Math.max(Math.min(spaceAbove, 300), 100);
+      }
       
       const newStyle: React.CSSProperties = {
         position: "fixed",
         left: `${Math.max(rect.left, 16)}px`,
-        top: `${rect.bottom + 8}px`,
+        top: `${top}px`,
         width: `${dropdownWidth}px`,
-        maxHeight: `${safeMaxHeight}px`,
+        maxHeight: `${maxHeight}px`,
         zIndex: 9999,
       };
       
@@ -54,7 +65,13 @@ export function Select({
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(target) &&
+        dropdownRef.current &&
+        !dropdownRef.current.contains(target)
+      ) {
         setIsOpen(false);
       }
     };
@@ -97,7 +114,7 @@ export function Select({
       </button>
 
       {isOpen && !disabled && createPortal(
-        <div className="custom-select-dropdown" style={dropdownStyle}>
+        <div ref={dropdownRef} className="custom-select-dropdown" style={dropdownStyle}>
           <div className="custom-select-options">
             {options.map((option) => (
               <button

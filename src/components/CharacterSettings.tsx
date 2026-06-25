@@ -898,6 +898,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 	// 关系图谱状态 - 在父组件中管理
 	const [graphFocusedId, setGraphFocusedId] = useState<string | null>(null);
+	const [graphScale, setGraphScale] = useState(1);
 	const allRelationships = useCharacterStore((s) => s.characterRelationships);
 	const relationships = useMemo(() => allRelationships[novelId] ?? [], [allRelationships, novelId]);
 	const storeNodePositions = useCharacterStore((s) => s.nodePositions);
@@ -1618,8 +1619,9 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					}
 
 					// --- 导入世界观设定 ---
-					if (importedWorldbuilding) {
-						setWorldbuilding(novelId, importedWorldbuilding);
+					const hasWorldbuilding = importedWorldbuilding && importedWorldbuilding.worldType;
+					if (hasWorldbuilding) {
+						setWorldbuilding(novelId, importedWorldbuilding!);
 					}
 
 					const msg = `导入完成！新增 ${addedCount} 个角色，更新 ${updatedCount} 个角色` +
@@ -1627,7 +1629,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						(Object.keys(importedNodePositions).length > 0 ? "，导入节点位置" : "") +
 						(importedIgnoredWords.length > 0 ? `，导入 ${importedIgnoredWords.length} 个忽略词` : "") +
 						(importedNovelCategory ? "，导入小说分类" : "") +
-						(importedIgnoredCharacterNames.length > 0 ? `，导入 ${importedIgnoredCharacterNames.length} 个忽略角色` : "");
+						(importedIgnoredCharacterNames.length > 0 ? `，导入 ${importedIgnoredCharacterNames.length} 个忽略角色` : "") +
+						(hasWorldbuilding ? "，导入世界观设定" : "");
 					useAppMetaStore.getState().showToast(msg, "success");
 				} catch (err) {
 					useAppMetaStore.getState().showToast("文件解析失败：" + (err instanceof Error ? err.message : String(err)), "error");
@@ -2191,6 +2194,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 							characters={characters}
 							externalFocusedId={graphFocusedId}
 							onFocusedChange={setGraphFocusedId}
+							externalScale={graphScale}
+							onScaleChange={setGraphScale}
 						/>
 					)}
 					{showAddForm && (
@@ -2827,6 +2832,21 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								/>
 							</>
 						)}
+						<button
+							className="btn"
+							onClick={() => setGraphScale((s) => Math.min(s + 0.2, 5))}
+							title="放大"
+						>
+							<Icons.plus size={18} />
+						</button>
+						<span className="graph-scale-display">{Math.round(graphScale * 100)}%</span>
+						<button
+							className="btn"
+							onClick={() => setGraphScale((s) => Math.max(s - 0.2, 0.3))}
+							title="缩小"
+						>
+							<Icons.minus size={18} />
+						</button>
 					</div>
 				)}
 

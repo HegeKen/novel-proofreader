@@ -851,6 +851,32 @@ select {
 .btn-hide-proofread.active {
 	color: var(--text-muted)}
 
+.btn-resplit {
+	gap: 4px;
+	font-size: 11px;
+	color: var(--accent);
+	background: var(--bg-overlay);
+	padding: 4px 10px;
+	border-radius: 20px;
+	cursor: pointer;
+	transition: all 0.2s ease}
+
+.btn-resplit:hover:not(:disabled) {
+	background: var(--bg-hover);
+	border-color: var(--border-strong)}
+
+.btn-resplit:disabled {
+	opacity: 0.6;
+	cursor: not-allowed}
+
+.btn-resplit .spin {
+	animation: spin 1s linear infinite}
+
+@keyframes spin {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
 .chapter-list {
 	flex: 1;
 	overflow-y: auto;
@@ -4829,6 +4855,19 @@ color: var(--text-primary)}
 	display: block;
 	width: 18px;
 	height: 18px}
+
+.graph-scale-display {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 48px;
+	padding: 0 8px;
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--text-secondary);
+	background: var(--bg-secondary);
+	border-radius: var(--r-md);
+}
 
 .character-actions-fab-wrapper .btn.primary {
 	background: linear-gradient(135deg, var(--accent), var(--accent-hover));

@@ -12,6 +12,7 @@ import { useSwipeGesture } from "../hooks/useSwipeGesture";
 import type { Chapter } from "../types";
 import { logger } from "../utils/logger";
 import { generateChapterTitle } from "../utils/aiClient";
+import { splitChapters } from "../utils/chapterSplit";
 
 const ChapterItem = forwardRef<HTMLButtonElement, {
 	chapter: Chapter;
@@ -321,6 +322,35 @@ export function ChapterNav({
 		setSuggestingChapterId(null);
 	}, []);
 
+	// 重新断章相关状态
+	const [isResplitting, setIsResplitting] = useState(false);
+	const novels = useNovelStore((s) => s.novels);
+	const currentNovelId = useNovelStore((s) => s.currentNovelId);
+	const setChapters = useNovelStore((s) => s.setChapters);
+
+	// 重新断章处理函数
+	const handleResplitChapters = useCallback(async () => {
+		const currentNovel = novels.find(n => n.id === currentNovelId);
+		if (!currentNovel?.fullText) {
+			useAppMetaStore.getState().showToast("无法获取小说内容", "error");
+			return;
+		}
+
+		setIsResplitting(true);
+		try {
+			logger.info('[ChapterNav] 重新断章开始');
+			const newChapters = splitChapters(currentNovel.fullText);
+			setChapters(newChapters);
+			useAppMetaStore.getState().showToast(`重新断章完成，共 ${newChapters.length} 章`, "success");
+			logger.info('[ChapterNav] 重新断章完成', newChapters.length);
+		} catch (error) {
+			logger.errorGeneric('[ChapterNav] 重新断章失败:', error);
+			useAppMetaStore.getState().showToast("重新断章失败", "error");
+		} finally {
+			setIsResplitting(false);
+		}
+	}, [novels, currentNovelId, setChapters]);
+
 	// 当当前章节变化时，滚动到 active 项并居中
 	useEffect(() => {
 		if (activeItemRef.current && chapterListRef.current) {
@@ -396,6 +426,15 @@ export function ChapterNav({
 				</h3>
 				<div className="nav-header-actions">
 					<span className="chapter-count">{totalDisplayed}/{chapters.length} 章</span>
+					<button
+						className="btn"
+						onClick={handleResplitChapters}
+						disabled={isResplitting}
+						title="重新识别章节标题并分割"
+					>
+						<Icons.refreshCw size={14} className={isResplitting ? "spin" : ""} />
+						{isResplitting ? "断章中..." : "重新断章"}
+					</button>
 					{proofreadCount > 0 && (
 						<button
 							className={`btn-hide-proofread ${hideProofread ? "active" : ""}`}

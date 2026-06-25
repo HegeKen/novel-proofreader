@@ -69,6 +69,8 @@ export default function App() {
 	const selectNovel = useNovelStore((s) => s.selectNovel);
 	const showCharacterSettings = useUIStore((s) => s.showCharacterSettings);
 	const setShowCharacterSettings = useUIStore((s) => s.setShowCharacterSettings);
+	const toastMessages = useAppMetaStore((s) => s.toastMessages);
+	const hideToast = useAppMetaStore((s) => s.hideToast);
 	const [configOpen, setConfigOpen] = useState(false);
 	const [rightTab, setRightTab] = useState<RightTab>("proofread");
 	const [mobileTab, setMobileTab] = useState<MobileTab>("novels");
@@ -507,7 +509,7 @@ export default function App() {
 				</aside>
 			</div>
 
-			{isMobile && !readingMode && (
+			{isMobile && !(readingMode && mobileTab === "reader") && (
 				<>
 					<div className="mobile-tab-bar" role="tablist">
 						<button
@@ -567,9 +569,9 @@ export default function App() {
 					/>
 				</Suspense>
 			)}
-			<ToastContainer 
-				messages={useAppMetaStore.getState().toastMessages} 
-				onClose={(id) => useAppMetaStore.getState().hideToast(id)} 
+			<ToastContainer
+				messages={toastMessages}
+				onClose={hideToast}
 			/>
 		</>
 	)}
