@@ -75,7 +75,7 @@ function ConfigModalContent({
 }) {
 	const [config, setConfig] = useState<ConfigState>(initialConfig);
 	const [showApiKey, setShowApiKey] = useState(false);
-	const [activeTab, setActiveTab] = useState<"ai" | "tts" | "settings" | "prompt" | "logs">("ai");
+	const [activeTab, setActiveTab] = useState<"ai" | "tts" | "settings" | "prompt" | "logs" | "data">("ai");
 	const [logRefresh, setLogRefresh] = useState(0);
 	const [showWordReplacementModal, setShowWordReplacementModal] = useState(false);
 	const logs = useMemo(() => {
@@ -124,7 +124,7 @@ function ConfigModalContent({
 				<div className="config-header">
 					<div className="config-title">
 						<span className="title-icon"><Icons.settings size={16} /></span>
-						<span>AI 配置</span>
+						<span>APP 设置</span>
 					</div>
 					<button className="close-btn" onClick={onClose}>
 						<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
@@ -133,14 +133,14 @@ function ConfigModalContent({
 					</button>
 				</div>
 				<div className="config-tabs">
-					{([["ai", "AI 配置", Icons.saveOriginal], ["tts", "TTS 配置", Icons.volume], ["settings", "设置", Icons.settings], ["prompt", "PROMPT", Icons.punctuation]] as const).map(([tab, label, Icon]) => (
+					{([["ai", "AI 配置", Icons.brain], ["tts", "TTS 配置", Icons.volume], ["settings", "设置", Icons.settings], ["prompt", "PROMPT", Icons.punctuation], ["data", "数据管理", Icons.server]] as const).map(([tab, label, Icon]) => (
 						<button key={tab} className={`tab-btn ${activeTab === tab ? "active" : ""}`} onClick={() => setActiveTab(tab)}>
 							<Icon size={14} />{label}
 						</button>
 					))}
 					{config.enableLogging && (
 						<button key="logs" className={`tab-btn ${activeTab === "logs" ? "active" : ""}`} onClick={() => setActiveTab("logs")}>
-							<Icons.punctuation size={14} />日志
+							<Icons.history size={14} />日志
 						</button>
 					)}
 				</div>
@@ -218,7 +218,6 @@ function ConfigModalContent({
 								</label>
 							</div>
 							<APIUsageSection />
-							<DataManagementSection />
 						</>
 					)}
 					{activeTab === "prompt" && (
@@ -263,6 +262,9 @@ function ConfigModalContent({
 								)}
 							</div>
 						</div>
+					)}
+					{activeTab === "data" && (
+						<DataManagementSection />
 					)}
 				</div>
 				<div className="character-actions-fab-wrapper">
@@ -311,6 +313,12 @@ function ConfigModalContent({
 								<span>清空</span>
 							</button>
 						</>
+					)}
+					{activeTab === "data" && (
+						<button className="btn" onClick={onClose}>
+							<Icons.checkCircle size={18} />
+							<span>完成</span>
+						</button>
 					)}
 				</div>
 			</div>

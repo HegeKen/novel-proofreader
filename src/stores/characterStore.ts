@@ -32,6 +32,8 @@ export interface CharacterState {
 
 	getWorldbuilding: (novelId: string) => NovelWorldbuilding | null;
 	setWorldbuilding: (novelId: string, wb: NovelWorldbuilding) => void;
+
+	clearNovelData: (novelId: string) => void;
 }
 
 function syncNicknamesToCharacters(
@@ -187,6 +189,31 @@ export const useCharacterStore = create<CharacterState>()(
 				set((state) => ({
 					worldbuilding: { ...state.worldbuilding, [novelId]: wb },
 				})),
+
+			clearNovelData: (novelId) => {
+				const state = get();
+				const updatedWorldbuilding = { ...state.worldbuilding };
+				delete updatedWorldbuilding[novelId];
+				set({
+					novelCharacters: {
+						...state.novelCharacters,
+						[novelId]: [],
+					},
+					characterRelationships: {
+						...state.characterRelationships,
+						[novelId]: [],
+					},
+					nodePositions: {
+						...state.nodePositions,
+						[novelId]: {},
+					},
+					ignoredCharacterNames: {
+						...state.ignoredCharacterNames,
+						[novelId]: [],
+					},
+					worldbuilding: updatedWorldbuilding,
+				});
+			},
 		}),
 		{
 			name: "novel-proofreader-characters",

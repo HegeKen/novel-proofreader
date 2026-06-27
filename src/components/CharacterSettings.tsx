@@ -809,13 +809,6 @@ function WorldbuildingSection({
 
 	return (
 		<div className="worldbuilding-section">
-			<div className="worldbuilding-header">
-				<div className="section-label">
-					<Icons.globe size={14} />
-					世界观设定
-				</div>
-			</div>
-
 			{analyzeError && (
 				<div className="text-red-400 text-sm">{analyzeError}</div>
 			)}

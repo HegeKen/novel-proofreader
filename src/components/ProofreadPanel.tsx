@@ -23,6 +23,7 @@ const ERROR_TYPE_LABELS: Record<string, { icon: keyof typeof Icons; label: strin
 	format: { icon: "grammar", label: "排版" },
 	grammar: { icon: "grammar", label: "病句" },
 	punctuation: { icon: "punctuation", label: "标点" },
+	variant: { icon: "sparkle", label: "变体字" },
 	network: { icon: "alertCircle", label: "网络错误" },
 };
 
@@ -31,6 +32,7 @@ const ERROR_TYPE_COLORS: Record<string, string> = {
 	format: "#faad14",
 	grammar: "#1677ff",
 	punctuation: "#52c41a",
+	variant: "#9254de",
 	network: "#722ed1",
 };
 
@@ -214,6 +216,16 @@ export function ProofreadPanel() {
 			inline: 'nearest'
 		});
 	}, []);
+
+	/** 返回顶部：选中第一个非空段落并滚动定位 */
+	const handleScrollToTop = useCallback(() => {
+		if (displayResults.length === 0) return;
+		const targetIndex = displayResults[0].paragraphIndex;
+		setHighlightedParagraph(targetIndex);
+		if (!checking) {
+			setStartLine(targetIndex);
+		}
+	}, [displayResults, checking, setHighlightedParagraph, setStartLine]);
 
 	// 监听 highlightedParagraph 变化，自动滚动到对应段落
 	useEffect(() => {
@@ -473,7 +485,7 @@ export function ProofreadPanel() {
 					<div className="toolbar-row toolbar-row-1">
 						<div className="toolbar-row-left">
 							<label className="granularity-select">
-								检测项：
+								检测：
 								<div className="detection-options">
 									<label className="detection-option">
 										<input
@@ -481,7 +493,7 @@ export function ProofreadPanel() {
 											checked={granularity === 'chapter'}
 											onChange={() => setGranularity(granularity === 'chapter' ? 'paragraph' : 'chapter')}
 										/>
-										<span>按章节</span>
+										<span>按章</span>
 									</label>
 								</div>
 							</label>
@@ -489,12 +501,19 @@ export function ProofreadPanel() {
 								<label className="start-line-display">
 									起始行：
 									<span className="start-line-value">
-										{startLine !== null ? `第 ${startLine + 1} 行` : '从头开始'}
+										{startLine !== null ? `#${startLine + 1}` : '#?'}
 									</span>
 								</label>
 							)}
 						</div>
 						<div className="toolbar-row-right">
+							<button
+								className={isMobile ? "btn-mobile" : "btn"}
+								onClick={handleScrollToTop}
+								title="返回顶部"
+							>
+								<Icons.chevronUp size={16} />
+							</button>
 							{chapters.length > 1 && (
 								<>
 									<button

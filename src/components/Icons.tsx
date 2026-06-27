@@ -68,12 +68,15 @@ import {
 	CodeXml,
 	History,
 	Globe,
+	ExternalLink,
+	Brain,
 } from "lucide-react";
 
 export const Icons = {
 	import: FolderOpen,
 	save: Save,
 	saveOriginal: Database,
+	brain: Brain,
 	cache: HardDrive,
 	sun: Sun,
 	moon: Moon,
@@ -146,6 +149,7 @@ export const Icons = {
 	codeXml: CodeXml,
 	history: History,
 	globe: Globe,
+	externalLink: ExternalLink,
 };
 
 export type IconName = keyof typeof Icons;

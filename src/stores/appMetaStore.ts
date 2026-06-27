@@ -16,7 +16,7 @@ export interface AppMetaState {
 	readingReminderMinutes: number;
 	toastMessages: ToastMessage[];
 
-	incrementAPIUsage: (provider: string, success: boolean, tokens?: number) => void;
+	incrementAPIUsage: (provider: string, success: boolean, inputTokens?: number, outputTokens?: number) => void;
 	resetAPIUsage: () => void;
 
 	setNovelCategory: (novelId: string, category: NovelCategory) => void;
@@ -47,8 +47,11 @@ export const useAppMetaStore = create<AppMetaState>()(
 				successfulRequests: 0,
 				failedRequests: 0,
 				totalTokens: 0,
+				inputTokens: 0,
+				outputTokens: 0,
 				lastReset: Date.now(),
 				providerStats: {},
+				dailyStats: {},
 			},
 			novelCategories: {},
 			readingProgress: {},
@@ -56,23 +59,69 @@ export const useAppMetaStore = create<AppMetaState>()(
 			readingReminderMinutes: 30,
 			toastMessages: [],
 
-			incrementAPIUsage: (provider, success, tokens = 0) =>
+			incrementAPIUsage: (provider, success, inputTokens = 0, outputTokens = 0) =>
 				set((state) => {
+					const totalTokens = inputTokens + outputTokens;
+					const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+					// 确保旧数据兼容（补充缺失字段）
+					const currentInputTokens = state.apiUsage.inputTokens || 0;
+					const currentOutputTokens = state.apiUsage.outputTokens || 0;
+					const currentDailyStats = state.apiUsage.dailyStats || {};
+
+					// 更新提供商统计
 					const providerStats = { ...state.apiUsage.providerStats };
 					providerStats[provider] = {
 						requests: (providerStats[provider]?.requests || 0) + 1,
 						success: (providerStats[provider]?.success || 0) + (success ? 1 : 0),
 						failure: (providerStats[provider]?.failure || 0) + (success ? 0 : 1),
-						tokens: (providerStats[provider]?.tokens || 0) + tokens,
+						tokens: (providerStats[provider]?.tokens || 0) + totalTokens,
+						inputTokens: (providerStats[provider]?.inputTokens || 0) + inputTokens,
+						outputTokens: (providerStats[provider]?.outputTokens || 0) + outputTokens,
 					};
+
+					// 更新每日统计
+					const dailyStats = { ...currentDailyStats };
+					if (!dailyStats[today]) {
+						dailyStats[today] = {
+							requests: 0,
+							success: 0,
+							failure: 0,
+							inputTokens: 0,
+							outputTokens: 0,
+							providerStats: {},
+						};
+					}
+					dailyStats[today] = {
+						...dailyStats[today],
+						requests: dailyStats[today].requests + 1,
+						success: dailyStats[today].success + (success ? 1 : 0),
+						failure: dailyStats[today].failure + (success ? 0 : 1),
+						inputTokens: dailyStats[today].inputTokens + inputTokens,
+						outputTokens: dailyStats[today].outputTokens + outputTokens,
+						providerStats: {
+							...dailyStats[today].providerStats,
+							[provider]: {
+								requests: (dailyStats[today].providerStats[provider]?.requests || 0) + 1,
+								success: (dailyStats[today].providerStats[provider]?.success || 0) + (success ? 1 : 0),
+								failure: (dailyStats[today].providerStats[provider]?.failure || 0) + (success ? 0 : 1),
+								inputTokens: (dailyStats[today].providerStats[provider]?.inputTokens || 0) + inputTokens,
+								outputTokens: (dailyStats[today].providerStats[provider]?.outputTokens || 0) + outputTokens,
+							},
+						},
+					};
+
 					return {
 						apiUsage: {
 							...state.apiUsage,
 							totalRequests: state.apiUsage.totalRequests + 1,
 							successfulRequests: state.apiUsage.successfulRequests + (success ? 1 : 0),
 							failedRequests: state.apiUsage.failedRequests + (success ? 0 : 1),
-							totalTokens: state.apiUsage.totalTokens + tokens,
+							totalTokens: state.apiUsage.totalTokens + totalTokens,
+							inputTokens: currentInputTokens + inputTokens,
+							outputTokens: currentOutputTokens + outputTokens,
 							providerStats,
+							dailyStats,
 						},
 					};
 				}),
@@ -84,8 +133,11 @@ export const useAppMetaStore = create<AppMetaState>()(
 						successfulRequests: 0,
 						failedRequests: 0,
 						totalTokens: 0,
+						inputTokens: 0,
+						outputTokens: 0,
 						lastReset: Date.now(),
 						providerStats: {},
+						dailyStats: {},
 					},
 				}),
 

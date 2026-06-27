@@ -39,7 +39,7 @@ export interface AIConfig {
 }
 
 /** 错误类型 */
-export type ErrorType = "typo" | "format" | "grammar" | "punctuation" | "network" | "timeout";
+export type ErrorType = "typo" | "format" | "grammar" | "punctuation" | "variant" | "network" | "timeout";
 
 /** 单个检测错误 */
 export interface ProofreadError {
@@ -117,13 +117,32 @@ export interface APIUsage {
 	totalRequests: number;
 	successfulRequests: number;
 	failedRequests: number;
-	totalTokens: number;
+	totalTokens: number; // 保留兼容性，等于 inputTokens + outputTokens
+	inputTokens: number; // 输入 token（prompt tokens）
+	outputTokens: number; // 输出 token（completion tokens）
 	lastReset: number;
 	providerStats: Record<string, {
 		requests: number;
 		success: number;
 		failure: number;
-		tokens: number;
+		tokens: number; // 保留兼容性
+		inputTokens: number;
+		outputTokens: number;
+	}>;
+	/** 按日期统计（key 为 YYYY-MM-DD 格式） */
+	dailyStats: Record<string, {
+		requests: number;
+		success: number;
+		failure: number;
+		inputTokens: number;
+		outputTokens: number;
+		providerStats: Record<string, {
+			requests: number;
+			success: number;
+			failure: number;
+			inputTokens: number;
+			outputTokens: number;
+		}>;
 	}>;
 }
 

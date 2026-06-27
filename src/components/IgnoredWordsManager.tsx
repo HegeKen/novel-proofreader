@@ -101,9 +101,6 @@ export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 						<div className="config-section">
 							<div className="section-header">
 								<div className="section-label">已忽略的单词 ({ignoredWords.length})</div>
-								<button className="btn btn-sm btn-secondary" onClick={handleClearAll}>
-									<Icons.trash2 size={14} />清空全部
-								</button>
 							</div>
 							<div className="words-grid">
 								{ignoredWords.map((word) => (
@@ -132,6 +129,10 @@ export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 				</div>
 
 				<div className="character-actions-fab-wrapper">
+					<button className="btn" onClick={handleClearAll} disabled={ignoredWords.length === 0}>
+						<Icons.trash2 size={18} />
+						<span>清空全部</span>
+					</button>
 					<button className="btn" onClick={onClose}>
 						<Icons.x size={18} />
 						<span>关闭</span>

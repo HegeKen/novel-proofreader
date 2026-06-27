@@ -37,11 +37,18 @@ function locateTextInParagraph(
 	matchText: string,
 	column?: number,
 ): { start: number; end: number } | null {
+	const normalizeWhitespace = (s: string) => s.replace(/\s+/g, '');
+	
 	// 1. column 定位（1-based，Prompt 要求 AI 返回此字段）
 	if (column !== undefined && column > 0 && column <= para.length) {
 		const endIdx = column - 1 + matchText.length;
 		if (endIdx <= para.length && para.slice(column - 1, endIdx) === matchText) {
 			return { start: column - 1, end: endIdx };
+		} else if (endIdx <= para.length) {
+			const actualText = para.slice(column - 1, endIdx);
+			if (normalizeWhitespace(actualText) === normalizeWhitespace(matchText)) {
+				return { start: column - 1, end: endIdx };
+			}
 		}
 	}
 
@@ -49,16 +56,61 @@ function locateTextInParagraph(
 	const exactIdx = para.indexOf(matchText);
 	if (exactIdx >= 0) return { start: exactIdx, end: exactIdx + matchText.length };
 
-	// 3. 模糊匹配：若 AI 补充的上下文与原文略有出入，渐进缩短 find 再试
+	// 3. 空白不敏感精确匹配
+	const normalizedPara = normalizeWhitespace(para);
+	const normalizedMatch = normalizeWhitespace(matchText);
+	if (normalizedPara.includes(normalizedMatch)) {
+		let charCount = 0;
+		let realStart = -1;
+		for (let j = 0; j < para.length && charCount <= normalizedPara.indexOf(normalizedMatch); j++) {
+			if (!/\s/.test(para[j])) {
+				if (charCount === normalizedPara.indexOf(normalizedMatch)) realStart = j;
+				charCount++;
+			}
+		}
+		if (realStart >= 0) {
+			let realEnd = realStart;
+			let remaining = normalizedMatch.length;
+			while (realEnd < para.length && remaining > 0) {
+				if (!/\s/.test(para[realEnd])) remaining--;
+				realEnd++;
+			}
+			return { start: realStart, end: realEnd };
+		}
+	}
+
+	// 4. 模糊匹配：若 AI 补充的上下文与原文略有出入，渐进缩短 find 再试
 	if (matchText.length > 4) {
 		let shortened = matchText;
 		while (shortened.length >= 4) {
 			shortened = shortened.slice(1, -1);
 			const idx = para.indexOf(shortened);
 			if (idx >= 0) return { start: idx, end: idx + shortened.length };
+			
+			const normalizedShortened = normalizeWhitespace(shortened);
+			if (normalizedPara.includes(normalizedShortened)) {
+				let charCount = 0;
+				let realStart = -1;
+				for (let j = 0; j < para.length && charCount <= normalizedPara.indexOf(normalizedShortened); j++) {
+					if (!/\s/.test(para[j])) {
+						if (charCount === normalizedPara.indexOf(normalizedShortened)) realStart = j;
+						charCount++;
+					}
+				}
+				if (realStart >= 0) {
+					let realEnd = realStart;
+					let remaining = normalizedShortened.length;
+					while (realEnd < para.length && remaining > 0) {
+						if (!/\s/.test(para[realEnd])) remaining--;
+						realEnd++;
+					}
+					return { start: realStart, end: realEnd };
+				}
+			}
 		}
 	}
 
+	logger.proofread(`[locateTextInParagraph] 定位失败: matchText="${matchText.slice(0, 20)}${matchText.length > 20 ? '...' : ''}", para="${para.slice(0, 30)}${para.length > 30 ? '...' : ''}", column=${column}`);
 	return null;
 }
 
@@ -83,12 +135,13 @@ function parseAIProofreadResponse(
 		const suggest = String(o.reason ?? o.suggestion ?? "");
 		const aiColumn = o.column !== undefined ? Number(o.column) : undefined;
 
+		if (['无错误', 'none', 'no_error', 'no-error', 'noerror', 'nil', 'null', ''].includes(errType.toLowerCase())) continue;
+
 		const matchText = find || orig;
 		const correctText = replace || corr;
 		if (!matchText) continue;
 
-		const needsReplacement = errType === "typo" || errType === "grammar" || errType === "format";
-		if (needsReplacement && (matchText === correctText || matchText.replace(/\s/g, '') === correctText.replace(/\s/g, ''))) continue;
+		if (matchText === correctText || matchText.replace(/\s/g, '') === correctText.replace(/\s/g, '')) continue;
 
 		const isIgnored = ignoredWords.some(word => word && (matchText.includes(word) || word.includes(matchText)));
 		if (isIgnored) continue;
@@ -102,7 +155,7 @@ function parseAIProofreadResponse(
 			endIndex: located.end,
 			errorType: (errType as ProofreadError["errorType"]) || "typo",
 			suggestion: suggest,
-			originalText: matchText,
+			originalText: paragraph.slice(located.start, located.end),
 			correctedText: correctText,
 			applied: false,
 			skipped: false,
@@ -262,25 +315,53 @@ export function useAICheck() {
 							const suggest = String(obj.reason ?? obj.suggestion ?? "");
 							const aiColumn = obj.column !== undefined ? Number(obj.column) : undefined;
 
+							if (['无错误', 'none', 'no_error', 'no-error', 'noerror', 'nil', 'null', ''].includes(errType.toLowerCase())) continue;
+
 							const matchText = find || orig;
 							const correctText = replace || corr;
 							if (!matchText) continue;
 
-							const needsReplacement = errType === "typo" || errType === "grammar" || errType === "format";
-							if (needsReplacement && (matchText === correctText || matchText.replace(/\s/g, '') === correctText.replace(/\s/g, ''))) continue;
+							if (matchText === correctText || matchText.replace(/\s/g, '') === correctText.replace(/\s/g, '')) continue;
 
 							// 检查行号是否在该批次范围内
-							if (lineNumber < batch.start || lineNumber >= batch.end) {
-								const foundLine = paragraphs.findIndex((p, idx) =>
+							let isValidLineNumber = lineNumber >= batch.start && lineNumber < batch.end;
+							
+							if (!isValidLineNumber) {
+								logger.proofread(`[章节模式] 行号 ${lineNumber} 不在批次范围 ${batch.start}-${batch.end}，尝试文本匹配定位`);
+								
+								// 先在批次内搜索
+								const foundInBatch = paragraphs.findIndex((p, idx) =>
 									idx >= batch.start && idx < batch.end && locateTextInParagraph(p, matchText, aiColumn) !== null
 								);
-								if (foundLine < 0) continue;
-								lineNumber = foundLine;
+								
+								if (foundInBatch >= 0) {
+									lineNumber = foundInBatch;
+									isValidLineNumber = true;
+									logger.proofread(`[章节模式] 在批次内找到匹配段落: ${lineNumber}`);
+								} else {
+									// 在整个章节范围内搜索
+									const foundInChapter = paragraphs.findIndex((p) =>
+										locateTextInParagraph(p, matchText, aiColumn) !== null
+									);
+									if (foundInChapter >= 0) {
+										lineNumber = foundInChapter;
+										isValidLineNumber = true;
+										logger.proofread(`[章节模式] 在章节范围内找到匹配段落: ${lineNumber}`);
+									}
+								}
+							}
+							
+							if (!isValidLineNumber) {
+								logger.proofread(`[章节模式] 无法定位错误: matchText="${matchText.slice(0, 20)}${matchText.length > 20 ? '...' : ''}", lineNumber=${lineNumber}`);
+								continue;
 							}
 
 							const targetPara = paragraphs[lineNumber];
 							const located = locateTextInParagraph(targetPara, matchText, aiColumn);
-							if (!located) continue;
+							if (!located) {
+								logger.proofread(`[章节模式] 定位失败: matchText="${matchText.slice(0, 20)}${matchText.length > 20 ? '...' : ''}", paragraph=${lineNumber}`);
+								continue;
+							}
 
 							errorsByLine[lineNumber].push({
 								id: `err-${chapter.id}-${lineNumber}-${errorsByLine[lineNumber].length}`,
@@ -288,7 +369,7 @@ export function useAICheck() {
 								endIndex: located.end,
 								errorType: (errType as ProofreadError["errorType"]) || "typo",
 								suggestion: suggest,
-								originalText: matchText,
+								originalText: paragraphs[lineNumber].slice(located.start, located.end),
 								correctedText: correctText,
 								applied: false,
 								skipped: false,

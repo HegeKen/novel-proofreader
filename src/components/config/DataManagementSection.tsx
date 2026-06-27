@@ -4,16 +4,37 @@ import { Icons } from "../Icons";
 
 export function DataManagementSection() {
 	const novels = useNovelStore((s) => s.novels);
+	const removeNovel = useNovelStore((s) => s.removeNovel);
+	const clearAllCache = useNovelStore((s) => s.clearAllCache);
 	const novelCharacters = useCharacterStore((s) => s.novelCharacters);
+	const clearNovelData = useCharacterStore((s) => s.clearNovelData);
 	const totalNovels = novels.length;
 	const totalCharacters = Object.values(novelCharacters).reduce((acc, chars) => acc + chars.length, 0);
 
+	const handleClearNovelData = (novelId: string, novelName: string) => {
+		if (window.confirm(`确定要清除"${novelName}"的所有数据吗？\n\n这将删除该小说的角色、关系、世界观等所有关联数据。\n此操作不可恢复！`)) {
+			clearNovelData(novelId);
+			window.location.reload();
+		}
+	};
+
+	const handleDeleteNovel = (novelId: string, novelName: string) => {
+		if (window.confirm(`确定要删除小说"${novelName}"吗？\n\n这将删除小说本身及其所有关联数据。\n此操作不可恢复！`)) {
+			removeNovel(novelId);
+			clearNovelData(novelId);
+			window.location.reload();
+		}
+	};
+
+	const handleClearAll = () => {
+		if (window.confirm("确定要清除所有数据吗？\n\n此操作将清除所有小说、角色信息和编号，恢复为初始状态。\n此操作不可恢复！")) {
+			clearAllCache();
+			window.location.reload();
+		}
+	};
+
 	return (
 		<div className="config-section data-management-section">
-			<div className="section-header">
-				<div className="section-label"><Icons.settings size={16} />数据管理</div>
-				<span className="section-hint">管理本地存储的小说和角色数据</span>
-			</div>
 			<div className="data-stats">
 				<div className="stat-item">
 					<Icons.book size={20} />
@@ -31,6 +52,50 @@ export function DataManagementSection() {
 					</div>
 				</div>
 			</div>
+
+			{/* 小说列表 */}
+			{novels.length > 0 && (
+				<div className="novel-list-section">
+					<div className="section-sub-label"><Icons.book size={14} />小说列表</div>
+					<div className="novel-list">
+						{novels.map(novel => {
+							const characters = novelCharacters[novel.id] ?? [];
+							return (
+								<div key={novel.id} className="novel-item">
+									<div className="novel-info">
+										<div className="novel-name">{novel.name}</div>
+										<div className="novel-meta">
+											<span className="novel-chapters">{novel.chapters?.length ?? 0} 章</span>
+											<span className="novel-divider">·</span>
+											<span className="novel-characters">{characters.length} 角色</span>
+										</div>
+									</div>
+									<div className="novel-actions">
+										<button
+											className="novel-action-btn clear-btn"
+											onClick={() => handleClearNovelData(novel.id, novel.name)}
+											title="清除数据"
+										>
+											<Icons.trash2 size={14} />
+											<span>清除数据</span>
+										</button>
+										<button
+											className="novel-action-btn delete-btn"
+											onClick={() => handleDeleteNovel(novel.id, novel.name)}
+											title="删除小说"
+										>
+											<Icons.x size={14} />
+											<span>删除</span>
+										</button>
+									</div>
+								</div>
+							);
+						})}
+					</div>
+				</div>
+			)}
+
+			{/* 清除所有数据 */}
 			<div className="data-action-card">
 				<div className="action-header">
 					<div className="action-icon warning"><Icons.alertTriangle size={20} /></div>
@@ -41,12 +106,7 @@ export function DataManagementSection() {
 				</div>
 				<div className="action-footer">
 					<span className="action-warning">⚠️ 此操作不可撤销，请谨慎操作！</span>
-					<button className="clear-cache-btn" onClick={() => {
-						if (window.confirm("确定要清除所有数据吗？此操作不可恢复！")) {
-							useNovelStore.getState().clearAllCache();
-							window.location.reload();
-						}
-					}}>
+					<button className="clear-cache-btn" onClick={handleClearAll}>
 						<Icons.trash2 size={14} />确认清除
 					</button>
 				</div>

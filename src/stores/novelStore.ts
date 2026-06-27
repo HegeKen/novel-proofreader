@@ -136,34 +136,106 @@ export const useNovelStore = create<NovelState>()(
 					const chapters = state.chapters.map((ch) => {
 						if (ch.id !== chapterId) return ch;
 						const paragraphs = ch.content.split("\n");
-						if (paragraphIndex >= paragraphs.length) return ch;
+						
+						if (paragraphIndex >= paragraphs.length) {
+							logger.warn('[novelStore]', `段落索引越界: paragraphIndex=${paragraphIndex}, total=${paragraphs.length}`);
+							return ch;
+						}
 
 						let para = paragraphs[paragraphIndex];
 						const original = para;
 
 						if (oldText === newText) return ch;
 
+						const normalizeWhitespace = (s: string) => s.replace(/\s+/g, '');
+
 						if (startIndex !== undefined && endIndex !== undefined && startIndex >= 0 && endIndex > startIndex && endIndex <= para.length) {
 							const actualText = para.slice(startIndex, endIndex);
 							if (actualText === oldText) {
 								para = para.slice(0, startIndex) + newText + para.slice(endIndex);
 								replaced = true;
+								logger.info('[novelStore]', '替换成功: 精确索引匹配');
+							} else if (normalizeWhitespace(actualText) === normalizeWhitespace(oldText)) {
+								para = para.slice(0, startIndex) + newText + para.slice(endIndex);
+								replaced = true;
+								logger.info('[novelStore]', '替换成功: 空白不敏感索引匹配');
+							}
+						}
+
+						if (!replaced && startIndex !== undefined) {
+							const searchStart = Math.max(0, startIndex - 10);
+							const searchEnd = Math.min(para.length, startIndex + oldText.length + 10);
+							const searchRange = para.slice(searchStart, searchEnd);
+							const relativeIdx = searchRange.indexOf(oldText);
+							if (relativeIdx >= 0) {
+								const foundIdx = searchStart + relativeIdx;
+								para = para.slice(0, foundIdx) + newText + para.slice(foundIdx + oldText.length);
+								replaced = true;
+								logger.info('[novelStore]', `替换成功: 局部搜索匹配 (偏移=${foundIdx - startIndex})`);
+							} else {
+								const normalizedSearchRange = normalizeWhitespace(searchRange);
+								const normalizedOldText = normalizeWhitespace(oldText);
+								const relativeIdxNormalized = normalizedSearchRange.indexOf(normalizedOldText);
+								if (relativeIdxNormalized >= 0) {
+									let charCount = 0;
+									let realStart = -1;
+									for (let j = searchStart; j < searchEnd && charCount <= relativeIdxNormalized; j++) {
+										if (!/\s/.test(para[j])) {
+											if (charCount === relativeIdxNormalized) realStart = j;
+											charCount++;
+										}
+									}
+									if (realStart >= 0) {
+										let realEnd = realStart;
+										let remaining = oldText.length;
+										while (realEnd < para.length && remaining > 0) {
+											if (!/\s/.test(para[realEnd])) remaining--;
+											realEnd++;
+										}
+										para = para.slice(0, realStart) + newText + para.slice(realEnd);
+										replaced = true;
+										logger.info('[novelStore]', '替换成功: 局部空白不敏感匹配');
+									}
+								}
 							}
 						}
 
 						if (!replaced) {
-							let foundIdx = -1;
-							if (startIndex !== undefined) {
-								const searchStart = Math.max(0, startIndex - 5);
-								const searchEnd = Math.min(para.length, startIndex + oldText.length + 5);
-								const searchRange = para.slice(searchStart, searchEnd);
-								const relativeIdx = searchRange.indexOf(oldText);
-								if (relativeIdx >= 0) foundIdx = searchStart + relativeIdx;
-							}
-							if (foundIdx >= 0) {
-								para = para.slice(0, foundIdx) + newText + para.slice(foundIdx + oldText.length);
+							const globalIdx = para.indexOf(oldText);
+							if (globalIdx >= 0) {
+								para = para.slice(0, globalIdx) + newText + para.slice(globalIdx + oldText.length);
 								replaced = true;
+								logger.info('[novelStore]', `替换成功: 全局搜索匹配 (位置=${globalIdx})`);
+							} else {
+								const normalizedPara = normalizeWhitespace(para);
+								const normalizedOldText = normalizeWhitespace(oldText);
+								const fuzzyIdx = normalizedPara.indexOf(normalizedOldText);
+								if (fuzzyIdx >= 0) {
+									let charCount = 0;
+									let realStart = -1;
+									for (let j = 0; j < para.length && charCount <= fuzzyIdx; j++) {
+										if (!/\s/.test(para[j])) {
+											if (charCount === fuzzyIdx) realStart = j;
+											charCount++;
+										}
+									}
+									if (realStart >= 0) {
+										let realEnd = realStart;
+										let remaining = normalizedOldText.length;
+										while (realEnd < para.length && remaining > 0) {
+											if (!/\s/.test(para[realEnd])) remaining--;
+											realEnd++;
+										}
+										para = para.slice(0, realStart) + newText + para.slice(realEnd);
+										replaced = true;
+										logger.info('[novelStore]', '替换成功: 全局空白不敏感匹配');
+									}
+								}
 							}
+						}
+
+						if (!replaced) {
+							logger.warn('[novelStore]', `替换失败: 在段落中找不到 "${oldText.slice(0, 30)}${oldText.length > 30 ? '...' : ''}"`);
 						}
 
 						if (para !== original) paragraphs[paragraphIndex] = para;

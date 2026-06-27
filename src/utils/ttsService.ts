@@ -278,10 +278,11 @@ export async function synthesizeSpeech(
 	];
 
 	if (useVoiceDesign) {
-		// 使用音色设计模型时，user消息中的文本就是音色设计描述
+		// 使用音色设计模型时，对音色描述也应用词组替换过滤敏感词
+		const processedPrompt = applyWordReplacements(voiceDesignPrompt);
 		messages.push({
 			role: "user",
-			content: voiceDesignPrompt,
+			content: processedPrompt,
 		});
 	} else {
 		messages.push({
@@ -393,10 +394,11 @@ export async function synthesizeSpeechWithVoice(
 	];
 
 	if (useVoiceDesign) {
-		// 使用音色设计模型时，user消息中的文本就是音色设计描述
+		// 使用音色设计模型时，对音色描述也应用词组替换过滤敏感词
+		const processedPrompt = applyWordReplacements(voiceDesignPrompt);
 		messages.push({
 			role: "user",
-			content: voiceDesignPrompt,
+			content: processedPrompt,
 		});
 	} else {
 		messages.push({

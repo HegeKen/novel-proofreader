@@ -152,8 +152,9 @@ export async function sendChatCompletion(
 	logger.response(url, resp.status, data, elapsed);
 
 	const provider = detectProvider(config.baseURL);
-	const tokens = data.usage?.total_tokens ?? 0;
-	useAppMetaStore.getState().incrementAPIUsage(provider, true, tokens);
+	const promptTokens = data.usage?.prompt_tokens ?? 0;
+	const completionTokens = data.usage?.completion_tokens ?? 0;
+	useAppMetaStore.getState().incrementAPIUsage(provider, true, promptTokens, completionTokens);
 
 	// MiMo 内容拦截：返回 200 但 body 包含 high risk 拒绝文本
 	const content = data.choices?.[0]?.message?.content ?? "";
@@ -194,11 +195,68 @@ export async function testConnection(
 // ============================================================
 
 /** 校对系统 prompt（段落级别） */
-export const PROOFREAD_SYSTEM_PROMPT = `你是小说文字编辑。输出JSON数组，每个错误含：line(行号从1)、find(原文连续片段，含错误及前后至少3字符，10-20字)、replace(修正后片段)、type(typo/format/punctuation/grammar)、reason(≤10汉字)。
-示例：[{"line":3,"find":"他很高兴地笑了","replace":"他很高兴地笑了","type":"typo","reason":"的/地混用"}]
-约束：find精确复制且唯一；同行的find不重叠；无法定位则跳过；无错返回[]。`;
+export const PROOFREAD_SYSTEM_PROMPT = `你是小说文字编辑。输出JSON数组，每个错误含：line(行号从1)、find(原文连续片段，含错误及前后至少3字符，10-40字)、replace(修正后片段)、type(typo/format/punctuation/grammar/variant)、reason(≤10汉字)。
+
+类型说明：
+- typo：错别字（如"倾盘大雨"→"倾盆大雨"）
+- format：排版空格空行
+- punctuation：标点致命错误
+- grammar：病句（如"的/地/得"混用）
+- variant：康熙字典变体字/异体字/旧字形（如"⿰亻⿱⻊夂"、"⿲⿰⻊夂⻊夂"、"曱甴"等生僻字或旧字形，需修正为现代通用标准字）
+
+上下文完整性要求（避免误判的关键）：
+1. 如错误靠近句末，find必须包含句末标点（句号、问号、感叹号、逗号等）
+2. find应包含完整的语义单元（完整词语、完整句子片段），不要截断词语
+3. 上下文完整性优先于字数限制，宁可超出字数也要保证完整
+4. 如错误涉及句子结构，应包含足够上下文以判断是否真正错误
+5. 禁止为满足字数限制而删除必要的标点或截断词语
+
+变体字精校规则：
+1. 识别康熙字典中的生僻异体字、旧字形、俗字、讹字
+2. 识别Unicode扩展区中的生僻字（如U+2F00-U+2FFF康熙部首区、U+3400-U+4DBF扩展A区等）
+3. 将变体字修正为现代通用标准汉字
+4. 常见变体字示例：
+   - 旧字形「丼」→标准字「井」
+   - 俗字「氼」→「溺」
+   - 异体字「仌」→「冰」
+   - 异体字「羣」→「群」
+   - 旧字形「刄」→「刃」
+   - 俗字「巛」→「川」
+   - 旧字形「鉨」→「镍」
+
+示例：[{"line":3,"find":"他很高兴地笑了。","replace":"他很高兴地笑了。","type":"typo","reason":"的/地混用"}]
+约束：find精确复制且唯一；同行的find不重叠；无法定位则跳过；无错返回[]；变体字检测优先级高于普通错别字。`;
 /** 校对系统 prompt（章节级别 - 每行返回一条错误） */
-export const PROOFREAD_SYSTEM_PROMPT_CHAPTER = `你是小说文字编辑，校对整章JSON（key为行号，value为段落文本）。逐行检查typo(错别字)/format(排版空格空行)/punctuation(标点致命错误)/grammar(病句)。输出JSON数组，字段：lineNumber(与输入key一致，string)、column(错误起始列，从1计数)、find(原文连续片段，含错误及前后各≥3字符，8-20字)、replace(修正后)、type、reason(≤10汉字)。严格约束：lineNumber须存在；column基于该行逐字符计算(含空格标点)；find精确复制；不跨行；无错返回[]；只输出JSON数组，无markdown。示例输入{"0":"第一章","1":"倾盘大雨"} → [{"lineNumber":"1","column":5,"find":"倾盘大雨","replace":"倾盆大雨","type":"typo","reason":"错别字"}]。的/地/得错误：find含错误及前后各≥2字符。优先级：错别字>语法>排版>标点。不修改风格化/口语化表达。`;
+export const PROOFREAD_SYSTEM_PROMPT_CHAPTER = `你是小说文字编辑，校对整章JSON（key为行号，value为段落文本）。逐行检查typo(错别字)/format(排版空格空行)/punctuation(标点致命错误)/grammar(病句)/variant(康熙变体字)。输出JSON数组，字段：lineNumber(与输入key一致，string)、column(错误起始列，从1计数)、find(原文连续片段，含错误及前后各≥3字符，8-40字)、replace(修正后)、type、reason(≤10汉字)。严格约束：lineNumber须存在；column基于该行逐字符计算(含空格标点)；find精确复制；不跨行；无错返回[]；只输出JSON数组，无markdown。
+
+类型说明：
+- typo：错别字（如"倾盘大雨"→"倾盆大雨"）
+- format：排版空格空行
+- punctuation：标点致命错误
+- grammar：病句（如"的/地/得"混用）
+- variant：康熙字典变体字/异体字/旧字形（如"丼""氼""仌"等生僻字或旧字形，需修正为现代通用标准字）
+
+上下文完整性要求（避免误判的关键）：
+1. 如错误靠近句末，find必须包含句末标点（句号、问号、感叹号、逗号等）
+2. find应包含完整的语义单元（完整词语、完整句子片段），不要截断词语
+3. 上下文完整性优先于字数限制，宁可超出字数也要保证完整
+4. 如错误涉及句子结构，应包含足够上下文以判断是否真正错误
+5. 禁止为满足字数限制而删除必要的标点或截断词语
+
+变体字精校规则：
+1. 识别康熙字典中的生僻异体字、旧字形、俗字、讹字
+2. 识别Unicode扩展区中的生僻字（如U+2F00-U+2FFF康熙部首区、U+3400-U+4DBF扩展A区等）
+3. 将变体字修正为现代通用标准汉字
+4. 常见变体字示例：
+   - 旧字形「丼」→标准字「井」
+   - 俗字「氼」→「溺」
+   - 异体字「仌」→「冰」
+   - 异体字「羣」→「群」
+   - 旧字形「刄」→「刃」
+   - 俗字「巛」→「川」
+   - 旧字形「鉨」→「镍」
+
+示例输入{"0":"第一章","1":"倾盘大雨。"} → [{"lineNumber":"1","column":5,"find":"倾盘大雨。","replace":"倾盆大雨。","type":"typo","reason":"错别字"}]。的/地/得错误：find含错误及前后各≥2字符。优先级：变体字>错别字>语法>排版>标点。不修改风格化/口语化表达。`;
 /** 构建带忽略词的系统 prompt */
 export function buildProofreadSystemPrompt(
 	basePrompt: string,

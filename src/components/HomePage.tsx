@@ -122,12 +122,32 @@ export function HomePage({ onStart }: HomePageProps) {
 		return match ? match[1].toUpperCase() : "";
 	};
 
+	// 处理 Markdown 样式的文本，将 `code` 转换为 code 标签
+	const parseMarkdownText = (text: string) => {
+		// 处理行内代码 `code`
+		let parsed = text.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+		// 处理加粗 **text**
+		parsed = parsed.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+		return parsed;
+	};
+
 	const parseChangelogSimple = (body: string) => {
+		// 从 body 中提取 Full Changelog 链接
+		let fullChangelogLink: string | null = null;
+		const fullChangelogMatch = body.match(/Full\s+Changelog\s*:?\s*`?(https?:\/\/[^\s`]+)/i);
+		if (fullChangelogMatch) {
+			fullChangelogLink = fullChangelogMatch[1];
+		}
+
 		const lines = body.split("\n");
 		const sections: { type: "module" | "item"; content: string }[] = [];
 
 		lines.forEach(line => {
 			const trimmedLine = line.trim();
+			// 跳过 Full Changelog 行
+			if (/Full\s+Changelog/i.test(trimmedLine)) {
+				return;
+			}
 			const moduleMatch = trimmedLine.match(/^\*\*([^*]+)\*\*/);
 			if (moduleMatch) {
 				sections.push({ type: "module", content: moduleMatch[1].trim() });
@@ -162,17 +182,25 @@ export function HomePage({ onStart }: HomePageProps) {
 					<div key={groupIdx} className="timeline-section">
 						{group.moduleName && (
 							<div className="timeline-module-title">
-								<strong>{group.moduleName}</strong>
+								<strong>{parseMarkdownText(group.moduleName)}</strong>
 							</div>
 						)}
 						{group.items.map((item, itemIdx) => (
 							<div key={itemIdx} className="timeline-item-line">
 								<span className="timeline-item-number">{itemIdx + 1}.</span>
-								<span className="timeline-item-text">{item}</span>
+								<span className="timeline-item-text" dangerouslySetInnerHTML={{ __html: parseMarkdownText(item) }}></span>
 							</div>
 						))}
 					</div>
 				))}
+				{fullChangelogLink && (
+					<div className="timeline-full-changelog">
+						<a href={fullChangelogLink} target="_blank" rel="noopener noreferrer" className="full-changelog-link">
+							<Icons.externalLink size={12} />
+							<span>Full Changelog</span>
+						</a>
+					</div>
+				)}
 			</div>
 		);
 	};
@@ -291,7 +319,7 @@ export function HomePage({ onStart }: HomePageProps) {
 					</p>
 
 					{onStart && (
-						<button className="start-btn" onClick={handleStartApp}>
+						<button className="btn" onClick={handleStartApp}>
 							<Icons.book size={20} />
 							<span>立即体验网页版</span>
 						</button>

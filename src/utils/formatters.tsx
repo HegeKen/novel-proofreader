@@ -47,7 +47,8 @@ export function buildOriginalToFilteredMap(content: string): Record<number, numb
     return map;
 }
 
-export function formatLargeNumber(value: number): ReactNode {
+export function formatLargeNumber(value: number | undefined): ReactNode {
+    if (value === undefined || value === null || isNaN(value)) return '0';
     const detailed = value.toLocaleString();
     if (value >= 1_000_000_000) {
         return (

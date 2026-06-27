@@ -4,6 +4,7 @@ export interface GitHubRelease {
 	name: string;
 	tag_name: string;
 	body: string;
+	html_url: string;
 	assets: Array<{
 		name: string;
 		browser_download_url: string;
