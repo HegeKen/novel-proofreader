@@ -48,8 +48,8 @@ export class ErrorBoundary extends Component<Props, State> {
 					</p>
 					<div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
 						<button className="btn" onClick={this.handleReset}>重试</button>
-						<button className="btn btn-secondary" onClick={this.handleReload}>重新加载</button>
-						<button className="btn btn-secondary" onClick={this.handleCopy}>复制错误</button>
+						<button className="btn" onClick={this.handleReload}>重新加载</button>
+						<button className="btn" onClick={this.handleCopy}>复制错误</button>
 					</div>
 				</div>
 			);

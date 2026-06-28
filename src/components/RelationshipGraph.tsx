@@ -3,6 +3,7 @@ import { useCharacterStore } from "../stores/characterStore";
 import type { CharacterInfo, CharacterRelationship, RelationType } from "../types";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
+import { ConfirmModal } from "./config/ConfirmModal";
 
 interface RelationshipGraphProps {
 	novelId: string;
@@ -51,6 +52,12 @@ export function RelationshipGraph({
 	const [editingRelation, setEditingRelation] = useState<CharacterRelationship | null>(null);
 	const [showCharacterModal, setShowCharacterModal] = useState(false);
 	const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
+
+	const [confirmModal, setConfirmModal] = useState<{
+		show: boolean;
+		message: string;
+		onConfirm: () => void;
+	}>({ show: false, message: "", onConfirm: () => {} });
 
 	const [relationForm, setRelationForm] = useState<{
 		sourceId: string;
@@ -453,9 +460,14 @@ export function RelationshipGraph({
 
 	const handleDeleteRelation = useCallback(
 		(relationId: string) => {
-			if (confirm("确定要删除这个关系吗？")) {
-				removeRelationship(novelId, relationId);
-			}
+			setConfirmModal({
+				show: true,
+				message: "确定要删除这个关系吗？",
+				onConfirm: () => {
+					removeRelationship(novelId, relationId);
+					setConfirmModal(prev => ({ ...prev, show: false }));
+				},
+			});
 		},
 		[novelId, removeRelationship]
 	);
@@ -1213,7 +1225,7 @@ export function RelationshipGraph({
 								</button>
 							)}
 							<div className="modal-footer-right">
-								<button className="btn btn-secondary" onClick={() => setShowAddModal(false)}>
+								<button className="btn" onClick={() => setShowAddModal(false)}>
 									取消
 								</button>
 								<button
@@ -1317,6 +1329,17 @@ export function RelationshipGraph({
 			)}
 
 			{/* 按钮区域由父组件渲染 */}
+
+			<ConfirmModal
+				show={confirmModal.show}
+				title="删除关系"
+				message={confirmModal.message}
+				danger
+				confirmText="确定"
+				cancelText="取消"
+				onConfirm={confirmModal.onConfirm}
+				onCancel={() => setConfirmModal(prev => ({ ...prev, show: false }))}
+			/>
 		</div>
 	);
 }

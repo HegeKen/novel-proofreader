@@ -70,7 +70,7 @@ function ConfigModalContent({
 	apiKeyMap: Partial<Record<AIProvider, string>>;
 	onSave: (config: ConfigState) => void;
 	onClose: () => void;
-	promptConfig: { proofread: string; proofreadChapter: string; script: string; scriptTts: string; novelTts: string; readingModeTts: string; chapterTitle: string; characterReanalysis: string };
+	promptConfig: { proofread: string; proofreadChapter: string; script: string; scriptTts: string; novelTts: string; readingModeTts: string; chapterTitle: string; characterReanalysis: string; characterAnalysis: string; worldbuilding: string; voiceDesign: string; majorEvents: string; majorEventsMerge: string };
 	onSavePrompt: (config: typeof promptConfig) => void;
 }) {
 	const [config, setConfig] = useState<ConfigState>(initialConfig);

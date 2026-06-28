@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useNovelStore } from "../../stores/novelStore";
 import { useCharacterStore } from "../../stores/characterStore";
 import { Icons } from "../Icons";
+import { ConfirmModal } from "./ConfirmModal";
 
 export function DataManagementSection() {
 	const novels = useNovelStore((s) => s.novels);
@@ -11,26 +13,55 @@ export function DataManagementSection() {
 	const totalNovels = novels.length;
 	const totalCharacters = Object.values(novelCharacters).reduce((acc, chars) => acc + chars.length, 0);
 
+	const [confirmModal, setConfirmModal] = useState<{
+		show: boolean;
+		title?: string;
+		message: string;
+		danger?: boolean;
+		onConfirm: () => void;
+	}>({ show: false, message: "", onConfirm: () => {} });
+
 	const handleClearNovelData = (novelId: string, novelName: string) => {
-		if (window.confirm(`确定要清除"${novelName}"的所有数据吗？\n\n这将删除该小说的角色、关系、世界观等所有关联数据。\n此操作不可恢复！`)) {
-			clearNovelData(novelId);
-			window.location.reload();
-		}
+		setConfirmModal({
+			show: true,
+			title: "清除数据",
+			message: `确定要清除"${novelName}"的所有数据吗？\n\n这将删除该小说的角色、关系、世界观等所有关联数据。\n此操作不可恢复！`,
+			danger: true,
+			onConfirm: () => {
+				clearNovelData(novelId);
+				window.location.reload();
+			},
+		});
 	};
 
 	const handleDeleteNovel = (novelId: string, novelName: string) => {
-		if (window.confirm(`确定要删除小说"${novelName}"吗？\n\n这将删除小说本身及其所有关联数据。\n此操作不可恢复！`)) {
-			removeNovel(novelId);
-			clearNovelData(novelId);
-			window.location.reload();
-		}
+		setConfirmModal({
+			show: true,
+			title: "删除小说",
+			message: `确定要删除小说"${novelName}"吗？\n\n这将删除小说本身及其所有关联数据。\n此操作不可恢复！`,
+			danger: true,
+			onConfirm: () => {
+				removeNovel(novelId);
+				clearNovelData(novelId);
+				window.location.reload();
+			},
+		});
 	};
 
 	const handleClearAll = () => {
-		if (window.confirm("确定要清除所有数据吗？\n\n此操作将清除所有小说、角色信息和编号，恢复为初始状态。\n此操作不可恢复！")) {
-			clearAllCache();
-			window.location.reload();
-		}
+		setConfirmModal({
+			show: true,
+			title: "清除所有数据",
+			message: "确定要清除所有数据吗？\n\n此操作将清除所有小说、角色信息和编号，恢复为初始状态。\n此操作不可恢复！",
+			danger: true,
+			onConfirm: () => {
+				clearAllCache();
+				// 只清除小说和角色数据的持久化缓存（保留 AI 配置等其他设置）
+				localStorage.removeItem("novel-proofreader-novels");
+				localStorage.removeItem("novel-proofreader-characters");
+				window.location.reload();
+			},
+		});
 	};
 
 	return (
@@ -72,20 +103,18 @@ export function DataManagementSection() {
 									</div>
 									<div className="novel-actions">
 										<button
-											className="novel-action-btn clear-btn"
+											className="action-btn"
 											onClick={() => handleClearNovelData(novel.id, novel.name)}
 											title="清除数据"
 										>
-											<Icons.trash2 size={14} />
-											<span>清除数据</span>
+											<Icons.brushCleaning size={14} />
 										</button>
 										<button
-											className="novel-action-btn delete-btn"
+											className="action-btn"
 											onClick={() => handleDeleteNovel(novel.id, novel.name)}
 											title="删除小说"
 										>
-											<Icons.x size={14} />
-											<span>删除</span>
+											<Icons.trash2 size={14} />
 										</button>
 									</div>
 								</div>
@@ -111,6 +140,20 @@ export function DataManagementSection() {
 					</button>
 				</div>
 			</div>
+
+			<ConfirmModal
+				show={confirmModal.show}
+				title={confirmModal.title}
+				message={confirmModal.message}
+				danger={confirmModal.danger}
+				confirmText="确定"
+				cancelText="取消"
+				onConfirm={() => {
+					confirmModal.onConfirm();
+					setConfirmModal(prev => ({ ...prev, show: false }));
+				}}
+				onCancel={() => setConfirmModal(prev => ({ ...prev, show: false }))}
+			/>
 		</div>
 	);
 }

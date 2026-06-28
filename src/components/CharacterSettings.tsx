@@ -13,9 +13,11 @@ import { synthesizeSpeechWithVoice } from "../utils/ttsService";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { logger } from "../utils/logger";
+import { ConfirmModal } from "./config/ConfirmModal";
 import { saveCharacterConfigToStorage, loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
 import type { DetectedCharacter } from "../utils/fileExport";
-import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign, generateMajorEvents, analyzeWorldbuilding } from "../utils/aiClient";
+import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign, generateMajorEvents, analyzeWorldbuilding, sendChatCompletion } from "../utils/aiClient";
+import type { ChatMessage } from "../utils/aiClient";
 import { formatDateTime } from "../utils/formatters";
 import { RelationshipGraph } from "./RelationshipGraph";
 
@@ -460,7 +462,7 @@ function OrganizeRelationItem({ rel, characters, novelId, onAdded }: OrganizeRel
 					</div>
 				</div>
 				<button
-					className="btn btn-primary btn-sm"
+					className="btn btn-sm"
 					onClick={handleAdd}
 					disabled={isAdded}
 				>
@@ -729,10 +731,10 @@ function MergeConfigPanel({ sourceChars, onExecute, onBack }: MergeConfigPanelPr
 			</div>
 
 			<div className="modal-footer">
-				<button className="btn btn-secondary" onClick={onBack}>
+				<button className="btn" onClick={onBack}>
 					上一步
 				</button>
-				<button className="btn btn-primary" onClick={handleExecute}>
+				<button className="btn" onClick={handleExecute}>
 					确认合并 ({sourceChars.length}个角色)
 				</button>
 			</div>
@@ -791,7 +793,7 @@ function WorldbuildingSection({
 				<p className="text-neutral-400 text-lg mb-2">暂无世界观设定</p>
 				<p className="text-neutral-500 text-sm mb-4">使用 AI 分析角色时将自动生成世界观，或单独分析</p>
 				<div className="flex flex-col items-center gap-3">
-					<button className="btn-primary" onClick={onAnalyze} disabled={wbIsAnalyzing}>
+					<button className="btn" onClick={onAnalyze} disabled={wbIsAnalyzing}>
 						{wbIsAnalyzing ? <Icons.loader2 size={14} className="animate-spin" /> : <Icons.sparkle size={14} />}
 						{wbIsAnalyzing ? "AI 分析中..." : "AI 分析世界观"}
 					</button>
@@ -1021,7 +1023,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 角色分析弹窗状态
 	const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
 	const [isAnalyzing, setIsAnalyzing] = useState(false);
-	const [analyzeProgress, setAnalyzeProgress] = useState({ current: 0, total: 0 });
+	const [analyzeProgress, setAnalyzeProgress] = useState({ current: 0, total: 0, phase: "analyze" as "analyze" | "summarize" });
 	const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 	
 	// 检测结果操作状态：'new' | 'alias' | 'relation'
@@ -1223,6 +1225,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const [newRelationTerm, setNewRelationTerm] = useState("");
 	const [isGeneratingVoiceDesign, setIsGeneratingVoiceDesign] = useState(false);
 	const [isGeneratingMajorEvents, setIsGeneratingMajorEvents] = useState(false);
+	const [isEnhancingCharacter, setIsEnhancingCharacter] = useState(false);
 	const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 	
 	const toggleCardExpand = useCallback((charId: string) => {
@@ -1269,6 +1272,17 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		{ value: "客家话", label: "客家话" },
 		{ value: "闽语", label: "闽语" },
 	];
+
+	const [confirmModal, setConfirmModal] = useState<{
+		show: boolean;
+		title?: string;
+		message: string;
+		danger?: boolean;
+		confirmText?: string;
+		cancelText?: string;
+		onConfirm: () => void;
+		onCancel?: () => void;
+	}>({ show: false, message: "", onConfirm: () => {} });
 
 	const startEdit = useCallback((char: CharacterInfo) => {
 		setEditingId(char.id);
@@ -1321,20 +1335,32 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	}, []);
 
 	const clearAllAliases = useCallback(() => {
-		if ((editForm.aliases || []).length > 0 && confirm("确定要清空所有别称吗？")) {
-			setEditForm(prev => ({
-				...prev,
-				aliases: []
-			}));
+		if ((editForm.aliases || []).length > 0) {
+			setConfirmModal({
+				show: true,
+				title: "清空别称",
+				message: "确定要清空所有别称吗？",
+				danger: true,
+				onConfirm: () => {
+					setEditForm(prev => ({ ...prev, aliases: [] }));
+					setConfirmModal(p => ({ ...p, show: false }));
+				},
+			});
 		}
 	}, [editForm.aliases]);
 
 	const clearAllRelationTerms = useCallback(() => {
-		if ((editForm.relationTerms || []).length > 0 && confirm("确定要清空所有关系代称吗？")) {
-			setEditForm(prev => ({
-				...prev,
-				relationTerms: []
-			}));
+		if ((editForm.relationTerms || []).length > 0) {
+			setConfirmModal({
+				show: true,
+				title: "清空关系代称",
+				message: "确定要清空所有关系代称吗？",
+				danger: true,
+				onConfirm: () => {
+					setEditForm(prev => ({ ...prev, relationTerms: [] }));
+					setConfirmModal(p => ({ ...p, show: false }));
+				},
+			});
 		}
 	}, [editForm.relationTerms]);
 
@@ -1343,6 +1369,14 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		addCharacter(novelId, {
 			name: editForm.name.trim(),
 			gender: editForm.gender || "other",
+			age: editForm.age,
+			appearance: editForm.appearance,
+			identity: editForm.identity,
+			socialStatus: editForm.socialStatus,
+			personality: editForm.personality,
+			background: editForm.background,
+			keyExperiences: editForm.keyExperiences,
+			characterArc: editForm.characterArc,
 			notes: editForm.notes,
 			voice: editForm.voice,
 			voiceDesignPrompt: editForm.voiceDesignPrompt,
@@ -1356,9 +1390,16 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	}, [editForm, novelId, addCharacter, setShowAddForm]);
 
 	const handleDelete = useCallback((id: string) => {
-		if (confirm("确定要删除这个角色吗？")) {
-			removeCharacter(novelId, id);
-		}
+		setConfirmModal({
+			show: true,
+			title: "删除角色",
+			message: "确定要删除这个角色吗？",
+			danger: true,
+			onConfirm: () => {
+				removeCharacter(novelId, id);
+				setConfirmModal(p => ({ ...p, show: false }));
+			},
+		});
 	}, [novelId, removeCharacter]);
 
 	// 显示导出结果弹窗
@@ -1397,11 +1438,22 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					if (i < totalChunks - 1) {
 						// 等待用户确认后继续下一段
 						await new Promise<void>((resolve) => {
-							const proceed = confirm(`已复制第 ${i + 1}/${totalChunks} 部分，点击确定继续复制下一部分`);
-							if (!proceed) {
-								useAppMetaStore.getState().showToast(`已取消复制，共复制了 ${i + 1}/${totalChunks} 部分`, "warning");
-							}
-							resolve();
+							setConfirmModal({
+								show: true,
+								title: "继续复制",
+								message: `已复制第 ${i + 1}/${totalChunks} 部分，点击确定继续复制下一部分`,
+								confirmText: "继续复制",
+								cancelText: "取消复制",
+								onConfirm: () => {
+									setConfirmModal(p => ({ ...p, show: false }));
+									resolve();
+								},
+								onCancel: () => {
+									useAppMetaStore.getState().showToast(`已取消复制，共复制了 ${i + 1}/${totalChunks} 部分`, "warning");
+									setConfirmModal(p => ({ ...p, show: false }));
+									resolve();
+								},
+							});
 						});
 					}
 				}
@@ -1433,9 +1485,18 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				order: char.order,
 				relationTerms: char.relationTerms || [],
 				aliases: char.aliases || [],
+				age: char.age || "",
+				appearance: char.appearance || "",
+				identity: char.identity || "",
+				socialStatus: char.socialStatus || "",
+				personality: char.personality || "",
+				background: char.background || "",
+				keyExperiences: char.keyExperiences || [],
+				characterArc: char.characterArc || "",
 				notes: char.notes || "",
 				voice: char.voice || "",
 				voiceDesignPrompt: char.voiceDesignPrompt || "",
+				majorEvents: char.majorEvents || "",
 			})),
 			relationships: relationships.map(rel => ({
 				id: rel.id,
@@ -1563,11 +1624,20 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 									gender: importedChar.gender,
 									role: importedChar.role,
 									order: importedChar.order,
+									age: importedChar.age || "",
+									appearance: importedChar.appearance || "",
+									identity: importedChar.identity || "",
+									socialStatus: importedChar.socialStatus || "",
+									personality: importedChar.personality || "",
+									background: importedChar.background || "",
+									keyExperiences: importedChar.keyExperiences || [],
+									characterArc: importedChar.characterArc || "",
 									notes: importedChar.notes || "",
 									voice: importedChar.voice || "",
 									voiceDesignPrompt: importedChar.voiceDesignPrompt || "",
 									aliases: importedChar.aliases || [],
 									relationTerms: importedChar.relationTerms || [],
+									majorEvents: importedChar.majorEvents || "",
 								};
 							}
 							idMapping.set(importedChar.id, existing.id);
@@ -1580,11 +1650,20 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								gender: importedChar.gender,
 								role: importedChar.role,
 								order: importedChar.order,
+								age: importedChar.age || "",
+								appearance: importedChar.appearance || "",
+								identity: importedChar.identity || "",
+								socialStatus: importedChar.socialStatus || "",
+								personality: importedChar.personality || "",
+								background: importedChar.background || "",
+								keyExperiences: importedChar.keyExperiences || [],
+								characterArc: importedChar.characterArc || "",
 								notes: importedChar.notes || "",
 								voice: importedChar.voice || "",
 								voiceDesignPrompt: importedChar.voiceDesignPrompt || "",
 								aliases: importedChar.aliases || [],
 								relationTerms: importedChar.relationTerms || [],
+								majorEvents: importedChar.majorEvents || "",
 							};
 							if (!mergedIds.has(importedChar.id)) {
 								mergedChars.push(charWithId);
@@ -1679,7 +1758,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 		setIsAnalyzing(true);
 		setAnalyzeError(null);
-		setAnalyzeProgress({ current: 0, total: 0 });
+		setAnalyzeProgress({ current: 0, total: 0, phase: "analyze" });
 
 		const abortController = new AbortController();
 
@@ -1697,10 +1776,10 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			const result = await analyzeCharactersInBatches(
 				currentNovel.fullText,
 				config,
-				50000, // 50K字符每批次
+				80000, // 80K字符每批次
 				abortController.signal,
-				(current, total) => {
-					setAnalyzeProgress({ current, total });
+				(current, total, phase) => {
+					setAnalyzeProgress({ current, total, phase });
 				}
 			);
 
@@ -1724,6 +1803,14 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						name: char.name,
 						gender: char.gender,
 						role: char.role as CharacterRole,
+						age: char.age || "",
+						appearance: char.appearance || "",
+						identity: char.identity || "",
+						socialStatus: char.socialStatus || "",
+						personality: char.personality || "",
+						background: char.background || "",
+						keyExperiences: char.keyExperiences || [],
+						characterArc: char.characterArc || "",
 						notes: char.description,
 						voice: "",
 						voiceDesignPrompt: char.voiceDesignPrompt,
@@ -1859,15 +1946,26 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 			// 根据结果显示不同消息
 			if (currentSkippedRelationships.length > 0) {
-				const shouldOrganize = confirm(
-					`分析完成！\n\n新增 ${newCharactersWithIds.length} 个角色\n导入 ${newRelationships.length} 条关系\n\n有 ${currentSkippedRelationships.length} 条关系因无法匹配角色而被跳过。\n\n是否现在手动整理这些关系？`
-				);
-				if (shouldOrganize) {
-					setShowAnalyzeModal(false);
-					setShowOrganizeRelationsModal(true);
-				} else {
-					setShowAnalyzeModal(false);
-				}
+				await new Promise<void>((resolve) => {
+					setConfirmModal({
+						show: true,
+						title: "分析完成",
+						message: `分析完成！\n\n新增 ${newCharactersWithIds.length} 个角色\n导入 ${newRelationships.length} 条关系\n\n有 ${currentSkippedRelationships.length} 条关系因无法匹配角色而被跳过。\n\n是否现在手动整理这些关系？`,
+						confirmText: "手动整理",
+						cancelText: "稍后处理",
+						onConfirm: () => {
+							setShowAnalyzeModal(false);
+							setShowOrganizeRelationsModal(true);
+							setConfirmModal(p => ({ ...p, show: false }));
+							resolve();
+						},
+						onCancel: () => {
+							setShowAnalyzeModal(false);
+							setConfirmModal(p => ({ ...p, show: false }));
+							resolve();
+						},
+					});
+				});
 			} else {
 				useAppMetaStore.getState().showToast(`分析完成！新增 ${newCharactersWithIds.length} 个角色和 ${newRelationships.length} 条关系`, "success");
 				setShowAnalyzeModal(false);
@@ -2123,7 +2221,137 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		} finally {
 			setIsGeneratingMajorEvents(false);
 		}
-	}, [editForm.name, editForm.gender, editForm.role, editForm.notes, editForm.aliases, aiConfig, currentNovel?.fullText]);
+	}, [editForm.name, editForm.gender, editForm.role, editForm.notes, editForm.aliases, aiConfig, currentNovel]);
+
+	// AI完善角色卡片所有信息
+	const handleEnhanceCharacter = useCallback(async () => {
+		if (!editForm.name) return;
+		if (!aiConfig.apiKey || !aiConfig.baseURL) {
+			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			return;
+		}
+
+		setIsEnhancingCharacter(true);
+		try {
+			const existingInfo = {
+				name: editForm.name,
+				gender: editForm.gender || "other",
+				role: editForm.role || "",
+				age: editForm.age || "",
+				identity: editForm.identity || "",
+				socialStatus: editForm.socialStatus || "",
+				personality: editForm.personality || "",
+				appearance: editForm.appearance || "",
+				background: editForm.background || "",
+				characterArc: editForm.characterArc || "",
+				notes: editForm.notes || "",
+				voiceDesignPrompt: editForm.voiceDesignPrompt || "",
+				dialect: editForm.dialect || "",
+				aliases: editForm.aliases || [],
+				relationTerms: editForm.relationTerms || [],
+				majorEvents: editForm.majorEvents || "",
+			};
+
+			const systemPrompt = `你是一位资深小说角色设定专家。你的任务是根据角色已有的信息，对角色卡片中的各个字段进行完善和丰富，使角色更加立体鲜活。
+
+## 要求
+- 以现有信息为基础进行合理的扩展和丰富，不要编造与已有信息矛盾的内容
+- 保持风格统一，语言简洁有力
+- 角色类型(role)和性别(gender)字段保持原样不变
+- 音色设计(voiceDesignPrompt)要结合角色性别、性格、身份等特征给出专业的声音描述
+- 别称(aliases)和关系代称(relationTerms)保持为数组格式
+- 如果某个字段已有内容，在其基础上进行丰富完善；如果为空，则根据其他信息合理补充
+- 严格按照JSON格式输出，确保可以被JSON.parse解析
+
+## 输出格式
+输出一个JSON对象，包含以下字段（只输出JSON，不要markdown代码块标记）：
+{
+  "age": "年龄描述",
+  "identity": "身份职业",
+  "socialStatus": "社会地位",
+  "personality": "核心性格",
+  "appearance": "外貌特征",
+  "background": "出身背景",
+  "characterArc": "角色弧光",
+  "notes": "备注/角色小传",
+  "voiceDesignPrompt": "音色设计描述",
+  "dialect": "方言",
+  "aliases": ["别称1", "别称2"],
+  "relationTerms": ["关系代称1", "关系代称2"],
+  "majorEvents": "角色大事件"
+}`;
+
+			const userPrompt = `请根据以下角色现有信息，完善和丰富角色卡片中的各个字段：
+
+\`\`\`json
+${JSON.stringify(existingInfo, null, 2)}
+\`\`\`
+
+请输出完善后的完整JSON对象。`;
+
+			const messages: ChatMessage[] = [
+				{ role: "system", content: systemPrompt },
+				{ role: "user", content: userPrompt },
+			];
+
+			const config = {
+				baseURL: aiConfig.baseURL,
+				apiKey: aiConfig.apiKey,
+				model: aiConfig.model,
+				customHeaders: {} as Record<string, string>,
+				maxCharsPerRequest: 0,
+				enableLogging: false,
+			};
+
+			const response = await sendChatCompletion(messages, config);
+
+			// 尝试从回复中提取JSON
+			let parsed: Record<string, unknown>;
+			try {
+				// 尝试直接解析
+				parsed = JSON.parse(response);
+			} catch {
+				// 尝试提取 JSON 代码块
+				const jsonMatch = response.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+				if (jsonMatch) {
+					parsed = JSON.parse(jsonMatch[1]);
+				} else {
+					// 尝试提取 { } 对象
+					const objMatch = response.match(/\{[\s\S]*\}/);
+					if (objMatch) {
+						parsed = JSON.parse(objMatch[0]);
+					} else {
+						throw new Error("无法解析AI返回结果");
+					}
+				}
+			}
+
+			// 更新editForm，只更新AI返回的字段，保留name/gender/role不变
+			setEditForm(prev => ({
+				...prev,
+				age: typeof parsed.age === "string" ? parsed.age : prev.age,
+				identity: typeof parsed.identity === "string" ? parsed.identity : prev.identity,
+				socialStatus: typeof parsed.socialStatus === "string" ? parsed.socialStatus : prev.socialStatus,
+				personality: typeof parsed.personality === "string" ? parsed.personality : prev.personality,
+				appearance: typeof parsed.appearance === "string" ? parsed.appearance : prev.appearance,
+				background: typeof parsed.background === "string" ? parsed.background : prev.background,
+				characterArc: typeof parsed.characterArc === "string" ? parsed.characterArc : prev.characterArc,
+				notes: typeof parsed.notes === "string" ? parsed.notes : prev.notes,
+				voiceDesignPrompt: typeof parsed.voiceDesignPrompt === "string" ? parsed.voiceDesignPrompt : prev.voiceDesignPrompt,
+				dialect: typeof parsed.dialect === "string" ? parsed.dialect : prev.dialect,
+				aliases: Array.isArray(parsed.aliases) ? parsed.aliases as string[] : prev.aliases,
+				relationTerms: Array.isArray(parsed.relationTerms) ? parsed.relationTerms as string[] : prev.relationTerms,
+				majorEvents: typeof parsed.majorEvents === "string" ? parsed.majorEvents : prev.majorEvents,
+			}));
+
+			useAppMetaStore.getState().showToast("角色卡片完善成功", "success");
+		} catch (err) {
+			logger.errorGeneric("角色卡片完善失败", { error: err });
+			useAppMetaStore.getState().showToast("角色卡片完善失败: " + (err instanceof Error ? err.message : String(err)), "error");
+		} finally {
+			setIsEnhancingCharacter(false);
+		}
+	}, [editForm, aiConfig]);
 
 	// 播放备注
 	const handlePlayNote = useCallback(async (character: CharacterInfo) => {
@@ -2643,6 +2871,78 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 													)}
 												</div>
 
+												{/* 角色档案 - 结构化信息 */}
+												<div className="form-field">
+													<label>年龄</label>
+													<input
+														type="text"
+														value={editForm.age || ""}
+														onChange={(e) => setEditForm({ ...editForm, age: e.target.value })}
+														placeholder="如：20多岁、中年、年过半百"
+														className="config-input"
+													/>
+												</div>
+												<div className="form-field">
+													<label>身份职业</label>
+													<input
+														type="text"
+														value={editForm.identity || ""}
+														onChange={(e) => setEditForm({ ...editForm, identity: e.target.value })}
+														placeholder="如：剑客、商人、书生、将军"
+														className="config-input"
+													/>
+												</div>
+												<div className="form-field">
+													<label>社会地位</label>
+													<input
+														type="text"
+														value={editForm.socialStatus || ""}
+														onChange={(e) => setEditForm({ ...editForm, socialStatus: e.target.value })}
+														placeholder="如：贵族、平民、江湖高手"
+														className="config-input"
+													/>
+												</div>
+												<div className="form-field">
+													<label>核心性格</label>
+													<input
+														type="text"
+														value={editForm.personality || ""}
+														onChange={(e) => setEditForm({ ...editForm, personality: e.target.value })}
+														placeholder="如：沉稳内敛、开朗活泼、心机深沉"
+														className="config-input"
+													/>
+												</div>
+												<div className="form-field">
+													<label>外貌特征</label>
+													<textarea
+														value={editForm.appearance || ""}
+														onChange={(e) => setEditForm({ ...editForm, appearance: e.target.value })}
+														placeholder="身高、体型、面容、穿着风格等"
+														className="config-input"
+														style={{ minHeight: "40px" }}
+													/>
+												</div>
+												<div className="form-field">
+													<label>出身背景</label>
+													<textarea
+														value={editForm.background || ""}
+														onChange={(e) => setEditForm({ ...editForm, background: e.target.value })}
+														placeholder="家庭背景、成长环境等"
+														className="config-input"
+														style={{ minHeight: "40px" }}
+													/>
+												</div>
+												<div className="form-field">
+													<label>角色弧光</label>
+													<textarea
+														value={editForm.characterArc || ""}
+														onChange={(e) => setEditForm({ ...editForm, characterArc: e.target.value })}
+														placeholder="角色成长变化、内心转变、价值观演变等"
+														className="config-input"
+														style={{ minHeight: "40px" }}
+													/>
+												</div>
+
 												<div className="form-field">
 													<label>备注</label>
 													<textarea
@@ -2674,14 +2974,22 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 												</div>
 												<div className="flex gap-2 pt-2">
 													<button
-														className="character-action-btn"
+														className="btn btn-primary"
+														onClick={handleEnhanceCharacter}
+														disabled={isEnhancingCharacter || !editForm.name}
+													>
+														<Icons.sparkle size={14} />
+														<span>{isEnhancingCharacter ? "完善中..." : "AI完善"}</span>
+													</button>
+													<button
+														className="btn"
 														onClick={saveEdit}
 													>
 														<Icons.saveIcon size={14} />
 														<span>保存</span>
 													</button>
 													<button
-														className="character-action-btn"
+														className="btn"
 														onClick={cancelEdit}
 													>
 														<Icons.x size={14} />
@@ -2725,9 +3033,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 													</div>
 
 													{/* 展开/折叠指示器 */}
-													<div className="expand-indicator">
-														<Icons.chevronDown size={16} style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
-													</div>
 
 													{/* 操作按钮 */}
 													<div className="character-actions">
@@ -2744,6 +3049,12 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 															title="编辑"
 														>
 															<Icons.userRoundPen size={18} />
+														</button>
+														<button
+															className="action-btn expend"
+															title="展开/折叠"
+														>
+															<Icons.chevronDown size={16} style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
 														</button>
 													</div>
 												</div>
@@ -2792,6 +3103,66 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 																		<span key={index} className="relation-badge">{term}</span>
 																	))}
 																</div>
+															</div>
+														)}
+													</div>
+												)}
+
+												{/* 角色档案：结构化信息 */}
+												{(char.age || char.identity || char.socialStatus || char.personality || char.appearance || char.background || char.characterArc || (char.keyExperiences && char.keyExperiences.length > 0)) && (
+													<div className="character-profile-section">
+														<div className="profile-grid">
+															{char.age && (
+																<div className="profile-item">
+																	<span className="profile-label">年龄</span>
+																	<span className="profile-value">{char.age}</span>
+																</div>
+															)}
+															{char.identity && (
+																<div className="profile-item">
+																	<span className="profile-label">身份</span>
+																	<span className="profile-value">{char.identity}</span>
+																</div>
+															)}
+															{char.socialStatus && (
+																<div className="profile-item">
+																	<span className="profile-label">地位</span>
+																	<span className="profile-value">{char.socialStatus}</span>
+																</div>
+															)}
+															{char.personality && (
+																<div className="profile-item">
+																	<span className="profile-label">性格</span>
+																	<span className="profile-value">{char.personality}</span>
+																</div>
+															)}
+														</div>
+														{char.appearance && (
+															<div className="profile-detail">
+																<span className="profile-label">外貌</span>
+																<span className="profile-value">{char.appearance}</span>
+															</div>
+														)}
+														{char.background && (
+															<div className="profile-detail">
+																<span className="profile-label">出身</span>
+																<span className="profile-value">{char.background}</span>
+															</div>
+														)}
+														{char.characterArc && (
+															<div className="profile-detail">
+																<span className="profile-label">弧光</span>
+																<span className="profile-value">{char.characterArc}</span>
+															</div>
+														)}
+														{char.keyExperiences && char.keyExperiences.length > 0 && (
+															<div className="profile-detail">
+																<span className="profile-label">关键经历</span>
+																<ul className="profile-experiences">
+																	{char.keyExperiences.map((exp, idx) => (
+																		<li key={idx}>{exp}</li>
+																	))}
+																</ul>
 															</div>
 														)}
 													</div>
@@ -3002,7 +3373,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 									<Icons.x size={18} />
 									<span>取消</span>
 								</button>
-								<button className="btn primary" onClick={handleWbSave}>
+								<button className="btn" onClick={handleWbSave}>
 									<Icons.saveIcon size={18} />
 									<span>保存</span>
 								</button>
@@ -3018,7 +3389,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 									<span>{wbIsAnalyzing ? "分析中..." : "AI 分析"}</span>
 								</button>
 								<button
-									className="btn primary"
+									className="btn"
 									onClick={() => { initWbForm(); setWbEditMode(true); }}
 								>
 									<Icons.edit size={18} />
@@ -3256,13 +3627,13 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					</div>
 					<div className="modal-footer">
 						<button
-							className="btn btn-secondary"
+							className="btn"
 							onClick={() => setShowDetectModal(false)}
 						>
 							取消
 						</button>
 						<button
-							className="btn btn-primary"
+							className="btn"
 							onClick={handleAddSelectedCharacters}
 							disabled={Object.values(detectedSelections).filter(s => s.selected && (s.action === 'new' || !!s.mergeTargetId)).length === 0}
 						>
@@ -3276,7 +3647,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		{/* AI分析角色弹窗 */}
 		{showAnalyzeModal && (
 			<div className="modal-overlay" onClick={() => !isAnalyzing && setShowAnalyzeModal(false)}>
-				<div className="modal-content detect-characters-modal" onClick={e => e.stopPropagation()}>
+				<div className="config-modal detect-characters-modal" onClick={e => e.stopPropagation()}>
 					<div className="config-header">
 						<div className="config-title">
 							<span className="title-icon"><Icons.sparkles size={16} /></span>
@@ -3288,7 +3659,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 							</button>
 						)}
 					</div>
-					<div className="modal-body">
+					<div className="config-body">
 						{analyzeError && (
 							<div className="text-red-400 mb-4 p-3 bg-red-900/20 rounded">
 								<p className="font-bold">分析失败</p>
@@ -3302,7 +3673,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 									<div className="analyze-icon-ring"></div>
 								</div>
 								<p className="analyze-title">正在分析小说内容</p>
-								<p className="analyze-subtitle">提取角色人物小传与关系图谱...</p>
+								<p className="analyze-subtitle">{analyzeProgress.phase === "analyze" ? "逐段分析角色信息与关系..." : "综合整合角色档案..."}</p>
 								<div className="analyze-progress-bar">
 									<div
 										className="analyze-progress-fill"
@@ -3316,7 +3687,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								<div className="analyze-progress-info">
 									<span className="analyze-batch">
 										<Icons.list size={14} />
-										批次 {analyzeProgress.current} / {analyzeProgress.total}
+										{analyzeProgress.phase === "analyze" ? "分析" : "综合"} {analyzeProgress.current} / {analyzeProgress.total}
 									</span>
 									<span className="analyze-percent">
 										{analyzeProgress.total > 0
@@ -3332,27 +3703,33 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						) : (
 							<div className="space-y-4">
 								<p className="text-sm text-neutral-400">
-									AI 将分析整本小说内容，提取角色人物小传和关系图谱信息。
+									AI 将分批分析整本小说，自动提取角色信息、人物小传及关系图谱，支持超大文本。
 								</p>
 								<div className="analyze-features">
 									<p className="analyze-features-title">功能特点</p>
 									<div className="analyze-features-list">
-										<span className="analyze-feature-item">自动识别小说中的主要角色</span>
-										<span className="analyze-feature-item">提取角色外貌、性格、背景描述</span>
-										<span className="analyze-feature-item">分析小说世界观设定</span>
-										<span className="analyze-feature-item">分析角色之间的关系</span>
-										<span className="analyze-feature-item">支持超大文本（1M+ tokens）</span>
+										<span className="analyze-feature-item">自动识别小说中的主要角色及配角</span>
+										<span className="analyze-feature-item">提取角色性别、类别、外貌、性格、背景描述</span>
+										<span className="analyze-feature-item">识别角色别称、代称</span>
+										<span className="analyze-feature-item">分析角色之间的关系及称呼方式</span>
+										<span className="analyze-feature-item">提取角色音色设计描述</span>
+										<span className="analyze-feature-item">提取角色大事件经历</span>
+										<span className="analyze-feature-item">跳过已有角色，仅新增未识别的角色</span>
+										<span className="analyze-feature-item">分批处理，支持 1M+ 字符的超大文本</span>
 									</div>
+								</div>
+								<div className="analyze-note">
+									<Icons.info size={14} />
+									<span>分析完成后如有未匹配的关系，可手动整理归属</span>
 								</div>
 							</div>
 						)}
 					</div>
-					<div className="modal-footer">
+					<div className="config-footer">
 						{isAnalyzing ? (
 							<button
-								className="btn btn-secondary"
+								className="btn"
 								onClick={() => {
-									// 取消分析 - 需要通过 abort controller
 									setIsAnalyzing(false);
 									setShowAnalyzeModal(false);
 								}}
@@ -3362,13 +3739,13 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						) : (
 							<>
 								<button
-									className="btn btn-secondary"
+									className="btn"
 									onClick={() => setShowAnalyzeModal(false)}
 								>
 									关闭
 								</button>
 								<button
-									className="btn btn-primary"
+									className="btn"
 									onClick={handleAnalyzeCharacters}
 								>
 									<Icons.sparkle size={16} />
@@ -3439,13 +3816,13 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					{mergeMode === "select" && (
 						<div className="config-footer">
 							<button
-								className="btn btn-secondary"
+								className="btn"
 								onClick={() => setShowMergeModal(false)}
 							>
 								取消
 							</button>
 							<button
-								className="btn btn-primary"
+								className="btn"
 								onClick={handleProceedToMergeConfig}
 								disabled={selectedForMerge.length < 2}
 							>
@@ -3489,13 +3866,13 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					</div>
 					<div className="modal-footer">
 						<button
-							className="btn btn-secondary"
+							className="btn"
 							onClick={() => setShowOrganizeRelationsModal(false)}
 						>
 							关闭
 						</button>
 						<button
-							className="btn btn-primary"
+							className="btn"
 							onClick={() => {
 								useAppMetaStore.getState().showToast(`成功添加 ${skippedRelationships.length} 条关系`, "success");
 								setShowOrganizeRelationsModal(false);
@@ -3675,9 +4052,16 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 												<button
 													className="relation-action-btn danger"
 													onClick={() => {
-														if (confirm("确定要删除这条关系吗？")) {
-															removeRelationship(novelId, rel.id);
-														}
+														setConfirmModal({
+															show: true,
+															title: "删除关系",
+															message: "确定要删除这条关系吗？",
+															danger: true,
+															onConfirm: () => {
+																removeRelationship(novelId, rel.id);
+																setConfirmModal(p => ({ ...p, show: false }));
+															},
+														});
 													}}
 													title="删除"
 												>
@@ -3693,7 +4077,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					</div>
 					<div className="config-footer">
 						<button
-							className="btn btn-secondary"
+							className="btn"
 							onClick={() => setShowManageRelationsModal(false)}
 						>
 							关闭
@@ -3929,23 +4313,30 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 							<button
 								className="btn btn-danger"
 								onClick={() => {
-									if (confirm("确定要删除这条关系吗？")) {
-										removeRelationship(novelId, editingRelation.id);
-										setEditingRelation(null);
-									}
+									setConfirmModal({
+										show: true,
+										title: "删除关系",
+										message: "确定要删除这条关系吗？",
+										danger: true,
+										onConfirm: () => {
+											removeRelationship(novelId, editingRelation.id);
+											setEditingRelation(null);
+											setConfirmModal(p => ({ ...p, show: false }));
+										},
+									});
 								}}
 							>
 								删除
 							</button>
 						)}
 						<button
-							className="btn btn-secondary"
+							className="btn"
 							onClick={() => setEditingRelation(null)}
 						>
 							取消
 						</button>
 						<button
-							className="btn btn-primary"
+							className="btn"
 							onClick={() => {
 								if (!relationForm.sourceId || !relationForm.targetId) {
 									useAppMetaStore.getState().showToast("请选择源角色和目标角色", "warning");
@@ -4038,13 +4429,13 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					</div>
 					<div className="config-footer">
 						<button
-							className="btn btn-secondary"
+							className="btn"
 							onClick={() => setExportModal({ ...exportModal, show: false })}
 						>
 							关闭
 						</button>
 						<button
-							className="btn btn-primary"
+							className="btn"
 							onClick={() => copyToClipboard(exportModal.dataStr)}
 						>
 							<Icons.copy size={16} />
@@ -4115,13 +4506,13 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					{!isReanalyzing && !reanalyzeError && (
 						<div className="modal-footer">
 							<button
-								className="btn btn-secondary"
+								className="btn"
 								onClick={handleCloseReanalyzeModal}
 							>
 								取消
 							</button>
 							<button
-								className="btn btn-primary"
+								className="btn"
 								onClick={handleReplaceBiography}
 								disabled={!newBiography}
 							>
@@ -4132,5 +4523,22 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				</div>
 			</div>
 		)}
+
+		<ConfirmModal
+			show={confirmModal.show}
+			title={confirmModal.title}
+			message={confirmModal.message}
+			danger={confirmModal.danger}
+			confirmText={confirmModal.confirmText}
+			cancelText={confirmModal.cancelText}
+			onConfirm={() => {
+				confirmModal.onConfirm();
+				setConfirmModal(prev => ({ ...prev, show: false }));
+			}}
+			onCancel={() => {
+				if (confirmModal.onCancel) confirmModal.onCancel();
+				else setConfirmModal(prev => ({ ...prev, show: false }));
+			}}
+		/>
 	</>);
 }

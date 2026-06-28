@@ -8,6 +8,11 @@ import {
 	READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT,
 	CHAPTER_TITLE_SYSTEM_PROMPT,
 	CHARACTER_REANALYSIS_SYSTEM_PROMPT,
+	CHARACTER_ANALYSIS_SYSTEM_PROMPT,
+	WORLDBUILDING_ANALYSIS_SYSTEM_PROMPT,
+	VOICE_DESIGN_SYSTEM_PROMPT,
+	MAJOR_EVENTS_SYSTEM_PROMPT,
+	MAJOR_EVENTS_MERGE_PROMPT,
 } from "../../utils/aiClient";
 import { logger } from "../../utils/logger";
 import { Icons } from "../Icons";
@@ -21,6 +26,11 @@ interface PromptConfig {
 	readingModeTts: string;
 	chapterTitle: string;
 	characterReanalysis: string;
+	characterAnalysis: string;
+	worldbuilding: string;
+	voiceDesign: string;
+	majorEvents: string;
+	majorEventsMerge: string;
 }
 
 const DEFAULTS: Record<keyof PromptConfig, string> = {
@@ -32,6 +42,11 @@ const DEFAULTS: Record<keyof PromptConfig, string> = {
 	readingModeTts: READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT,
 	chapterTitle: CHAPTER_TITLE_SYSTEM_PROMPT,
 	characterReanalysis: CHARACTER_REANALYSIS_SYSTEM_PROMPT,
+	characterAnalysis: CHARACTER_ANALYSIS_SYSTEM_PROMPT,
+	worldbuilding: WORLDBUILDING_ANALYSIS_SYSTEM_PROMPT,
+	voiceDesign: VOICE_DESIGN_SYSTEM_PROMPT,
+	majorEvents: MAJOR_EVENTS_SYSTEM_PROMPT,
+	majorEventsMerge: MAJOR_EVENTS_MERGE_PROMPT,
 };
 
 const LABELS: Record<keyof PromptConfig, { label: string; hint: string; rows: number }> = {
@@ -43,6 +58,11 @@ const LABELS: Record<keyof PromptConfig, { label: string; hint: string; rows: nu
 	readingModeTts: { label: "阅读模式 TTS 增强 Prompt", hint: "用于阅读模式下分析段落、识别人物、判断情绪", rows: 6 },
 	chapterTitle: { label: "章节标题生成 Prompt", hint: "用于根据章节内容生成合适的章节标题", rows: 6 },
 	characterReanalysis: { label: "角色重新分析 Prompt", hint: "用于重新分析角色小传，结合角色名、别称和关系代称", rows: 6 },
+	characterAnalysis: { label: "角色分析 Prompt（全本）", hint: "用于从整本小说中提取角色信息、小传和关系图谱", rows: 8 },
+	worldbuilding: { label: "世界观分析 Prompt", hint: "用于分析小说的世界观设定，生成结构化数据", rows: 8 },
+	voiceDesign: { label: "音色设计生成 Prompt", hint: "用于根据角色信息生成TTS音色描述", rows: 6 },
+	majorEvents: { label: "角色大事件分析 Prompt（单批）", hint: "用于逐批分析角色在文本片段中的关键经历", rows: 6 },
+	majorEventsMerge: { label: "角色大事件合并 Prompt", hint: "用于合并各批次大事件结果，去重排序", rows: 6 },
 };
 
 export function PromptSettingsSection({
@@ -83,7 +103,7 @@ export function PromptSettingsSection({
 					<p className="prompt-hint">{LABELS[key].hint}</p>
 				</div>
 			))}
-			<button className="prompt-save-btn" onClick={() => onSave(prompts)}>
+			<button className="btn" onClick={() => onSave(prompts)}>
 				<Icons.save size={14} />保存 PROMPT 设置
 			</button>
 		</div>

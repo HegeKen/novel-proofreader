@@ -5,13 +5,14 @@ import { useNovelStore } from "../stores/novelStore";
 import { useUIStore } from "../stores/uiStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { saveNovelToStorage, deleteNovelFromStorage, createCharacterTemplate } from "../utils/fileExport";
+import { saveNovelToStorage, deleteNovelFromStorage, createCharacterTemplate, loadNovelContent } from "../utils/fileExport";
 import { splitChapters } from "../utils/chapterSplit";
 import { decodeTextBuffer } from "../utils/decodeText";
 import { formatFileSize, formatDateTime } from "../utils/formatters";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { useMobile } from "../hooks/useMobile";
+import { ConfirmModal } from "./config/ConfirmModal";
 import type { Novel } from "../types";
 
 export function NovelList({
@@ -34,6 +35,12 @@ export function NovelList({
 		novel: Novel;
 	} | null>(null);
 	const longPressTriggered = useRef(false);
+
+	const [confirmModal, setConfirmModal] = useState<{
+		show: boolean;
+		message: string;
+		onConfirm: () => void;
+	}>({ show: false, message: "", onConfirm: () => {} });
 	const handleImport = async () => {
 		const input = document.createElement("input");
 		input.type = "file";
@@ -66,13 +73,30 @@ export function NovelList({
 		input.click();
 	};
 
-	const handleSelect = (novel: Novel) => {
+	const handleSelect = async (novel: Novel) => {
 		if (longPressTriggered.current) {
 			longPressTriggered.current = false;
 			return;
 		}
+
+		let fullText = novel.fullText;
+		if (!fullText) {
+			// fullText 未持久化到 localStorage，从文件系统恢复
+			const fileName = `${novel.name}.txt`;
+			const content = await loadNovelContent(fileName);
+			if (content) {
+				fullText = content;
+				// 更新 store 中的 fullText
+				useNovelStore.setState((state) => ({
+					novels: state.novels.map((n) =>
+						n.id === novel.id ? { ...n, fullText: content } : n
+					),
+				}));
+			}
+		}
+
 		selectNovel(novel.id);
-		const chapters = splitChapters(novel.fullText);
+		const chapters = splitChapters(fullText);
 		setChapters(chapters);
 
 		const progress = getReadingProgress(novel.id);
@@ -87,15 +111,18 @@ export function NovelList({
 
 	const handleRemove = async (e: React.MouseEvent, id: string) => {
 		e.stopPropagation();
-		const confirmed = window.confirm("删除小说前请确认：校对后的小说是否已导出保存？\n\n点击\"确定\"删除，点击\"取消\"保留。");
-		if (!confirmed) {
-			return;
-		}
 		const novel = novels.find(n => n.id === id);
-		if (novel) {
-			await deleteNovelFromStorage(`${novel.name}.txt`);
-		}
-		removeNovel(id);
+		setConfirmModal({
+			show: true,
+			message: "删除小说前请确认：校对后的小说是否已导出保存？\n\n点击「确定」删除，点击「取消」保留。",
+			onConfirm: async () => {
+				if (novel) {
+					await deleteNovelFromStorage(`${novel.name}.txt`);
+				}
+				removeNovel(id);
+				setConfirmModal(prev => ({ ...prev, show: false }));
+			},
+		});
 	};
 
 	const handleCloseContextMenu = useCallback(() => {
@@ -177,6 +204,17 @@ export function NovelList({
 					))
 				)}
 			</div>
+
+			<ConfirmModal
+				show={confirmModal.show}
+				title="删除小说"
+				message={confirmModal.message}
+				danger
+				confirmText="确定"
+				cancelText="取消"
+				onConfirm={confirmModal.onConfirm}
+				onCancel={() => setConfirmModal(prev => ({ ...prev, show: false }))}
+			/>
 		</div>
 	);
 }

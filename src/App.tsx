@@ -25,6 +25,7 @@ import { logger } from "./utils/logger";
 import { audioCache } from "./utils/ttsService";
 import { useConfigStore } from "./stores/configStore";
 import { useMobile } from "./hooks/useMobile";
+import { ConfirmModal } from "./components/config/ConfirmModal";
 
 const ConfigModal = lazy(() => import("./components/ConfigModal").then(m => ({ default: m.ConfigModal })));
 const CharacterSettings = lazy(() => import("./components/CharacterSettings").then(m => ({ default: m.CharacterSettings })));
@@ -78,6 +79,17 @@ export default function App() {
 	const [mobileTab, setMobileTab] = useState<MobileTab>("novels");
 	const { isMobile } = useMobile();
 
+	const [confirmModal, setConfirmModal] = useState<{
+		show: boolean;
+		title?: string;
+		message: string;
+		danger?: boolean;
+		confirmText?: string;
+		cancelText?: string;
+		onConfirm: () => void;
+		onCancel?: () => void;
+	}>({ show: false, message: "", onConfirm: () => {} });
+
 	const handleStartApp = useCallback(() => {
 		markAsVisited();
 		setShowHome(false);
@@ -92,8 +104,46 @@ export default function App() {
 		audioCache.setPersistent(audioCachePersistent);
 	}, [audioCachePersistent]);
 
+	// 从文件系统恢复小说全文（因为 fullText 未持久化到 localStorage）
+	const restoreFullTextFromStorage = useCallback(async () => {
+		const state = useNovelStore.getState();
+		const currentNovelId = state.currentNovelId;
+		if (state.novels.length === 0) return;
+
+		const storedFileNames = await loadNovelsFromStorage();
+		if (storedFileNames.length === 0) return;
+
+		let updated = false;
+		const updatedNovels = await Promise.all(state.novels.map(async (novel) => {
+			if (novel.fullText) return novel; // 已有全文，跳过
+			const fileName = ensureTxtFilename(novel.name);
+			if (!storedFileNames.includes(fileName)) return novel;
+			const content = await loadNovelContent(fileName);
+			if (!content) return novel;
+			updated = true;
+			return { ...novel, fullText: content };
+		}));
+
+		if (!updated) return;
+
+		useNovelStore.setState({ novels: updatedNovels });
+
+		// 恢复当前选中小说的章节
+		const newState = useNovelStore.getState();
+		const selectedNovel = updatedNovels.find(n => n.id === currentNovelId);
+		if (selectedNovel?.fullText && newState.chapters.length === 0) {
+			const chapters = splitChapters(selectedNovel.fullText);
+			const progress = useAppMetaStore.getState().getReadingProgress(selectedNovel.id);
+			useNovelStore.setState({ chapters });
+			if (progress) {
+				useNovelStore.setState({ currentChapterIndex: progress.currentChapterIndex });
+			}
+		}
+	}, [loadNovelsFromStorage, loadNovelContent, ensureTxtFilename, splitChapters]);
+
 	useEffect(() => {
 		if (novels.length === 0) {
+			// 首次启动，从文件系统加载所有小说
 			loadNovelsFromStorage().then(async (storedFileNames) => {
 				if (storedFileNames.length > 0) {
 					const loadedNovels: typeof novels = [];
@@ -131,8 +181,11 @@ export default function App() {
 					}
 				}
 			});
+		} else if (novels.some((n) => !n.fullText)) {
+			// 已有小说元数据但 fullText 为空，从文件系统恢复
+			restoreFullTextFromStorage();
 		}
-	}, [novels.length]);
+	}, [novels.length, restoreFullTextFromStorage]);
 
 	useEffect(() => {
 		const params = parseURLParams();
@@ -267,18 +320,23 @@ export default function App() {
 	const handleSaveToOriginal = async () => {
 		const novel = novels.find((n) => n.id === currentNovelId);
 		if (!novel) return;
-		if (!confirm(`确定要覆盖原文件 "${novel.name}" 吗？此操作不可撤销。`)) {
-			return;
-		}
-		const result = await exportToFile(
-			novel.fullText,
-			`${novel.name}.txt`,
-		);
-		if (result === "success") {
-			useAppMetaStore.getState().showToast("文件已成功保存！", "success");
-		} else if (result === "fallback") {
-			useAppMetaStore.getState().showToast("文件已下载！请手动覆盖原文件。", "success");
-		}
+		setConfirmModal({
+			show: true,
+			title: "覆盖原文件",
+			message: `确定要覆盖原文件 "${novel.name}" 吗？此操作不可撤销。`,
+			danger: true,
+			confirmText: "确定覆盖",
+			cancelText: "取消",
+			onConfirm: async () => {
+				const result = await exportToFile(novel.fullText, `${novel.name}.txt`);
+				if (result === "success") {
+					useAppMetaStore.getState().showToast("文件已成功保存！", "success");
+				} else if (result === "fallback") {
+					useAppMetaStore.getState().showToast("文件已下载！请手动覆盖原文件。", "success");
+				}
+				setConfirmModal(prev => ({ ...prev, show: false }));
+			},
+		});
 	};
 
 	const handleExportNovel = async () => {
@@ -307,19 +365,41 @@ export default function App() {
 		const aiConfigState = useAIConfigStore.getState();
 		const metaState = useAppMetaStore.getState();
 		const proofreadMetaState = useProofreadMetaStore.getState();
-		const includeSensitiveData = confirm("⚠️ 安全提示：导出包含 API 密钥后，任何获取该文件的人都能使用你的 API Key。\n\n选择「确定」包含敏感信息，选择「取消」则自动脱敏（推荐）。");
-		await exportAllData({
+
+		const baseExportData = {
 			novels: novelState.novels,
-			aiConfig: {
-				...aiConfigState.aiConfig,
-				apiKey: includeSensitiveData ? aiConfigState.aiConfig.apiKey : "[REDACTED]",
-			},
+			aiConfig: aiConfigState.aiConfig,
 			apiUsage: metaState.apiUsage,
 			novelCategories: metaState.novelCategories,
 			readingProgress: metaState.readingProgress,
 			ignoredWords: proofreadMetaState.ignoredWords,
 			exportTime: formatDateTime(Date.now()),
 			version: "0.10.1",
+		};
+
+		setConfirmModal({
+			show: true,
+			title: "安全提示",
+			message: "导出包含 API 密钥后，任何获取该文件的人都能使用你的 API Key。\n\n选择「包含密钥」包含敏感信息，选择「脱敏导出」则自动脱敏（推荐）。",
+			danger: true,
+			confirmText: "包含密钥",
+			cancelText: "脱敏导出（推荐）",
+			onConfirm: async () => {
+				await exportAllData({
+					...baseExportData,
+					aiConfig: { ...aiConfigState.aiConfig, apiKey: aiConfigState.aiConfig.apiKey },
+					version: "0.10.1",
+				});
+				setConfirmModal(prev => ({ ...prev, show: false }));
+			},
+			onCancel: async () => {
+				await exportAllData({
+					...baseExportData,
+					aiConfig: { ...aiConfigState.aiConfig, apiKey: "[REDACTED]" },
+					version: "0.10.1",
+				});
+				setConfirmModal(prev => ({ ...prev, show: false }));
+			},
 		});
 	};
 
@@ -579,6 +659,22 @@ export default function App() {
 			<ToastContainer
 				messages={toastMessages}
 				onClose={hideToast}
+			/>
+			<ConfirmModal
+				show={confirmModal.show}
+				title={confirmModal.title}
+				message={confirmModal.message}
+				danger={confirmModal.danger}
+				confirmText={confirmModal.confirmText}
+				cancelText={confirmModal.cancelText}
+				onConfirm={() => {
+					confirmModal.onConfirm();
+					setConfirmModal(prev => ({ ...prev, show: false }));
+				}}
+				onCancel={() => {
+					if (confirmModal.onCancel) confirmModal.onCancel();
+					else setConfirmModal(prev => ({ ...prev, show: false }));
+				}}
 			/>
 		</>
 	)}

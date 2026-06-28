@@ -24,6 +24,11 @@ export interface PromptConfig {
 	readingModeTts: string;
 	chapterTitle: string;
 	characterReanalysis: string;
+	characterAnalysis: string;
+	worldbuilding: string;
+	voiceDesign: string;
+	majorEvents: string;
+	majorEventsMerge: string;
 }
 
 export interface ProofreadConfig {
@@ -65,6 +70,11 @@ const DEFAULT_PROMPT_CONFIG: PromptConfig = {
 	readingModeTts: "",
 	chapterTitle: "",
 	characterReanalysis: "",
+	characterAnalysis: "",
+	worldbuilding: "",
+	voiceDesign: "",
+	majorEvents: "",
+	majorEventsMerge: "",
 };
 
 const DEFAULT_PROOFREAD_CONFIG: ProofreadConfig = {

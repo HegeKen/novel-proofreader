@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { Icons } from "./Icons";
+import { ConfirmModal } from "./config/ConfirmModal";
 import { useWordReplacementStore, type WordReplacement } from "../stores/wordReplacementStore";
 
 interface Props {
@@ -14,6 +15,11 @@ export function WordReplacementModal({ open, onClose }: Props) {
 	const [editReplacement, setEditReplacement] = useState("");
 	const [newOriginal, setNewOriginal] = useState("");
 	const [newReplacement, setNewReplacement] = useState("");
+	const [confirmModal, setConfirmModal] = useState<{
+		show: boolean;
+		message: string;
+		onConfirm: () => void;
+	}>({ show: false, message: "", onConfirm: () => {} });
 
 	const handleStartEdit = useCallback((item: WordReplacement) => {
 		setEditingId(item.id);
@@ -45,9 +51,14 @@ export function WordReplacementModal({ open, onClose }: Props) {
 	}, [newOriginal, newReplacement, addReplacement]);
 
 	const handleClearAll = useCallback(() => {
-		if (window.confirm("确定要清空所有替换词组吗？")) {
-			clearAllReplacements();
-		}
+		setConfirmModal({
+			show: true,
+			message: "确定要清空所有替换词组吗？",
+			onConfirm: () => {
+				clearAllReplacements();
+				setConfirmModal(prev => ({ ...prev, show: false }));
+			},
+		});
 	}, [clearAllReplacements]);
 
 	if (!open) return null;
@@ -195,6 +206,17 @@ export function WordReplacementModal({ open, onClose }: Props) {
 						<span>完成</span>
 					</button>
 				</div>
+
+				<ConfirmModal
+					show={confirmModal.show}
+					title="清空替换词组"
+					message={confirmModal.message}
+					danger
+					confirmText="确定"
+					cancelText="取消"
+					onConfirm={confirmModal.onConfirm}
+					onCancel={() => setConfirmModal(prev => ({ ...prev, show: false }))}
+				/>
 			</div>
 		</div>
 	);

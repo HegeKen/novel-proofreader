@@ -100,7 +100,7 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 							<p>点击"开始扫描"检查整本小说中的康熙变体字</p>
 							{!currentNovel && <p className="text-muted">请先导入小说</p>}
 							<button
-								className="btn btn-primary"
+								className="btn"
 								onClick={handleScan}
 								disabled={!currentNovel}
 							>
@@ -152,7 +152,7 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 							重新扫描
 						</button>
 						<button
-							className="btn btn-primary"
+							className="btn"
 							onClick={handleReplaceAll}
 							disabled={replacing}
 						>

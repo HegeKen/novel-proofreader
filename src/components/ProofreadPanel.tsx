@@ -479,7 +479,7 @@ export function ProofreadPanel() {
 	);
 
 	return (
-		<div className="proofread-panel">
+		<div className="proofread-panel notranslate" translate="no">
 			<div className="proofread-header">
 				<div className="proofread-toolbar">
 					<div className="toolbar-row toolbar-row-1">
@@ -657,36 +657,36 @@ export function ProofreadPanel() {
 									? paraResult.originalText.slice(0, 200) + "…"
 									: paraResult.originalText}
 								<button
-									className="btn-single-check"
+									className={`btn-single-check ${paraResult.status === "checking" ? "status-checking" : ""} ${paraResult.status === "done" && paraResult.errors.length === 0 ? "status-success" : ""} ${paraResult.status === "error" ? "status-error" : ""}`}
 									onClick={(e) => {
 										e.stopPropagation();
 										handleSingleLineCheck(paraResult.paragraphIndex, i);
 									}}
 									disabled={
 										checking ||
-										singleCheckingLine !== null ||
+										(singleCheckingLine !== null && singleCheckingLine !== i) ||
 										paraResult.status === "checking"
 									}
-									title="检测此行"
+									title={
+										paraResult.status === "checking" ? "检测中…" :
+										paraResult.status === "error" ? "检测失败，点击重试" :
+										paraResult.status === "done" && paraResult.errors.length === 0 ? "未发现问题，点击重新检测" :
+										"检测此行"
+									}
 								>
-									{singleCheckingLine === i ? "检测中…" : <><Icons.search size={14} /> 检测</>}
+									{paraResult.status === "checking" ? (
+										<><span className="spinner" /> 检测中…</>
+									) : paraResult.status === "error" ? (
+										<><Icons.error size={14} /> 检测失败</>
+									) : paraResult.status === "done" && paraResult.errors.length === 0 ? (
+										<><Icons.check size={14} /> 未发现问题</>
+									) : (
+										<><Icons.search size={14} /> 检测</>
+									)}
 								</button>
 							</div>
 
-							{paraResult.status === "checking" && (
-								<div className="para-status checking">
-									<span className="spinner" /> 检测中…
-								</div>
-							)}
-							{paraResult.status === "error" && (
-								<div className="para-status error">
-									<Icons.error size={14} /> 检测失败：{paraResult.errorMessage}
-								</div>
-							)}
-							{paraResult.status === "done" &&
-								paraResult.errors.length === 0 && (
-									<div className="para-status success"><Icons.check size={14} /> 未发现问题</div>
-								)}
+							{/* 检测失败或成功状态已整合到 btn-single-check 中，仅在有错误时显示校对选项 */}
 							{paraResult.errors.length > 0 && (
 								<div className="para-errors">
 									{paraResult.errors.map((err: ProofreadError) => {

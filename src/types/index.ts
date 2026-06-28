@@ -196,7 +196,15 @@ export interface CharacterInfo {
 	name: string;
 	gender: "male" | "female" | "other";
 	role?: CharacterRole; // 角色类型
-	notes?: string;
+	age?: string; // 年龄描述（如：20多岁、中年、年过半百等）
+	appearance?: string; // 外貌特征（身高、体型、面容、穿着风格等）
+	identity?: string; // 身份职业（如：剑客、商人、书生、将军等）
+	socialStatus?: string; // 社会地位（如：贵族、平民、江湖高手等）
+	personality?: string; // 核心性格特质（如：沉稳内敛、开朗活泼等）
+	background?: string; // 出身背景（如：名门望族、寒门子弟、孤儿等）
+	keyExperiences?: string[]; // 关键人生经历列表
+	characterArc?: string; // 角色弧光（成长变化、内心转变等）
+	notes?: string; // 人物小传（整合各维度信息的完整描述）
 	voice?: string; // 为该角色指定的音色
 	voiceDesignPrompt?: string; // 音色设计描述，用于TTS情感朗读
 	dialect?: string; // 方言：东北话/四川话/河南话/粤语/台湾腔/吴语等

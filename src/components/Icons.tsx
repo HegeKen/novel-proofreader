@@ -50,6 +50,7 @@ import {
 	BarChart3,
 	ListTodo,
 	Trash2,
+	Brush,
 	Loader2,
 	Circle,
 	AlertTriangle,
@@ -70,6 +71,7 @@ import {
 	Globe,
 	ExternalLink,
 	Brain,
+	Info,
 } from "lucide-react";
 
 export const Icons = {
@@ -133,6 +135,7 @@ export const Icons = {
 	listTodo: ListTodo,
 	listOrdered: ListOrdered,
 	trash2: Trash2,
+	brushCleaning: Brush,
 	loader2: Loader2,
 	circle: Circle,
 	edit: Edit,
@@ -150,6 +153,7 @@ export const Icons = {
 	history: History,
 	globe: Globe,
 	externalLink: ExternalLink,
+	info: Info,
 };
 
 export type IconName = keyof typeof Icons;

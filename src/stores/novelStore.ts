@@ -113,7 +113,15 @@ export const useNovelStore = create<NovelState>()(
 						...ch,
 						content: normalizeCJKVariants(ch.content),
 					}));
-					return { chapters: normalized, currentChapterIndex: state.currentChapterIndex };
+					// 同步更新当前小说的 chapters 字段
+					const novels = state.currentNovelId
+						? state.novels.map((n) =>
+								n.id === state.currentNovelId
+									? { ...n, chapters: chapters.map((ch) => ({ title: ch.title, content: ch.content })) }
+									: n,
+							)
+						: state.novels;
+					return { chapters: normalized, currentChapterIndex: state.currentChapterIndex, novels };
 				});
 			},
 
@@ -358,7 +366,11 @@ export const useNovelStore = create<NovelState>()(
 		{
 			name: "novel-proofreader-novels",
 			partialize: (state) => ({
-				novels: state.novels,
+				novels: state.novels.map((n) => ({
+					...n,
+					fullText: "", // 不持久化全文到 localStorage
+					chapters: [], // 不持久化章节到 localStorage
+				})),
 				currentNovelId: state.currentNovelId,
 				currentChapterIndex: state.currentChapterIndex,
 				nextBookId: state.nextBookId,

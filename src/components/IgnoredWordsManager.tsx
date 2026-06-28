@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { useNovelStore } from "../stores/novelStore";
 import { useProofreadMetaStore } from "../stores/proofreadMetaStore";
 import { Icons } from "./Icons";
+import { ConfirmModal } from "./config/ConfirmModal";
 
 interface IgnoredWordsManagerProps {
 	onClose: () => void;
@@ -17,6 +18,11 @@ export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 
 	const [newWord, setNewWord] = useState("");
 	const inputRef = useRef<HTMLInputElement>(null);
+	const [confirmModal, setConfirmModal] = useState<{
+		show: boolean;
+		message: string;
+		onConfirm: () => void;
+	}>({ show: false, message: "", onConfirm: () => {} });
 
 	if (!currentNovelId) return null;
 
@@ -39,9 +45,14 @@ export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 	};
 
 	const handleClearAll = () => {
-		if (window.confirm("确定要清空所有忽略单词吗？")) {
-			clearIgnoredWords(currentNovelId);
-		}
+		setConfirmModal({
+			show: true,
+			message: "确定要清空所有忽略单词吗？",
+			onConfirm: () => {
+				clearIgnoredWords(currentNovelId);
+				setConfirmModal(prev => ({ ...prev, show: false }));
+			},
+		});
 	};
 
 	return (
@@ -138,6 +149,17 @@ export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 						<span>关闭</span>
 					</button>
 				</div>
+
+				<ConfirmModal
+					show={confirmModal.show}
+					title="清空忽略单词"
+					message={confirmModal.message}
+					danger
+					confirmText="确定"
+					cancelText="取消"
+					onConfirm={confirmModal.onConfirm}
+					onCancel={() => setConfirmModal(prev => ({ ...prev, show: false }))}
+				/>
 			</div>
 		</div>
 	);
