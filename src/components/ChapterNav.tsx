@@ -198,7 +198,8 @@ const VolumeItem = ({
 
 export function ChapterNav({
 	onChapterSelect,
-}: { onChapterSelect?: () => void } = {}) {
+	onOpenCJKVariantScan,
+}: { onChapterSelect?: () => void; onOpenCJKVariantScan?: () => void } = {}) {
 	const chapters = useNovelStore((s) => s.chapters);
 	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
 	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
@@ -426,15 +427,6 @@ export function ChapterNav({
 				</h3>
 				<div className="nav-header-actions">
 					<span className="chapter-count">{totalDisplayed}/{chapters.length} 章</span>
-					<button
-						className="btn"
-						onClick={handleResplitChapters}
-						disabled={isResplitting}
-						title="重新识别章节标题并分割"
-					>
-						<Icons.refreshCw size={14} className={isResplitting ? "spin" : ""} />
-						{isResplitting ? "断章中..." : "重新断章"}
-					</button>
 					{proofreadCount > 0 && (
 						<button
 							className={`btn-hide-proofread ${hideProofread ? "active" : ""}`}
@@ -446,6 +438,25 @@ export function ChapterNav({
 						</button>
 					)}
 				</div>
+			</div>
+			<div className="nav-actions-bar">
+				<button
+					className="btn"
+					onClick={onOpenCJKVariantScan}
+					title="检查康熙变体字"
+				>
+					<Icons.search size={14} />
+					变体字
+				</button>
+				<button
+					className="btn"
+					onClick={handleResplitChapters}
+					disabled={isResplitting}
+					title="重新识别章节标题并分割"
+				>
+					<Icons.refreshCw size={14} className={isResplitting ? "spin" : ""} />
+					{isResplitting ? "断章中..." : "重新断章"}
+				</button>
 			</div>
 			<div className="chapter-list" ref={chapterListRef}>
 				{hasVolumes ? (

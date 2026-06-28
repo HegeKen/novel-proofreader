@@ -3,6 +3,7 @@
 // ============================================================
 import type { Chapter } from "../types";
 import { logger } from "./logger";
+import { normalizeCJKVariants } from "./normalizeCJK";
 
 /** 卷名正则 */
 const VOLUME_PATTERNS = [
@@ -49,6 +50,8 @@ export function splitChapters(
 	fullText: string,
 	chunkSize = DEFAULT_CHUNK_SIZE,
 ): Chapter[] {
+	// 标准化 CJK 变体字/部首字（如 ⾯→面, ⽜→牛, ⻘→青）
+	fullText = normalizeCJKVariants(fullText);
 	const matches: MatchItem[] = [];
 
 	// 收集所有卷名匹配

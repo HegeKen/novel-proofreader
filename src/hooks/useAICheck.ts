@@ -123,6 +123,8 @@ function parseAIProofreadResponse(
 	ignoredWords: string[],
 ): ProofreadError[] {
 	const errors: ProofreadError[] = [];
+	let filteredCount = 0;
+	
 	for (const item of raw) {
 		if (typeof item !== "object" || item === null) continue;
 		const o = item as Record<string, unknown>;
@@ -135,20 +137,56 @@ function parseAIProofreadResponse(
 		const suggest = String(o.reason ?? o.suggestion ?? "");
 		const aiColumn = o.column !== undefined ? Number(o.column) : undefined;
 
-		if (['无错误', 'none', 'no_error', 'no-error', 'noerror', 'nil', 'null', ''].includes(errType.toLowerCase())) continue;
+		// 过滤条件1：无错误标记
+		if (['无错误', 'none', 'no_error', 'no-error', 'noerror', 'nil', 'null', ''].includes(errType.toLowerCase())) {
+			logger.proofread(`[过滤] 错误类型为无错误: type="${errType}"`);
+			filteredCount++;
+			continue;
+		}
 
 		const matchText = find || orig;
 		const correctText = replace || corr;
-		if (!matchText) continue;
+		
+		// 过滤条件2：matchText 为空
+		if (!matchText) {
+			logger.proofread(`[过滤] matchText 为空`);
+			filteredCount++;
+			continue;
+		}
 
-		if (matchText === correctText || matchText.replace(/\s/g, '') === correctText.replace(/\s/g, '')) continue;
+		// 过滤条件3：原文本和修改内容完全相同（放宽条件：仅当完全一致时过滤）
+		if (matchText === correctText) {
+			logger.proofread(`[过滤] 原文本和修改内容完全相同: "${matchText}"`);
+			filteredCount++;
+			continue;
+		}
+		
+		// 过滤条件4：去除空格后相同（保留大小写差异）
+		if (matchText.replace(/\s/g, '') === correctText.replace(/\s/g, '') && matchText === correctText) {
+			logger.proofread(`[过滤] 去除空格后且原文相同: "${matchText}" vs "${correctText}"`);
+			filteredCount++;
+			continue;
+		}
 
+		// 过滤条件5：忽略词列表
 		const isIgnored = ignoredWords.some(word => word && (matchText.includes(word) || word.includes(matchText)));
-		if (isIgnored) continue;
+		if (isIgnored) {
+			logger.proofread(`[过滤] 在忽略词列表中: "${matchText}"`);
+			filteredCount++;
+			continue;
+		}
 
 		const located = locateTextInParagraph(paragraph, matchText, aiColumn);
-		if (!located) continue;
+		
+		// 过滤条件6：无法定位
+		if (!located) {
+			logger.proofread(`[过滤] 无法定位文本: matchText="${matchText.slice(0, 30)}${matchText.length > 30 ? '...' : ''}", paragraph="${paragraph.slice(0, 50)}${paragraph.length > 50 ? '...' : ''}"`);
+			filteredCount++;
+			continue;
+		}
 
+		// 成功添加错误
+		logger.proofread(`[成功] 添加错误: matchText="${matchText.slice(0, 30)}", correctText="${correctText.slice(0, 30)}", type="${errType}"`);
 		errors.push({
 			id: `err-${chapterId}-${paragraphIndex}-${errors.length}`,
 			startIndex: located.start,
@@ -161,6 +199,8 @@ function parseAIProofreadResponse(
 			skipped: false,
 		});
 	}
+	
+	logger.proofread(`[parseAIProofreadResponse] 解析完成: 总项数=${raw.length}, 成功=${errors.length}, 过滤=${filteredCount}`);
 	return errors;
 }
 
@@ -299,13 +339,20 @@ export function useAICheck() {
 
 						// 收集该批次所有错误，按原始行号分组
 						const errorsByLine: ProofreadError[][] = paragraphs.map(() => []);
+						let filteredCount = 0;
+						
 						// 只处理该批次内的错误
 						for (const item of raw) {
 							if (typeof item !== "object" || item === null) continue;
 							const obj = item as Record<string, unknown>;
 
-							let lineNumber = obj.line !== undefined ? Number(obj.line) :
-								(obj.lineNumber !== undefined ? Number(obj.lineNumber) : -1);
+							// 提取行号（支持 string 和 number 类型）
+							let lineNumber = -1;
+							if (obj.lineNumber !== undefined) {
+								lineNumber = typeof obj.lineNumber === 'string' ? parseInt(obj.lineNumber, 10) : Number(obj.lineNumber);
+							} else if (obj.line !== undefined) {
+								lineNumber = typeof obj.line === 'string' ? parseInt(obj.line, 10) : Number(obj.line);
+							}
 
 							const find = String(obj.find ?? "");
 							const replace = String(obj.replace ?? "");
@@ -315,13 +362,36 @@ export function useAICheck() {
 							const suggest = String(obj.reason ?? obj.suggestion ?? "");
 							const aiColumn = obj.column !== undefined ? Number(obj.column) : undefined;
 
-							if (['无错误', 'none', 'no_error', 'no-error', 'noerror', 'nil', 'null', ''].includes(errType.toLowerCase())) continue;
+							// 过滤条件1：无错误标记
+							if (['无错误', 'none', 'no_error', 'no-error', 'noerror', 'nil', 'null', ''].includes(errType.toLowerCase())) {
+								logger.proofread(`[章节模式-过滤] 错误类型为无错误: type="${errType}"`);
+								filteredCount++;
+								continue;
+							}
 
 							const matchText = find || orig;
 							const correctText = replace || corr;
-							if (!matchText) continue;
-
-							if (matchText === correctText || matchText.replace(/\s/g, '') === correctText.replace(/\s/g, '')) continue;
+							
+							// 过滤条件2：matchText 为空
+							if (!matchText) {
+								logger.proofread(`[章节模式-过滤] matchText 为空`);
+								filteredCount++;
+								continue;
+							}
+							
+							// 过滤条件3：原文本和修改内容完全相同（放宽条件）
+							if (matchText === correctText) {
+								logger.proofread(`[章节模式-过滤] 原文本和修改内容完全相同: "${matchText}"`);
+								filteredCount++;
+								continue;
+							}
+							
+							// 过滤条件4：去除空格后相同（保留大小写差异）
+							if (matchText.replace(/\s/g, '') === correctText.replace(/\s/g, '') && matchText === correctText) {
+								logger.proofread(`[章节模式-过滤] 去除空格后且原文相同: "${matchText}" vs "${correctText}"`);
+								filteredCount++;
+								continue;
+							}
 
 							// 检查行号是否在该批次范围内
 							let isValidLineNumber = lineNumber >= batch.start && lineNumber < batch.end;
@@ -347,22 +417,24 @@ export function useAICheck() {
 										lineNumber = foundInChapter;
 										isValidLineNumber = true;
 										logger.proofread(`[章节模式] 在章节范围内找到匹配段落: ${lineNumber}`);
+									} else {
+										logger.proofread(`[章节模式-过滤] 无法定位错误: matchText="${matchText.slice(0, 30)}${matchText.length > 30 ? '...' : ''}", lineNumber=${lineNumber}`);
+										filteredCount++;
+										continue;
 									}
 								}
-							}
-							
-							if (!isValidLineNumber) {
-								logger.proofread(`[章节模式] 无法定位错误: matchText="${matchText.slice(0, 20)}${matchText.length > 20 ? '...' : ''}", lineNumber=${lineNumber}`);
-								continue;
 							}
 
 							const targetPara = paragraphs[lineNumber];
 							const located = locateTextInParagraph(targetPara, matchText, aiColumn);
 							if (!located) {
-								logger.proofread(`[章节模式] 定位失败: matchText="${matchText.slice(0, 20)}${matchText.length > 20 ? '...' : ''}", paragraph=${lineNumber}`);
+								logger.proofread(`[章节模式-过滤] 定位失败: matchText="${matchText.slice(0, 30)}${matchText.length > 30 ? '...' : ''}", paragraph=${lineNumber}`);
+								filteredCount++;
 								continue;
 							}
 
+							// 成功添加错误
+							logger.proofread(`[章节模式-成功] 添加错误: lineNumber=${lineNumber}, matchText="${matchText.slice(0, 30)}", correctText="${correctText.slice(0, 30)}", type="${errType}"`);
 							errorsByLine[lineNumber].push({
 								id: `err-${chapter.id}-${lineNumber}-${errorsByLine[lineNumber].length}`,
 								startIndex: located.start,
@@ -375,6 +447,8 @@ export function useAICheck() {
 								skipped: false,
 							});
 						}
+
+						logger.proofread(`[章节模式] 批次 ${batch.start}-${batch.end} 解析完成: 总项数=${raw.length}, 成功=${errorsByLine.reduce((sum, arr) => sum + arr.length, 0)}, 过滤=${filteredCount}`);
 
 						// 更新该批次每个段落的结果（基于原始索引）
 						for (let lineIdx = batch.start; lineIdx < batch.end; lineIdx++) {

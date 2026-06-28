@@ -15,7 +15,7 @@ import { Select } from "./Select";
 import { logger } from "../utils/logger";
 import { saveCharacterConfigToStorage, loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
 import type { DetectedCharacter } from "../utils/fileExport";
-import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign, analyzeWorldbuilding } from "../utils/aiClient";
+import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign, generateMajorEvents, analyzeWorldbuilding } from "../utils/aiClient";
 import { formatDateTime } from "../utils/formatters";
 import { RelationshipGraph } from "./RelationshipGraph";
 
@@ -1213,13 +1213,29 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		notes: "",
 		voice: "",
 		voiceDesignPrompt: "",
+		dialect: "",
 		aliases: [],
 		relationTerms: [],
+		majorEvents: "",
 	});
 	const [showAddForm, setShowAddForm] = useState(false);
 	const [newAlias, setNewAlias] = useState("");
 	const [newRelationTerm, setNewRelationTerm] = useState("");
 	const [isGeneratingVoiceDesign, setIsGeneratingVoiceDesign] = useState(false);
+	const [isGeneratingMajorEvents, setIsGeneratingMajorEvents] = useState(false);
+	const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+	
+	const toggleCardExpand = useCallback((charId: string) => {
+		setExpandedCards(prev => {
+			const next = new Set(prev);
+			if (next.has(charId)) {
+				next.delete(charId);
+			} else {
+				next.add(charId);
+			}
+			return next;
+		});
+	}, []);
 	
 	// TTS 功能状态
 	const [playingNoteCharacterId, setPlayingNoteCharacterId] = useState<string | null>(null);
@@ -1237,6 +1253,21 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		{ value: "Chloe", label: "Chloe (女)" },
 		{ value: "Milo", label: "Milo (男)" },
 		{ value: "Dean", label: "Dean (男)" },
+	];
+
+	const dialectOptions = [
+		{ value: "", label: "普通话（无方言）" },
+		{ value: "粤语", label: "粤语" },
+		{ value: "东北话", label: "东北话" },
+		{ value: "四川话", label: "四川话" },
+		{ value: "河南话", label: "河南话" },
+		{ value: "陕西话", label: "陕西话" },
+		{ value: "台湾腔", label: "台湾腔" },
+		{ value: "吴语", label: "吴语" },
+		{ value: "湘语", label: "湘语" },
+		{ value: "赣语", label: "赣语" },
+		{ value: "客家话", label: "客家话" },
+		{ value: "闽语", label: "闽语" },
 	];
 
 	const startEdit = useCallback((char: CharacterInfo) => {
@@ -1698,6 +1729,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						voiceDesignPrompt: char.voiceDesignPrompt,
 						aliases: char.aliases,
 						relationTerms: [] as string[],
+						majorEvents: char.majorEvents || "",
 						order: newCharactersWithIds.length,
 					});
 					existingNames.add(char.name.toLowerCase());
@@ -2049,6 +2081,50 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		}
 	}, [editForm.name, editForm.gender, editForm.role, editForm.notes, aiConfig]);
 
+	// AI生成角色大事件
+	const handleGenerateMajorEvents = useCallback(async () => {
+		if (!editForm.name) return;
+		if (!currentNovel?.fullText) {
+			useAppMetaStore.getState().showToast("无法获取小说内容", "error");
+			return;
+		}
+		if (!aiConfig.apiKey || !aiConfig.baseURL) {
+			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			return;
+		}
+
+		setIsGeneratingMajorEvents(true);
+		try {
+			const config = {
+				baseURL: aiConfig.baseURL,
+				apiKey: aiConfig.apiKey,
+				model: aiConfig.model,
+				customHeaders: {},
+				maxCharsPerRequest: 0,
+				enableLogging: false,
+			};
+
+			const result = await generateMajorEvents(
+				currentNovel.fullText,
+				{
+					name: editForm.name,
+					gender: editForm.gender || "other",
+					role: editForm.role,
+					notes: editForm.notes,
+					aliases: editForm.aliases,
+				},
+				config,
+			);
+
+			setEditForm(prev => ({ ...prev, majorEvents: result }));
+			useAppMetaStore.getState().showToast("大事件分析完成", "success");
+		} catch (err) {
+			useAppMetaStore.getState().showToast("大事件分析失败: " + (err instanceof Error ? err.message : String(err)), "error");
+		} finally {
+			setIsGeneratingMajorEvents(false);
+		}
+	}, [editForm.name, editForm.gender, editForm.role, editForm.notes, editForm.aliases, aiConfig, currentNovel?.fullText]);
+
 	// 播放备注
 	const handlePlayNote = useCallback(async (character: CharacterInfo) => {
 		if (!character.notes) return;
@@ -2240,6 +2316,15 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								/>
 							</div>
 
+							<div className="form-field">
+								<label>方言</label>
+								<Select
+									value={editForm.dialect || ""}
+									onChange={(v) => setEditForm({ ...editForm, dialect: v })}
+									options={dialectOptions}
+								/>
+							</div>
+
 							{/* 别称 */}
 							<div className="form-field">
 								<label>别称 <span className="text-xs text-neutral-500">(如：我、主角等)</span></label>
@@ -2373,8 +2458,10 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								/>
 							) : (
 								<div>
-									{sortedCharacters.map((char) => (
-										<div key={char.id} className="character-card">
+									{sortedCharacters.map((char) => {
+										const isExpanded = expandedCards.has(char.id);
+										return (
+										<div key={char.id} className={`character-card ${isExpanded ? 'expanded' : ''}`}>
 										{editingId === char.id ? (
 											<div className="space-y-3">
 												<div className="form-field">
@@ -2446,6 +2533,15 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 														className="config-input"
 														placeholder="输入音色设计描述（优先使用），如：温柔甜美，年轻女性，温婉知性..."
 														rows={3}
+													/>
+												</div>
+
+												<div className="form-field">
+													<label>方言</label>
+													<Select
+														value={editForm.dialect || ""}
+														onChange={(v) => setEditForm({ ...editForm, dialect: v })}
+														options={dialectOptions}
 													/>
 												</div>
 
@@ -2555,6 +2651,27 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 														className="config-input"
 													/>
 												</div>
+												<div className="form-field">
+													<div className="flex justify-between items-center mb-2">
+														<label className="text-xs">角色大事件</label>
+														<button
+															type="button"
+															className="text-xs text-blue-500 hover:text-blue-400 flex items-center gap-1"
+															onClick={handleGenerateMajorEvents}
+															disabled={isGeneratingMajorEvents || !editForm.name}
+														>
+															<Icons.sparkle size={12} />
+															{isGeneratingMajorEvents ? "分析中..." : "AI生成"}
+														</button>
+													</div>
+													<textarea
+														value={editForm.majorEvents || ""}
+														onChange={(e) => setEditForm({ ...editForm, majorEvents: e.target.value })}
+														className="config-input"
+														placeholder="角色在全文中的关键经历总结，如：&#10;1. 在青云门拜师学艺&#10;2. 参加天才大会夺冠&#10;3. 发现身世之谜远走天涯"
+														rows={4}
+													/>
+												</div>
 												<div className="flex gap-2 pt-2">
 													<button
 														className="character-action-btn"
@@ -2574,8 +2691,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 											</div>
 										) : (
 											<div className="character-card-content">
-												{/* 第一区块：头像 + 名称/性别/角色 + 音色 + 操作按钮 */}
-												<div className="character-main-section">
+												{/* 第一区块（折叠态）：头像 + 姓名/性别/角色 + 展开指示器 + 操作按钮 */}
+												<div className="character-main-section" onClick={() => toggleCardExpand(char.id)} style={{ cursor: 'pointer' }}>
 													{/* 头像区域 */}
 													<div className="character-avatar">
 														<div className={`avatar-circle ${char.gender}`}>
@@ -2605,16 +2722,11 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 																</span>
 															)}
 														</div>
+													</div>
 
-														{(char.voiceDesignPrompt || char.voice) && (
-								<div className="detail-item voice-design-detail">
-									<Icons.sparkle size={14} />
-									<span className="detail-label">音色设计:</span>
-									<span className="detail-value truncate" title={char.voiceDesignPrompt || char.voice}>
-										{char.voiceDesignPrompt || (char.voice ? voiceOptions.find(o => o.value === char.voice)?.label || char.voice : "")}
-									</span>
-								</div>
-							)}
+													{/* 展开/折叠指示器 */}
+													<div className="expand-indicator">
+														<Icons.chevronDown size={16} style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
 													</div>
 
 													{/* 操作按钮 */}
@@ -2636,7 +2748,30 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 													</div>
 												</div>
 
-												{/* 第二区块：别称 + 代称 */}
+												{isExpanded && (<>
+												{/* 第二区块：音色设计 + 方言 */}
+												{(char.voiceDesignPrompt || char.voice || char.dialect) && (
+													<div className="character-tags-section">
+														{(char.voiceDesignPrompt || char.voice) && (
+															<div className="detail-item voice-design-detail">
+																<Icons.sparkle size={14} />
+																<span className="detail-label">音色设计:</span>
+																<span className="detail-value truncate" title={char.voiceDesignPrompt || char.voice}>
+																	{char.voiceDesignPrompt || (char.voice ? voiceOptions.find(o => o.value === char.voice)?.label || char.voice : "")}
+																</span>
+															</div>
+														)}
+														{char.dialect && (
+															<div className="detail-item dialect-detail">
+																<Icons.globe size={14} />
+																<span className="detail-label">方言:</span>
+																<span className="detail-value">{char.dialect}</span>
+															</div>
+														)}
+													</div>
+												)}
+
+												{/* 第三区块：别称 + 代称 */}
 												{((char.aliases && char.aliases.length > 0) || (char.relationTerms && char.relationTerms.length > 0)) && (
 													<div className="character-tags-section">
 														{(char.aliases && char.aliases.length > 0) && (
@@ -2662,7 +2797,18 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 													</div>
 												)}
 
-												{/* 第三区块：备注 */}
+												{/* 第三区块：角色大事件 */}
+												{char.majorEvents && (
+													<div className="character-major-events-section">
+														<div className="events-label">
+															<Icons.list size={14} />
+															角色大事件
+														</div>
+														<div className="events-content">{char.majorEvents}</div>
+													</div>
+												)}
+
+												{/* 第四区块：备注 */}
 												{char.notes && (
 													<div className="character-notes-section">
 														<div className="notes-label">
@@ -2700,10 +2846,11 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 														<div className="notes-content">{char.notes}</div>
 													</div>
 												)}
+												</>)}
 											</div>
 										)}
 									</div>
-								))}
+								);})}
 							</div>
 							)}
 						</div>

@@ -38,6 +38,7 @@ export function useTTS() {
 	const scriptTTSRef = useRef<ScriptTTSPlayer | null>(null);
 	const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const totalDurationRef = useRef(0);
+	const isStreamActiveRef = useRef(false); // 同步标记：情感朗读是否仍在运行，用于阻断异步循环
 
 	// 计算文本的预计朗读时长（秒）
 	const calculateDuration = useCallback((text: string): number => {
@@ -142,8 +143,42 @@ export function useTTS() {
 		if (!matched) {
 			matched = characters.find((c) => c.aliases?.some(alias => alias.toLowerCase() === characterName.toLowerCase()));
 		}
-		return matched?.notes?.trim() || undefined;
+		if (!matched) return undefined;
+		const designPrompt = matched.voiceDesignPrompt?.trim();
+		const dialect = matched.dialect;
+		// 有 voiceDesignPrompt 时追加方言信息，使用 voicedesign 模型
+		if (designPrompt) {
+			return dialect ? `${designPrompt}，说${dialect}` : designPrompt;
+		}
+		// 只有 dialect 没有 voiceDesignPrompt → 返回 undefined，走普通 TTS 模型 + 音频标签
+		return undefined;
 	}, [currentNovelId, getCharacters]);
+
+	const getDialectForCharacter = useCallback((characterName: string): string | undefined => {
+		if (!currentNovelId) return undefined;
+		const characters = getCharacters(currentNovelId);
+		let matched = characters.find((c) => c.name.toLowerCase() === characterName.toLowerCase());
+		if (!matched) {
+			matched = characters.find((c) => c.aliases?.some(alias => alias.toLowerCase() === characterName.toLowerCase()));
+		}
+		return matched?.dialect;
+	}, [currentNovelId, getCharacters]);
+
+	/** 根据角色 dialect 合并到文本开头的标签中 */
+	const applyDialectLabel = useCallback((speaker: string, text: string): string => {
+		const dialect = getDialectForCharacter(speaker);
+		if (!dialect) return text;
+		// 如果已有相同方言标签则不重复添加
+		if (text.startsWith(`(${dialect},`) || text.startsWith(`(${dialect})`)) return text;
+		// 解析开头的 (标签) 并合并方言进去
+		const match = text.match(/^\(([^)]+)\)/);
+		if (match) {
+			// (标签1,标签2) → (方言,标签1,标签2)
+			return `(${dialect},${match[1]})${text.slice(match[0].length)}`;
+		}
+		// 没有标签，直接添加 (方言)
+		return `(${dialect})${text}`;
+	}, [getDialectForCharacter]);
 
 	const analyzeParagraphEmotion = useCallback(async (
 		paraIndex: number,
@@ -158,7 +193,8 @@ export function useTTS() {
 			aliases: c.aliases || [],
 			voice: c.voice,
 			role: c.role,
-			relationTerms: c.relationTerms || []
+			relationTerms: c.relationTerms || [],
+			dialect: c.dialect,
 		})) : [];
 
 		try {
@@ -190,6 +226,7 @@ export function useTTS() {
 		} else {
 			if (isStreamTTSWaitingForStart) setIsStreamTTSWaitingForStart(false);
 			if (scriptTTSRef.current) {
+				isStreamActiveRef.current = false;
 				scriptTTSRef.current.stop();
 				scriptTTSRef.current = null;
 				setIsStreamTTSPlaying(false);
@@ -237,6 +274,7 @@ export function useTTS() {
 	}, []);
 
 	const handleTTSStop = useCallback(() => {
+		isStreamActiveRef.current = false;
 		if (scriptTTSRef.current) { scriptTTSRef.current.stop(); scriptTTSRef.current = null; }
 		if (ttsPlayerRef.current) { ttsPlayerRef.current.stop(); ttsPlayerRef.current = null; }
 		setTtsPlaying(false);
@@ -269,6 +307,7 @@ export function useTTS() {
 		if (!ttsConfig.apiKey || !aiConfig.apiKey || !chapter) return;
 		if (ttsPlayerRef.current) { ttsPlayerRef.current.stop(); ttsPlayerRef.current = null; setTtsPlaying(false); setTtsHighlightedPara(-1); }
 		if (scriptTTSRef.current) { scriptTTSRef.current.stop(); scriptTTSRef.current = null; setIsStreamTTSPlaying(false); setEnhancedTTSPreparing(false); }
+		isStreamActiveRef.current = false;
 		setIsStreamTTSWaitingForStart(true);
 	}, [isStreamTTSWaitingForStart, ttsConfig.apiKey, aiConfig.apiKey, chapter]);
 
@@ -277,6 +316,7 @@ export function useTTS() {
 		if (ttsPlayerRef.current && ttsPlaying) { ttsPlayerRef.current.pause(); setTtsPlaying(false); setTtsHighlightedPara(-1); }
 		if (scriptTTSRef.current) { scriptTTSRef.current.stop(); scriptTTSRef.current = null; }
 
+		isStreamActiveRef.current = true;
 		setEnhancedTTSPreparing(true);
 		setIsStreamTTSPlaying(true);
 		setIsStreamTTSWaitingForStart(false);
@@ -317,24 +357,36 @@ export function useTTS() {
 			});
 
 			for (let i = startPara; i < allParagraphs.length; i++) {
+				// 用户已关闭 → 立即退出循环，不再发起任何请求
+				if (!isStreamActiveRef.current) break;
+
 				const cachedResult = paragraphEmotionCache.get(i);
 				if (cachedResult?.segments?.length) {
 					for (const segment of cachedResult.segments) {
+						if (!isStreamActiveRef.current) break;
 						const actualSpeaker = segment.speaker === '旁白' ? narratorName : segment.speaker;
 						if (!characterVoices[actualSpeaker]) characterVoices[actualSpeaker] = getVoiceForCharacter(actualSpeaker);
-						await scriptTTS.addDialogueStream(actualSpeaker, segment.text, i, getVoiceDesignPromptForCharacter(actualSpeaker));
+						const dialectText = applyDialectLabel(actualSpeaker, segment.text);
+						await scriptTTS.addDialogueStream(actualSpeaker, dialectText, i, getVoiceDesignPromptForCharacter(actualSpeaker));
 					}
 					cachedResult.characters.forEach(c => allCharacters.add(c));
 					newCache.set(i, cachedResult);
 					continue;
 				}
 
+				// 用户已关闭 → 跳过 AI 请求
+				if (!isStreamActiveRef.current) break;
+
 				const result = await analyzeParagraphEmotion(i, allParagraphs[i], allParagraphs);
+				if (!isStreamActiveRef.current) break;
+
 				if (result?.segments?.length) {
 					for (const segment of result.segments) {
+						if (!isStreamActiveRef.current) break;
 						const actualSpeaker = segment.speaker === '旁白' ? narratorName : segment.speaker;
 						if (!characterVoices[actualSpeaker]) characterVoices[actualSpeaker] = getVoiceForCharacter(actualSpeaker);
-						await scriptTTS.addDialogueStream(actualSpeaker, segment.text, i, getVoiceDesignPromptForCharacter(actualSpeaker));
+						const dialectText = applyDialectLabel(actualSpeaker, segment.text);
+						await scriptTTS.addDialogueStream(actualSpeaker, dialectText, i, getVoiceDesignPromptForCharacter(actualSpeaker));
 					}
 					result.characters.forEach(c => allCharacters.add(c));
 					if (result.characters.length === 0 && result.segments.length > 0) {
@@ -343,8 +395,16 @@ export function useTTS() {
 					newCache.set(i, result);
 				} else {
 					if (!characterVoices[narratorName]) characterVoices[narratorName] = getVoiceForCharacter(narratorName);
-					await scriptTTS.addDialogueStream(narratorName, allParagraphs[i], i);
+					const dialectText = applyDialectLabel(narratorName, allParagraphs[i]);
+					await scriptTTS.addDialogueStream(narratorName, dialectText, i);
 				}
+			}
+
+			// 用户已关闭 → 不更新缓存、不标记完成
+			if (!isStreamActiveRef.current) {
+				scriptTTS.stop();
+				scriptTTSRef.current = null;
+				return;
 			}
 
 			setParagraphEmotionCache(newCache);
@@ -363,11 +423,12 @@ export function useTTS() {
 				}
 			}
 		} catch {
+			isStreamActiveRef.current = false;
 			setIsStreamTTSPlaying(false);
 			setEnhancedTTSPreparing(false);
 			scriptTTSRef.current = null;
 		}
-	}, [chapter, ttsConfig, aiConfig, ttsPlaying, getVoiceForCharacter, paragraphEmotionCache, analyzeParagraphEmotion, getCharacters, currentNovelId, getVoiceDesignPromptForCharacter]);
+	}, [chapter, ttsConfig, aiConfig, ttsPlaying, getVoiceForCharacter, paragraphEmotionCache, analyzeParagraphEmotion, getCharacters, currentNovelId, getVoiceDesignPromptForCharacter, applyDialectLabel]);
 
 	// 更新通知栏标题（章节变化时）
 	useEffect(() => {

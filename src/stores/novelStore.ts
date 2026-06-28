@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Novel, Chapter } from "../types";
 import { saveNovelToStorage } from "../utils/fileExport";
+import { normalizeCJKVariants } from "../utils/normalizeCJK";
 import { logger } from "../utils/logger";
 
 interface ScriptResult {
@@ -106,7 +107,14 @@ export const useNovelStore = create<NovelState>()(
 
 			setChapters: (chapters) => {
 				logger.info('[novelStore]', `设置章节: 共 ${chapters.length} 章`);
-				set((state) => ({ chapters, currentChapterIndex: state.currentChapterIndex }));
+				set((state) => {
+					// 标准化 CJK 变体字/部首字
+					const normalized = chapters.map(ch => ({
+						...ch,
+						content: normalizeCJKVariants(ch.content),
+					}));
+					return { chapters: normalized, currentChapterIndex: state.currentChapterIndex };
+				});
 			},
 
 			setCurrentChapter: (index) => {

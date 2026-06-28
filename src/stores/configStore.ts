@@ -12,6 +12,7 @@ export interface TTSConfig {
 	characterVoices: Record<string, string>;
 	audioCacheEnabled: boolean;
 	audioCachePersistent: boolean;
+	dialect: string;
 }
 
 export interface PromptConfig {
@@ -52,6 +53,7 @@ const DEFAULT_TTS_CONFIG: TTSConfig = {
 	characterVoices: {},
 	audioCacheEnabled: true,
 	audioCachePersistent: false,
+	dialect: "",
 };
 
 const DEFAULT_PROMPT_CONFIG: PromptConfig = {

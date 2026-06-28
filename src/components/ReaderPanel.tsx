@@ -740,7 +740,7 @@ export function ReaderPanel({
 											const filteredParaIndex = originalToFilteredMap[originalIndex] ?? 0;
 											handleEnhancedChapterTTS(filteredParaIndex);
 										} else {
-											startTTSFromParagraph(originalIndex);
+											startTTSFromParagraph(originalToFilteredMap[originalIndex] ?? 0);
 										}
 									} else {
 										setHighlightedParagraph(originalIndex);

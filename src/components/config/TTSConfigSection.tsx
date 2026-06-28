@@ -50,6 +50,25 @@ export function TTSConfigSection({ onOpenWordReplacement }: Props) {
 						]} />
 				</div>
 				<div className="form-field">
+					<label>朗读方言{ttsConfig.dialect ? `（当前：${ttsConfig.dialect}）` : ''}</label>
+					<Select value={ttsConfig.dialect}
+						onChange={(value) => updateTTSConfig({ dialect: value })}
+						options={[
+							{ value: "", label: "普通话（无方言）" },
+							{ value: "粤语", label: "粤语" },
+							{ value: "东北话", label: "东北话" },
+							{ value: "四川话", label: "四川话" },
+							{ value: "河南话", label: "河南话" },
+							{ value: "陕西话", label: "陕西话" },
+							{ value: "台湾腔", label: "台湾腔" },
+							{ value: "吴语", label: "吴语" },
+							{ value: "湘语", label: "湘语" },
+							{ value: "赣语", label: "赣语" },
+							{ value: "客家话", label: "客家话" },
+							{ value: "闽语", label: "闽语" },
+						]} />
+				</div>
+				<div className="form-field">
 					<label>语速 ({ttsConfig.speed})</label>
 					<input type="range" min="1" max="10" value={ttsConfig.speed}
 						onChange={(e) => updateTTSConfig({ speed: parseInt(e.target.value) })} className="config-range" />

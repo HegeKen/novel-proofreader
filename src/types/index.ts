@@ -199,9 +199,11 @@ export interface CharacterInfo {
 	notes?: string;
 	voice?: string; // 为该角色指定的音色
 	voiceDesignPrompt?: string; // 音色设计描述，用于TTS情感朗读
+	dialect?: string; // 方言：东北话/四川话/河南话/粤语/台湾腔/吴语等
 	aliases?: string[]; // 别称列表，如"我"、"主角"等
 	relationTerms?: string[]; // 关系代称列表，如"老婆"、"老公"等
 	order?: number; // 自定义排序顺序
+	majorEvents?: string; // 角色大事件分析（全文经历总结）
 }
 
 /** 人物关系类型枚举 */

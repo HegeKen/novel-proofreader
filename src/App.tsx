@@ -9,6 +9,7 @@ import { ProofreadPanel } from "./components/ProofreadPanel";
 import { TaskPanel } from "./components/TaskPanel";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { ToastContainer } from "./components/Toast";
+import { CJKVariantsModal } from "./components/CJKVariantsModal";
 import { useNovelStore } from "./stores/novelStore";
 import { useUIStore } from "./stores/uiStore";
 import { useAppMetaStore } from "./stores/appMetaStore";
@@ -72,6 +73,7 @@ export default function App() {
 	const toastMessages = useAppMetaStore((s) => s.toastMessages);
 	const hideToast = useAppMetaStore((s) => s.hideToast);
 	const [configOpen, setConfigOpen] = useState(false);
+	const [showCJKVariantModal, setShowCJKVariantModal] = useState(false);
 	const [rightTab, setRightTab] = useState<RightTab>("proofread");
 	const [mobileTab, setMobileTab] = useState<MobileTab>("novels");
 	const { isMobile } = useMobile();
@@ -454,6 +456,7 @@ export default function App() {
 				>
 					<ChapterNav
 						onChapterSelect={() => isMobile && setMobileTab("reader")}
+						onOpenCJKVariantScan={() => setShowCJKVariantModal(true)}
 					/>
 				</aside>
 
@@ -560,6 +563,10 @@ export default function App() {
 			<Suspense fallback={null}>
 				<ConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
 			</Suspense>
+			<CJKVariantsModal
+				open={showCJKVariantModal}
+				onClose={() => setShowCJKVariantModal(false)}
+			/>
 			{showCharacterSettings && (
 				<Suspense fallback={null}>
 					<CharacterSettings

@@ -254,7 +254,12 @@ export async function synthesizeSpeech(
 	voiceDesignPrompt?: string
 ): Promise<ArrayBuffer> {
 	// 应用词组替换
-	const processedText = applyWordReplacements(text);
+	let processedText = applyWordReplacements(text);
+
+	// 全局方言前缀：无方言标签时自动添加 (方言) 标签
+	if (config.dialect && !processedText.startsWith('(')) {
+		processedText = `(${config.dialect})${processedText}`;
+	}
 
 	const apiKey = config.apiKey;
 	const voice = getValidVoice(config.voice);
@@ -272,22 +277,21 @@ export async function synthesizeSpeech(
 	const useVoiceDesign = !!voiceDesignPrompt;
 	const model = useVoiceDesign ? MIMO_VOICEDESIGN_MODEL : MIMO_TTS_MODEL;
 
-	// 构建请求体
-	const messages: Array<{ role: string; content: string }> = [
-		{ role: "assistant", content: processedText },
-	];
+	// 构建请求体 — voicedesign 模型要求: user(音色描述)在前, assistant(合成文本)在后
+	const messages: Array<{ role: string; content: string }> = [];
 
 	if (useVoiceDesign) {
-		// 使用音色设计模型时，对音色描述也应用词组替换过滤敏感词
 		const processedPrompt = applyWordReplacements(voiceDesignPrompt);
-		messages.push({
-			role: "user",
-			content: processedPrompt,
-		});
+		messages.push({ role: "user", content: processedPrompt });
+		// voicedesign: 标签在 user message 中已传递，assistant 用纯文本
+		messages.push({ role: "assistant", content: processedText.replace(/^\([^)]+\)\s*/, '') });
 	} else {
+		// 普通 TTS: 保留第一个标签（方言/情绪）作为音频标签控制，去掉其余复合标签
+		// (粤语,平静,深沉)文本 → (粤语)文本
+		messages.push({ role: "assistant", content: processedText.replace(/^\(([^,，]+)[,，][^)]*\)\s*/, '($1) ') });
 		messages.push({
 			role: "user",
-			content: `语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）\n你是专业小说有声书演播大神...`,
+			content: `语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）\n照读以下文本，一字不改，包括标点。`,
 		});
 	}
 
@@ -297,9 +301,11 @@ export async function synthesizeSpeech(
 		max_completion_tokens: 1024,
 	};
 
-	// 只有在不使用音色设计模型时才添加audio.voice
-	if (!useVoiceDesign) {
-		(requestBody as Record<string, unknown>).audio = { voice: voice };
+	// audio 参数：voicedesign 模型不传 voice，可传 optimize_text_preview
+	if (useVoiceDesign) {
+		(requestBody as Record<string, unknown>).audio = { optimize_text_preview: false };
+	} else {
+		(requestBody as Record<string, unknown>).audio = { voice: voice, optimize_text_preview: false };
 	}
 
 	logger.tts("发起 TTS 请求", { text: text.slice(0, 50) + "...", voice, speed, volume });
@@ -370,7 +376,12 @@ export async function synthesizeSpeechWithVoice(
 	voiceDesignPrompt?: string
 ): Promise<ArrayBuffer> {
 	// 应用词组替换
-	const processedText = applyWordReplacements(text);
+	let processedText = applyWordReplacements(text);
+
+	// 全局方言前缀：无方言标签时自动添加 (方言) 标签
+	if (config.dialect && !processedText.startsWith('(')) {
+		processedText = `(${config.dialect})${processedText}`;
+	}
 
 	const apiKey = config.apiKey;
 	const validatedVoice = getValidVoice(voice);
@@ -388,22 +399,22 @@ export async function synthesizeSpeechWithVoice(
 	const useVoiceDesign = !!voiceDesignPrompt;
 	const model = useVoiceDesign ? MIMO_VOICEDESIGN_MODEL : MIMO_TTS_MODEL;
 
-	// 构建请求体
-	const messages: Array<{ role: string; content: string }> = [
-		{ role: "assistant", content: processedText },
-	];
+	// 构建请求体 — voicedesign 模型要求: user(音色描述)在前, assistant(合成文本)在后
+	const messages: Array<{ role: string; content: string }> = [];
 
 	if (useVoiceDesign) {
-		// 使用音色设计模型时，对音色描述也应用词组替换过滤敏感词
+		// user: 音色设计描述
 		const processedPrompt = applyWordReplacements(voiceDesignPrompt);
-		messages.push({
-			role: "user",
-			content: processedPrompt,
-		});
+		messages.push({ role: "user", content: processedPrompt });
+		// assistant: 要合成的文本（voicedesign 剥离全部标签）
+		messages.push({ role: "assistant", content: processedText.replace(/^\([^)]+\)\s*/, '') });
 	} else {
+		// 普通 TTS: 保留第一个标签（方言/情绪）作为音频标签控制，去掉其余复合标签
+		// (粤语,平静,深沉)文本 → (粤语)文本
+		messages.push({ role: "assistant", content: processedText.replace(/^\(([^,，]+)[,，][^)]*\)\s*/, '($1) ') });
 		messages.push({
 			role: "user",
-			content: `语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）\n你是专业小说有声书演播大神...`,
+			content: `语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）\n照读以下文本，一字不改，包括标点。`,
 		});
 	}
 
@@ -413,9 +424,11 @@ export async function synthesizeSpeechWithVoice(
 		max_completion_tokens: 1024,
 	};
 
-	// 只有在不使用音色设计模型时才添加audio.voice
-	if (!useVoiceDesign) {
-		(requestBody as Record<string, unknown>).audio = { voice: validatedVoice };
+	// audio 参数：voicedesign 模型不传 voice，可传 optimize_text_preview
+	if (useVoiceDesign) {
+		(requestBody as Record<string, unknown>).audio = { optimize_text_preview: false };
+	} else {
+		(requestBody as Record<string, unknown>).audio = { voice: validatedVoice, optimize_text_preview: false };
 	}
 
 	logger.tts("发起 TTS 请求（角色配音）", { text: text.slice(0, 50) + "...", voice: validatedVoice, speed, volume });
