@@ -16,8 +16,9 @@ import { logger } from "../utils/logger";
 import { ConfirmModal } from "./config/ConfirmModal";
 import { saveCharacterConfigToStorage, loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
 import type { DetectedCharacter } from "../utils/fileExport";
-import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign, generateMajorEvents, analyzeWorldbuilding, sendChatCompletion } from "../utils/aiClient";
+import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign, analyzeWorldbuilding, sendChatCompletion } from "../utils/aiClient";
 import type { ChatMessage } from "../utils/aiClient";
+import { NovelEventModal } from "./NovelEventModal";
 import { formatDateTime } from "../utils/formatters";
 import { RelationshipGraph } from "./RelationshipGraph";
 
@@ -873,6 +874,8 @@ function WorldbuildingSection({
 export function CharacterSettings({ novelId, novelName, onClose }: CharacterSettingsProps) {
 	const novelCharacters = useCharacterStore((s) => s.novelCharacters);
 	const characters = useMemo(() => novelCharacters[novelId] ?? [], [novelCharacters, novelId]);
+	const novelEventsMap = useCharacterStore((s) => s.novelEvents);
+	const allEvents = useMemo(() => (novelId ? novelEventsMap[novelId] ?? [] : []), [novelEventsMap, novelId]);
 
 	// 角色排序状态 - 按 order 字段排序，未设置的放在最后
 	const sortedCharacters = useMemo(() => {
@@ -1056,6 +1059,9 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 关系管理弹窗状态
 	const [showManageRelationsModal, setShowManageRelationsModal] = useState(false);
 	const [editingRelation, setEditingRelation] = useState<CharacterRelationship | null>(null);
+
+	// 小说大事记弹窗
+	const [showEventModal, setShowEventModal] = useState(false);
 	const [showOnlyUnknown, setShowOnlyUnknown] = useState(true);
 	const [selectedCharacterForRelations, setSelectedCharacterForRelations] = useState<string | null>(null);
 	const [relationForm, setRelationForm] = useState<{
@@ -1224,7 +1230,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const [newAlias, setNewAlias] = useState("");
 	const [newRelationTerm, setNewRelationTerm] = useState("");
 	const [isGeneratingVoiceDesign, setIsGeneratingVoiceDesign] = useState(false);
-	const [isGeneratingMajorEvents, setIsGeneratingMajorEvents] = useState(false);
 	const [isEnhancingCharacter, setIsEnhancingCharacter] = useState(false);
 	const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 	
@@ -2179,50 +2184,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		}
 	}, [editForm.name, editForm.gender, editForm.role, editForm.notes, aiConfig]);
 
-	// AI生成角色大事件
-	const handleGenerateMajorEvents = useCallback(async () => {
-		if (!editForm.name) return;
-		if (!currentNovel?.fullText) {
-			useAppMetaStore.getState().showToast("无法获取小说内容", "error");
-			return;
-		}
-		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
-			return;
-		}
-
-		setIsGeneratingMajorEvents(true);
-		try {
-			const config = {
-				baseURL: aiConfig.baseURL,
-				apiKey: aiConfig.apiKey,
-				model: aiConfig.model,
-				customHeaders: {},
-				maxCharsPerRequest: 0,
-				enableLogging: false,
-			};
-
-			const result = await generateMajorEvents(
-				currentNovel.fullText,
-				{
-					name: editForm.name,
-					gender: editForm.gender || "other",
-					role: editForm.role,
-					notes: editForm.notes,
-					aliases: editForm.aliases,
-				},
-				config,
-			);
-
-			setEditForm(prev => ({ ...prev, majorEvents: result }));
-			useAppMetaStore.getState().showToast("大事件分析完成", "success");
-		} catch (err) {
-			useAppMetaStore.getState().showToast("大事件分析失败: " + (err instanceof Error ? err.message : String(err)), "error");
-		} finally {
-			setIsGeneratingMajorEvents(false);
-		}
-	}, [editForm.name, editForm.gender, editForm.role, editForm.notes, editForm.aliases, aiConfig, currentNovel]);
-
 	// AI完善角色卡片所有信息
 	const handleEnhanceCharacter = useCallback(async () => {
 		if (!editForm.name) return;
@@ -2249,7 +2210,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				dialect: editForm.dialect || "",
 				aliases: editForm.aliases || [],
 				relationTerms: editForm.relationTerms || [],
-				majorEvents: editForm.majorEvents || "",
 			};
 
 			const systemPrompt = `你是一位资深小说角色设定专家。你的任务是根据角色已有的信息，对角色卡片中的各个字段进行完善和丰富，使角色更加立体鲜活。
@@ -2341,7 +2301,6 @@ ${JSON.stringify(existingInfo, null, 2)}
 				dialect: typeof parsed.dialect === "string" ? parsed.dialect : prev.dialect,
 				aliases: Array.isArray(parsed.aliases) ? parsed.aliases as string[] : prev.aliases,
 				relationTerms: Array.isArray(parsed.relationTerms) ? parsed.relationTerms as string[] : prev.relationTerms,
-				majorEvents: typeof parsed.majorEvents === "string" ? parsed.majorEvents : prev.majorEvents,
 			}));
 
 			useAppMetaStore.getState().showToast("角色卡片完善成功", "success");
@@ -2952,25 +2911,20 @@ ${JSON.stringify(existingInfo, null, 2)}
 													/>
 												</div>
 												<div className="form-field">
-													<div className="flex justify-between items-center mb-2">
-														<label className="text-xs">角色大事件</label>
+													<label>小说大事记</label>
+													<div className="event-edit-form-btn">
 														<button
 															type="button"
-															className="text-xs text-blue-500 hover:text-blue-400 flex items-center gap-1"
-															onClick={handleGenerateMajorEvents}
-															disabled={isGeneratingMajorEvents || !editForm.name}
+															className="btn"
+															onClick={() => setShowEventModal(true)}
 														>
-															<Icons.sparkle size={12} />
-															{isGeneratingMajorEvents ? "分析中..." : "AI生成"}
+															<Icons.list size={14} />
+															<span>管理小说大事记</span>
 														</button>
+														<span className="event-edit-form-hint">
+															在全局大事记中关联此角色，即可在角色卡片中查看
+														</span>
 													</div>
-													<textarea
-														value={editForm.majorEvents || ""}
-														onChange={(e) => setEditForm({ ...editForm, majorEvents: e.target.value })}
-														className="config-input"
-														placeholder="角色在全文中的关键经历总结，如：&#10;1. 在青云门拜师学艺&#10;2. 参加天才大会夺冠&#10;3. 发现身世之谜远走天涯"
-														rows={4}
-													/>
 												</div>
 												<div className="flex gap-2 pt-2">
 													<button
@@ -3168,16 +3122,38 @@ ${JSON.stringify(existingInfo, null, 2)}
 													</div>
 												)}
 
-												{/* 第三区块：角色大事件 */}
-												{char.majorEvents && (
-													<div className="character-major-events-section">
-														<div className="events-label">
-															<Icons.list size={14} />
-															角色大事件
+												{/* 第三区块：角色相关大事记 */}
+												{(() => {
+													const charEvents = allEvents
+														.filter((evt) => evt.involvedCharacterIds.includes(char.id))
+														.sort((a, b) => a.timeOrder - b.timeOrder);
+													if (charEvents.length === 0 && !char.majorEvents) return null;
+													return (
+														<div className="character-major-events-section">
+															<div className="events-label">
+																<Icons.list size={14} />
+																角色大事件
+															</div>
+															{charEvents.length > 0 ? (
+																<div className="events-timeline">
+																	{charEvents.map((evt) => (
+																		<div key={evt.id} className="events-timeline-item">
+																			<div className="events-timeline-dot" />
+																			<div className="events-timeline-body">
+																				<div className="events-timeline-title">{evt.title}</div>
+																				{evt.description && (
+																					<div className="events-timeline-desc">{evt.description}</div>
+																				)}
+																			</div>
+																		</div>
+																	))}
+																</div>
+															) : (
+																<div className="events-content">{char.majorEvents}</div>
+															)}
 														</div>
-														<div className="events-content">{char.majorEvents}</div>
-													</div>
-												)}
+													);
+												})()}
 
 												{/* 第四区块：备注 */}
 												{char.notes && (
@@ -3312,6 +3288,14 @@ ${JSON.stringify(existingInfo, null, 2)}
 						>
 							<Icons.userRoundPen size={18} />
 							<span>关系</span>
+						</button>
+						<button
+							className="action-btn character-action"
+							onClick={() => setShowEventModal(true)}
+							title="小说大事记"
+						>
+							<Icons.list size={18} />
+							<span>大事记</span>
 						</button>
 					</div>
 				)}
@@ -4539,6 +4523,11 @@ ${JSON.stringify(existingInfo, null, 2)}
 				if (confirmModal.onCancel) confirmModal.onCancel();
 				else setConfirmModal(prev => ({ ...prev, show: false }));
 			}}
+		/>
+		<NovelEventModal
+			novelId={novelId}
+			show={showEventModal}
+			onClose={() => setShowEventModal(false)}
 		/>
 	</>);
 }

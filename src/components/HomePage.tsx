@@ -4,6 +4,7 @@ import { Icons } from "./Icons";
 import { useMobile } from "../hooks/useMobile";
 import { logger } from "../utils/logger";
 import { useAppMetaStore } from "../stores/appMetaStore";
+import { WEB_VERSION } from "../utils/githubApi";	
 
 import { fetchLatestReleaseWithAssets, fetchAllReleases, formatFileSize, getAllAssetsByPlatform, tryDownloadWithMirrors, downloadFromMirror, getMirrorUrl, GITHUB_MIRRORS, CORS_PROXIES, compareVersions, getCurrentVersion, type GitHubRelease, type MirrorSource } from "../utils/githubApi";
 
@@ -321,7 +322,7 @@ export function HomePage({ onStart }: HomePageProps) {
 					{onStart && (
 						<button className="btn" onClick={handleStartApp}>
 							<Icons.book size={20} />
-							<span>立即体验网页版</span>
+							<span>立即体验网页版 V{WEB_VERSION}</span>
 						</button>
 					)}
 				</div>

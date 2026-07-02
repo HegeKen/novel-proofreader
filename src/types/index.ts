@@ -214,6 +214,15 @@ export interface CharacterInfo {
 	majorEvents?: string; // 角色大事件分析（全文经历总结）
 }
 
+/** 小说大事记事件 */
+export interface NovelEvent {
+	id: string;
+	title: string;
+	description: string;
+	timeOrder: number; // 时间顺序（数字越小越早）
+	involvedCharacterIds: string[]; // 涉及的角色ID列表
+}
+
 /** 人物关系类型枚举 */
 export type RelationType =
 	| "couple" // 夫妻

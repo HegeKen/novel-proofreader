@@ -139,7 +139,7 @@ export default function App() {
 				useNovelStore.setState({ currentChapterIndex: progress.currentChapterIndex });
 			}
 		}
-	}, [loadNovelsFromStorage, loadNovelContent, ensureTxtFilename, splitChapters]);
+	}, []);
 
 	useEffect(() => {
 		if (novels.length === 0) {
@@ -185,7 +185,7 @@ export default function App() {
 			// 已有小说元数据但 fullText 为空，从文件系统恢复
 			restoreFullTextFromStorage();
 		}
-	}, [novels.length, restoreFullTextFromStorage]);
+	}, [novels, restoreFullTextFromStorage]);
 
 	useEffect(() => {
 		const params = parseURLParams();
@@ -199,20 +199,18 @@ export default function App() {
 				return false;
 			}
 
-			// 动态获取最新状态
-			const currentState = useNovelStore.getState();
+			const state = useNovelStore.getState();
 			
-			logger.info('[App]', `trySelect: bookId=${bookId}, novel.id=${novel.id}, currentNovelId=${currentState.currentNovelId}, chapters.length=${currentState.chapters.length}, currentChapterIndex=${currentState.currentChapterIndex}`);
+			logger.info('[App]', `trySelect: bookId=${bookId}, novel.id=${novel.id}, currentNovelId=${state.currentNovelId}, chapters.length=${state.chapters.length}, currentChapterIndex=${state.currentChapterIndex}`);
 			
 			// 如果已经是当前选中的小说且章节已加载，不需要重新设置
-			if (currentState.currentNovelId === novel.id && currentState.chapters.length > 0) {
+			if (state.currentNovelId === novel.id && state.chapters.length > 0) {
 				logger.info('[App]', `trySelect: 已选中当前小说，检查章节是否变化`);
-				// 只有在 URL 参数明确指定了不同章节时才更新章节索引
-				if (params.chapter !== undefined && params.chapter >= 0 && params.chapter !== currentState.currentChapterIndex) {
-					logger.info('[App]', `trySelect: 章节变化，从 ${currentState.currentChapterIndex} 切换到 ${params.chapter}`);
+				if (params.chapter !== undefined && params.chapter >= 0 && params.chapter !== state.currentChapterIndex) {
+					logger.info('[App]', `trySelect: 章节变化，从 ${state.currentChapterIndex} 切换到 ${params.chapter}`);
 					setCurrentChapterIndex(params.chapter);
 				} else {
-					logger.info('[App]', `trySelect: 章节未变化，保持当前章节 ${currentState.currentChapterIndex}`);
+					logger.info('[App]', `trySelect: 章节未变化，保持当前章节 ${state.currentChapterIndex}`);
 				}
 				return true;
 			}
@@ -222,7 +220,7 @@ export default function App() {
 			if (novel.fullText) {
 				const chapters = splitChapters(novel.fullText);
 				logger.info('[App]', `trySelect: 设置章节，共 ${chapters.length} 章`);
-				currentState.setChapters(chapters);
+				setChapters(chapters);
 			}
 			if (params.chapter !== undefined && params.chapter >= 0) {
 				logger.info('[App]', `trySelect: 设置初始章节 ${params.chapter}`);
@@ -247,7 +245,7 @@ export default function App() {
 			}, 100);
 			setTimeout(() => clearInterval(checkInterval), 5000);
 		}
-	}, [novels, selectNovel, setCurrentChapterIndex, setReadingMode, setShowHome]);
+	}, [novels, selectNovel, setCurrentChapterIndex, setChapters, setReadingMode, setShowHome]);
 
 	useEffect(() => {
 		if (!currentNovelId) return;

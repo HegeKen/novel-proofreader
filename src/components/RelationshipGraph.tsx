@@ -1,9 +1,13 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useCharacterStore } from "../stores/characterStore";
+import { useAIConfigStore } from "../stores/aiConfigStore";
+import { useAppMetaStore } from "../stores/appMetaStore";
 import type { CharacterInfo, CharacterRelationship, RelationType } from "../types";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { ConfirmModal } from "./config/ConfirmModal";
+import { sendChatCompletion } from "../utils/aiClient";
+import type { ChatMessage } from "../utils/aiClient";
 
 interface RelationshipGraphProps {
 	novelId: string;
@@ -58,6 +62,9 @@ export function RelationshipGraph({
 		message: string;
 		onConfirm: () => void;
 	}>({ show: false, message: "", onConfirm: () => {} });
+
+	const aiConfig = useAIConfigStore((s) => s.aiConfig);
+	const [isGeneratingRelationships, setIsGeneratingRelationships] = useState(false);
 
 	const [relationForm, setRelationForm] = useState<{
 		sourceId: string;
@@ -713,6 +720,167 @@ export function RelationshipGraph({
 		};
 	}, []);
 
+	// AI生成角色关系
+	const handleGenerateRelationships = useCallback(async () => {
+		if (characters.length < 2) {
+			useAppMetaStore.getState().showToast("至少需要2个角色才能生成关系", "warning");
+			return;
+		}
+		if (!aiConfig.apiKey || !aiConfig.baseURL) {
+			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			return;
+		}
+
+		setIsGeneratingRelationships(true);
+		try {
+			const charsInfo = characters.map(c => ({
+				id: c.id,
+				name: c.name,
+				gender: c.gender,
+				role: c.role || "",
+				age: c.age || "",
+				identity: c.identity || "",
+				personality: c.personality || "",
+				notes: c.notes || "",
+				aliases: c.aliases || [],
+				relationTerms: c.relationTerms || [],
+			}));
+
+			const existingRelationships = relationships.map(r => {
+				const srcChar = characters.find(c => c.id === r.sourceId);
+				const tgtChar = characters.find(c => c.id === r.targetId);
+				return {
+					sourceName: srcChar?.name || "未知",
+					targetName: tgtChar?.name || "未知",
+					relationType: r.relationType || [],
+					sourceNickname: r.sourceNickname,
+					targetNickname: r.targetNickname,
+				};
+			});
+
+			const systemPrompt = `你是一位小说角色关系分析专家。根据角色信息列表，分析他们之间可能存在的人际关系。
+
+## 要求
+- 只基于角色信息中提到的关联进行分析，不要凭空编造关系
+- 每对角色之间只输出一条关系（从最相关的角度）
+- 称呼要符合角色身份和关系（如夫妻互称"老公/老婆"，师徒称"师父/徒弟"）
+- 注意关系方向：sourceNickname 是源角色对目标角色的称呼，targetNickname 是目标角色对源角色的称呼
+- 关系类型从以下中选择：couple(夫妻)、father-son(父子)、father-daughter(父女)、mother-son(母子)、mother-daughter(母女)、brother(兄弟)、sister(姐妹)、brother-sister(兄妹)、sister-brother(姐弟)、mother-daughter-in-law(婆媳)、father-daughter-in-law(公媳)、mother-son-in-law(岳母女婿)、father-son-in-law(翁婿)、co-parents-male(亲家公)、co-parents-female(亲家母)、lover(恋人)、ex-lover(前任)、classmate(同学)、friend(朋友)、bestie(闺蜜)、rival(竞争对手)、arch-enemy(宿敌)、enemy(仇人)、master-disciple(师徒)、teacher-student(师生)、employer-employee(上下级)、colleague(同事)、neighbor(邻居)、relative(亲戚)、stranger(陌生人)、other(其他)
+- 如果判断关系类型不属于以上具体类型，请使用 "other"，同时在 customRelationType 字段中用中文描述具体关系（如"青梅竹马"、"结拜兄弟"、"救命恩人"等）
+- 如果已有关系存在但称呼不完整，可以补充称呼
+- 严格按照JSON格式输出
+
+## 输出格式
+输出一个JSON数组，每个元素包含：
+{
+  "sourceName": "源角色名称（必须匹配输入中的name）",
+  "targetName": "目标角色名称（必须匹配输入中的name）",
+  "relationType": ["关系类型数组"],
+  "customRelationType": "当relationType包含other时，填写中文关系描述；否则无需填写",
+  "sourceNickname": ["源角色对目标角色的称呼"],
+  "targetNickname": ["目标角色对源角色的称呼"]
+}`;
+
+			const userPrompt = `## 角色列表
+${JSON.stringify(charsInfo, null, 2)}
+
+## 已有关系
+${existingRelationships.length > 0 ? JSON.stringify(existingRelationships, null, 2) : "暂无"}
+
+请根据以上角色信息，分析他们之间应该存在的关系，输出JSON数组。如果角色之间没有明确的关联，不要强行建立关系。`;
+
+			const messages: ChatMessage[] = [
+				{ role: "system", content: systemPrompt },
+				{ role: "user", content: userPrompt },
+			];
+
+			const config = {
+				baseURL: aiConfig.baseURL,
+				apiKey: aiConfig.apiKey,
+				model: aiConfig.model,
+				customHeaders: {} as Record<string, string>,
+				maxCharsPerRequest: 0,
+				enableLogging: false,
+			};
+
+			const response = await sendChatCompletion(messages, config);
+
+			// 解析JSON
+			let parsed: Array<{
+				sourceName: string;
+				targetName: string;
+				relationType: string[];
+				customRelationType?: string;
+				sourceNickname: string[];
+				targetNickname: string[];
+			}>;
+
+			try {
+				parsed = JSON.parse(response);
+			} catch {
+				const jsonMatch = response.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+				if (jsonMatch) {
+					parsed = JSON.parse(jsonMatch[1]);
+				} else {
+					const arrMatch = response.match(/\[[\s\S]*\]/);
+					if (arrMatch) {
+						parsed = JSON.parse(arrMatch[0]);
+					} else {
+						throw new Error("无法解析AI返回结果");
+					}
+				}
+			}
+
+			if (!Array.isArray(parsed)) throw new Error("AI返回结果格式错误");
+
+			// 创建角色名称到ID的映射
+			const nameToId: Record<string, string> = {};
+			characters.forEach(c => { nameToId[c.name] = c.id; });
+
+			let addedCount = 0;
+			for (const rel of parsed) {
+				const sourceId = nameToId[rel.sourceName];
+				const targetId = nameToId[rel.targetName];
+				if (!sourceId || !targetId || sourceId === targetId) continue;
+
+				// 检查是否已存在相同关系
+				const existing = getRelationBetween(sourceId, targetId);
+				if (existing) {
+					// 补充称呼和关系类型
+					const newSourceNicknames = rel.sourceNickname.filter(n => !existing.sourceNickname.includes(n));
+					const newTargetNicknames = rel.targetNickname.filter(n => !existing.targetNickname.includes(n));
+					const hasNewRelationType = rel.relationType.length > 0 && (!existing.relationType || existing.relationType.length === 0);
+					const hasNewCustomType = rel.customRelationType && (!existing.customRelationType || existing.customRelationType !== rel.customRelationType);
+					if (newSourceNicknames.length > 0 || newTargetNicknames.length > 0 || hasNewRelationType || hasNewCustomType) {
+						updateRelationship(novelId, existing.id, {
+							relationType: rel.relationType.length > 0 ? rel.relationType as RelationType[] : existing.relationType,
+							customRelationType: rel.customRelationType || existing.customRelationType,
+							sourceNickname: [...existing.sourceNickname, ...newSourceNicknames],
+							targetNickname: [...existing.targetNickname, ...newTargetNicknames],
+						});
+						addedCount++;
+					}
+				} else {
+					addRelationship(novelId, {
+						sourceId,
+						targetId,
+						relationType: rel.relationType.length > 0 ? rel.relationType as RelationType[] : undefined,
+						customRelationType: rel.customRelationType,
+						sourceNickname: rel.sourceNickname || [],
+						targetNickname: rel.targetNickname || [],
+					});
+					addedCount++;
+				}
+			}
+
+			useAppMetaStore.getState().showToast(`关系生成完成，新增/更新 ${addedCount} 条关系`, "success");
+		} catch (err) {
+			useAppMetaStore.getState().showToast("关系生成失败: " + (err instanceof Error ? err.message : String(err)), "error");
+		} finally {
+			setIsGeneratingRelationships(false);
+		}
+	}, [characters, relationships, aiConfig, novelId, addRelationship, updateRelationship, getRelationBetween]);
+
 	const getSourceSuggestions = useCallback(
 		(input: string) => {
 			if (!input.trim()) return [];
@@ -780,6 +948,16 @@ export function RelationshipGraph({
 				<div className="graph-toolbar-info">
 					<span>{filteredGraphNodes.length} 个角色</span>
 					<span>{filteredGraphEdges.length} 条关系</span>
+				</div>
+				<div className="graph-toolbar-actions">
+					<button
+						className="graph-toolbar-btn"
+						onClick={handleGenerateRelationships}
+						disabled={isGeneratingRelationships || characters.length < 2}
+					>
+						<Icons.sparkle size={12} />
+						<span>{isGeneratingRelationships ? "生成中..." : "AI生成关系"}</span>
+					</button>
 				</div>
 			</div>
 
@@ -871,13 +1049,19 @@ export function RelationshipGraph({
 								"co-parents-male": "亲家公",
 								"co-parents-female": "亲家母",
 								lover: "恋人",
+								"ex-lover": "前任",
 								classmate: "同学",
 								friend: "朋友",
 								bestie: "闺蜜",
 								rival: "竞争对手",
+								"arch-enemy": "宿敌",
+								enemy: "仇人",
 								"master-disciple": "师徒",
+								"teacher-student": "师生",
 								"employer-employee": "上下级",
 								colleague: "同事",
+								neighbor: "邻居",
+								relative: "亲戚",
 								stranger: "陌生人",
 							};
 							relationTypes.forEach((t) => {

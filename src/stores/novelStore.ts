@@ -44,6 +44,9 @@ export interface NovelState {
 	) => number;
 	replaceLine: (chapterId: number, lineIndex: number, newLine: string) => void;
 
+	/** 追加内容到指定章节末尾（用于AI续写） */
+	appendToChapter: (chapterIndex: number, content: string) => void;
+
 	setScriptResult: (chapterId: number, segments: ScriptResult["segments"]) => void;
 	getScriptResult: (chapterId: number) => ScriptResult | undefined;
 	clearScriptResults: () => void;
@@ -113,15 +116,7 @@ export const useNovelStore = create<NovelState>()(
 						...ch,
 						content: normalizeCJKVariants(ch.content),
 					}));
-					// 同步更新当前小说的 chapters 字段
-					const novels = state.currentNovelId
-						? state.novels.map((n) =>
-								n.id === state.currentNovelId
-									? { ...n, chapters: chapters.map((ch) => ({ title: ch.title, content: ch.content })) }
-									: n,
-							)
-						: state.novels;
-					return { chapters: normalized, currentChapterIndex: state.currentChapterIndex, novels };
+					return { chapters: normalized, currentChapterIndex: state.currentChapterIndex };
 				});
 			},
 
@@ -335,6 +330,20 @@ export const useNovelStore = create<NovelState>()(
 				saveCurrentNovel(get());
 			},
 
+			appendToChapter: (chapterIndex, content) => {
+				logger.info('[novelStore]', `追加内容到章节: chapterIndex=${chapterIndex}, 新增 ${content.length} 字符`);
+				set((state) => {
+					if (chapterIndex < 0 || chapterIndex >= state.chapters.length) return state;
+					const chapters = state.chapters.map((ch, i) => {
+						if (i !== chapterIndex) return ch;
+						return { ...ch, content: ch.content + "\n" + content };
+					});
+					const novels = syncNovelsFromChapters(chapters, state.novels, state.currentNovelId);
+					return { chapters, novels };
+				});
+				saveCurrentNovel(get());
+			},
+
 			setScriptResult: (chapterId, segments) =>
 				set((state) => ({
 					scriptResults: { ...state.scriptResults, [chapterId]: { chapterId, segments } },
@@ -365,19 +374,8 @@ export const useNovelStore = create<NovelState>()(
 		}),
 		{
 			name: "novel-proofreader-novels",
-			partialize: (state) => ({
-				novels: state.novels.map((n) => ({
-					...n,
-					fullText: "", // 不持久化全文到 localStorage
-					chapters: [], // 不持久化章节到 localStorage
-				})),
-				currentNovelId: state.currentNovelId,
-				currentChapterIndex: state.currentChapterIndex,
-				nextBookId: state.nextBookId,
-				proofreadStatus: state.proofreadStatus,
-				scriptResults: state.scriptResults,
-				lastCacheSaveTime: state.lastCacheSaveTime,
-			}),
+			version: 0,
+			migrate: (persistedState) => persistedState as NovelState,
 		},
 	),
 );

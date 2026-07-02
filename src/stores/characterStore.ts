@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { CharacterInfo, CharacterRelationship, NovelWorldbuilding } from "../types";
+import type { CharacterInfo, CharacterRelationship, NovelWorldbuilding, NovelEvent } from "../types";
 
 
 export interface CharacterState {
@@ -9,6 +9,7 @@ export interface CharacterState {
 	nodePositions: Record<string, Record<string, { x: number; y: number }>>;
 	ignoredCharacterNames: Record<string, string[]>;
 	worldbuilding: Record<string, NovelWorldbuilding>;
+	novelEvents: Record<string, NovelEvent[]>; // 每个小说的大事记列表
 
 	addCharacter: (novelId: string, character: Omit<CharacterInfo, "id">) => void;
 	updateCharacter: (novelId: string, characterId: string, character: Partial<Omit<CharacterInfo, "id">>) => void;
@@ -33,7 +34,16 @@ export interface CharacterState {
 	getWorldbuilding: (novelId: string) => NovelWorldbuilding | null;
 	setWorldbuilding: (novelId: string, wb: NovelWorldbuilding) => void;
 
+	// 小说大事记
+	getEvents: (novelId: string) => NovelEvent[];
+	addEvent: (novelId: string, event: Omit<NovelEvent, "id">) => void;
+	updateEvent: (novelId: string, eventId: string, updates: Partial<Omit<NovelEvent, "id">>) => void;
+	removeEvent: (novelId: string, eventId: string) => void;
+	setEvents: (novelId: string, events: NovelEvent[]) => void;
+	getCharacterEvents: (novelId: string, characterId: string) => NovelEvent[];
+
 	clearNovelData: (novelId: string) => void;
+	rebuildStatistics: (validNovelIds: string[]) => void;
 }
 
 function syncNicknamesToCharacters(
@@ -57,6 +67,7 @@ export const useCharacterStore = create<CharacterState>()(
 			nodePositions: {},
 			ignoredCharacterNames: {},
 			worldbuilding: {},
+			novelEvents: {},
 
 			addCharacter: (novelId, character) => {
 				const newCharacter = { ...character, id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` };
@@ -190,31 +201,114 @@ export const useCharacterStore = create<CharacterState>()(
 					worldbuilding: { ...state.worldbuilding, [novelId]: wb },
 				})),
 
-			clearNovelData: (novelId) => {
-				const state = get();
-				const updatedWorldbuilding = { ...state.worldbuilding };
-				delete updatedWorldbuilding[novelId];
-				set({
-					novelCharacters: {
-						...state.novelCharacters,
-						[novelId]: [],
-					},
-					characterRelationships: {
-						...state.characterRelationships,
-						[novelId]: [],
-					},
-					nodePositions: {
-						...state.nodePositions,
-						[novelId]: {},
-					},
-					ignoredCharacterNames: {
-						...state.ignoredCharacterNames,
-						[novelId]: [],
-					},
-					worldbuilding: updatedWorldbuilding,
+			// --- 小说大事记 ---
+			getEvents: (novelId) => get().novelEvents[novelId] ?? [],
+
+			addEvent: (novelId, event) => {
+				const newEvent: NovelEvent = {
+					...event,
+					id: `evt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+				};
+				set((state) => {
+					const current = state.novelEvents[novelId] ?? [];
+					return {
+						novelEvents: {
+							...state.novelEvents,
+							[novelId]: [...current, newEvent].sort((a, b) => a.timeOrder - b.timeOrder),
+						},
+					};
 				});
 			},
-		}),
+
+			updateEvent: (novelId, eventId, updates) =>
+				set((state) => {
+					const current = state.novelEvents[novelId] ?? [];
+					return {
+						novelEvents: {
+							...state.novelEvents,
+							[novelId]: current
+								.map((evt) => (evt.id === eventId ? { ...evt, ...updates } : evt))
+								.sort((a, b) => a.timeOrder - b.timeOrder),
+						},
+					};
+				}),
+
+			removeEvent: (novelId, eventId) =>
+				set((state) => {
+					const current = state.novelEvents[novelId] ?? [];
+					return {
+						novelEvents: {
+							...state.novelEvents,
+							[novelId]: current.filter((evt) => evt.id !== eventId),
+						},
+					};
+				}),
+
+			setEvents: (novelId, events) =>
+				set((state) => ({
+					novelEvents: {
+						...state.novelEvents,
+						[novelId]: [...events].sort((a, b) => a.timeOrder - b.timeOrder),
+					},
+				})),
+
+			getCharacterEvents: (novelId, characterId) => {
+				const events = get().novelEvents[novelId] ?? [];
+				return events
+					.filter((evt) => evt.involvedCharacterIds.includes(characterId))
+					.sort((a, b) => a.timeOrder - b.timeOrder);
+			},
+
+			clearNovelData: (novelId) => {
+			const state = get();
+			const updatedWorldbuilding = { ...state.worldbuilding };
+			delete updatedWorldbuilding[novelId];
+			set({
+				novelCharacters: {
+					...state.novelCharacters,
+					[novelId]: [],
+				},
+				characterRelationships: {
+					...state.characterRelationships,
+					[novelId]: [],
+				},
+				nodePositions: {
+					...state.nodePositions,
+					[novelId]: {},
+				},
+				ignoredCharacterNames: {
+					...state.ignoredCharacterNames,
+					[novelId]: [],
+				},
+				worldbuilding: updatedWorldbuilding,
+				novelEvents: {
+					...state.novelEvents,
+					[novelId]: [],
+				},
+			});
+		},
+
+		rebuildStatistics: (validNovelIds) => {
+			const validSet = new Set(validNovelIds);
+			const filterRecord = <T>(record: Record<string, T>): Record<string, T> => {
+				const result: Record<string, T> = {};
+				for (const key of Object.keys(record)) {
+					if (validSet.has(key)) {
+						result[key] = record[key];
+					}
+				}
+				return result;
+			};
+			set((state) => ({
+				novelCharacters: filterRecord(state.novelCharacters),
+				characterRelationships: filterRecord(state.characterRelationships),
+				nodePositions: filterRecord(state.nodePositions),
+				ignoredCharacterNames: filterRecord(state.ignoredCharacterNames),
+				worldbuilding: filterRecord(state.worldbuilding),
+				novelEvents: filterRecord(state.novelEvents),
+			}));
+		},
+	}),
 		{
 			name: "novel-proofreader-characters",
 			partialize: (state) => ({
@@ -223,6 +317,7 @@ export const useCharacterStore = create<CharacterState>()(
 				nodePositions: state.nodePositions,
 				ignoredCharacterNames: state.ignoredCharacterNames,
 				worldbuilding: state.worldbuilding,
+				novelEvents: state.novelEvents,
 			}),
 		},
 	),

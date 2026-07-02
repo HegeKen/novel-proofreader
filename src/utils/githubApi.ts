@@ -285,11 +285,14 @@ export function compareVersions(current: string, latest: string): -1 | 0 | 1 {
 	return 0;
 }
 
+/** Web 端版本号（来自 package.json，由 Vite 编译时注入） */
+export const WEB_VERSION: string = __APP_VERSION__;
+
 export async function getCurrentVersion(): Promise<string> {
 	try {
 		const { getVersion } = await import("@tauri-apps/api/app");
 		return await getVersion();
 	} catch {
-		return (globalThis as Record<string, unknown>).__APP_VERSION__ as string || "0.0.0";
+		return WEB_VERSION;
 	}
 }

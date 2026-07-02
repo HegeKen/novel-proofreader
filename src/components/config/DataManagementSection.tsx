@@ -10,8 +10,11 @@ export function DataManagementSection() {
 	const clearAllCache = useNovelStore((s) => s.clearAllCache);
 	const novelCharacters = useCharacterStore((s) => s.novelCharacters);
 	const clearNovelData = useCharacterStore((s) => s.clearNovelData);
+	const rebuildStatistics = useCharacterStore((s) => s.rebuildStatistics);
 	const totalNovels = novels.length;
 	const totalCharacters = Object.values(novelCharacters).reduce((acc, chars) => acc + chars.length, 0);
+	const novelListTotalCharacters = novels.reduce((acc, novel) => acc + (novelCharacters[novel.id]?.length ?? 0), 0);
+	const hasStatsMismatch = totalCharacters !== novelListTotalCharacters;
 
 	const [confirmModal, setConfirmModal] = useState<{
 		show: boolean;
@@ -64,6 +67,18 @@ export function DataManagementSection() {
 		});
 	};
 
+	const handleRebuildStatistics = () => {
+		setConfirmModal({
+			show: true,
+			title: "重建统计数据",
+			message: `检测到统计数据不一致（统计角色数 ${totalCharacters} ≠ 小说列表角色数之和 ${novelListTotalCharacters}）。\n\n将根据小说列表中的角色信息重建统计，移除已删除小说的残留角色数据。\n此操作不可恢复！`,
+			danger: true,
+			onConfirm: () => {
+				rebuildStatistics(novels.map(n => n.id));
+			},
+		});
+	};
+
 	return (
 		<div className="config-section data-management-section">
 			<div className="data-stats">
@@ -83,6 +98,19 @@ export function DataManagementSection() {
 					</div>
 				</div>
 			</div>
+
+			{hasStatsMismatch && (
+				<div className="stats-mismatch-banner">
+					<div className="mismatch-info">
+						<Icons.alertCircle size={16} />
+						<span>统计数据不一致：总角色数（{totalCharacters}）≠ 小说列表角色数之和（{novelListTotalCharacters}）</span>
+					</div>
+					<button className="rebuild-stats-btn" onClick={handleRebuildStatistics}>
+						<Icons.refreshCw size={14} />
+						重建统计数据
+					</button>
+				</div>
+			)}
 
 			{/* 小说列表 */}
 			{novels.length > 0 && (

@@ -1,5 +1,72 @@
 # Proof Reader Changelog
 
+## v0.12.0 (2026-07-03)
+
+### ✨ 功能更新
+
+**剧本页面渲染全面升级**
+- 对话区域新增性别头像（男蓝/女粉/其他紫渐变色），显示角色首字
+- 角色名按性别着色，已设置音色设计的角色名旁显示金色闪烁徽章
+- 情绪标签改为粉色胶囊样式 + 星光图标，对话序号徽章显示「当前/总数」
+- 场景卡片新增氛围标签（自动提取场景标题末尾的氛围词），渐变场景徽章
+- 角色列表标签支持性别配色圆点，与小说角色设置中的性别信息关联
+- 章节标题改为双分隔线装饰 + 发光文字效果
+- 场景描述采用渐变背景 + 左边框，动作描述增加场记板图标
+- `ScriptRenderer` 组件新增 `characters` 属性，传入当前小说角色信息用于性别识别
+
+**剧本 Markdown 格式化渲染**
+- `ScriptBlock` 类型新增 `markdown-header`，支持解析 AI 返回的 `#`~`######` 标题
+- 支持 h1~h6 不同字号和样式（h1 居中、h2 带下划线、h3 左边框等）
+- 章节标题（`第N章`）在 Markdown 标题中仍解析为 `title` 类型以统一渲染
+
+**剧本角色与小说角色设置关联**
+- `buildScriptUserPrompt` 新增可选 `characters` 参数，在 prompt 中注入角色名、别名和角色类型
+- 明确要求 AI 生成的剧本角色名必须与小说角色设置完全一致
+- `handleGenerate` 调用时传入当前小说的角色列表
+
+**数据管理统计重建功能**
+- 数据管理 Tab 新增统计一致性检测：总角色数与小说列表角色数之和不一致时显示琥珀色横幅
+- 横幅中提供「重建统计数据」按钮，点击后弹窗确认
+- `characterStore` 新增 `rebuildStatistics(validNovelIds)` 方法，过滤 `novelCharacters` 及关联的 5 个 state（关系、节点位置、忽略名、世界观、大事记），仅保留现存小说的条目
+
+**Web 端版本号支持**
+- `githubApi.ts` 新增 `WEB_VERSION` 同步常量（来自 `package.json`，由 Vite 编译时注入）
+- `getCurrentVersion()` 在 Web 端 fallback 到 `WEB_VERSION`，Tauri 端返回 Tauri 版本
+- HomePage 按钮显示「立即体验网页版 v0.12.0」
+
+### 🐛 Bug 修复
+
+**剧本解析器对话误识别修复**
+- 修复角色介绍列表项（如 `- 胡八一（也可称：胡爷、老胡）—— 前工程兵，主角。`）被误识别为对话的问题
+- 根因：列表项中的中文冒号 `：` 被 `plainMatch` 正则误识别为对话分隔符
+- 新增角色介绍列表项识别（`- 角色名（别名）——描述` / `- 角色名：描述`），优先于对话识别
+- 对话识别增加严格排除条件：Markdown 列表项、角色名含中间括号、含破折号、角色名过长（>15字）等
+
+**章节标题正则修复**
+- 修复章节标题正则 `\b`（单词边界）对中文字符无效导致 `第十九章 关东军地下要塞` 无法识别的问题
+- 改用 `(?:\s|$|：)` 匹配「章」字后的边界
+
+**TTS 音色设计数据修复**
+- 修复 `playDialogue` 方法未将 `voiceDesignPrompt` 传递给 `synthesizeSpeechWithVoice` 的问题
+- 修复 `loadScript` 未设置 `voiceDesignPrompt` 的问题，新增可选 `getVoiceDesignPrompt` 回调
+- 修复 `AudioCacheManager.generateKey` 缓存键未包含 `voiceDesignPrompt` 导致缓存冲突的问题
+
+**TypeScript 类型错误修复**
+- 修复 `handleEmotionTTS` 直接赋值给 `onClick` 导致 MouseEvent 被传入 `startDialogueIndex` 的问题
+- 修复 HomePage 中 `{{WEB_VERSION}}` 双花括号被解析为对象字面量的语法错误
+
+**ESLint 警告修复**
+- 移除 `ScriptRenderer.tsx` 中未使用的 `sceneIndex` 变量
+
+### 🔧 改进优化
+
+**校对 Prompt 上下文完整性**
+- 段落级别校对 Prompt 字数限制从 10-20 字扩展到 10-40 字
+- 章节级别校对 Prompt 字数限制从 8-20 字扩展到 8-40 字
+- 新增上下文完整性要求：错误靠近句末时 `find` 必须包含句末标点；禁止为满足字数限制而截断词语
+
+---
+
 ## v0.11.5 (2026-06-28)
 
 ### ✨ 功能更新

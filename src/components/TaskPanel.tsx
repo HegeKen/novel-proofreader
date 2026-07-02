@@ -12,6 +12,9 @@ import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { ScriptTTSPlayer, parseScriptContent } from "../utils/ttsService";
+import { scriptToPlainText, parseScriptBlocks } from "../utils/scriptMarkdown";
+import type { ScriptBlock } from "../utils/scriptMarkdown";
+import { ScriptRenderer } from "./ScriptRenderer";
 import { logger } from "../utils/logger";
 import type { ChatMessage } from "../utils/aiClient";
 import type { Chapter, AIConfig, CharacterInfo } from "../types";
@@ -51,7 +54,10 @@ function TaskPanelContent({
 	const [ttsPlaying, setTtsPlaying] = useState(false);
 	const [ttsProcessing, setTtsProcessing] = useState(false);
 	const [showVoiceSettings, setShowVoiceSettings] = useState(false);
+	const [currentDialogueIndex, setCurrentDialogueIndex] = useState(-1);
+	const [currentPlayingCharacter, setCurrentPlayingCharacter] = useState<string | undefined>(undefined);
 	const scriptTTSRef = useRef<ScriptTTSPlayer | null>(null);
+	const isEmotionTTSActiveRef = useRef(false);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
 	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
 	const promptConfig = useConfigStore((s) => s.promptConfig);
@@ -59,7 +65,7 @@ function TaskPanelContent({
 
 	const detectedCharacters = useMemo(() => {
 		if (result.length > 0 && result[0].content) {
-			const { characters } = parseScriptContent(result[0].content);
+			const { characters } = parseScriptContent(scriptToPlainText(result[0].content));
 			return characters;
 		}
 		return [];
@@ -111,6 +117,148 @@ function TaskPanelContent({
 		ttsConfigRef.current = ttsConfig;
 	}, [ttsConfig]);
 
+	// 获取角色的音色设计 prompt
+	const getVoiceDesignPromptForCharacter = useCallback((characterName: string): string | undefined => {
+		if (!currentNovelId) return undefined;
+		const characters = getCharacters(currentNovelId);
+		let matched = characters.find((c) => c.name.toLowerCase() === characterName.toLowerCase());
+		if (!matched) {
+			matched = characters.find(
+				(c) => c.aliases?.some((alias) => alias.toLowerCase() === characterName.toLowerCase())
+			);
+		}
+		if (!matched) return undefined;
+		const designPrompt = matched.voiceDesignPrompt?.trim();
+		const dialect = matched.dialect;
+		if (designPrompt) {
+			return dialect ? `${designPrompt}，说${dialect}` : designPrompt;
+		}
+		return undefined;
+	}, [currentNovelId, getCharacters]);
+
+	// 获取角色方言
+	const getDialectForCharacter = useCallback((characterName: string): string | undefined => {
+		if (!currentNovelId) return undefined;
+		const characters = getCharacters(currentNovelId);
+		let matched = characters.find((c) => c.name.toLowerCase() === characterName.toLowerCase());
+		if (!matched) {
+			matched = characters.find(
+				(c) => c.aliases?.some((alias) => alias.toLowerCase() === characterName.toLowerCase())
+			);
+		}
+		return matched?.dialect;
+	}, [currentNovelId, getCharacters]);
+
+	// 合并方言标签到文本
+	const applyDialectLabel = useCallback((character: string, text: string): string => {
+		const dialect = getDialectForCharacter(character);
+		if (!dialect) return text;
+		if (text.startsWith(`(${dialect},`) || text.startsWith(`(${dialect})`)) return text;
+		const match = text.match(/^\(([^)]+)\)/);
+		if (match) {
+			return `(${dialect},${match[1]})${text.slice(match[0].length)}`;
+		}
+		return `(${dialect})${text}`;
+	}, [getDialectForCharacter]);
+
+	// 剧本情感朗读（直接利用剧本结构，无需AI分析）
+	const handleEmotionTTS = useCallback(async (startDialogueIndex: number = 0) => {
+		if (!ttsConfig.apiKey) {
+			setError("请先在设置中配置 TTS API Key");
+			return;
+		}
+		if (result.length === 0) return;
+
+		// 停止当前播放
+		if (scriptTTSRef.current) {
+			isEmotionTTSActiveRef.current = false;
+			scriptTTSRef.current.stop();
+			scriptTTSRef.current = null;
+		}
+
+		setTtsProcessing(true);
+		setError("");
+
+		try {
+			const blocks = parseScriptBlocks(result[0].content);
+			const dialogues = blocks.filter((b): b is Extract<ScriptBlock, { type: "dialogue" }> => b.type === "dialogue");
+
+			if (dialogues.length === 0) {
+				setError("剧本中没有可朗读的对话");
+				setTtsProcessing(false);
+				return;
+			}
+
+			// 构建 characterVoices
+			const characterVoices: Record<string, string> = { ...ttsConfig.characterVoices };
+			for (const d of dialogues) {
+				if (!characterVoices[d.character]) {
+					characterVoices[d.character] = getVoiceForCharacter(d.character);
+				}
+			}
+
+			const customTTSConfig = { ...ttsConfig, characterVoices };
+			const scriptTTS = new ScriptTTSPlayer(customTTSConfig);
+			scriptTTSRef.current = scriptTTS;
+			isEmotionTTSActiveRef.current = true;
+
+			scriptTTS.setOnUpdate(() => {
+				if (!scriptTTSRef.current) return;
+				const idx = scriptTTSRef.current.getCurrentIndex();
+				const dlg = scriptTTSRef.current.getDialogues()[idx];
+				setCurrentDialogueIndex(idx);
+				setCurrentPlayingCharacter(dlg?.character);
+			});
+			scriptTTS.setOnComplete(() => {
+				isEmotionTTSActiveRef.current = false;
+				setTtsPlaying(false);
+				setCurrentDialogueIndex(-1);
+				setCurrentPlayingCharacter(undefined);
+			});
+
+			setTtsPlaying(true);
+			setTtsProcessing(false);
+
+			// 流式添加对话并立即开始播放
+			for (let i = startDialogueIndex; i < dialogues.length; i++) {
+				if (!isEmotionTTSActiveRef.current) break;
+
+				const d = dialogues[i];
+				let text = d.emotion ? `(${d.emotion})${d.text}` : d.text;
+				text = applyDialectLabel(d.character, text);
+				const voicePrompt = getVoiceDesignPromptForCharacter(d.character);
+
+				await scriptTTS.addDialogueStream(d.character, text, undefined, voicePrompt);
+
+				// 如果还没开始播放，第一个音频生成后启动播放
+				if (i === startDialogueIndex && !scriptTTS.getIsPlaying()) {
+					scriptTTS.play();
+				}
+			}
+
+			if (isEmotionTTSActiveRef.current) {
+				scriptTTS.markStreamComplete();
+			}
+		} catch (e) {
+			isEmotionTTSActiveRef.current = false;
+			setError(e instanceof Error ? e.message : "TTS播放失败");
+			setTtsPlaying(false);
+			setCurrentDialogueIndex(-1);
+			setCurrentPlayingCharacter(undefined);
+		} finally {
+			setTtsProcessing(false);
+		}
+	}, [result, ttsConfig, getVoiceForCharacter, applyDialectLabel, getVoiceDesignPromptForCharacter]);
+
+	// 点击对话行开始播放
+	const handleDialogueClick = useCallback((index: number) => {
+		if (!scriptTTSRef.current || !ttsPlaying) {
+			handleEmotionTTS(index);
+		} else {
+			scriptTTSRef.current.skipTo(index);
+		}
+	}, [handleEmotionTTS, ttsPlaying]);
+
 	const handleScriptTTS = useCallback(async () => {
 		if (!ttsConfig.apiKey) {
 			setError("请先在设置中配置 TTS API Key");
@@ -141,7 +289,7 @@ function TaskPanelContent({
 
 			const enhanceMessages: ChatMessage[] = [
 				{ role: "system", content: promptConfig.scriptTts || SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT },
-				{ role: "user", content: buildScriptTTSEnhanceUserPrompt(result[0].content, characters) },
+				{ role: "user", content: buildScriptTTSEnhanceUserPrompt(scriptToPlainText(result[0].content), characters) },
 			];
 
 			const enhancedScript = await sendChatCompletion(
@@ -153,11 +301,12 @@ function TaskPanelContent({
 			logger.tts(enhancedScript);
 
 			const cleanedScript = cleanEnhancedScript(enhancedScript);
+			const plainScript = scriptToPlainText(cleanedScript);
 			logger.tts("=== 清理后的剧本内容 ===");
-			logger.tts(cleanedScript);
+			logger.tts(plainScript);
 
 			// 根据角色信息构建 characterVoices
-			const { characters: detected } = parseScriptContent(cleanedScript);
+			const { characters: detected } = parseScriptContent(plainScript);
 			const characterVoices: Record<string, string> = { ...ttsConfig.characterVoices };
 			for (const char of detected) {
 				characterVoices[char] = characterVoices[char] || getVoiceForCharacter(char);
@@ -174,8 +323,8 @@ function TaskPanelContent({
 				setTtsPlaying(false);
 			});
 
-			scriptTTSRef.current.loadScript(cleanedScript);
-			
+			scriptTTSRef.current.loadScript(plainScript, getVoiceDesignPromptForCharacter);
+
 			logger.tts("=== 解析出的对话 ===", scriptTTSRef.current.getDialogues());
 
 			setTtsPlaying(true);
@@ -186,13 +335,17 @@ function TaskPanelContent({
 		} finally {
 			setTtsProcessing(false);
 		}
-	}, [result, ttsConfig, aiConfig, getVoiceForCharacter, promptConfig, currentNovelId, getCharacters]);
+	}, [result, ttsConfig, aiConfig, getVoiceForCharacter, getVoiceDesignPromptForCharacter, promptConfig, currentNovelId, getCharacters]);
 
 	const handleScriptTTSStop = useCallback(() => {
+		isEmotionTTSActiveRef.current = false;
 		if (scriptTTSRef.current) {
 			scriptTTSRef.current.stop();
-			setTtsPlaying(false);
+			scriptTTSRef.current = null;
 		}
+		setTtsPlaying(false);
+		setCurrentDialogueIndex(-1);
+		setCurrentPlayingCharacter(undefined);
 	}, []);
 
 	const handleCharacterVoiceChange = useCallback((character: string, voice: string) => {
@@ -231,9 +384,10 @@ function TaskPanelContent({
 				enableLogging: aiConfig.enableLogging,
 			};
 
+			const characters = currentNovelId ? getCharacters(currentNovelId) : [];
 			const messages: ChatMessage[] = [
 				{ role: "system", content: effectivePrompt },
-				{ role: "user", content: buildScriptUserPrompt(chapterText) },
+				{ role: "user", content: buildScriptUserPrompt(chapterText, characters) },
 			];
 
 			const segmentContent = await sendChatCompletion(
@@ -254,7 +408,7 @@ function TaskPanelContent({
 		} finally {
 			setProcessing(false);
 		}
-	}, [chapter, prompt, aiConfig, setScriptResult, promptConfig]);
+	}, [chapter, prompt, aiConfig, setScriptResult, promptConfig, currentNovelId, getCharacters]);
 
 	const handleExport = useCallback(async () => {
 		if (result.length === 0) return;
@@ -315,6 +469,11 @@ function TaskPanelContent({
 								<div className="result-summary">
 									<span className="summary-count">
 										章节转换完成
+										{currentPlayingCharacter && ttsPlaying && (
+											<span className="current-character-badge">
+												正在朗读：{currentPlayingCharacter}
+											</span>
+										)}
 									</span>
 									<div className="script-tts-controls">
 										{ttsPlaying ? (
@@ -322,16 +481,21 @@ function TaskPanelContent({
 												<Icons.pause size={14} /> 停止播放
 											</button>
 										) : (
-											<button className="btn-script-tts" onClick={handleScriptTTS} disabled={ttsProcessing}>
-												{ttsProcessing ? (
-													<>
-														<span className="spinner"></span>
-														<span>准备中...</span>
-													</>
-												) : (
-													<><Icons.bookHeadphones size={14} /> 角色配音</>
-												)}
-											</button>
+											<>
+												<button className="btn-script-tts" onClick={() => handleEmotionTTS()} disabled={ttsProcessing}>
+													{ttsProcessing ? (
+														<>
+															<span className="spinner"></span>
+															<span>准备中...</span>
+														</>
+													) : (
+														<><Icons.bookHeadphones size={14} /> 情感朗读</>
+													)}
+												</button>
+												<button className="btn-script-tts" onClick={handleScriptTTS} disabled={ttsProcessing} title="AI 增强情感配音">
+													<Icons.sparkles size={14} /> AI增强
+												</button>
+											</>
 										)}
 										<button
 											className={`btn-voice-settings ${showVoiceSettings ? "active" : ""}`}
@@ -376,10 +540,14 @@ function TaskPanelContent({
 								)}
 								{result.map((seg, i) => (
 									<div key={i} className="result-segment">
-										<div className="segment-header">
-											<span className="segment-index"><Icons.grammar size={12} /> {seg.chapterTitle}</span>
-										</div>
-										<div className="segment-content">{seg.content}</div>
+										<div className="segment-content">
+										<ScriptRenderer
+											content={seg.content}
+											currentDialogueIndex={ttsPlaying ? currentDialogueIndex : -1}
+											onDialogueClick={handleDialogueClick}
+											characters={currentNovelId ? getCharacters(currentNovelId) : []}
+										/>
+									</div>
 									</div>
 								))}
 							</div>

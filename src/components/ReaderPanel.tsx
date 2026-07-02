@@ -1,4 +1,5 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useNovelStore } from "../stores/novelStore";
 import { useUIStore } from "../stores/uiStore";
 import { useCharacterStore } from "../stores/characterStore";
@@ -11,6 +12,10 @@ import { useTTS } from "../hooks/useTTS";
 import { useSearch } from "../hooks/useSearch";
 import { useReadingProgress } from "../hooks/useReadingProgress";
 import { useChapterTitleSuggestion } from "../hooks/useChapterTitleSuggestion";
+import { AIContinuation } from "./AIContinuation";
+import { generateChapterBridge } from "../utils/aiClient";
+import type { BridgeParams } from "../utils/aiClient";
+import { useAIConfigStore } from "../stores/aiConfigStore";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
@@ -139,6 +144,12 @@ export function ReaderPanel({
 	const [detectedNewCharacters, setDetectedNewCharacters] = useState<string[]>([]);
 	const [showNewCharacterModal, setShowNewCharacterModal] = useState(false);
 
+	// 章节桥接状态
+	const [bridgingIndex, setBridgingIndex] = useState<number | null>(null);
+	const [isGeneratingBridge, setIsGeneratingBridge] = useState(false);
+	const [bridgeContent, setBridgeContent] = useState("");
+	const [showBridgePreview, setShowBridgePreview] = useState(false);
+
 	const {
 		ttsPlaying, ttsHighlightedPara, isStreamTTSPlaying, enhancedTTSPreparing,
 		isStreamTTSWaitingForStart, currentPlayingCharacter, remainingSeconds,
@@ -191,6 +202,91 @@ export function ReaderPanel({
 		setShowNewCharacterModal(false);
 		setDetectedNewCharacters([]);
 	}, [currentNovelId, addCharacter]);
+
+	// AI生成章节之间的桥接内容
+	const handleGenerateBridge = useCallback(async (prevIndex: number) => {
+		if (!currentNovelId || prevIndex < 0 || prevIndex >= chapters.length - 1) return;
+		const aiConfig = useAIConfigStore.getState().aiConfig;
+		if (!aiConfig.apiKey || !aiConfig.baseURL) {
+			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			return;
+		}
+
+		const prevChapter = chapters[prevIndex];
+		const nextChapter = chapters[prevIndex + 1];
+		if (!prevChapter || !nextChapter) return;
+
+		setBridgingIndex(prevIndex);
+		setIsGeneratingBridge(true);
+		try {
+			// 上一章末尾最后10段
+			const prevParagraphs = prevChapter.content.split("\n").filter(p => p.trim());
+			const prevEnding = prevParagraphs.slice(-10).join("\n");
+			// 下一章开头前5段
+			const nextParagraphs = nextChapter.content.split("\n").filter(p => p.trim());
+			const nextBeginning = nextParagraphs.slice(0, 5).join("\n");
+
+			// 收集角色信息摘要
+			const allChars = useCharacterStore.getState().novelCharacters[currentNovelId] ?? [];
+			const charsSummary = allChars.map(c => {
+				const parts = [c.name, c.gender === "male" ? "男" : c.gender === "female" ? "女" : "其他"];
+				if (c.role) parts.push(c.role);
+				if (c.personality) parts.push(c.personality);
+				return parts.join("，");
+			}).join("\n");
+
+			// 世界观
+			const wb = useCharacterStore.getState().worldbuilding[currentNovelId];
+			const worldbuildingText = wb ? [
+				wb.worldType, wb.eraDescription, wb.geography,
+				wb.socialStructure, wb.powerSystem, wb.coreSettings,
+			].filter(Boolean).join("，") : "";
+
+			const params: BridgeParams = {
+				prevTitle: prevChapter.title || `第${prevIndex + 1}章`,
+				prevEnding,
+				nextTitle: nextChapter.title || `第${prevIndex + 2}章`,
+				nextBeginning,
+				charactersSummary: charsSummary,
+				worldbuilding: worldbuildingText,
+			};
+
+			const config = {
+				baseURL: aiConfig.baseURL,
+				apiKey: aiConfig.apiKey,
+				model: aiConfig.model,
+				customHeaders: {} as Record<string, string>,
+				maxCharsPerRequest: 0,
+				enableLogging: false,
+			};
+
+			const result = await generateChapterBridge(params, config);
+			setBridgeContent(result);
+			setShowBridgePreview(true);
+			useAppMetaStore.getState().showToast(`衔接段落生成完成，${result.length} 字符`, "success");
+		} catch (err) {
+			useAppMetaStore.getState().showToast("生成衔接段落失败: " + (err instanceof Error ? err.message : String(err)), "error");
+		} finally {
+			setIsGeneratingBridge(false);
+		}
+	}, [currentNovelId, chapters]);
+
+	// 确认将桥接内容追加到上一章末尾
+	const handleApplyBridge = useCallback(() => {
+		if (bridgingIndex === null || !bridgeContent) return;
+		useNovelStore.getState().appendToChapter(bridgingIndex, bridgeContent);
+		setBridgeContent("");
+		setShowBridgePreview(false);
+		setBridgingIndex(null);
+		useAppMetaStore.getState().showToast("衔接内容已追加到章节末尾", "success");
+	}, [bridgingIndex, bridgeContent]);
+
+	// 取消桥接
+	const handleCancelBridge = useCallback(() => {
+		setBridgeContent("");
+		setShowBridgePreview(false);
+		setBridgingIndex(null);
+	}, []);
 
 	/** 进入编辑模式 */
 	const startEditing = useCallback((index: number, currentText: string) => {
@@ -1325,63 +1421,86 @@ export function ReaderPanel({
 										const showSuggestionsLocal = suggestingId === ch.id && (chapterTitleSuggestions[ch.id]?.length ?? 0) > 0;
 
 										return (
-											<div key={ch.id}>
-												<div
-													ref={isActive ? activeChapterItemRef : null}
-													className={`chapter-list-item${isActive ? " active" : ""}`}
-													onClick={() => {
-														setCurrentChapterIndex(index);
-														setShowChapterList(false);
-													}}
-												>
-													<span className="chapter-index">{index + 1}</span>
-													<span className="chapter-name">
-														{ch.title || `第 ${index + 1} 章`}
-													</span>
-													{hasNoTitle && (
-														<button
-															className="suggest-title-btn"
-															onClick={(e) => {
-																e.stopPropagation();
-																handleSuggestChapterTitle(ch.id, index);
-															}}
-															disabled={isSuggestingLocal}
-														>
-															<Icons.sparkle size={14} />
-														</button>
+											<>
+												<div key={ch.id}>
+													<div
+														ref={isActive ? activeChapterItemRef : null}
+														className={`chapter-list-item${isActive ? " active" : ""}`}
+														onClick={() => {
+															setCurrentChapterIndex(index);
+															setShowChapterList(false);
+														}}
+													>
+														<span className="chapter-index">{index + 1}</span>
+														<span className="chapter-name">
+															{ch.title || `第 ${index + 1} 章`}
+														</span>
+														{hasNoTitle && (
+															<button
+																className="suggest-title-btn"
+																onClick={(e) => {
+																	e.stopPropagation();
+																	handleSuggestChapterTitle(ch.id, index);
+																}}
+																disabled={isSuggestingLocal}
+															>
+																<Icons.sparkle size={14} />
+															</button>
+														)}
+													</div>
+													{showSuggestionsLocal && (
+														<div className="chapter-title-suggestions">
+															<div className="suggestions-header">
+																<span>AI推荐章节名</span>
+																<button
+																	className="close-suggestions"
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		chapterTitleSuggestion.handleCloseSuggestions(ch.id);
+																	}}
+																>
+																	<Icons.x size={14} />
+																</button>
+															</div>
+															{(chapterTitleSuggestions[ch.id] || []).map((title, idx) => (
+																<button
+																	key={idx}
+																	className="suggestion-item"
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		handleApplyChapterTitle(ch.id, title);
+																	}}
+																>
+																	{title}
+																</button>
+															))}
+														</div>
 													)}
 												</div>
-												{showSuggestionsLocal && (
-													<div className="chapter-title-suggestions">
-														<div className="suggestions-header">
-															<span>AI推荐章节名</span>
-															<button
-																className="close-suggestions"
-																onClick={(e) => {
-																	e.stopPropagation();
-																	chapterTitleSuggestion.handleCloseSuggestions(ch.id);
-																}}
-															>
-																<Icons.x size={14} />
-															</button>
-														</div>
-														{(chapterTitleSuggestions[ch.id] || []).map((title, idx) => (
-															<button
-																key={idx}
-																className="suggestion-item"
-																onClick={(e) => {
-																	e.stopPropagation();
-																	handleApplyChapterTitle(ch.id, title);
-																}}
-															>
-																{title}
-															</button>
-														))}
+												{/* 章节之间的桥接按钮 */}
+												{index < chapters.length - 1 && (
+													<div className="chapter-bridge-row">
+														<button
+															className="chapter-bridge-btn"
+															onClick={(e) => {
+																e.stopPropagation();
+																handleGenerateBridge(index);
+															}}
+															disabled={isGeneratingBridge && bridgingIndex === index}
+															title={ch.title ? `生成"${ch.title}"到"${chapters[index + 1]?.title || "第" + (index + 2) + "章"}"之间的衔接段落` : "生成章节衔接段落"}
+														>
+															{isGeneratingBridge && bridgingIndex === index ? (
+																<><span className="spinner"></span><span>生成中</span></>
+															) : (
+																<><Icons.combine size={12} /><span>衔接</span></>
+															)}
+														</button>
 													</div>
 												)}
-											</div>
+											</>
 										);
 									})}
+									<AIContinuation />
 								</div>
 							</div>
 						</div>
@@ -1579,6 +1698,42 @@ export function ReaderPanel({
 					</div>
 				</div>
 			)}
+
+			{/* AI章节衔接预览弹窗 */}
+			{showBridgePreview && bridgeContent && createPortal(
+				<div className="chapter-list-overlay" onClick={handleCancelBridge}>
+					<div className="config-modal bridge-preview-modal" onClick={(e) => e.stopPropagation()}>
+						<div className="config-header">
+							<div className="config-title">
+								<Icons.combine size={18} />
+								<span>章节衔接预览</span>
+							</div>
+							<button className="close-btn" onClick={handleCancelBridge}>
+								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+									<path d="M3 3L13 13M13 3L3 13" />
+								</svg>
+							</button>
+						</div>
+						<div className="bridge-preview-content">
+							<p className="bridge-preview-hint">
+								将衔接段落追加到第 {(bridgingIndex ?? 0) + 1} 章末尾
+							</p>
+							<div className="bridge-preview-text">{bridgeContent}</div>
+						</div>
+						<div className="config-actions">
+							<button className="btn btn-cancel" onClick={handleCancelBridge}>
+								取消
+							</button>
+							<button className="btn" onClick={handleApplyBridge}>
+								<Icons.combine size={16} />
+								<span>追加到本章</span>
+							</button>
+						</div>
+					</div>
+				</div>,
+				document.body,
+			)}
+
 		</div>
 	);
 }

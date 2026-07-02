@@ -106,6 +106,7 @@ export const Icons = {
 	circleCheckBig: CircleCheckBig,
 	typo: Type,
 	grammar: PenLine,
+	penLine: PenLine,
 	punctuation: FileText,
 	chevronDown: ChevronDown,
 	chevronUp: ChevronUp,

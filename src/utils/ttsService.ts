@@ -71,9 +71,9 @@ class AudioCacheManager {
 		return this.isPersistent;
 	}
 
-	generateKey(text: string, config: TTSConfig, voice?: string): string {
+	generateKey(text: string, config: TTSConfig, voice?: string, voiceDesignPrompt?: string): string {
 		const effectiveVoice = voice || config.voice || "";
-		return `${text}:${effectiveVoice}:${config.speed}:${config.volume}`;
+		return `${text}:${effectiveVoice}:${config.speed}:${config.volume}:${voiceDesignPrompt || ""}`;
 	}
 
 	get(key: string, config: TTSConfig): ArrayBuffer | undefined {
@@ -1047,7 +1047,7 @@ export class ScriptTTSPlayer {
 		this.onComplete = callback;
 	}
 
-	loadScript(content: string) {
+	loadScript(content: string, getVoiceDesignPrompt?: (character: string) => string | undefined) {
 		const { characters, dialogues } = parseScriptContent(content);
 
 		const voiceMap: Record<string, string> = this.config.characterVoices || {};
@@ -1056,6 +1056,7 @@ export class ScriptTTSPlayer {
 		this.dialogues = dialogues.map((d) => ({
 			...d,
 			voice: voiceMap[d.character] || defaultVoice,
+			voiceDesignPrompt: getVoiceDesignPrompt?.(d.character),
 		}));
 
 		this.currentIndex = 0;
@@ -1399,13 +1400,13 @@ export class ScriptTTSPlayer {
 
 				if (!audioBuffer && this.config.audioCacheEnabled) {
 					// 尝试从全局缓存获取
-					const cacheKey = audioCache.generateKey(dialogue.text, this.config, dialogue.voice);
+					const cacheKey = audioCache.generateKey(dialogue.text, this.config, dialogue.voice, dialogue.voiceDesignPrompt);
 					audioBuffer = audioCache.get(cacheKey, this.config);
 
 					if (!audioBuffer) {
 						// 需要生成音频
-						logger.tts("生成对话音频", { index, character: dialogue.character, fromCache: false });
-						audioBuffer = await synthesizeSpeechWithVoice(dialogue.text, this.config, dialogue.voice);
+						logger.tts("生成对话音频", { index, character: dialogue.character, fromCache: false, voiceDesign: !!dialogue.voiceDesignPrompt });
+						audioBuffer = await synthesizeSpeechWithVoice(dialogue.text, this.config, dialogue.voice, dialogue.voiceDesignPrompt);
 						// 缓存到全局和本地
 						audioCache.set(cacheKey, audioBuffer, this.config);
 						this.dialogues[index] = { ...this.dialogues[index], audioBuffer };
@@ -1416,8 +1417,8 @@ export class ScriptTTSPlayer {
 					}
 				} else if (!audioBuffer) {
 					// 缓存未启用，直接生成音频
-					logger.tts("生成对话音频（缓存未启用）", { index, character: dialogue.character, fromCache: false });
-					audioBuffer = await synthesizeSpeechWithVoice(dialogue.text, this.config, dialogue.voice);
+					logger.tts("生成对话音频（缓存未启用）", { index, character: dialogue.character, fromCache: false, voiceDesign: !!dialogue.voiceDesignPrompt });
+					audioBuffer = await synthesizeSpeechWithVoice(dialogue.text, this.config, dialogue.voice, dialogue.voiceDesignPrompt);
 				} else {
 					logger.tts("使用本地缓存音频", { index, character: dialogue.character, fromCache: true });
 				}

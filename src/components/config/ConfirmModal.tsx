@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import { Icons } from "../Icons";
 
 interface ConfirmModalProps {
@@ -24,7 +25,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 }) => {
 	if (!show) return null;
 
-	return (
+	return createPortal(
 		<div className="modal-overlay" onClick={onCancel}>
 			<div className="config-modal" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
 				<div className="config-header">
@@ -56,6 +57,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 					</button>
 				</div>
 			</div>
-		</div>
+		</div>,
+		document.body
 	);
 };
