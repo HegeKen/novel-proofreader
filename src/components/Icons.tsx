@@ -72,6 +72,7 @@ import {
 	ExternalLink,
 	Brain,
 	Info,
+	MapPin,
 } from "lucide-react";
 
 export const Icons = {
@@ -123,6 +124,7 @@ export const Icons = {
 	user: User,
 	calendar: Clock,
 	clock: Clock,
+	mapPin: MapPin,
 	file: FileIcon,
 	plus: Plus,
 	minus: Minus,

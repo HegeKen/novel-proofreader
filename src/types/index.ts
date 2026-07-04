@@ -223,6 +223,51 @@ export interface NovelEvent {
 	involvedCharacterIds: string[]; // 涉及的角色ID列表
 }
 
+/** 剧本块类型 */
+export type ScriptBlockType = "scene-header" | "action" | "dialogue" | "narration" | "transition";
+
+/** 剧本块 */
+export interface ScriptBlock {
+	type: ScriptBlockType;
+	text: string;
+	character?: string;
+	emotion?: string;
+	tone?: string;
+}
+
+/** 场景时间信息 */
+export interface SceneTime {
+	period: string;   // 标准化时段：清晨/上午/正午/下午/黄昏/傍晚/夜间/深夜/凌晨
+	detail?: string;  // 可选，自然/环境描写（≤12字）
+}
+
+/** 场景地点信息 */
+export interface SceneLocation {
+	scope: string;   // 内景/外景/内外
+	name: string;    // 具体地点名称
+}
+
+/** 场景氛围信息 */
+export interface SceneAtmosphere {
+	tag: string;       // 核心氛围词（≤4字）
+	intensity: string; // 氛围强度：弱/中/强
+}
+
+/** 剧本场景 */
+export interface ScriptScene {
+	title: string;
+	time: SceneTime;
+	location: SceneLocation;
+	atmosphere: SceneAtmosphere;
+	blocks: ScriptBlock[];
+}
+
+/** 剧本 JSON 结构 */
+export interface ScriptJSON {
+	scenes: ScriptScene[];
+	characters: string[];
+}
+
 /** 人物关系类型枚举 */
 export type RelationType =
 	| "couple" // 夫妻

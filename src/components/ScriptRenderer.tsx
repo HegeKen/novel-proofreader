@@ -1,8 +1,8 @@
 // ============================================================
 // 剧本渲染组件 — 将 MD 样式剧本解析为结构化 JSX 展示
 // ============================================================
-import { useMemo } from "react";
-import { parseScriptBlocks } from "../utils/scriptMarkdown";
+import { useMemo, useEffect } from "react";
+import { parseScriptBlocks, parseScriptJSON, scriptJSONToBlocks, convertNonDialogueToNarrator, type ScriptBlock } from "../utils/scriptMarkdown";
 import { Icons } from "./Icons";
 import type { CharacterInfo } from "../types";
 
@@ -11,6 +11,8 @@ interface ScriptRendererProps {
 	currentDialogueIndex?: number;
 	onDialogueClick?: (index: number) => void;
 	characters?: CharacterInfo[];
+	reparseKey?: number;
+	narratorName?: string;
 }
 
 function extractSceneNumber(header: string): string {
@@ -19,15 +21,50 @@ function extractSceneNumber(header: string): string {
 }
 
 function extractSceneTitle(header: string): string {
-	const cleaned = header
-		.replace(/^场景\s*\d*\s*[：:]\s*/, "")
-		.replace(/^\d+[.、]\s*/, "");
-	return cleaned || header;
+	const titleMatch = header.match(/^场景\s*\d*|^[\d]+[.、]\s*[^｜]+/);
+	if (titleMatch) {
+		return titleMatch[0].replace(/[.、]$/, "").trim();
+	}
+	const beforePipe = header.split("｜")[0]?.split("：")[0];
+	return beforePipe?.trim() || header;
+}
+
+function parseScriptContent(content: string, narratorName?: string): ScriptBlock[] {
+	let blocks: ScriptBlock[];
+	const jsonResult = parseScriptJSON(content);
+	if (jsonResult) {
+		blocks = scriptJSONToBlocks(jsonResult);
+	} else {
+		blocks = parseScriptBlocks(content);
+	}
+	if (narratorName) {
+		blocks = convertNonDialogueToNarrator(blocks, narratorName);
+	}
+	return blocks;
 }
 
 function extractSceneAtmosphere(header: string): string {
 	const match = header.match(/[-—–]\s*([^-—–]+?)\s*$/);
 	return match ? match[1].trim() : "";
+}
+
+interface SceneMeta {
+	time: string;
+	location: string;
+	atmosphere: string;
+}
+
+function extractSceneMeta(header: string): SceneMeta | null {
+	const parts = header.split("｜").map((p) => p.trim());
+	if (parts.length < 3) return null;
+	const titlePart = parts[0];
+	const timeMatch = titlePart.match(/：(.+)$/);
+	const time = timeMatch ? timeMatch[1].trim() : "";
+	return {
+		time,
+		location: parts[1] || "",
+		atmosphere: parts[2] || "",
+	};
 }
 
 function findCharacterInfo(name: string, characters?: CharacterInfo[]): CharacterInfo | undefined {
@@ -55,8 +92,21 @@ function getGenderClass(gender?: string): string {
 	}
 }
 
-export function ScriptRenderer({ content, currentDialogueIndex = -1, onDialogueClick, characters }: ScriptRendererProps) {
-	const blocks = useMemo(() => parseScriptBlocks(content), [content]);
+export function ScriptRenderer({ content, currentDialogueIndex = -1, onDialogueClick, characters, reparseKey, narratorName }: ScriptRendererProps) {
+	// eslint-disable-next-line react-hooks/exhaustive-deps -- reparseKey triggers forced re-parse
+	const blocks = useMemo(() => parseScriptContent(content, narratorName), [content, reparseKey, narratorName]);
+
+	useEffect(() => {
+		if (currentDialogueIndex >= 0) {
+			const activeElement = document.querySelector(`[data-dialogue-index="${currentDialogueIndex}"]`);
+			if (activeElement) {
+				activeElement.scrollIntoView({
+					block: "center",
+					behavior: "smooth",
+				});
+			}
+		}
+	}, [currentDialogueIndex]);
 
 	const dialogueCount = useMemo(() => {
 		return blocks.filter((b) => b.type === "dialogue").length;
@@ -84,9 +134,10 @@ export function ScriptRenderer({ content, currentDialogueIndex = -1, onDialogueC
 			if (block.type === "dialogue") {
 				const dIdx = dialogueIndex++;
 				const isActive = dIdx === currentDialogueIndex;
-				const charInfo = findCharacterInfo(block.character, characters);
+				const charName = block.character ?? "?";
+				const charInfo = findCharacterInfo(charName, characters);
 				const genderCls = getGenderClass(charInfo?.gender);
-				const initial = getCharacterInitial(block.character);
+				const initial = getCharacterInitial(charName);
 				const hasVoiceDesign = !!charInfo?.voiceDesignPrompt;
 
 				currentScene.children.push(
@@ -109,15 +160,15 @@ export function ScriptRenderer({ content, currentDialogueIndex = -1, onDialogueC
 										</span>
 									)}
 								</span>
-								{block.emotion && (
+								{(block.emotion || block.tone) && (
 									<span className="script-emotion">
 										<Icons.sparkle size={10} />
-										{block.emotion}
+										{block.emotion}{block.emotion && block.tone ? "," : ""}{block.tone}
 									</span>
 								)}
 								<span className="dialogue-index-badge">{dIdx + 1}/{dialogueCount}</span>
 							</div>
-							<div className="script-dialogue-text">{block.text}</div>
+							<div className="script-dialogue-text">{block.text.replace(/^'(.*)'$/, '$1')}</div>
 						</div>
 					</div>,
 				);
@@ -212,6 +263,7 @@ export function ScriptRenderer({ content, currentDialogueIndex = -1, onDialogueC
 				}
 				const sceneNum = extractSceneNumber(scene.header);
 				const sceneTitle = extractSceneTitle(scene.header);
+				const sceneMeta = extractSceneMeta(scene.header);
 				return (
 					<div key={si} className="script-scene-card">
 						<div className="script-scene-card-header">
@@ -219,14 +271,30 @@ export function ScriptRenderer({ content, currentDialogueIndex = -1, onDialogueC
 								{sceneNum && <span className="script-scene-badge">场景 {sceneNum}</span>}
 								<span className="script-scene-card-title">{sceneTitle}</span>
 							</div>
-							{scene.atmosphere && (
-								<span className="script-atmosphere-tag">
-									<Icons.sparkle size={11} />
-									{scene.atmosphere}
-								</span>
-							)}
 						</div>
 						<div className="script-scene-card-body">
+							{sceneMeta && (
+								<div className="script-scene-meta-table">
+									<div className="script-scene-meta-row">
+										<div className="script-scene-meta-label">
+											<Icons.clock size={10} /> 时间
+										</div>
+										<div className="script-scene-meta-value">{sceneMeta.time}</div>
+									</div>
+									<div className="script-scene-meta-row">
+										<div className="script-scene-meta-label">
+											<Icons.mapPin size={10} /> 地点
+										</div>
+										<div className="script-scene-meta-value">{sceneMeta.location}</div>
+									</div>
+									<div className="script-scene-meta-row">
+										<div className="script-scene-meta-label">
+											<Icons.sparkle size={10} /> 氛围
+										</div>
+										<div className="script-scene-meta-value">{sceneMeta.atmosphere}</div>
+									</div>
+								</div>
+							)}
 							{scene.children}
 						</div>
 					</div>

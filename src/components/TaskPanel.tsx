@@ -6,14 +6,14 @@ import { useNovelStore } from "../stores/novelStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useCharacterStore } from "../stores/characterStore";
 import { useConfigStore } from "../stores/configStore";
-import { sendChatCompletion, buildScriptUserPrompt, SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT, buildScriptTTSEnhanceUserPrompt, cleanEnhancedScript } from "../utils/aiClient";
+import { sendChatCompletion, buildScriptUserPrompt, SCRIPT_SYSTEM_PROMPT, SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT, buildScriptTTSEnhanceUserPrompt, cleanEnhancedScript } from "../utils/aiClient";
 import { exportToFile } from "../utils/fileExport";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { ScriptTTSPlayer, parseScriptContent } from "../utils/ttsService";
-import { scriptToPlainText, parseScriptBlocks } from "../utils/scriptMarkdown";
-import type { ScriptBlock } from "../utils/scriptMarkdown";
+import { scriptToPlainText, parseScriptBlocks, parseScriptJSON, scriptJSONToBlocks, convertNonDialogueToNarrator, repairScriptContent } from "../utils/scriptMarkdown";
+import type { ScriptBlock, DialogueBlock } from "../utils/scriptMarkdown";
 import { ScriptRenderer } from "./ScriptRenderer";
 import { logger } from "../utils/logger";
 import type { ChatMessage } from "../utils/aiClient";
@@ -56,6 +56,8 @@ function TaskPanelContent({
 	const [showVoiceSettings, setShowVoiceSettings] = useState(false);
 	const [currentDialogueIndex, setCurrentDialogueIndex] = useState(-1);
 	const [currentPlayingCharacter, setCurrentPlayingCharacter] = useState<string | undefined>(undefined);
+	const [reparseKey, setReparseKey] = useState(0);
+	const [narratorName, setNarratorName] = useState<string | undefined>(undefined);
 	const scriptTTSRef = useRef<ScriptTTSPlayer | null>(null);
 	const isEmotionTTSActiveRef = useRef(false);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
@@ -65,11 +67,12 @@ function TaskPanelContent({
 
 	const detectedCharacters = useMemo(() => {
 		if (result.length > 0 && result[0].content) {
-			const { characters } = parseScriptContent(scriptToPlainText(result[0].content));
+			const knownCharacters = currentNovelId ? getCharacters(currentNovelId).map((c) => c.name) : undefined;
+			const { characters } = parseScriptContent(scriptToPlainText(result[0].content, knownCharacters));
 			return characters;
 		}
 		return [];
-	}, [result]);
+	}, [result, currentNovelId, getCharacters]);
 
 	// 根据角色信息获取音色
 	const getVoiceForCharacter = useCallback((characterName: string): string => {
@@ -119,21 +122,40 @@ function TaskPanelContent({
 
 	// 获取角色的音色设计 prompt
 	const getVoiceDesignPromptForCharacter = useCallback((characterName: string): string | undefined => {
-		if (!currentNovelId) return undefined;
+		if (!currentNovelId) {
+			logger.tts("getVoiceDesignPromptForCharacter: 无当前小说ID", { characterName });
+			return undefined;
+		}
 		const characters = getCharacters(currentNovelId);
+		logger.tts("getVoiceDesignPromptForCharacter: 当前小说角色列表", { novelId: currentNovelId, characterCount: characters.length, characterNames: characters.map(c => c.name) });
+		
 		let matched = characters.find((c) => c.name.toLowerCase() === characterName.toLowerCase());
 		if (!matched) {
+			logger.tts("getVoiceDesignPromptForCharacter: 未精确匹配，尝试别名匹配", { characterName });
 			matched = characters.find(
 				(c) => c.aliases?.some((alias) => alias.toLowerCase() === characterName.toLowerCase())
 			);
 		}
-		if (!matched) return undefined;
+		
+		if (!matched) {
+			logger.tts("getVoiceDesignPromptForCharacter: 未找到匹配角色", { characterName, availableCharacters: characters.map(c => ({ name: c.name, aliases: c.aliases })) });
+			return undefined;
+		}
+		
 		const designPrompt = matched.voiceDesignPrompt?.trim();
 		const dialect = matched.dialect;
-		if (designPrompt) {
-			return dialect ? `${designPrompt}，说${dialect}` : designPrompt;
-		}
-		return undefined;
+		const result = designPrompt ? (dialect ? `${designPrompt}，说${dialect}` : designPrompt) : undefined;
+		
+		logger.tts("getVoiceDesignPromptForCharacter: 匹配成功", {
+			characterName,
+			matchedName: matched.name,
+			hasVoiceDesign: !!designPrompt,
+			hasDialect: !!dialect,
+			voiceDesignPreview: designPrompt?.slice(0, 50),
+			resultPreview: result?.slice(0, 50),
+		});
+		
+		return result;
 	}, [currentNovelId, getCharacters]);
 
 	// 获取角色方言
@@ -169,7 +191,6 @@ function TaskPanelContent({
 		}
 		if (result.length === 0) return;
 
-		// 停止当前播放
 		if (scriptTTSRef.current) {
 			isEmotionTTSActiveRef.current = false;
 			scriptTTSRef.current.stop();
@@ -180,8 +201,28 @@ function TaskPanelContent({
 		setError("");
 
 		try {
-			const blocks = parseScriptBlocks(result[0].content);
-			const dialogues = blocks.filter((b): b is Extract<ScriptBlock, { type: "dialogue" }> => b.type === "dialogue");
+			const allNovelCharacters = currentNovelId ? getCharacters(currentNovelId) : [];
+			const narratorChar = allNovelCharacters.find((c) =>
+				c.role === "narrator" ||
+				c.aliases?.some((a) => a.includes("旁白")) ||
+				c.relationTerms?.some((r) => r.includes("旁白"))
+			);
+
+			let blocks: ScriptBlock[];
+			const jsonResult = parseScriptJSON(result[0].content);
+			if (jsonResult) {
+				blocks = scriptJSONToBlocks(jsonResult);
+			} else {
+				blocks = parseScriptBlocks(result[0].content);
+			}
+			// 如果有旁白角色，将动作/场景描述/内心独白等转为旁白对话
+			if (narratorChar) {
+				setNarratorName(narratorChar.name);
+				blocks = convertNonDialogueToNarrator(blocks, narratorChar.name);
+			} else {
+				setNarratorName(undefined);
+			}
+			const dialogues = blocks.filter((b): b is DialogueBlock => b.type === "dialogue");
 
 			if (dialogues.length === 0) {
 				setError("剧本中没有可朗读的对话");
@@ -189,9 +230,9 @@ function TaskPanelContent({
 				return;
 			}
 
-			// 构建 characterVoices
 			const characterVoices: Record<string, string> = { ...ttsConfig.characterVoices };
 			for (const d of dialogues) {
+				if (!d.character) continue;
 				if (!characterVoices[d.character]) {
 					characterVoices[d.character] = getVoiceForCharacter(d.character);
 				}
@@ -219,18 +260,29 @@ function TaskPanelContent({
 			setTtsPlaying(true);
 			setTtsProcessing(false);
 
-			// 流式添加对话并立即开始播放
 			for (let i = startDialogueIndex; i < dialogues.length; i++) {
 				if (!isEmotionTTSActiveRef.current) break;
 
 				const d = dialogues[i];
-				let text = d.emotion ? `(${d.emotion})${d.text}` : d.text;
+				if (!d.character) continue;
+
+				const emotionTag = d.emotion && d.tone ? `(${d.emotion},${d.tone})` : d.emotion ? `(${d.emotion})` : "";
+				let text = `${emotionTag}${d.text}`;
 				text = applyDialectLabel(d.character, text);
 				const voicePrompt = getVoiceDesignPromptForCharacter(d.character);
+				
+				logger.tts("handleEmotionTTS: 添加对话", {
+					index: i,
+					character: d.character,
+					emotion: d.emotion,
+					tone: d.tone,
+					voiceDesignPrompt: !!voicePrompt,
+					voiceDesignPreview: voicePrompt?.slice(0, 80),
+					textPreview: text.slice(0, 50),
+				});
 
 				await scriptTTS.addDialogueStream(d.character, text, undefined, voicePrompt);
 
-				// 如果还没开始播放，第一个音频生成后启动播放
 				if (i === startDialogueIndex && !scriptTTS.getIsPlaying()) {
 					scriptTTS.play();
 				}
@@ -248,7 +300,7 @@ function TaskPanelContent({
 		} finally {
 			setTtsProcessing(false);
 		}
-	}, [result, ttsConfig, getVoiceForCharacter, applyDialectLabel, getVoiceDesignPromptForCharacter]);
+	}, [result, ttsConfig, getVoiceForCharacter, applyDialectLabel, getVoiceDesignPromptForCharacter, currentNovelId, getCharacters]);
 
 	// 点击对话行开始播放
 	const handleDialogueClick = useCallback((index: number) => {
@@ -277,6 +329,12 @@ function TaskPanelContent({
 		try {
 			// 获取当前小说的角色列表
 			const characters = currentNovelId ? getCharacters(currentNovelId) : [];
+			const narratorChar = characters.find((c) =>
+				c.role === "narrator" ||
+				c.aliases?.some((a) => a.includes("旁白")) ||
+				c.relationTerms?.some((r) => r.includes("旁白"))
+			);
+			const narratorName = narratorChar?.name;
 			
 			const ttsEnhanceAiConfig = {
 				baseURL: aiConfig.baseURL,
@@ -289,7 +347,7 @@ function TaskPanelContent({
 
 			const enhanceMessages: ChatMessage[] = [
 				{ role: "system", content: promptConfig.scriptTts || SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT },
-				{ role: "user", content: buildScriptTTSEnhanceUserPrompt(scriptToPlainText(result[0].content), characters) },
+				{ role: "user", content: buildScriptTTSEnhanceUserPrompt(scriptToPlainText(result[0].content, characters.map(c => c.name), narratorName), characters) },
 			];
 
 			const enhancedScript = await sendChatCompletion(
@@ -301,7 +359,7 @@ function TaskPanelContent({
 			logger.tts(enhancedScript);
 
 			const cleanedScript = cleanEnhancedScript(enhancedScript);
-			const plainScript = scriptToPlainText(cleanedScript);
+			const plainScript = scriptToPlainText(cleanedScript, characters.map(c => c.name), narratorName);
 			logger.tts("=== 清理后的剧本内容 ===");
 			logger.tts(plainScript);
 
@@ -356,7 +414,7 @@ function TaskPanelContent({
 	const handleGenerate = useCallback(async () => {
 		if (!chapter) return;
 
-		const effectivePrompt = prompt.trim() || promptConfig.script;
+		const effectivePrompt = prompt.trim() || promptConfig.script || SCRIPT_SYSTEM_PROMPT;
 		if (!aiConfig.apiKey) {
 			setError("请先在设置中配置 API Key");
 			return;
@@ -417,8 +475,73 @@ function TaskPanelContent({
 			.map((s) => `// ${s.chapterTitle}\n\n${s.content}`)
 			.join("\n\n" + "=".repeat(60) + "\n\n");
 
-		await exportToFile(fullScript, `${chapter?.title ?? "剧本"}_改编.txt`);
+		await exportToFile(fullScript, `${chapter?.title ?? "剧本"}_改编.json`);
 	}, [result, chapter]);
+
+	const handleCopyToClipboard = useCallback(async () => {
+		if (result.length === 0) return;
+
+		const segments = result.map((s) => `// ${s.chapterTitle}\n\n${s.content}`);
+		const separator = "\n\n" + "=".repeat(60) + "\n\n";
+		const fullScript = segments.join(separator);
+
+		const maxClipboardSize = 200000;
+
+		if (fullScript.length <= maxClipboardSize) {
+			try {
+				await navigator.clipboard.writeText(fullScript);
+				logger.ui("剧本内容已复制到剪贴板");
+			} catch (err) {
+				logger.errorGeneric("复制失败:", err);
+			}
+			return;
+		}
+
+		try {
+			const blob = new Blob([fullScript], { type: "text/plain;charset=utf-8" });
+			const dataUrl = URL.createObjectURL(blob);
+
+			try {
+				const item = new ClipboardItem({
+					"text/plain": blob,
+					"text/html": new Blob([`<pre>${fullScript}</pre>`], { type: "text/html" }),
+				});
+				await navigator.clipboard.write([item]);
+				logger.ui("剧本内容已复制到剪贴板");
+			} catch {
+				const link = document.createElement("a");
+				link.href = dataUrl;
+				link.download = `${chapter?.title ?? "剧本"}_改编.txt`;
+				document.body.appendChild(link);
+				link.click();
+				document.body.removeChild(link);
+				logger.ui("剧本内容较长，已自动下载为文件");
+			} finally {
+				URL.revokeObjectURL(dataUrl);
+			}
+		} catch (err) {
+			logger.errorGeneric("复制失败:", err);
+		}
+	}, [result, chapter]);
+
+	// 重新解析：修复 JSON 问题（引号等），验证能否解析，成功则更新显示
+	const handleReparse = useCallback(() => {
+		if (result.length === 0) return;
+		const repaired = repairScriptContent(result[0].content);
+		const parsed = parseScriptJSON(repaired);
+		if (parsed) {
+			const newSegments: ScriptSegment[] = result.map((seg) => ({
+				...seg,
+				content: seg === result[0] ? repaired : seg.content,
+			}));
+			setResult(newSegments);
+			if (chapter) setScriptResult(chapter.id, newSegments);
+			setError("");
+		} else {
+			setError("修复后仍无法解析为 JSON，请重新生成剧本");
+		}
+		setReparseKey((k) => k + 1);
+	}, [result, chapter, setScriptResult]);
 
 	return (
 		<>
@@ -436,7 +559,7 @@ function TaskPanelContent({
 					<textarea
 						value={prompt}
 						onChange={(e) => setPrompt(e.target.value)}
-						placeholder={promptConfig.script}
+						placeholder={SCRIPT_SYSTEM_PROMPT}
 						className="prompt-textarea"
 						rows={4}
 					/>
@@ -503,6 +626,9 @@ function TaskPanelContent({
 										>
 											<Icons.volume size={14} /> 角色音色
 										</button>
+										<button className="btn-script-tts" onClick={handleReparse} title="修复 JSON 引号混用等问题后重新渲染">
+											<Icons.refresh size={13} /> 重新解析
+										</button>
 									</div>
 								</div>
 								{showVoiceSettings && detectedCharacters.length > 0 && (
@@ -539,22 +665,26 @@ function TaskPanelContent({
 									</div>
 								)}
 								{result.map((seg, i) => (
-									<div key={i} className="result-segment">
-										<div className="segment-content">
+										<div  key={i} className="segment-content">
 										<ScriptRenderer
 											content={seg.content}
 											currentDialogueIndex={ttsPlaying ? currentDialogueIndex : -1}
 											onDialogueClick={handleDialogueClick}
 											characters={currentNovelId ? getCharacters(currentNovelId) : []}
+											reparseKey={reparseKey}
+											narratorName={narratorName}
 										/>
-									</div>
 									</div>
 								))}
 							</div>
-							{/* 右下角固定保存按钮 */}
 							<div className="task-export-bar">
+								<button className="btn" onClick={handleCopyToClipboard} title="复制到剪贴板">
+									<Icons.copy size={16} />
+									<span>复制剧本</span>
+								</button>
 								<button className="btn" onClick={handleExport}>
-									💾 导出剧本
+									<Icons.download size={16} />
+									<span>导出剧本</span>
 								</button>
 							</div>
 						</>

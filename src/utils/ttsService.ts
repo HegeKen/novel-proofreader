@@ -282,7 +282,10 @@ export async function synthesizeSpeech(
 
 	if (useVoiceDesign) {
 		const processedPrompt = applyWordReplacements(voiceDesignPrompt);
-		messages.push({ role: "user", content: processedPrompt });
+		messages.push({ 
+			role: "user", 
+			content: `${processedPrompt}\n\n语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）` 
+		});
 		// voicedesign: 标签在 user message 中已传递，assistant 用纯文本
 		messages.push({ role: "assistant", content: processedText.replace(/^\([^)]+\)\s*/, '') });
 	} else {
@@ -398,14 +401,25 @@ export async function synthesizeSpeechWithVoice(
 	// 判断是否使用音色设计模型
 	const useVoiceDesign = !!voiceDesignPrompt;
 	const model = useVoiceDesign ? MIMO_VOICEDESIGN_MODEL : MIMO_TTS_MODEL;
+	
+	logger.tts("synthesizeSpeechWithVoice: 模型选择", {
+		useVoiceDesign,
+		model,
+		voice: validatedVoice,
+		voiceDesignPrompt: !!voiceDesignPrompt,
+		voiceDesignPreview: voiceDesignPrompt?.slice(0, 100),
+	});
 
 	// 构建请求体 — voicedesign 模型要求: user(音色描述)在前, assistant(合成文本)在后
 	const messages: Array<{ role: string; content: string }> = [];
 
 	if (useVoiceDesign) {
-		// user: 音色设计描述
+		// user: 音色设计描述 + 语速音量
 		const processedPrompt = applyWordReplacements(voiceDesignPrompt);
-		messages.push({ role: "user", content: processedPrompt });
+		messages.push({ 
+			role: "user", 
+			content: `${processedPrompt}\n\n语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）` 
+		});
 		// assistant: 要合成的文本（voicedesign 剥离全部标签）
 		messages.push({ role: "assistant", content: processedText.replace(/^\([^)]+\)\s*/, '') });
 	} else {

@@ -787,14 +787,25 @@ export async function createCharacterTemplate(novelName: string): Promise<boolea
 
 export async function exportToTxt(novel: Novel): Promise<boolean> {
   try {
-    const { writeFile } = await import('@tauri-apps/plugin-fs');
     const content = `《${novel.name}》\n\n${novel.fullText}`;
     const filePath = await save({
       defaultPath: `${novel.name}.txt`,
       filters: [{ name: 'Text Files', extensions: ['txt'] }],
     });
     if (filePath) {
-      await writeFile(filePath, new TextEncoder().encode(content));
+      logger.file('Export path:', filePath);
+      logger.file('Content length:', content.length);
+
+      try {
+        await writeTextFile(filePath, content);
+        logger.file('writeTextFile success');
+      } catch (writeErr) {
+        logger.errorGeneric('[fileExport]', 'writeTextFile failed:', writeErr);
+        const { writeFile } = await import('@tauri-apps/plugin-fs');
+        await writeFile(filePath, new TextEncoder().encode(content));
+        logger.file('writeFile fallback success');
+      }
+
       logger.file('Exported novel to:', filePath);
       return true;
     }
@@ -807,20 +818,31 @@ export async function exportToTxt(novel: Novel): Promise<boolean> {
 
 export async function exportToFile(content: string, fileName: string): Promise<"success" | "fallback" | false> {
   try {
-    const { writeFile } = await import('@tauri-apps/plugin-fs');
     const filePath = await save({
       defaultPath: fileName,
       filters: [{ name: 'Text Files', extensions: ['txt'] }],
     });
     if (filePath) {
-      await writeFile(filePath, new TextEncoder().encode(content));
+      logger.file('Export path:', filePath);
+      logger.file('Content length:', content.length);
+      logger.file('Content preview:', content.slice(0, 100));
+
+      try {
+        await writeTextFile(filePath, content);
+        logger.file('writeTextFile success');
+      } catch (writeErr) {
+        logger.errorGeneric('[fileExport]', 'writeTextFile failed:', writeErr);
+        const { writeFile } = await import('@tauri-apps/plugin-fs');
+        await writeFile(filePath, new TextEncoder().encode(content));
+        logger.file('writeFile fallback success');
+      }
+
       logger.file('Exported file to:', filePath);
       return "success";
     }
     return false;
   } catch (e) {
     logger.errorGeneric('[fileExport]', 'Failed to export file:', e);
-    // 尝试 fallback 到下载
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -836,14 +858,13 @@ export async function exportToFile(content: string, fileName: string): Promise<"
 
 export async function exportCharactersToJson(_novelId: string, novelName: string, characters: import('../types').CharacterInfo[]): Promise<boolean> {
   try {
-    const { writeFile } = await import('@tauri-apps/plugin-fs');
     const content = JSON.stringify(characters, null, 2);
     const filePath = await save({
       defaultPath: `${novelName}-characters.json`,
       filters: [{ name: 'JSON Files', extensions: ['json'] }],
     });
     if (filePath) {
-      await writeFile(filePath, new TextEncoder().encode(content));
+      await writeTextFile(filePath, content);
       logger.file('Exported characters to:', filePath);
       return true;
     }
@@ -931,14 +952,13 @@ export async function exportAllData(data: {
   version: string;
 }): Promise<boolean> {
   try {
-    const { writeFile } = await import('@tauri-apps/plugin-fs');
     const content = JSON.stringify(data, null, 2);
     const filePath = await save({
       defaultPath: 'novel-proofreader-backup.json',
       filters: [{ name: 'JSON Files', extensions: ['json'] }],
     });
     if (filePath) {
-      await writeFile(filePath, new TextEncoder().encode(content));
+      await writeTextFile(filePath, content);
       logger.file('Exported all data to:', filePath);
       return true;
     }

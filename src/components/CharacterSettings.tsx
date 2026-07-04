@@ -14,7 +14,7 @@ import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { logger } from "../utils/logger";
 import { ConfirmModal } from "./config/ConfirmModal";
-import { saveCharacterConfigToStorage, loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
+import { loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
 import type { DetectedCharacter } from "../utils/fileExport";
 import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign, analyzeWorldbuilding, sendChatCompletion } from "../utils/aiClient";
 import type { ChatMessage } from "../utils/aiClient";
@@ -1524,37 +1524,31 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		const safeName = (novelName || "小说设置").replace(/[\\/:*?"<>|]/g, "_");
 		const fileName = `${safeName}-小说设置-${new Date().toISOString().split("T")[0]}.json`;
 
-		if (isMobile) {
-			// 移动端：使用 Tauri API 保存到 Android/data/cn.helilab.proofreader/documents/characters/ 目录
-			const success = await saveCharacterConfigToStorage(fileName, dataStr);
-			logger.file('小说设置导出结果:', { success, fileName, characterCount: sortedCharacters.length, dataSize: dataStr.length, isMobile });
-			setExportModal({
-				show: true,
-				success,
-				fileName,
-				dataStr,
-				characterCount: sortedCharacters.length,
-				relationshipCount: relationships.length,
+		// 移动端与桌面端统一使用 Tauri 原生保存对话框
+		try {
+			const { save } = await import("@tauri-apps/plugin-dialog");
+			const { writeTextFile } = await import("@tauri-apps/plugin-fs");
+			const filePath = await save({
+				defaultPath: fileName,
+				filters: [{ name: "JSON Files", extensions: ["json"] }],
 			});
-		} else {
-			// 桌面端：使用浏览器下载
-			const blob = new Blob([dataStr], { type: "application/json" });
-			const url = URL.createObjectURL(blob);
-			const link = document.createElement("a");
-			link.href = url;
-			link.download = fileName;
-			link.click();
-			URL.revokeObjectURL(url);
-			setExportModal({
-				show: true,
-				success: true,
-				fileName,
-				dataStr,
-				characterCount: sortedCharacters.length,
-				relationshipCount: relationships.length,
-			});
+			if (filePath) {
+				await writeTextFile(filePath, dataStr);
+				logger.file("小说设置导出成功:", filePath);
+				setExportModal({
+					show: true,
+					success: true,
+					fileName,
+					dataStr,
+					characterCount: sortedCharacters.length,
+					relationshipCount: relationships.length,
+				});
+			}
+		} catch (e) {
+			logger.errorGeneric("CharacterSettings - 导出失败:", e);
+			useAppMetaStore.getState().showToast("导出失败，请重试", "error");
 		}
-	}, [sortedCharacters, relationships, novelName, novelId, isMobile, nodePositions, ignoredWords, ignoredCharacterNames, novelCategory, setExportModal, getWorldbuilding]);
+	}, [sortedCharacters, relationships, novelName, novelId, nodePositions, ignoredWords, ignoredCharacterNames, novelCategory, setExportModal, getWorldbuilding]);
 
 	// 导入角色
 	const handleImportCharacters = useCallback(async () => {

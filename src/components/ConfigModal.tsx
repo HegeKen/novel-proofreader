@@ -9,6 +9,8 @@ import { ProofreadSettingsSection } from "./config/ProofreadSettingsSection";
 import { TTSConfigSection } from "./config/TTSConfigSection";
 import { DataManagementSection } from "./config/DataManagementSection";
 import { PromptSettingsSection } from "./config/PromptSettingsSection";
+import type { PromptConfig } from "./config/promptConfig";
+import { DEFAULTS as PROMPT_DEFAULTS } from "./config/promptConfig";
 import { WordReplacementModal } from "./WordReplacementModal";
 import { getLogHistory, clearLogHistory, type LogEntry } from "../utils/logger";
 
@@ -78,6 +80,7 @@ function ConfigModalContent({
 	const [activeTab, setActiveTab] = useState<"ai" | "tts" | "settings" | "prompt" | "logs" | "data">("ai");
 	const [logRefresh, setLogRefresh] = useState(0);
 	const [showWordReplacementModal, setShowWordReplacementModal] = useState(false);
+	const [promptState, setPromptState] = useState<PromptConfig>(promptConfig);
 	const logs = useMemo(() => {
 		void logRefresh;
 		return config.enableLogging ? getLogHistory() : [];
@@ -221,7 +224,10 @@ function ConfigModalContent({
 						</>
 					)}
 					{activeTab === "prompt" && (
-						<PromptSettingsSection initialPromptConfig={promptConfig} onSave={onSavePrompt} />
+						<PromptSettingsSection
+							prompts={promptState}
+							onChange={(key, value) => setPromptState((prev) => ({ ...prev, [key]: value }))}
+						/>
 					)}
 					{activeTab === "logs" && (
 						<div className="config-section">
@@ -297,10 +303,16 @@ function ConfigModalContent({
 						</button>
 					)}
 					{activeTab === "prompt" && (
-						<button className="btn" onClick={onClose}>
-							<Icons.checkCircle size={18} />
-							<span>完成</span>
-						</button>
+						<>
+							<button className="btn" onClick={() => setPromptState(PROMPT_DEFAULTS)}>
+								<Icons.reset size={18} />
+								<span>恢复默认</span>
+							</button>
+							<button className="btn" onClick={() => onSavePrompt(promptState)}>
+								<Icons.save size={18} />
+								<span>保存 PROMPT</span>
+							</button>
+						</>
 					)}
 					{activeTab === "logs" && (
 						<>

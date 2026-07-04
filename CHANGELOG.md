@@ -1,5 +1,73 @@
 # Proof Reader Changelog
 
+## v0.12.3 (2026-07-05)
+
+### ✨ 功能更新
+
+**剧本格式升级为 JSON**
+- `SCRIPT_SYSTEM_PROMPT` 全面升级，AI 返回格式改为结构化 JSON，包含场景、角色、情绪标签等完整信息
+- JSON 格式包含 `scenes`（场景列表）和 `characters`（角色列表），每个场景包含 `title`、`time`、`location`、`atmosphere`、`blocks` 字段
+- `time.period` 标准化为 9 种时段（清晨/上午/正午/下午/黄昏/傍晚/夜间/深夜/凌晨）
+- `location.scope` 标准化为内景/外景/内外三种类型
+- `atmosphere` 包含核心氛围词（≤4字）和强度（弱/中/强）
+- 对话内容强制使用单引号包裹，禁止双引号/中文引号及转义字符
+
+**旁白角色检测增强**
+- 旁白角色检测逻辑扩展，除检查 `role === "narrator"` 外，同时检测角色的 `aliases`（别称）和 `relationTerms`（代称）中是否包含"旁白"属性
+- 支持小说中已有角色同时作为旁白出现的场景，当角色的别称或代称包含"旁白"时，该角色会被识别为旁白角色
+- `script-action`（动作描述）和 `script-narration`（内心独白/叙述性文字）交给旁白角色进行情感朗读
+
+**场景卡片元数据展示**
+- 场景卡片新增时间、地点、氛围三栏表格展示，提取自场景标题中的 `｜` 分隔内容
+- 表格采用两列网格布局，渐变背景，带图标（⏰、📍、✨）和边框
+
+**活动对话滚动居中**
+- `ScriptRenderer` 新增 `useEffect`，当 `currentDialogueIndex` 变化时自动将活动对话滚动到视口垂直中心
+- 使用 `scrollIntoView({ block: "center", behavior: "smooth" })` 实现平滑滚动效果
+- 通过 `data-dialogue-index` 属性精确定位当前活动的对话元素
+
+**剧本解析索引一致性修复**
+- 修复 `script-action` 和 `script-narration` 加入情感朗读列表时，`script-dialogue-active` 无法正确高亮显示当前朗读段落的问题
+- 问题根因：`TaskPanel` 中调用 `convertNonDialogueToNarrator` 将非对话块转为对话块，但 `ScriptRenderer` 只解析原始 blocks，导致索引不匹配
+- 修复方案：`ScriptRenderer` 新增 `narratorName` 属性，应用相同的转换逻辑，确保两边索引计算一致
+
+**剧本重新解析功能**
+- TTS 工具栏新增「重新解析」按钮，点击触发修复 JSON 引号混用等问题后重新渲染
+- 调用 `repairScriptContent` 修复内容，验证能否解析为 JSON，成功则更新显示
+
+**Prompt 设置重构**
+- Prompt 设置面板重构，状态提升到 `ConfigModal`，支持实时编辑
+- 底部按钮改为「恢复默认」和「保存 PROMPT」两个独立按钮
+- `PromptSettingsSection` 组件改为纯展示组件，通过 `onChange` 回调更新状态
+- 新增 `promptConfig.ts` 文件，包含 `PromptConfig` 接口、`DEFAULTS` 和 `LABELS` 常量
+
+**script-action 和 script-narration 样式升级**
+- `script-action` 采用琥珀色渐变背景和左边框，添加悬停效果（背景加深、边框变色、位移、阴影）
+- `script-narration` 采用紫色渐变背景和左边框，同样添加悬停效果
+- 图标添加背景和圆角，文字去除斜体样式
+
+**AI 请求 max_tokens 动态计算**
+- `sendChatCompletion` 中 `max_tokens` 改为动态计算：输入 tokens × 1.5，最小 65536
+- 防止长章节因 tokens 不足导致响应被截断
+
+### 🐛 Bug 修复
+
+- 修复 `aiClient.ts` 中 `buildScriptTTSEnhanceUserPrompt` 函数参数类型缺失 `aliases` 和 `relationTerms` 字段导致的 TypeScript 错误
+- 修复 `aiClient.ts` 中 `promptTokens` 变量重复声明问题，重命名为 `responsePromptTokens`
+- 修复对话文本中多余的单引号显示问题，在 `ScriptRenderer.tsx` 中使用正则去除首尾单引号
+- 修复 ESLint 'no-useless-escape' 错误，将 `\、` 改为 `\\、`
+- 修复 `ScriptRenderer.tsx` 中 `react-hooks/exhaustive-deps` 警告，添加 eslint-disable 注释
+- 修复 `ScriptRenderer.tsx` 中未使用变量 `titlePart`，重命名为 `_`
+
+### 🔧 改进优化
+
+- 统一旁白角色检测逻辑，确保 `TaskPanel.tsx`、`aiClient.ts`、`useTTS.ts` 三处使用相同的检测规则
+- `ScriptRenderer.tsx` 中 `extractSceneTitle` 优化，支持提取场景标题中 `｜` 前的部分
+- `TaskPanel.tsx` 中 `getVoiceDesignPromptForCharacter` 增加详细日志输出，便于调试
+- `repairTruncatedJson` 函数导出为公共函数，便于其他模块调用
+
+---
+
 ## v0.12.0 (2026-07-03)
 
 ### ✨ 功能更新

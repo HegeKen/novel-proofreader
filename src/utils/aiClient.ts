@@ -114,11 +114,14 @@ export async function sendChatCompletion(
 		headers["Authorization"] = `Bearer ${config.apiKey}`;
 	}
 
+	const promptTokens = Math.floor(messages.reduce((acc, m) => acc + (m.content?.length || 0), 0) * 0.5);
+	const minMaxTokens = Math.max(65536, Math.floor(promptTokens * 1.5));
+
 	const body = {
 		model: config.model,
 		messages,
 		temperature: 0.1,
-		max_tokens: 32768,
+		max_tokens: minMaxTokens,
 	};
 
 	logger.request(url, headers, body);
@@ -153,9 +156,9 @@ export async function sendChatCompletion(
 	logger.response(url, resp.status, data, elapsed);
 
 	const provider = detectProvider(config.baseURL);
-	const promptTokens = data.usage?.prompt_tokens ?? 0;
+	const responsePromptTokens = data.usage?.prompt_tokens ?? 0;
 	const completionTokens = data.usage?.completion_tokens ?? 0;
-	useAppMetaStore.getState().incrementAPIUsage(provider, true, promptTokens, completionTokens);
+	useAppMetaStore.getState().incrementAPIUsage(provider, true, responsePromptTokens, completionTokens);
 
 	// MiMo 内容拦截：返回 200 但 body 包含 high risk 拒绝文本
 	const content = data.choices?.[0]?.message?.content ?? "";
@@ -175,7 +178,7 @@ export async function sendChatCompletion(
  * 尝试修复被截断的 JSON 字符串
  * 当 AI 响应因 max_tokens 不足而被截断时，尝试补全未闭合的括号/引号
  */
-function repairTruncatedJson(jsonStr: string): string | null {
+export function repairTruncatedJson(jsonStr: string): string | null {
 	try {
 		JSON.parse(jsonStr);
 		return jsonStr; // 本身是合法 JSON，无需修复
@@ -519,61 +522,123 @@ export function buildProofreadUserPrompt(
 }
 
 /** 剧本转换系统 prompt */
-export const SCRIPT_SYSTEM_PROMPT = `你是剧本改编编剧。将小说章节转为中文影视拍摄剧本格式。输出纯剧本，无markdown。
+export const SCRIPT_SYSTEM_PROMPT = `你是剧本改编编剧。将小说章节转为中文影视拍摄剧本格式。输出纯JSON，无markdown，不要任何开场白。
 
-## 标记（标记后冒号，内容换行）
-场景 [序号]：[时间] - [地点] - [氛围]（氛围≤6字）
-动作：描述角色动作/表情/环境（每段≤3行）
-[角色名]：对话（口语化）
-内心独白：[角色名]：内容（仅当无法用动作替代时）
-转场：[切至/叠化/淡入/淡出/闪回]（仅时空大跳跃时用）
+## 核心约束：绝对禁止篡改原文
+- text 字段必须包含原文的完整内容，只允许在开头添加标签
+- 禁止修改、增删、替换原文中的任何词语、标点或字符
 
-## 规则（优先级）
-1. 保留核心情节、关键对话、转折点
-2. 叙述转动作（紧张→攥紧拳头）
-3. 对话口语化（加停顿、语气词）
-4. 环境精简，只留推动情绪/情节的
-5. 心理描写优先转微表情/小动作→对话暗示→内心独白
-6. 删除作者评论（如“由此可见”）
+## 输出JSON格式（必须严格遵守）
+{
+  "scenes": [
+    {
+      "title": "场景标题",
+      "time": {
+        "period": "标准化时段",
+        "detail": "可选，环境描写（≤12字）"
+      },
+      "location": {
+        "scope": "内景/外景/内外",
+        "name": "具体地点"
+      },
+      "atmosphere": {
+        "tag": "核心氛围词（≤4字）",
+        "intensity": "弱/中/强"
+      },
+      "blocks": [
+        {"type":"action","text":"动作描述"},
+        {"type":"dialogue","character":"角色名","emotion":"情绪","tone":"语调","text":"对话内容"},
+        {"type":"narration","text":"内心独白或旁白"},
+        {"type":"transition","text":"转场类型"}
+      ]
+    }
+  ],
+  "characters": ["角色1","角色2"]
+}
 
-## 约束
-- 场景间空一行，场景内不空行
-- 每场景至少一个动作+对话或事件
-- 角色名一致，首次可加（年龄，身份）
-- 不添加原文没有的角色/情节/对话
-- 无戏剧价值的过渡叙述可合并或省略（用一句动作交代结果）
+## 字段说明
+- type: 只能是 "scene-header" | "action" | "dialogue" | "narration" | "transition"
+- title: 场景标题，必须是能概括该场景核心内容的有意义标题（4-12字），如"雨夜重逢"、"密室审讯"，禁止使用"场景 1"、"场景 2"等无意义序号
+- character: 角色名必须与提供的角色列表完全一致
+- emotion: 情绪标签，从以下选择：怅然/慵懒/开心/悲伤/愤怒/恐惧/惊讶/兴奋/委屈/平静/冷漠/欣慰/无奈/愧疚/释然/嫉妒/厌倦/忐忑/动情
+- tone: 语调标签，从以下选择：温柔/高冷/活泼/严肃/俏皮/深沉/干练/凌厉
+- text: 动作描述或对话内容，对话必须是角色说的话，口语化，加停顿和语气词
+- 引号规范：所有对话、对白、自白内容必须用单引号包裹，如 '你好吗？'，禁止使用双引号或中文引号
+- 转义字符：禁止使用任何转义字符（如 \\、"、\\\\），所有内容直接书写，不需要转义
 
-## 示例
-场景 1：夜 - 废弃工厂 - 压抑
-动作：雨水漏过屋顶，滴在铁皮上。张强（40岁，厂长）站在暗处，捏着照片。
-张强：她今晚一定会来。
-转场：切至
-场景 2：夜 - 工厂门口 - 紧张
-动作：林晓（28岁，记者）撑着黑伞，雨水顺伞流下。她推门而入。
-林晓：有人吗？
-`;
+## time / location / atmosphere 标准化规范
+### time.period（必填，仅限以下值）
+清晨 | 上午 | 正午 | 下午 | 黄昏 | 傍晚 | 夜间 | 深夜 | 凌晨
+### time.detail（可选）
+自然光线或环境细节描写，如"阳光透过窗帘"、"月色暗淡"，不超过12字
+### location.scope（必填）
+内景 — 室内封闭空间
+外景 — 室外开放空间
+内外 — 室内外切换或过渡
+### location.name（必填）
+具体地点名称，如"废弃工厂车间"、"医院走廊"
+### atmosphere.tag（必填，≤4字）
+核心氛围词，如：压抑/紧张/温暖/阴冷/欢快/肃穆/浪漫/诡异/宁静/喧嚣
+### atmosphere.intensity（必填）
+弱 — 氛围淡雅、轻微
+中 — 氛围明显
+强 — 氛围浓烈、极致
+
+## 核心规则（优先级从高到低）
+1. **角色一致性**：剧本中出现的角色名必须与提供的角色列表完全一致，包括别名
+2. **引号内容默认判定为台词**：原文中被引号包裹的内容（无论单双引号、中文引号）默认视为角色对话，应转为dialogue类型；是否为拟声词、旁白等由你根据上下文判断决定
+3. **无法判断角色时使用NPC**：如果无法确定说话者是谁，使用"NPC"作为角色名；如果是路人、群众等，使用"路人甲"、"路人乙"、"群众"等通用名称
+4. **对话必须有情感标注**：每个dialogue必须包含emotion和tone字段
+5. **对话/动作严格分离**：角色说的话用dialogue类型，环境描写用action类型
+6. **必须输出合法JSON**：确保JSON格式正确，所有字符串用双引号，字段名正确
+7. **保留核心情节**：保留关键对话、转折点、情感冲突
+8. **叙述转动作**：把叙述性文字转化为可视觉化的动作描述
+9. **对话口语化**：加停顿、语气词，去掉书面化表达
+10. **环境精简**：只保留推动情绪/情节的环境描写
+11. **心理描写优先转微表情/小动作**，其次对话暗示，最后narration
+12. **删除作者评论**：如"由此可见"、"值得一提的是"等
+
+## 绝对禁止（违反任何一条视为输出失败）
+- ❌ 禁止输出JSON以外的任何内容
+- ❌ 禁止添加原文没有的角色、情节、对话
+- ❌ 禁止dialogue没有emotion或tone字段
+- ❌ 禁止使用除上述类型以外的其他type值
+- ❌ 禁止使用markdown格式（如**加粗**、*斜体*等）
+- ❌ 禁止输出解释性文字、开场白、结束语
+- ❌ 禁止time.period使用枚举值以外的值
+- ❌ 禁止atmosphere.tag超过4个字
+- ❌ 禁止atmosphere.intensity使用非"弱/中/强"的值
+- ❌ 禁止location.scope使用非"内景/外景/内外"的值
+- ❌ 禁止对话内容使用双引号或中文引号，必须用单引号包裹
+- ❌ 禁止使用任何转义字符（如 \\、"、\\\\），内容直接书写即可
+
+## 正确示例
+{"scenes":[{"title":"雨夜守候","time":{"period":"夜间","detail":"月色暗淡"},"location":{"scope":"外景","name":"废弃工厂"},"atmosphere":{"tag":"压抑","intensity":"强"},"blocks":[{"type":"action","text":"雨水漏过屋顶，滴在铁皮上。张强站在暗处，手指微微颤抖。"},{"type":"dialogue","character":"张强","emotion":"坚定","tone":"深沉","text":"'她今晚一定会来。'"},{"type":"action","text":"他将照片贴在胸口，眼神坚定。"},{"type":"dialogue","character":"张强","emotion":"决绝","tone":"凌厉","text":"'无论付出什么代价。'"}]},{"title":"推门而入","time":{"period":"夜","detail":"雨势渐小"},"location":{"scope":"外景","name":"工厂门口"},"atmosphere":{"tag":"紧张","intensity":"中"},"blocks":[{"type":"action","text":"林晓撑着黑伞，雨水顺伞流下。她深吸一口气，推门而入。"},{"type":"dialogue","character":"林晓","emotion":"紧张","tone":"温柔","text":"'有人吗？'"},{"type":"action","text":"回声在空旷的厂房里回荡。"}]}],"characters":["张强","林晓"]}`;
 
 /** 剧本转换 user prompt */
 export function buildScriptUserPrompt(
 	text: string,
-	characters?: Array<{ name: string; aliases?: string[]; role?: string; gender?: string }>,
+	characters?: Array<{ name: string; aliases?: string[]; role?: string; gender?: string; voice?: string; voiceDesignPrompt?: string; dialect?: string }>,
 ): string {
-	let characterSection = "";
+	let characterSection = '';
 	if (characters && characters.length > 0) {
 		const roleLabels: Record<string, string> = {
-			protagonist: "男主", heroine: "女主", antagonist: "反派",
-			supportingMale: "男配", supportingFemale: "女配", narrator: "旁白",
-			mentor: "导师", rival: "对手", loveInterest: "爱慕对象",
-			family: "家人", friend: "朋友", npc: "NPC",
+			protagonist: '男主', heroine: '女主', antagonist: '反派',
+			supportingMale: '男配', supportingFemale: '女配', narrator: '旁白',
+			mentor: '导师', rival: '对手', loveInterest: '爱慕对象',
+			family: '家人', friend: '朋友', npc: 'NPC',
 		};
 		const lines = characters.map((c) => {
-			const aliasStr = c.aliases?.length ? `（也可称：${c.aliases.join("、")}）` : "";
-			const roleStr = c.role ? `[${roleLabels[c.role] || c.role}]` : "";
-			return `- ${c.name}${aliasStr}${roleStr}`;
+			const aliasStr = c.aliases?.length ? '(也可称：' + c.aliases.join('、') + ')' : '';
+			const roleStr = c.role ? '[' + (roleLabels[c.role] || c.role) + ']' : '';
+			const voiceStr = c.voice ? ' 音色:' + c.voice : '';
+			const dialectStr = c.dialect ? ' 方言:' + c.dialect : '';
+			const designStr = c.voiceDesignPrompt ? ' 音色设计:"' + c.voiceDesignPrompt.slice(0, 80) + (c.voiceDesignPrompt.length > 80 ? '...' : '') + '"' : '';
+			return '- ' + c.name + aliasStr + roleStr + voiceStr + dialectStr + designStr;
 		});
-		characterSection = `\n\n## 角色信息（剧本中的角色名必须与以下设定完全一致）\n${lines.join("\n")}\n`;
+		characterSection = '\n\n## 角色信息（剧本中的角色名必须与以下设定完全一致）\n' + lines.join('\n') + '\n\n请根据角色的音色设计和方言信息，为对话添加合适的情感标签和语调。';
 	}
-	return `请将以下小说章节转换为剧本格式：${characterSection}\n\n${text}`;
+	return '请将以下小说章节转换为剧本格式：' + characterSection + '\n\n' + text;
 }
 
 /** 剧本TTS情感增强系统提示词 */
@@ -603,18 +668,23 @@ export const SCRIPT_TTS_ENHANCE_SYSTEM_PROMPT = `你是有声书演播导演。�
 李明：(唱歌)原谅我这一生不羁放纵爱自由，也会怕有一天会跌倒，Oh no。
 
 ## 规则
-- 场景/动作/转场保持原样，不添加标签
+- 场景/转场保持原样，不添加标签
+- 旁白朗读的动作描述需添加情感标签（如平静/怅然等）
 - 保留原文所有内容，绝不删改
 - 每个角色说话只加一个标签，不要叠加多个标签
 - 唱歌必须加(唱歌)，方言必须加对应方言标签
 `;
 
 /** 构建TTS情感增强的user prompt */
-export function buildScriptTTSEnhanceUserPrompt(scriptContent: string, configuredCharacters?: Array<{ name: string; role?: string; dialect?: string }>): string {
+export function buildScriptTTSEnhanceUserPrompt(scriptContent: string, configuredCharacters?: Array<{ name: string; role?: string; dialect?: string; aliases?: string[]; relationTerms?: string[] }>): string {
         // 检查是否有旁白角色
-        const narratorChar = configuredCharacters?.find(c => c.role === 'narrator');
+        const narratorChar = configuredCharacters?.find(c =>
+                c.role === 'narrator' ||
+                c.aliases?.some(a => a.includes('旁白')) ||
+                c.relationTerms?.some(r => r.includes('旁白'))
+        );
         const narratorInstruction = narratorChar 
-                ? `\n重要：如果剧本中存在旁白或叙述性文字，由旁白角色"${narratorChar.name}"朗读，使用"${narratorChar.name}："格式。` 
+                ? `\n重要-旁白角色：剧本中的动作描述/场景描写由旁白"${narratorChar.name}"朗读，统一使用"${narratorChar.name}："格式，并为其添加合适的情感标签（如平静、怅然、紧张等）。` 
                 : '\n重要：旁白或叙述性文字用"我："格式朗读。';
         
         // 构建方言提示
@@ -623,7 +693,7 @@ export function buildScriptTTSEnhanceUserPrompt(scriptContent: string, configure
                 ? `\n\n重要-角色方言指定：以下角色必须使用指定方言标签：\n${dialectChars.map(c => `- ${c.name}：方言标签为(${c.dialect})，该角色所有对话必须加上(${c.dialect})标签`).join('\n')}\n`
                 : '';
 
-        return `为以下剧本对话添加情感/音色标注(TTS)。规则：所有行(含旁白)标注角色名。格式：角色名：(标签)内容。场景/动作/转场保持原样。唱歌加(唱歌)。纯文本输出，无markdown。${narratorInstruction}${dialectInstruction}
+        return `为以下剧本对话添加情感/音色标注(TTS)。规则：所有行(含旁白)标注角色名。格式：角色名：(标签)内容。场景/转场保持原样。唱歌加(唱歌)。纯文本输出，无markdown。${narratorInstruction}${dialectInstruction}
 剧本：
 ${scriptContent}`;
 }

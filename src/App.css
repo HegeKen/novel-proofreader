@@ -3126,8 +3126,7 @@ color: var(--text-primary)}
 
 .result-content {
 	flex: 1;
-	overflow-y: auto;
-	padding: 0 14px}
+	overflow-y: auto}
 
 .result-summary {
 	padding: 12px 0;
@@ -3279,6 +3278,37 @@ color: var(--text-primary)}
 .script-scene-card-body {
 	padding: 14px}
 
+.script-scene-meta-table {
+	display: grid;
+	grid-template-columns: 70px 1fr;
+	gap: 6px 12px;
+	padding: 10px 12px;
+	margin: 0 0 14px;
+	background: linear-gradient(135deg, var(--bg-raised), var(--bg-card));
+	border-radius: var(--r-sm);
+	border: 1px solid var(--border);
+	overflow: hidden}
+
+.script-scene-meta-row {
+	display: contents}
+
+.script-scene-meta-label {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 11px;
+	font-weight: 500;
+	color: var(--text-muted);
+	white-space: nowrap}
+
+.script-scene-meta-value {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--text-secondary);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis}
+
 .script-scene-unnamed {
 	margin-bottom: 12px}
 
@@ -3360,24 +3390,38 @@ color: var(--text-primary)}
 .script-action {
 	display: flex;
 	align-items: flex-start;
-	gap: 8px;
+	gap: 10px;
 	font-size: 13px;
-	color: var(--text-muted);
+	color: var(--text-secondary);
 	margin: 8px 0;
-	padding: 8px 12px;
-	background: var(--bg-raised);
+	padding: 10px 14px;
+	background: linear-gradient(135deg, var(--bg-raised) 0%, color-mix(in srgb, var(--bg-raised) 95%, var(--accent-warm, #d97706)) 100%);
 	border-radius: var(--r-md);
-	line-height: 1.7;
-	border-left: 2px solid var(--text-muted)}
+	line-height: 1.75;
+	border-left: 3px solid var(--accent-warm, #d97706);
+	transition: all 0.2s ease;
+	position: relative}
+.script-action:hover {
+	background: linear-gradient(135deg, var(--bg-hover) 0%, color-mix(in srgb, var(--bg-hover) 92%, var(--accent-warm, #d97706)) 100%);
+	border-left-color: var(--accent-warm-light, #f59e0b);
+	transform: translateX(2px);
+	box-shadow: -2px 0 10px color-mix(in srgb, var(--accent-warm, #d97706) 15%, transparent)}
 .script-action-icon {
 	display: flex;
 	flex-shrink: 0;
-	margin-top: 3px;
-	color: var(--text-muted);
-	opacity: 0.7}
+	margin-top: 4px;
+	color: var(--accent-warm, #d97706);
+	opacity: 0.8;
+	transition: opacity 0.2s ease;
+	background: color-mix(in srgb, var(--accent-warm, #d97706) 12%, transparent);
+	border-radius: 6px;
+	padding: 3px}
+.script-action:hover .script-action-icon {
+	opacity: 1}
 .script-action-text {
 	flex: 1;
-	font-style: italic}
+	font-style: normal;
+	word-break: break-word}
 
 /* ---------- 对话（核心突出） ---------- */
 .script-dialogue {
@@ -3507,18 +3551,37 @@ color: var(--text-primary)}
 .script-narration {
 	display: flex;
 	align-items: flex-start;
-	gap: 6px;
+	gap: 10px;
 	font-size: 13px;
-	color: var(--text-muted);
-	margin: 6px 0;
-	padding: 4px 0;
-	line-height: 1.75}
+	color: var(--text-secondary);
+	margin: 8px 0;
+	padding: 10px 14px;
+	background: linear-gradient(135deg, var(--bg-raised) 0%, color-mix(in srgb, var(--bg-raised) 95%, var(--accent-secondary)) 100%);
+	border-radius: var(--r-md);
+	line-height: 1.75;
+	border-left: 3px solid var(--accent-secondary);
+	transition: all 0.2s ease;
+	position: relative}
+.script-narration:hover {
+	background: linear-gradient(135deg, var(--bg-hover) 0%, color-mix(in srgb, var(--bg-hover) 92%, var(--accent-secondary)) 100%);
+	border-left-color: color-mix(in srgb, var(--accent-secondary) 80%, white);
+	transform: translateX(2px);
+	box-shadow: -2px 0 10px color-mix(in srgb, var(--accent-secondary) 15%, transparent)}
 .narration-prefix {
 	flex-shrink: 0;
-	color: var(--accent);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
 	font-size: 10px;
-	margin-top: 4px;
-	opacity: 0.6}
+	color: var(--accent-secondary);
+	background: color-mix(in srgb, var(--accent-secondary) 12%, transparent);
+	border-radius: 6px;
+	margin-top: 2px;
+	transition: all 0.2s ease}
+.script-narration:hover .narration-prefix {
+	background: color-mix(in srgb, var(--accent-secondary) 20%, transparent)}
 
 /* ---------- 移动端优化 ---------- */
 @media (max-width: 768px) {
@@ -3550,7 +3613,7 @@ color: var(--text-primary)}
 		font-size: 13px}
 	.script-action {
 		font-size: 12px;
-		padding: 6px 10px}
+		padding: 8px 12px}
 }
 
 /* 剧本 TTS 控件 */
