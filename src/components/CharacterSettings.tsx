@@ -1,6 +1,3 @@
-// ============================================================
-// 小说设置组件
-// ============================================================
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useNovelStore } from "../stores/novelStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
@@ -9,7 +6,6 @@ import { useProofreadMetaStore } from "../stores/proofreadMetaStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
 import { useConfigStore } from "../stores/configStore";
 import type { CharacterInfo, CharacterRelationship, CharacterRole, NovelCategory, NovelWorldbuilding, RelationType, NovelEvent } from "../types";
-import { synthesizeSpeechWithVoice } from "../utils/ttsService";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { logger } from "../utils/logger";
@@ -21,6 +17,9 @@ import type { ChatMessage } from "../utils/aiClient";
 import { NovelEventModal } from "./NovelEventModal";
 import { formatDateTime } from "../utils/formatters";
 import { RelationshipGraph } from "./RelationshipGraph";
+import { CharacterCard } from "./character-settings/CharacterCard";
+import { CharacterEditForm } from "./character-settings/CharacterEditForm";
+import { synthesizeSpeechWithVoice } from "../utils/ttsService";
 
 // ============================================================
 // 角色排序组件 - 使用 Pointer Events 实现跨平台拖拽
@@ -1029,6 +1028,9 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const [isAnalyzing, setIsAnalyzing] = useState(false);
 	const [analyzeProgress, setAnalyzeProgress] = useState({ current: 0, total: 0, phase: "analyze" as "analyze" | "summarize" });
 	const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+
+	// 导入操作状态
+	const [isImporting, setIsImporting] = useState(false);
 	
 	// 检测结果操作状态：'new' | 'alias' | 'relation'
 	type DetectedAction = 'new' | 'alias' | 'relation';
@@ -1556,6 +1558,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			const file = (e.target as HTMLInputElement).files?.[0];
 			if (!file) return;
 			
+			setIsImporting(true);
+			
 			const reader = new FileReader();
 			reader.onload = async (event) => {
 				try {
@@ -1751,6 +1755,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					useAppMetaStore.getState().showToast(msg, "success");
 				} catch (err) {
 					useAppMetaStore.getState().showToast("文件解析失败：" + (err instanceof Error ? err.message : String(err)), "error");
+				} finally {
+					setIsImporting(false);
 				}
 			};
 			reader.readAsText(file);
@@ -2655,555 +2661,53 @@ ${JSON.stringify(existingInfo, null, 2)}
 									{sortedCharacters.map((char) => {
 										const isExpanded = expandedCards.has(char.id);
 										return (
-										<div key={char.id} className={`character-card ${isExpanded ? 'expanded' : ''}`}>
-										{editingId === char.id ? (
-											<div className="space-y-3">
-												<div className="form-field">
-													<label>角色名</label>
-													<input
-														type="text"
-														value={editForm.name || ""}
-														onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-														className="config-input"
-													/>
-												</div>
-												<div className="grid grid-cols-2 gap-3">
-													<div className="form-field">
-														<label>性别</label>
-														<Select
-															value={editForm.gender || "other"}
-															onChange={(v) => setEditForm({ ...editForm, gender: v as "male" | "female" | "other" })}
-															options={[
-																{ value: "male", label: "男" },
-																{ value: "female", label: "女" },
-																{ value: "other", label: "其他" },
-															]}
-														/>
-													</div>
-													<div className="form-field">
-														<label>角色类型</label>
-														<Select
-															value={editForm.role || ""}
-															onChange={(v) => setEditForm({ ...editForm, role: v ? (v as CharacterRole) : undefined })}
-															options={[
-																{ value: "", label: "未设置" },
-																{ value: "protagonist", label: "男主" },
-																{ value: "heroine", label: "女主" },
-																{ value: "antagonist", label: "反派" },
-																{ value: "supportingMale", label: "男配" },
-																{ value: "supportingFemale", label: "女配" },
-																{ value: "mentor", label: "导师" },
-																{ value: "rival", label: "对手" },
-																{ value: "loveInterest", label: "爱慕对象" },
-																{ value: "family", label: "家人" },
-																{ value: "friend", label: "朋友" },
-																{ value: "npc", label: "NPC" },
-															]}
-														/>
-													</div>
-												</div>
-												<div className="form-field">
-													<div className="flex justify-between items-center mb-2">
-														<label className="text-xs">音色设计</label>
-														<button
-															type="button"
-															className="text-xs text-blue-500 hover:text-blue-400 flex items-center gap-1"
-															onClick={handleGenerateVoiceDesign}
-															disabled={isGeneratingVoiceDesign || !editForm.name}
-														>
-															<Icons.sparkle size={12} />
-															{isGeneratingVoiceDesign ? "生成中..." : "AI生成"}
-														</button>
-													</div>
-													<Select
-														value={editForm.voice || ""}
-														onChange={(v) => setEditForm({ ...editForm, voice: v })}
-														options={[{ value: "", label: "选择预设音色" }, ...voiceOptions]}
-														className="mb-2"
-													/>
-													<textarea
-														value={editForm.voiceDesignPrompt || ""}
-														onChange={(e) => setEditForm({ ...editForm, voiceDesignPrompt: e.target.value })}
-														className="config-input"
-														placeholder="输入音色设计描述（优先使用），如：温柔甜美，年轻女性，温婉知性..."
-														rows={3}
-													/>
-												</div>
-
-												<div className="form-field">
-													<label>方言</label>
-													<Select
-														value={editForm.dialect || ""}
-														onChange={(v) => setEditForm({ ...editForm, dialect: v })}
-														options={dialectOptions}
-													/>
-												</div>
-
-												{/* 别称 */}
-												<div className="form-field">
-													<div className="flex justify-between items-center mb-2">
-														<label className="text-xs">别称</label>
-														{(editForm.aliases || []).length > 0 && (
-															<button
-																type="button"
-																className="text-xs text-red-500 hover:text-red-400"
-																onClick={clearAllAliases}
-															>
-																清空全部
-															</button>
-														)}
-													</div>
-													<div className="flex gap-2 mb-2">
-														<input
-															type="text"
-															value={newAlias}
-															onChange={(e) => setNewAlias(e.target.value)}
-															onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addAlias())}
-															placeholder="输入后按回车"
-															className="config-input flex-1"
-														/>
-														<button
-															type="button"
-															className="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs text-white"
-															onClick={addAlias}
-														>
-															<Icons.plus size={12} />
-														</button>
-													</div>
-													{(editForm.aliases || []).length > 0 && (
-														<div className="flex flex-wrap gap-1">
-															{(editForm.aliases || []).map((alias, index) => (
-																<span key={index} className="alias-tag text-xs">
-																	{alias}
-																	<button
-																		type="button"
-																		className="remove-btn"
-																		onClick={() => removeAlias(index)}
-																	>
-																		×
-																	</button>
-																</span>
-															))}
-														</div>
-													)}
-												</div>
-
-												{/* 关系代称 */}
-												<div className="form-field">
-													<div className="flex justify-between items-center mb-2">
-														<label className="text-xs">关系代称</label>
-														{(editForm.relationTerms || []).length > 0 && (
-															<button
-																type="button"
-																className="text-xs text-red-500 hover:text-red-400"
-																onClick={clearAllRelationTerms}
-															>
-																清空全部
-															</button>
-														)}
-													</div>
-													<div className="flex gap-2 mb-2">
-														<input
-															type="text"
-															value={newRelationTerm}
-															onChange={(e) => setNewRelationTerm(e.target.value)}
-															onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addRelationTerm())}
-															placeholder="输入后按回车"
-															className="config-input flex-1"
-														/>
-														<button
-															type="button"
-															className="px-2 py-1 bg-purple-600 hover:bg-purple-500 rounded text-xs text-white"
-															onClick={addRelationTerm}
-														>
-															<Icons.plus size={12} />
-														</button>
-													</div>
-													{(editForm.relationTerms || []).length > 0 && (
-														<div className="flex flex-wrap gap-1">
-															{(editForm.relationTerms || []).map((term, index) => (
-																<span key={index} className="relation-tag text-xs">
-																	{term}
-																	<button
-																		type="button"
-																		className="remove-btn"
-																		onClick={() => removeRelationTerm(index)}
-																	>
-																		×
-																	</button>
-																</span>
-															))}
-														</div>
-													)}
-												</div>
-
-												{/* 角色档案 - 结构化信息 */}
-												<div className="form-field">
-													<label>年龄</label>
-													<input
-														type="text"
-														value={editForm.age || ""}
-														onChange={(e) => setEditForm({ ...editForm, age: e.target.value })}
-														placeholder="如：20多岁、中年、年过半百"
-														className="config-input"
-													/>
-												</div>
-												<div className="form-field">
-													<label>身份职业</label>
-													<input
-														type="text"
-														value={editForm.identity || ""}
-														onChange={(e) => setEditForm({ ...editForm, identity: e.target.value })}
-														placeholder="如：剑客、商人、书生、将军"
-														className="config-input"
-													/>
-												</div>
-												<div className="form-field">
-													<label>社会地位</label>
-													<input
-														type="text"
-														value={editForm.socialStatus || ""}
-														onChange={(e) => setEditForm({ ...editForm, socialStatus: e.target.value })}
-														placeholder="如：贵族、平民、江湖高手"
-														className="config-input"
-													/>
-												</div>
-												<div className="form-field">
-													<label>核心性格</label>
-													<input
-														type="text"
-														value={editForm.personality || ""}
-														onChange={(e) => setEditForm({ ...editForm, personality: e.target.value })}
-														placeholder="如：沉稳内敛、开朗活泼、心机深沉"
-														className="config-input"
-													/>
-												</div>
-												<div className="form-field">
-													<label>外貌特征</label>
-													<textarea
-														value={editForm.appearance || ""}
-														onChange={(e) => setEditForm({ ...editForm, appearance: e.target.value })}
-														placeholder="身高、体型、面容、穿着风格等"
-														className="config-input"
-														style={{ minHeight: "40px" }}
-													/>
-												</div>
-												<div className="form-field">
-													<label>出身背景</label>
-													<textarea
-														value={editForm.background || ""}
-														onChange={(e) => setEditForm({ ...editForm, background: e.target.value })}
-														placeholder="家庭背景、成长环境等"
-														className="config-input"
-														style={{ minHeight: "40px" }}
-													/>
-												</div>
-												<div className="form-field">
-													<label>角色弧光</label>
-													<textarea
-														value={editForm.characterArc || ""}
-														onChange={(e) => setEditForm({ ...editForm, characterArc: e.target.value })}
-														placeholder="角色成长变化、内心转变、价值观演变等"
-														className="config-input"
-														style={{ minHeight: "40px" }}
-													/>
-												</div>
-
-												<div className="form-field">
-													<label>备注</label>
-													<textarea
-														value={editForm.notes || ""}
-														onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
-														className="config-input"
-													/>
-												</div>
-												<div className="form-field">
-													<label>小说大事记</label>
-													<div className="event-edit-form-btn">
-														<button
-															type="button"
-															className="btn"
-															onClick={() => setShowEventModal(true)}
-														>
-															<Icons.list size={14} />
-															<span>管理小说大事记</span>
-														</button>
-														<span className="event-edit-form-hint">
-															在全局大事记中关联此角色，即可在角色卡片中查看
-														</span>
-													</div>
-												</div>
-												<div className="flex gap-2 pt-2">
-													<button
-														className="btn btn-primary"
-														onClick={handleEnhanceCharacter}
-														disabled={isEnhancingCharacter || !editForm.name}
-													>
-														<Icons.sparkle size={14} />
-														<span>{isEnhancingCharacter ? "完善中..." : "AI完善"}</span>
-													</button>
-													<button
-														className="btn"
-														onClick={saveEdit}
-													>
-														<Icons.saveIcon size={14} />
-														<span>保存</span>
-													</button>
-													<button
-														className="btn"
-														onClick={cancelEdit}
-													>
-														<Icons.x size={14} />
-														<span>取消</span>
-													</button>
-												</div>
-											</div>
-										) : (
-											<div className="character-card-content">
-												{/* 第一区块（折叠态）：头像 + 姓名/性别/角色 + 展开指示器 + 操作按钮 */}
-												<div className="character-main-section" onClick={() => toggleCardExpand(char.id)} style={{ cursor: 'pointer' }}>
-													{/* 头像区域 */}
-													<div className="character-avatar">
-														<div className={`avatar-circle ${char.gender}`}>
-															<span className="avatar-text">{char.name.charAt(0)}</span>
-														</div>
-													</div>
-
-													{/* 信息区域 */}
-													<div className="character-info">
-														<div className="character-header">
-															<h3 className="character-name">{char.name}</h3>
-															<span className={`gender-badge ${char.gender}`}>
-																{char.gender === "male" ? "男" : char.gender === "female" ? "女" : "其他"}
-															</span>
-															{char.role && (
-																<span className="role-badge">
-																	{char.role === "protagonist" ? "男主" :
-																	 char.role === "heroine" ? "女主" :
-																	 char.role === "antagonist" ? "反派" :
-																	 char.role === "supportingMale" ? "男配" :
-																	 char.role === "supportingFemale" ? "女配" :
-																	 char.role === "mentor" ? "导师" :
-																	 char.role === "rival" ? "对手" :
-																	 char.role === "loveInterest" ? "爱慕对象" :
-																	 char.role === "family" ? "家人" :
-																	 char.role === "friend" ? "朋友" : "NPC"}
-																</span>
-															)}
-														</div>
-													</div>
-
-													{/* 展开/折叠指示器 */}
-
-													{/* 操作按钮 */}
-													<div className="character-actions">
-														<button
-															className="action-btn delete"
-															onClick={() => handleDelete(char.id)}
-															title="删除"
-														>
-															<Icons.trash2 size={16} />
-														</button>
-														<button
-															className="action-btn edit"
-															onClick={() => startEdit(char)}
-															title="编辑"
-														>
-															<Icons.userRoundPen size={18} />
-														</button>
-														<button
-															className="action-btn expend"
-															title="展开/折叠"
-														>
-															<Icons.chevronDown size={16} style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
-														</button>
-													</div>
-												</div>
-
-												{isExpanded && (<>
-												{/* 第二区块：音色设计 + 方言 */}
-												{(char.voiceDesignPrompt || char.voice || char.dialect) && (
-													<div className="character-tags-section">
-														{(char.voiceDesignPrompt || char.voice) && (
-															<div className="detail-item voice-design-detail">
-																<Icons.sparkle size={14} />
-																<span className="detail-label">音色设计:</span>
-																<span className="detail-value truncate" title={char.voiceDesignPrompt || char.voice}>
-																	{char.voiceDesignPrompt || (char.voice ? voiceOptions.find(o => o.value === char.voice)?.label || char.voice : "")}
-																</span>
-															</div>
-														)}
-														{char.dialect && (
-															<div className="detail-item dialect-detail">
-																<Icons.globe size={14} />
-																<span className="detail-label">方言:</span>
-																<span className="detail-value">{char.dialect}</span>
-															</div>
-														)}
-													</div>
-												)}
-
-												{/* 第三区块：别称 + 代称 */}
-												{((char.aliases && char.aliases.length > 0) || (char.relationTerms && char.relationTerms.length > 0)) && (
-													<div className="character-tags-section">
-														{(char.aliases && char.aliases.length > 0) && (
-															<div className="detail-item aliases">
-																<span className="detail-label">别称:</span>
-																<div className="tags-list">
-																	{char.aliases.map((alias, index) => (
-																		<span key={index} className="alias-badge">{alias}</span>
-																	))}
-																</div>
-															</div>
-														)}
-														{(char.relationTerms && char.relationTerms.length > 0) && (
-															<div className="detail-item relations">
-																<span className="detail-label">代称:</span>
-																<div className="tags-list">
-																	{char.relationTerms.map((term, index) => (
-																		<span key={index} className="relation-badge">{term}</span>
-																	))}
-																</div>
-															</div>
-														)}
-													</div>
-												)}
-
-												{/* 角色档案：结构化信息 */}
-												{(char.age || char.identity || char.socialStatus || char.personality || char.appearance || char.background || char.characterArc) && (
-													<div className="character-profile-section">
-														<div className="profile-grid">
-															{char.age && (
-																<div className="profile-item">
-																	<span className="profile-label">年龄</span>
-																	<span className="profile-value">{char.age}</span>
-																</div>
-															)}
-															{char.identity && (
-																<div className="profile-item">
-																	<span className="profile-label">身份</span>
-																	<span className="profile-value">{char.identity}</span>
-																</div>
-															)}
-															{char.socialStatus && (
-																<div className="profile-item">
-																	<span className="profile-label">地位</span>
-																	<span className="profile-value">{char.socialStatus}</span>
-																</div>
-															)}
-															{char.personality && (
-																<div className="profile-item">
-																	<span className="profile-label">性格</span>
-																	<span className="profile-value">{char.personality}</span>
-																</div>
-															)}
-															{char.appearance && (
-																<div className="profile-item">
-																	<span className="profile-label">外貌</span>
-																	<span className="profile-value">{char.appearance}</span>
-																</div>
-															)}
-															{char.background && (
-																<div className="profile-item">
-																	<span className="profile-label">出身</span>
-																	<span className="profile-value">{char.background}</span>
-																</div>
-															)}
-															{char.characterArc && (
-																<div className="profile-item">
-																	<span className="profile-label">弧光</span>
-																	<span className="profile-value">{char.characterArc}</span>
-																</div>
-															)}
-														</div>
-													</div>
-												)}
-
-												{/* 第三区块：角色相关大事记 */}
-												{(() => {
-													const charEvents = allEvents
-														.filter((evt) => evt.involvedCharacterIds.includes(char.id))
-														.sort((a, b) => a.timeOrder - b.timeOrder);
-													if (charEvents.length === 0) return null;
-													return (
-														<div className="character-major-events-section">
-															<div className="events-label">
-																<Icons.list size={14} />
-																角色大事件
-															</div>
-															<div className="events-timeline">
-																{charEvents.map((evt) => (
-																	<div key={evt.id} className="events-timeline-item">
-																		<div className="events-timeline-dot" />
-																		<div className="events-timeline-body">
-																			<div className="events-timeline-title">{evt.title}</div>
-																			{(evt.chapter || evt.timeInfo) && (
-																				<div className="events-timeline-meta">
-																					{evt.chapter && (
-																						<span className="events-timeline-chapter">{evt.chapter}</span>
-																					)}
-																					{evt.timeInfo && (
-																						<span className="events-timeline-time">{evt.timeInfo}</span>
-																					)}
-																				</div>
-																			)}
-																			{evt.description && (
-																				<div className="events-timeline-desc">{evt.description}</div>
-																			)}
-																		</div>
-																	</div>
-																))}
-															</div>
-														</div>
-													);
-												})()}
-
-												{/* 第四区块：备注 */}
-												{char.notes && (
-													<div className="character-notes-section">
-														<div className="notes-label">
-															<div className="notes-label-left">
-																<Icons.punctuation size={14} />
-																备注
-															</div>
-															<div className="notes-label-right">
-																<button
-																	className="notes-refresh-btn"
-																	onClick={(e) => {
-																		e.stopPropagation();
-																		handleReanalyzeBiography(char);
-																	}}
-																	title="重新分析角色小传"
-																>
-																	<Icons.refreshCw size={14} />
-																</button>
-																<button
-																	className={`notes-play-btn ${playingNoteCharacterId === char.id ? 'playing' : ''}`}
-																	onClick={(e) => {
-																		e.stopPropagation();
-																		handlePlayNote(char);
-																	}}
-																	title={playingNoteCharacterId === char.id ? '停止播放' : '播放备注'}
-																>
-																	{playingNoteCharacterId === char.id ? (
-																		<Icons.pause size={14} />
-																	) : (
-																		<Icons.volume size={14} />
-																	)}
-																</button>
-															</div>
-														</div>
-														<div className="notes-content">{char.notes}</div>
-													</div>
-												)}
-												</>)}
-											</div>
-										)}
-									</div>
-								);})}
-							</div>
+											<CharacterCard
+												key={char.id}
+												character={char}
+												isExpanded={isExpanded}
+												isEditing={editingId === char.id}
+												isReanalyzing={isReanalyzing && reanalyzingCharacterId === char.id}
+												playingNoteId={playingNoteCharacterId}
+												voiceOptions={voiceOptions}
+												allEvents={allEvents}
+												onToggleExpand={() => toggleCardExpand(char.id)}
+												onEdit={() => startEdit(char)}
+												onDelete={() => handleDelete(char.id)}
+												onReanalyzeBiography={() => handleReanalyzeBiography(char)}
+												onPlayNote={() => handlePlayNote(char)}
+											/>
+										);
+									})}
+								</div>
 							)}
 						</div>
+				)}
+
+				{editingId && (
+					<CharacterEditForm
+						novelId={novelId}
+						editForm={editForm}
+						voiceOptions={voiceOptions}
+						dialectOptions={dialectOptions}
+						newAlias={newAlias}
+						newRelationTerm={newRelationTerm}
+						isGeneratingVoiceDesign={isGeneratingVoiceDesign}
+						isEnhancingCharacter={isEnhancingCharacter}
+						onFormChange={setEditForm}
+						onNewAliasChange={setNewAlias}
+						onNewRelationTermChange={setNewRelationTerm}
+						onAddAlias={addAlias}
+						onRemoveAlias={removeAlias}
+						onClearAllAliases={clearAllAliases}
+						onAddRelationTerm={addRelationTerm}
+						onRemoveRelationTerm={removeRelationTerm}
+						onClearAllRelationTerms={clearAllRelationTerms}
+						onSave={saveEdit}
+						onCancel={cancelEdit}
+						onGenerateVoiceDesign={handleGenerateVoiceDesign}
+						onEnhanceCharacter={handleEnhanceCharacter}
+						onShowEventModal={() => setShowEventModal(true)}
+					/>
 				)}
 
 				{/* 世界观 */}
@@ -3255,9 +2759,10 @@ ${JSON.stringify(existingInfo, null, 2)}
 							className="action-btn character-action"
 							onClick={handleImportCharacters}
 							title="导入小说设置"
+							disabled={isImporting}
 						>
-							<Icons.import size={18} />
-							<span>导入</span>
+							{isImporting ? <Icons.loader2 size={18} className="animate-spin" /> : <Icons.import size={18} />}
+							<span>{isImporting ? "导入中" : "导入"}</span>
 						</button>
 						<button
 							className="action-btn character-action"

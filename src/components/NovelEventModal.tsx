@@ -49,6 +49,10 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 	const [formData, setFormData] = useState<EventFormData>(emptyForm);
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 	const [isGenerating, setIsGenerating] = useState(false);
+	const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 1 });
+	const [generationPhase, setGenerationPhase] = useState<string>("");
+	const [generationStatus, setGenerationStatus] = useState<"success" | "error" | "info" | null>(null);
+	const [generationMessage, setGenerationMessage] = useState("");
 
 	const sortedEvents = [...storeEvents].sort((a, b) => a.timeOrder - b.timeOrder);
 
@@ -117,7 +121,10 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		if (!novelId || !chapters.length || isGenerating) return;
 
 		setIsGenerating(true);
-		useAppMetaStore.getState().showToast("正在分析小说内容生成大事记...", "info");
+		setGenerationProgress({ current: 0, total: 1 });
+		setGenerationPhase("分析中");
+		setGenerationStatus("info");
+		setGenerationMessage("正在分析小说内容生成大事记...");
 		logger.proofread("[NovelEventModal] 开始 AI 生成大事记");
 
 		try {
@@ -130,12 +137,15 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 				aiConfig,
 				(current, total, phase) => {
 					const phaseText = phase === "analyze" ? "分析中" : "合并中";
-					useAppMetaStore.getState().showToast(`${phaseText} ${current}/${total}`, "info");
+					setGenerationProgress({ current, total });
+					setGenerationPhase(phaseText);
+					setGenerationMessage(`${phaseText} ${current}/${total}`);
 				}
 			);
 
 			if (!result || !Array.isArray(result.events) || result.events.length === 0) {
-				useAppMetaStore.getState().showToast("未生成任何事件，请重试", "error");
+				setGenerationStatus("error");
+				setGenerationMessage("未生成任何事件，请重试");
 				return;
 			}
 
@@ -169,24 +179,28 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 				addedCount++;
 			}
 
-			useAppMetaStore.getState().showToast(`成功生成 ${addedCount} 个大事记`, "success");
+			setGenerationStatus("success");
+			setGenerationMessage(`成功生成 ${addedCount} 个大事记`);
 			logger.proofread(`[NovelEventModal] AI 生成成功，添加了 ${addedCount} 个事件`);
 		} catch (err) {
 			logger.errorGeneric("[NovelEventModal] AI 生成失败:", err);
 			const errorMessage = err instanceof Error ? err.message : "生成失败";
+			let message: string;
 			if (errorMessage.includes("网络") || errorMessage.includes("network") || errorMessage.includes("fetch")) {
-				useAppMetaStore.getState().showToast("生成失败，请检查网络连接", "error");
+				message = "生成失败，请检查网络连接";
 			} else if (errorMessage.includes("配置")) {
-				useAppMetaStore.getState().showToast("生成失败，请检查 AI 配置", "error");
+				message = "生成失败，请检查 AI 配置";
 			} else if (errorMessage.includes("401")) {
-				useAppMetaStore.getState().showToast("生成失败，API Key 无效", "error");
+				message = "生成失败，API Key 无效";
 			} else if (errorMessage.includes("402")) {
-				useAppMetaStore.getState().showToast("生成失败，账户余额不足", "error");
+				message = "生成失败，账户余额不足";
 			} else if (errorMessage.includes("429")) {
-				useAppMetaStore.getState().showToast("生成失败，请求频率超限，请稍后重试", "error");
+				message = "生成失败，请求频率超限，请稍后重试";
 			} else {
-				useAppMetaStore.getState().showToast(`生成失败：${errorMessage.slice(0, 50)}`, "error");
+				message = `生成失败：${errorMessage.slice(0, 50)}`;
 			}
+			setGenerationStatus("error");
+			setGenerationMessage(message);
 		} finally {
 			setIsGenerating(false);
 		}
@@ -208,6 +222,42 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 				</div>
 
 				<div className="config-body">
+					{(isGenerating || generationStatus) && (
+						<div className={`generation-progress ${generationStatus || "info"}`}>
+							<div className="generation-progress-header">
+								<Icons.brain size={16} />
+								<span className="generation-progress-phase">{generationPhase}</span>
+								{isGenerating && (
+									<Icons.loader2 size={14} className="generation-spinner" />
+								)}
+								{!isGenerating && generationStatus && (
+									<button
+										className="generation-progress-close"
+										onClick={() => {
+											setGenerationStatus(null);
+											setGenerationMessage("");
+											setGenerationProgress({ current: 0, total: 1 });
+										}}
+									>
+										<Icons.x size={14} />
+									</button>
+								)}
+							</div>
+							<div className="generation-progress-bar">
+								<div
+									className="generation-progress-fill"
+									style={{ width: `${(generationProgress.current / generationProgress.total) * 100}%` }}
+								/>
+							</div>
+							<div className="generation-progress-footer">
+								<span className="generation-progress-message">{generationMessage}</span>
+								{generationProgress.total > 1 && (
+									<span className="generation-progress-counter">{generationProgress.current}/{generationProgress.total}</span>
+								)}
+							</div>
+						</div>
+					)}
+
 					{/* 编辑/添加表单 */}
 					{editingId !== null && (
 						<div className="event-edit-form">

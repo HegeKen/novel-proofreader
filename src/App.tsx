@@ -26,6 +26,7 @@ import { audioCache } from "./utils/ttsService";
 import { useConfigStore } from "./stores/configStore";
 import { useMobile } from "./hooks/useMobile";
 import { ConfirmModal } from "./components/config/ConfirmModal";
+import { getCurrentVersion } from "./utils/githubApi";
 
 const ConfigModal = lazy(() => import("./components/ConfigModal").then(m => ({ default: m.ConfigModal })));
 const CharacterSettings = lazy(() => import("./components/CharacterSettings").then(m => ({ default: m.CharacterSettings })));
@@ -372,7 +373,7 @@ export default function App() {
 			readingProgress: metaState.readingProgress,
 			ignoredWords: proofreadMetaState.ignoredWords,
 			exportTime: formatDateTime(Date.now()),
-			version: "0.10.1",
+			version: await getCurrentVersion(),
 		};
 
 		setConfirmModal({
@@ -386,7 +387,6 @@ export default function App() {
 				await exportAllData({
 					...baseExportData,
 					aiConfig: { ...aiConfigState.aiConfig, apiKey: aiConfigState.aiConfig.apiKey },
-					version: "0.10.1",
 				});
 				setConfirmModal(prev => ({ ...prev, show: false }));
 			},
@@ -394,7 +394,6 @@ export default function App() {
 				await exportAllData({
 					...baseExportData,
 					aiConfig: { ...aiConfigState.aiConfig, apiKey: "[REDACTED]" },
-					version: "0.10.1",
 				});
 				setConfirmModal(prev => ({ ...prev, show: false }));
 			},

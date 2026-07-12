@@ -19,56 +19,30 @@ interface AudioCacheEntry {
 	timestamp: number;
 }
 
-interface PersistedAudioCacheEntry {
-	audioData: string;
-	timestamp: number;
-}
-
 class AudioCacheManager {
 	private cache: Map<string, AudioCacheEntry> = new Map();
 	private maxCacheSize: number = 50;
 	private maxCacheAge: number = 30 * 60 * 1000; // 30分钟
-	private storageKey: string = "novel-proofreader-audio-cache";
-	private metaKey: string = "novel-proofreader-audio-cache-meta";
-	private isPersistent: boolean = false;
 
 	constructor() {
-		this.loadPersistentSetting();
-		this.loadFromStorage();
+		this.clearLegacyStorage();
 	}
 
-	private loadPersistentSetting(): void {
+	private clearLegacyStorage(): void {
 		try {
-			const meta = localStorage.getItem(this.metaKey);
-			if (meta) {
-				const data = JSON.parse(meta);
-				this.isPersistent = data.isPersistent || false;
-				logger.tts(`Loaded persistent setting: ${this.isPersistent}`);
-			}
+			localStorage.removeItem("novel-proofreader-audio-cache");
+			localStorage.removeItem("novel-proofreader-audio-cache-meta");
 		} catch (e) {
-			logger.errorGeneric("Failed to load audio cache meta", { error: e });
-		}
-	}
-
-	private savePersistentSetting(): void {
-		try {
-			localStorage.setItem(this.metaKey, JSON.stringify({ isPersistent: this.isPersistent }));
-		} catch (e) {
-			logger.errorGeneric("Failed to save audio cache meta", { error: e });
+			logger.errorGeneric("Failed to clear legacy audio cache", { error: e });
 		}
 	}
 
 	setPersistent(enabled: boolean): void {
-		logger.tts(`Setting persistent: ${enabled} (was: ${this.isPersistent})`);
-		this.isPersistent = enabled;
-		this.savePersistentSetting();
-		if (enabled) {
-			this.saveToStorage();
-		}
+		logger.tts(`Audio cache persistence is disabled for security. Requested: ${enabled}`);
 	}
 
 	getPersistent(): boolean {
-		return this.isPersistent;
+		return false;
 	}
 
 	generateKey(text: string, config: TTSConfig, voice?: string, voiceDesignPrompt?: string): string {
@@ -82,10 +56,8 @@ class AudioCacheManager {
 		const entry = this.cache.get(key);
 		if (!entry) return undefined;
 
-		// 检查缓存是否过期
 		if (Date.now() - entry.timestamp > this.maxCacheAge) {
 			this.cache.delete(key);
-			this.saveToStorage();
 			return undefined;
 		}
 
@@ -100,12 +72,10 @@ class AudioCacheManager {
 
 		logger.tts("Setting audio cache", { 
 			key: key.slice(0, 50), 
-			bufferSize: audioBuffer.byteLength, 
-			isPersistent: this.isPersistent,
+			bufferSize: audioBuffer.byteLength,
 			currentCacheSize: this.cache.size 
 		});
 
-		// 如果缓存已满，删除最旧的条目
 		if (this.cache.size >= this.maxCacheSize) {
 			const oldestKey = Array.from(this.cache.entries())
 				.sort((a, b) => a[1].timestamp - b[1].timestamp)[0]?.[0];
@@ -119,81 +89,14 @@ class AudioCacheManager {
 			audioBuffer,
 			timestamp: Date.now(),
 		});
-
-		if (this.isPersistent) {
-			logger.tts("Persistent enabled, saving to storage", { cacheSize: this.cache.size });
-			this.saveToStorage();
-		} else {
-			logger.tts("Persistent not enabled, skipping storage save", { cacheSize: this.cache.size });
-		}
 	}
 
 	clear(): void {
 		this.cache.clear();
-		if (this.isPersistent) {
-			localStorage.removeItem(this.storageKey);
-		}
 	}
 
 	getSize(): number {
 		return this.cache.size;
-	}
-
-	private loadFromStorage(): void {
-		try {
-			const stored = localStorage.getItem(this.storageKey);
-			if (stored) {
-				const data: Record<string, PersistedAudioCacheEntry> = JSON.parse(stored);
-				const now = Date.now();
-
-				for (const [key, entry] of Object.entries(data)) {
-					// 检查过期时间
-					if (now - entry.timestamp <= this.maxCacheAge) {
-						try {
-							const binaryString = atob(entry.audioData);
-							const bytes = new Uint8Array(binaryString.length);
-							for (let i = 0; i < binaryString.length; i++) {
-								bytes[i] = binaryString.charCodeAt(i);
-							}
-							this.cache.set(key, {
-								audioBuffer: bytes.buffer as ArrayBuffer,
-								timestamp: entry.timestamp,
-							});
-						} catch (e) {
-							logger.warn("Failed to decode cached audio data", { key, error: e });
-						}
-					}
-				}
-				logger.tts(`Loaded ${this.cache.size} audio entries from storage`);
-			}
-		} catch (e) {
-			logger.errorGeneric("Failed to load audio cache from storage", { error: e });
-		}
-	}
-
-	private saveToStorage(): void {
-		if (!this.isPersistent) return;
-
-		try {
-			const data: Record<string, PersistedAudioCacheEntry> = {};
-
-			this.cache.forEach((entry, key) => {
-				const bytes = new Uint8Array(entry.audioBuffer);
-				let binaryString = "";
-				for (let i = 0; i < bytes.length; i++) {
-					binaryString += String.fromCharCode(bytes[i]);
-				}
-				data[key] = {
-					audioData: btoa(binaryString),
-					timestamp: entry.timestamp,
-				};
-			});
-
-			localStorage.setItem(this.storageKey, JSON.stringify(data));
-			logger.tts(`Saved ${this.cache.size} audio entries to storage`);
-		} catch (e) {
-			logger.errorGeneric("Failed to save audio cache to storage", { error: e });
-		}
 	}
 }
 
@@ -248,140 +151,15 @@ interface MiMoTTSResponse {
 	};
 }
 
-export async function synthesizeSpeech(
-	text: string,
-	config: TTSConfig,
-	voiceDesignPrompt?: string
-): Promise<ArrayBuffer> {
-	// 应用词组替换
-	let processedText = applyWordReplacements(text);
-
-	// 全局方言前缀：无方言标签时自动添加 (方言) 标签
-	if (config.dialect && !processedText.startsWith('(')) {
-		processedText = `(${config.dialect})${processedText}`;
-	}
-
-	const apiKey = config.apiKey;
-	const voice = getValidVoice(config.voice);
-	const speed = config.speed;
-	const volume = config.volume;
-
-	if (!apiKey) {
-		throw new Error("TTS API Key 未配置，请在 TTS 设置中配置 MiMo API Key");
-	}
-
-	const baseUrl = config.baseUrl.replace(/\/$/, "");
-	const url = `${baseUrl}/chat/completions`;
-
-	// 判断是否使用音色设计模型
-	const useVoiceDesign = !!voiceDesignPrompt;
-	const model = useVoiceDesign ? MIMO_VOICEDESIGN_MODEL : MIMO_TTS_MODEL;
-
-	// 构建请求体 — voicedesign 模型要求: user(音色描述)在前, assistant(合成文本)在后
-	const messages: Array<{ role: string; content: string }> = [];
-
-	if (useVoiceDesign) {
-		const processedPrompt = applyWordReplacements(voiceDesignPrompt);
-		messages.push({ 
-			role: "user", 
-			content: `${processedPrompt}\n\n语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）` 
-		});
-		// voicedesign: 标签在 user message 中已传递，assistant 用纯文本
-		messages.push({ role: "assistant", content: processedText.replace(/^\([^)]+\)\s*/, '') });
-	} else {
-		// 普通 TTS: 保留第一个标签（方言/情绪）作为音频标签控制，去掉其余复合标签
-		// (粤语,平静,深沉)文本 → (粤语)文本
-		messages.push({ role: "assistant", content: processedText.replace(/^\(([^,，]+)[,，][^)]*\)\s*/, '($1) ') });
-		messages.push({
-			role: "user",
-			content: `语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）\n照读以下文本，一字不改，包括标点。`,
-		});
-	}
-
-	const requestBody: Record<string, unknown> = {
-		model,
-		messages,
-		max_completion_tokens: 1024,
-	};
-
-	// audio 参数：voicedesign 模型不传 voice，可传 optimize_text_preview
-	if (useVoiceDesign) {
-		(requestBody as Record<string, unknown>).audio = { optimize_text_preview: false };
-	} else {
-		(requestBody as Record<string, unknown>).audio = { voice: voice, optimize_text_preview: false };
-	}
-
-	logger.tts("发起 TTS 请求", { text: text.slice(0, 50) + "...", voice, speed, volume });
-	const startTime = Date.now();
-
-	const response = await fetch(url, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			Authorization: `Bearer ${apiKey}`,
-		},
-		body: JSON.stringify(requestBody),
-	});
-
-	const elapsed = Date.now() - startTime;
-
-	if (!response.ok) {
-		const errorText = await response.text();
-		logger.errorGeneric("TTS API 请求失败", { status: response.status, error: errorText, elapsed });
-		useAppMetaStore.getState().incrementAPIUsage("mimo", false);
-		throw new Error(`TTS API 错误: ${response.status} - ${errorText}`);
-	}
-
-	const data: MiMoTTSResponse = await response.json();
-	logger.tts("TTS 请求成功", {
-		status: response.status,
-		elapsed,
-		response: {
-			id: data.id,
-			model: data.model,
-			choicesCount: data.choices?.length,
-			hasAudio: !!data.choices?.[0]?.message?.audio?.data,
-			audioDataLength: data.choices?.[0]?.message?.audio?.data?.length,
-			audioExpiresAt: data.choices?.[0]?.message?.audio?.expires_at,
-			transcript: data.choices?.[0]?.message?.audio?.transcript,
-			error: data.error,
-		},
-	});
-
-	if (data.error) {
-		logger.errorGeneric("TTS 错误", { error: data.error });
-		useAppMetaStore.getState().incrementAPIUsage("mimo", false);
-		throw new Error(`TTS 错误: ${data.error.message}`);
-	}
-
-	const audioData = data.choices?.[0]?.message?.audio?.data;
-	if (!audioData) {
-		logger.warn("TTS 响应缺少 audio 字段");
-		useAppMetaStore.getState().incrementAPIUsage("mimo", false);
-		throw new Error("TTS 响应中缺少 audio 字段");
-	}
-
-	useAppMetaStore.getState().incrementAPIUsage("mimo", true);
-
-	logger.tts("TTS 音频数据", { audioDataLength: audioData.length });
-	const binaryString = atob(audioData);
-	const bytes = new Uint8Array(binaryString.length);
-	for (let i = 0; i < binaryString.length; i++) {
-		bytes[i] = binaryString.charCodeAt(i);
-	}
-	return bytes.buffer as ArrayBuffer;
-}
-
-export async function synthesizeSpeechWithVoice(
+async function _synthesizeSpeech(
 	text: string,
 	config: TTSConfig,
 	voice: string,
-	voiceDesignPrompt?: string
+	voiceDesignPrompt?: string,
+	logTag: string = "发起 TTS 请求"
 ): Promise<ArrayBuffer> {
-	// 应用词组替换
 	let processedText = applyWordReplacements(text);
 
-	// 全局方言前缀：无方言标签时自动添加 (方言) 标签
 	if (config.dialect && !processedText.startsWith('(')) {
 		processedText = `(${config.dialect})${processedText}`;
 	}
@@ -398,33 +176,29 @@ export async function synthesizeSpeechWithVoice(
 	const baseUrl = config.baseUrl.replace(/\/$/, "");
 	const url = `${baseUrl}/chat/completions`;
 
-	// 判断是否使用音色设计模型
 	const useVoiceDesign = !!voiceDesignPrompt;
 	const model = useVoiceDesign ? MIMO_VOICEDESIGN_MODEL : MIMO_TTS_MODEL;
 	
-	logger.tts("synthesizeSpeechWithVoice: 模型选择", {
-		useVoiceDesign,
-		model,
-		voice: validatedVoice,
-		voiceDesignPrompt: !!voiceDesignPrompt,
-		voiceDesignPreview: voiceDesignPrompt?.slice(0, 100),
-	});
+	if (logTag.includes("角色")) {
+		logger.tts("synthesizeSpeechWithVoice: 模型选择", {
+			useVoiceDesign,
+			model,
+			voice: validatedVoice,
+			voiceDesignPrompt: !!voiceDesignPrompt,
+			voiceDesignPreview: voiceDesignPrompt?.slice(0, 100),
+		});
+	}
 
-	// 构建请求体 — voicedesign 模型要求: user(音色描述)在前, assistant(合成文本)在后
 	const messages: Array<{ role: string; content: string }> = [];
 
 	if (useVoiceDesign) {
-		// user: 音色设计描述 + 语速音量
-		const processedPrompt = applyWordReplacements(voiceDesignPrompt);
+		const processedPrompt = applyWordReplacements(voiceDesignPrompt!);
 		messages.push({ 
 			role: "user", 
 			content: `${processedPrompt}\n\n语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）` 
 		});
-		// assistant: 要合成的文本（voicedesign 剥离全部标签）
 		messages.push({ role: "assistant", content: processedText.replace(/^\([^)]+\)\s*/, '') });
 	} else {
-		// 普通 TTS: 保留第一个标签（方言/情绪）作为音频标签控制，去掉其余复合标签
-		// (粤语,平静,深沉)文本 → (粤语)文本
 		messages.push({ role: "assistant", content: processedText.replace(/^\(([^,，]+)[,，][^)]*\)\s*/, '($1) ') });
 		messages.push({
 			role: "user",
@@ -436,16 +210,12 @@ export async function synthesizeSpeechWithVoice(
 		model,
 		messages,
 		max_completion_tokens: 1024,
+		audio: useVoiceDesign 
+			? { optimize_text_preview: false }
+			: { voice: validatedVoice, optimize_text_preview: false },
 	};
 
-	// audio 参数：voicedesign 模型不传 voice，可传 optimize_text_preview
-	if (useVoiceDesign) {
-		(requestBody as Record<string, unknown>).audio = { optimize_text_preview: false };
-	} else {
-		(requestBody as Record<string, unknown>).audio = { voice: validatedVoice, optimize_text_preview: false };
-	}
-
-	logger.tts("发起 TTS 请求（角色配音）", { text: text.slice(0, 50) + "...", voice: validatedVoice, speed, volume });
+	logger.tts(logTag, { text: text.slice(0, 50) + "...", voice: validatedVoice, speed, volume });
 	const startTime = Date.now();
 
 	const response = await fetch(url, {
@@ -503,7 +273,24 @@ export async function synthesizeSpeechWithVoice(
 	for (let i = 0; i < binaryString.length; i++) {
 		bytes[i] = binaryString.charCodeAt(i);
 	}
-	return bytes.buffer as ArrayBuffer;
+	return bytes.buffer;
+}
+
+export async function synthesizeSpeech(
+	text: string,
+	config: TTSConfig,
+	voiceDesignPrompt?: string
+): Promise<ArrayBuffer> {
+	return _synthesizeSpeech(text, config, config.voice, voiceDesignPrompt, "发起 TTS 请求");
+}
+
+export async function synthesizeSpeechWithVoice(
+	text: string,
+	config: TTSConfig,
+	voice: string,
+	voiceDesignPrompt?: string
+): Promise<ArrayBuffer> {
+	return _synthesizeSpeech(text, config, voice, voiceDesignPrompt, "发起 TTS 请求（角色配音）");
 }
 
 export function playAudio(arrayBuffer: ArrayBuffer, signal?: AbortSignal): Promise<void> {
@@ -728,6 +515,8 @@ export class TTSPlayer {
 		if (this.isPaused) {
 			logger.tts("恢复播放", { resumeFromIndex: this.currentIndex });
 			this.isPaused = false;
+			this.resumeResolve?.();
+			this.resumeResolve = undefined;
 			this.play();
 		}
 	}
@@ -742,6 +531,8 @@ export class TTSPlayer {
 			this.cancelCurrentAudio();
 			this.cancelCurrentAudio = null;
 		}
+		this.resumeResolve?.();
+		this.resumeResolve = undefined;
 		this.isPlaying = false;
 		this.isPaused = false;
 		this.currentIndex = 0;
@@ -859,7 +650,7 @@ export class TTSPlayer {
 		this.abortController = new AbortController();
 
 		let cancelled = false;
-		const audioRef = { current: null as HTMLAudioElement | null };
+		const audioRef: { current: HTMLAudioElement | null } = { current: null };
 		const cancelFn = () => {
 			cancelled = true;
 			if (audioRef.current) {
@@ -965,16 +756,11 @@ export class TTSPlayer {
 		this.notifyUpdate();
 	}
 
+	private resumeResolve?: () => void;
+
 	private waitForResume(): Promise<void> {
 		return new Promise((resolve) => {
-			const check = () => {
-				if (!this.isPaused) {
-					resolve();
-				} else {
-					setTimeout(check, 100);
-				}
-			};
-			check();
+			this.resumeResolve = resolve;
 		});
 	}
 
@@ -1044,6 +830,7 @@ export class ScriptTTSPlayer {
 	private audioQueue: { buffer: ArrayBuffer; dialogueIndex: number }[] = [];
 	private isProcessingQueue: boolean = false;
 	private isStreamComplete: boolean = false;
+	private resumeResolve?: () => void;
 
 	constructor(config: TTSConfig) {
 		this.config = config;
@@ -1132,6 +919,8 @@ export class ScriptTTSPlayer {
 		if (this.isPaused) {
 			logger.tts("恢复剧本播放", { resumeFromIndex: this.currentIndex });
 			this.isPaused = false;
+			this.resumeResolve?.();
+			this.resumeResolve = undefined;
 			this.play();
 		}
 	}
@@ -1146,6 +935,8 @@ export class ScriptTTSPlayer {
 			this.cancelCurrentAudio();
 			this.cancelCurrentAudio = null;
 		}
+		this.resumeResolve?.();
+		this.resumeResolve = undefined;
 		this.isPlaying = false;
 		this.isPaused = false;
 		this.currentIndex = 0;
@@ -1494,14 +1285,7 @@ export class ScriptTTSPlayer {
 
 	private waitForResume(): Promise<void> {
 		return new Promise((resolve) => {
-			const check = () => {
-				if (!this.isPaused) {
-					resolve();
-				} else {
-					setTimeout(check, 100);
-				}
-			};
-			check();
+			this.resumeResolve = resolve;
 		});
 	}
 

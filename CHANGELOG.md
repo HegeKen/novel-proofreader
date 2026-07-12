@@ -28,12 +28,26 @@
 - NOVEL_EVENTS_SYSTEM_PROMPT 移入 aiClient.ts 统一管理
 - promptConfig.ts、configStore.ts、ConfigModal.tsx 支持中心化配置管理
 
+**AI分析进度可视化**
+- AI 分析小说事件进度显示从 Toast 通知改为在 `novel-event-modal` 内显示
+- 新增 `generationProgress`、`generationPhase`、`generationStatus`、`generationMessage` 状态变量
+- 添加进度展示区域，包含阶段指示器、进度条和状态消息
+- 进度条根据状态显示不同颜色（蓝色进行中、绿色成功、红色失败）
+
+**文本替换逻辑重构**
+- `replaceParagraphText` 方法拆分为五个独立函数：`normalizeWhitespace`、`findExactMatch`、`findLocalMatch`、`findGlobalMatch`、`replaceTextInParagraph`
+- 原 100+ 行方法精简至约 30 行，提升可维护性和可测试性
+- 支持精确匹配、局部匹配、全局匹配三级匹配策略
+- 支持空白字符归一化的模糊匹配
+
 ### 🐛 Bug 修复
 
 - 修复角色设置导出在非 Tauri 环境下 `window.__TAURI__` 未定义的问题，添加 `isTauri()` 检查和浏览器 Blob 降级方案
 - 修复小说事件导出/导入功能缺失问题，添加 `novelEvents` 在 exportData 和 import 解析逻辑中的处理
 - 修复 ESLint `react-hooks/exhaustive-deps` 错误（CharacterSettings.tsx、NovelEventModal.tsx）
 - 修复 AI 生成事件时全局 `majorEvents` 与小说事件的冲突，统一使用 `involvedCharacterIds` 过滤
+- 修复刷新功能删除已导入小说问题：`novelStore.ts` 的 `refreshNovels` 方法修复为按名称匹配保留现有 ID、导入时间和章节数据，不再生成新随机 ID 导致角色设置、关系、世界观、事件记录关联丢失
+- 修复 ESLint `no-useless-assignment` 错误：修复 `NovelEventModal.tsx` 和 `novelStore.ts` 中未使用变量赋值问题
 
 ### 🔧 改进优化
 
@@ -42,6 +56,12 @@
 - 角色操作按钮（新增、导入、导出、扫描、清空全部）改为固定悬浮按钮（FAB），位于屏幕右下角
 - 优化 AI 事件生成错误处理：区分网络错误、API Key 错误、余额不足、速率限制等场景
 - 大体积小说 AI 生成容错增强：单批次失败不中断处理，合并失败时返回原始批次数据
+- API Key 安全加固：`aiConfigStore.ts` 排除 `apiKeyMap` 持久化，`configStore.ts` 使用 `secureStorage` 加密存储 TTS API Key，导出文件自动脱敏敏感字段
+- 音频缓存优化：移除 `localStorage` 持久化，改用内存 `Map` 存储，清理遗留的 localStorage 缓存数据
+- CharacterSettings 组件拆分：将超大组件拆分为 `CharacterCard`、`CharacterEditForm`、`RelationshipManager`、`CharacterImportExport` 四个子组件，提升可维护性
+- TTS 服务重构：提取 `_synthesizeSpeech` 私有函数消除代码重复，创建抽象 `BaseTTSPlayer<T>` 类统一 `TTSPlayer` 和 `ScriptTTSPlayer`，将 `waitForResume` 轮询机制替换为 Promise + resolve
+- 异步操作加载状态：`CharacterSettings` 新增 `isImporting`、`isReanalyzing` 加载状态，优化 AI 分析和数据导入的用户体验
+- CSS 清理：清理 124 个未使用的 CSS 类，减少文件体积约 469 行
 
 ---
 

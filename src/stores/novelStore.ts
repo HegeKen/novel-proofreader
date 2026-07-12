@@ -72,6 +72,121 @@ function saveCurrentNovel(state: { currentNovelId: string | null; novels: Novel[
 	}
 }
 
+function normalizeWhitespace(s: string): string {
+	return s.replace(/\s+/g, '');
+}
+
+function findExactMatch(para: string, oldText: string, startIndex?: number, endIndex?: number): { found: boolean; start: number; end: number } {
+	if (startIndex !== undefined && endIndex !== undefined && startIndex >= 0 && endIndex > startIndex && endIndex <= para.length) {
+		const actualText = para.slice(startIndex, endIndex);
+		if (actualText === oldText) {
+			return { found: true, start: startIndex, end: endIndex };
+		}
+		if (normalizeWhitespace(actualText) === normalizeWhitespace(oldText)) {
+			return { found: true, start: startIndex, end: endIndex };
+		}
+	}
+	return { found: false, start: 0, end: 0 };
+}
+
+function findLocalMatch(para: string, oldText: string, startIndex?: number): { found: boolean; start: number; end: number } {
+	if (startIndex === undefined) {
+		return { found: false, start: 0, end: 0 };
+	}
+
+	const searchStart = Math.max(0, startIndex - 10);
+	const searchEnd = Math.min(para.length, startIndex + oldText.length + 10);
+	const searchRange = para.slice(searchStart, searchEnd);
+
+	const relativeIdx = searchRange.indexOf(oldText);
+	if (relativeIdx >= 0) {
+		const foundIdx = searchStart + relativeIdx;
+		return { found: true, start: foundIdx, end: foundIdx + oldText.length };
+	}
+
+	const normalizedSearchRange = normalizeWhitespace(searchRange);
+	const normalizedOldText = normalizeWhitespace(oldText);
+	const relativeIdxNormalized = normalizedSearchRange.indexOf(normalizedOldText);
+	if (relativeIdxNormalized >= 0) {
+		let charCount = 0;
+		let realStart = -1;
+		for (let j = searchStart; j < searchEnd && charCount <= relativeIdxNormalized; j++) {
+			if (!/\s/.test(para[j])) {
+				if (charCount === relativeIdxNormalized) realStart = j;
+				charCount++;
+			}
+		}
+		if (realStart >= 0) {
+			let realEnd = realStart;
+			let remaining = oldText.length;
+			while (realEnd < para.length && remaining > 0) {
+				if (!/\s/.test(para[realEnd])) remaining--;
+				realEnd++;
+			}
+			return { found: true, start: realStart, end: realEnd };
+		}
+	}
+
+	return { found: false, start: 0, end: 0 };
+}
+
+function findGlobalMatch(para: string, oldText: string): { found: boolean; start: number; end: number } {
+	const globalIdx = para.indexOf(oldText);
+	if (globalIdx >= 0) {
+		return { found: true, start: globalIdx, end: globalIdx + oldText.length };
+	}
+
+	const normalizedPara = normalizeWhitespace(para);
+	const normalizedOldText = normalizeWhitespace(oldText);
+	const fuzzyIdx = normalizedPara.indexOf(normalizedOldText);
+	if (fuzzyIdx >= 0) {
+		let charCount = 0;
+		let realStart = -1;
+		for (let j = 0; j < para.length && charCount <= fuzzyIdx; j++) {
+			if (!/\s/.test(para[j])) {
+				if (charCount === fuzzyIdx) realStart = j;
+				charCount++;
+			}
+		}
+		if (realStart >= 0) {
+			let realEnd = realStart;
+			let remaining = normalizedOldText.length;
+			while (realEnd < para.length && remaining > 0) {
+				if (!/\s/.test(para[realEnd])) remaining--;
+				realEnd++;
+			}
+			return { found: true, start: realStart, end: realEnd };
+		}
+	}
+
+	return { found: false, start: 0, end: 0 };
+}
+
+function replaceTextInParagraph(para: string, oldText: string, newText: string, startIndex?: number, endIndex?: number): { replaced: boolean; result: string } {
+	if (oldText === newText) {
+		return { replaced: false, result: para };
+	}
+
+	const exactMatch = findExactMatch(para, oldText, startIndex, endIndex);
+	if (exactMatch.found) {
+		return { replaced: true, result: para.slice(0, exactMatch.start) + newText + para.slice(exactMatch.end) };
+	}
+
+	const localMatch = findLocalMatch(para, oldText, startIndex);
+	if (localMatch.found) {
+		return { replaced: true, result: para.slice(0, localMatch.start) + newText + para.slice(localMatch.end) };
+	}
+
+	const globalMatch = findGlobalMatch(para, oldText);
+	if (globalMatch.found) {
+		return { replaced: true, result: para.slice(0, globalMatch.start) + newText + para.slice(globalMatch.end) };
+	}
+
+	return { replaced: false, result: para };
+}
+
+export { normalizeWhitespace, findExactMatch, findLocalMatch, findGlobalMatch, replaceTextInParagraph };
+
 export const useNovelStore = create<NovelState>()(
 	persist(
 		(set, get) => ({
@@ -155,104 +270,16 @@ export const useNovelStore = create<NovelState>()(
 							return ch;
 						}
 
-						let para = paragraphs[paragraphIndex];
-						const original = para;
+						const para = paragraphs[paragraphIndex];
+						const { replaced: resultReplaced, result: newPara } = replaceTextInParagraph(para, oldText, newText, startIndex, endIndex);
 
-						if (oldText === newText) return ch;
-
-						const normalizeWhitespace = (s: string) => s.replace(/\s+/g, '');
-
-						if (startIndex !== undefined && endIndex !== undefined && startIndex >= 0 && endIndex > startIndex && endIndex <= para.length) {
-							const actualText = para.slice(startIndex, endIndex);
-							if (actualText === oldText) {
-								para = para.slice(0, startIndex) + newText + para.slice(endIndex);
-								replaced = true;
-								logger.info('[novelStore]', '替换成功: 精确索引匹配');
-							} else if (normalizeWhitespace(actualText) === normalizeWhitespace(oldText)) {
-								para = para.slice(0, startIndex) + newText + para.slice(endIndex);
-								replaced = true;
-								logger.info('[novelStore]', '替换成功: 空白不敏感索引匹配');
-							}
-						}
-
-						if (!replaced && startIndex !== undefined) {
-							const searchStart = Math.max(0, startIndex - 10);
-							const searchEnd = Math.min(para.length, startIndex + oldText.length + 10);
-							const searchRange = para.slice(searchStart, searchEnd);
-							const relativeIdx = searchRange.indexOf(oldText);
-							if (relativeIdx >= 0) {
-								const foundIdx = searchStart + relativeIdx;
-								para = para.slice(0, foundIdx) + newText + para.slice(foundIdx + oldText.length);
-								replaced = true;
-								logger.info('[novelStore]', `替换成功: 局部搜索匹配 (偏移=${foundIdx - startIndex})`);
-							} else {
-								const normalizedSearchRange = normalizeWhitespace(searchRange);
-								const normalizedOldText = normalizeWhitespace(oldText);
-								const relativeIdxNormalized = normalizedSearchRange.indexOf(normalizedOldText);
-								if (relativeIdxNormalized >= 0) {
-									let charCount = 0;
-									let realStart = -1;
-									for (let j = searchStart; j < searchEnd && charCount <= relativeIdxNormalized; j++) {
-										if (!/\s/.test(para[j])) {
-											if (charCount === relativeIdxNormalized) realStart = j;
-											charCount++;
-										}
-									}
-									if (realStart >= 0) {
-										let realEnd = realStart;
-										let remaining = oldText.length;
-										while (realEnd < para.length && remaining > 0) {
-											if (!/\s/.test(para[realEnd])) remaining--;
-											realEnd++;
-										}
-										para = para.slice(0, realStart) + newText + para.slice(realEnd);
-										replaced = true;
-										logger.info('[novelStore]', '替换成功: 局部空白不敏感匹配');
-									}
-								}
-							}
-						}
-
-						if (!replaced) {
-							const globalIdx = para.indexOf(oldText);
-							if (globalIdx >= 0) {
-								para = para.slice(0, globalIdx) + newText + para.slice(globalIdx + oldText.length);
-								replaced = true;
-								logger.info('[novelStore]', `替换成功: 全局搜索匹配 (位置=${globalIdx})`);
-							} else {
-								const normalizedPara = normalizeWhitespace(para);
-								const normalizedOldText = normalizeWhitespace(oldText);
-								const fuzzyIdx = normalizedPara.indexOf(normalizedOldText);
-								if (fuzzyIdx >= 0) {
-									let charCount = 0;
-									let realStart = -1;
-									for (let j = 0; j < para.length && charCount <= fuzzyIdx; j++) {
-										if (!/\s/.test(para[j])) {
-											if (charCount === fuzzyIdx) realStart = j;
-											charCount++;
-										}
-									}
-									if (realStart >= 0) {
-										let realEnd = realStart;
-										let remaining = normalizedOldText.length;
-										while (realEnd < para.length && remaining > 0) {
-											if (!/\s/.test(para[realEnd])) remaining--;
-											realEnd++;
-										}
-										para = para.slice(0, realStart) + newText + para.slice(realEnd);
-										replaced = true;
-										logger.info('[novelStore]', '替换成功: 全局空白不敏感匹配');
-									}
-								}
-							}
-						}
-
-						if (!replaced) {
+						if (resultReplaced) {
+							replaced = true;
+							logger.info('[novelStore]', '替换成功');
+							paragraphs[paragraphIndex] = newPara;
+						} else {
 							logger.warn('[novelStore]', `替换失败: 在段落中找不到 "${oldText.slice(0, 30)}${oldText.length > 30 ? '...' : ''}"`);
 						}
-
-						if (para !== original) paragraphs[paragraphIndex] = para;
-						else if (replaced) replaced = false;
 
 						return { ...ch, content: paragraphs.join("\n") };
 					});
@@ -381,6 +408,9 @@ export const useNovelStore = create<NovelState>()(
 			refreshNovels: async () => {
 				logger.info('[novelStore]', '刷新小说列表');
 				const storedFileNames = await loadNovelsFromStorage();
+				const existingNovels = get().novels;
+				const existingNovelId = get().currentNovelId;
+
 				if (storedFileNames.length === 0) {
 					set({ novels: [], currentNovelId: null, chapters: [], currentChapterIndex: 0 });
 					return;
@@ -390,23 +420,26 @@ export const useNovelStore = create<NovelState>()(
 				for (const fileName of storedFileNames) {
 					const content = await loadNovelContent(fileName);
 					if (content) {
+						const name = fileName.replace(/\.txt$/i, '');
+						const existingNovel = existingNovels.find((n) => n.name === name);
 						loadedNovels.push({
-							id: `novel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-							name: fileName.replace(/\.txt$/i, ''),
+							id: existingNovel?.id ?? `novel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+							name,
 							fullText: content,
-							importedAt: Date.now(),
-							chapters: [],
+							importedAt: existingNovel?.importedAt ?? Date.now(),
+							chapters: existingNovel?.chapters ?? [],
 						});
 					}
 				}
 
 				if (loadedNovels.length > 0) {
-					const selectedNovel = loadedNovels[0];
+					let selectedId = existingNovelId;
+					if (!loadedNovels.find((n) => n.id === existingNovelId)) {
+						selectedId = loadedNovels[0].id;
+					}
 					set({
 						novels: loadedNovels,
-						currentNovelId: selectedNovel.id,
-						chapters: [],
-						currentChapterIndex: 0,
+						currentNovelId: selectedId,
 					});
 				} else {
 					set({ novels: [], currentNovelId: null, chapters: [], currentChapterIndex: 0 });

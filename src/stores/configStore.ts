@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { secureStorageSet, secureStorageGet } from "../utils/secureStorage";
 
 
 export interface TTSConfig {
@@ -43,6 +44,7 @@ export interface ConfigState {
 	proofreadConfig: ProofreadConfig;
 	setTTSConfig: (config: TTSConfig) => void;
 	updateTTSConfig: (patch: Partial<TTSConfig>) => void;
+	setTTSApiKey: (apiKey: string) => void;
 	setPromptConfig: (config: PromptConfig) => void;
 	updatePromptConfig: (patch: Partial<PromptConfig>) => void;
 	setProofreadConfig: (config: ProofreadConfig) => void;
@@ -84,15 +86,30 @@ const DEFAULT_PROOFREAD_CONFIG: ProofreadConfig = {
 	maxConcurrentBatches: 4,
 };
 
+const loadedTtsApiKey = secureStorageGet("tts-api-key") || "";
+
 export const useConfigStore = create<ConfigState>()(
 	persist(
 		(set) => ({
-			ttsConfig: DEFAULT_TTS_CONFIG,
+			ttsConfig: { ...DEFAULT_TTS_CONFIG, apiKey: loadedTtsApiKey },
 			promptConfig: DEFAULT_PROMPT_CONFIG,
 			proofreadConfig: DEFAULT_PROOFREAD_CONFIG,
-			setTTSConfig: (config) => set({ ttsConfig: { ...DEFAULT_TTS_CONFIG, ...config } }),
-			updateTTSConfig: (patch) =>
-				set((state) => ({ ttsConfig: { ...DEFAULT_TTS_CONFIG, ...state.ttsConfig, ...patch } })),
+			setTTSConfig: (config) => {
+				if (config.apiKey) {
+					secureStorageSet("tts-api-key", config.apiKey);
+				}
+				set({ ttsConfig: { ...DEFAULT_TTS_CONFIG, ...config } });
+			},
+			updateTTSConfig: (patch) => {
+				if (patch.apiKey) {
+					secureStorageSet("tts-api-key", patch.apiKey);
+				}
+				set((state) => ({ ttsConfig: { ...DEFAULT_TTS_CONFIG, ...state.ttsConfig, ...patch } }));
+			},
+			setTTSApiKey: (apiKey) => {
+				secureStorageSet("tts-api-key", apiKey);
+				set((state) => ({ ttsConfig: { ...state.ttsConfig, apiKey } }));
+			},
 			setPromptConfig: (config) => set({ promptConfig: config }),
 			updatePromptConfig: (patch) =>
 				set((state) => ({ promptConfig: { ...state.promptConfig, ...patch } })),
@@ -102,6 +119,11 @@ export const useConfigStore = create<ConfigState>()(
 		}),
 		{
 			name: "novel-proofreader-app-config",
+			partialize: (state) => ({
+				ttsConfig: { ...state.ttsConfig, apiKey: "" },
+				promptConfig: state.promptConfig,
+				proofreadConfig: state.proofreadConfig,
+			}),
 		},
 	),
 );

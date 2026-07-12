@@ -96,8 +96,42 @@ function extractDetailError(body: string): string | null {
 	return null;
 }
 
+const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504];
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY = 1000;
+
+async function waitForRetry(attempt: number): Promise<void> {
+	const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt) + Math.random() * 500;
+	return new Promise(resolve => setTimeout(resolve, delay));
+}
+
+async function executeChatRequest(
+	url: string,
+	headers: Record<string, string>,
+	body: Record<string, unknown>,
+	signal?: AbortSignal,
+): Promise<Response> {
+	logger.request(url, headers, body);
+
+	const t0 = Date.now();
+	const resp = await fetch(url, {
+		method: "POST",
+		headers,
+		body: JSON.stringify(body),
+		signal,
+	});
+	const elapsed = Date.now() - t0;
+
+	if (!resp.ok) {
+		const text = await resp.text().catch(() => "");
+		logger.error(url, resp.status, text, elapsed);
+	}
+
+	return resp;
+}
+
 /**
- * 发送 Chat Completion 请求
+ * 发送 Chat Completion 请求（带重试机制）
  */
 export async function sendChatCompletion(
 	messages: ChatMessage[],
@@ -124,54 +158,68 @@ export async function sendChatCompletion(
 		max_tokens: minMaxTokens,
 	};
 
-	logger.request(url, headers, body);
-
-	const t0 = Date.now();
-	const resp = await fetch(url, {
-		method: "POST",
-		headers,
-		body: JSON.stringify(body),
-		signal,
-	});
-	const elapsed = Date.now() - t0;
-
-	if (!resp.ok) {
-		const text = await resp.text().catch(() => "");
-		logger.error(url, resp.status, text, elapsed);
-
-		const provider = detectProvider(config.baseURL);
-		useAppMetaStore.getState().incrementAPIUsage(provider, false);
-		const friendly = ERROR_MESSAGES[provider]?.[resp.status];
-		const detail = extractDetailError(text);
-
-		const parts: string[] = [];
-		if (friendly) parts.push(friendly);
-		if (detail && detail !== friendly) parts.push(detail);
-		if (parts.length === 0) parts.push(`AI 请求失败 (${resp.status})`);
-
-		throw new Error(parts.join(" — "));
-	}
-
-	const data: ChatCompletionResponse = await resp.json();
-	logger.response(url, resp.status, data, elapsed);
-
 	const provider = detectProvider(config.baseURL);
-	const responsePromptTokens = data.usage?.prompt_tokens ?? 0;
-	const completionTokens = data.usage?.completion_tokens ?? 0;
-	useAppMetaStore.getState().incrementAPIUsage(provider, true, responsePromptTokens, completionTokens);
 
-	// MiMo 内容拦截：返回 200 但 body 包含 high risk 拒绝文本
-	const content = data.choices?.[0]?.message?.content ?? "";
-	if (
-		detectProvider(config.baseURL) === "mimo" &&
-		content.includes(
-			"The request was rejected because it was considered high risk",
-		)
-	) {
-		throw new Error("MiMo 内容审核拦截，避免输入不安全或敏感内容 — 421");
+	for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+		if (signal?.aborted) {
+			throw new Error("请求已被取消");
+		}
+
+		try {
+			const resp = await executeChatRequest(url, headers, body, signal);
+
+			if (!resp.ok) {
+				const text = await resp.text().catch(() => "");
+				
+				if (RETRYABLE_STATUS_CODES.includes(resp.status) && attempt < MAX_RETRIES - 1) {
+					logger.warn(`AI 请求失败，准备重试 (attempt ${attempt + 1}/${MAX_RETRIES})`, { status: resp.status });
+					await waitForRetry(attempt);
+					continue;
+				}
+
+				useAppMetaStore.getState().incrementAPIUsage(provider, false);
+				const friendly = ERROR_MESSAGES[provider]?.[resp.status];
+				const detail = extractDetailError(text);
+
+				const parts: string[] = [];
+				if (friendly) parts.push(friendly);
+				if (detail && detail !== friendly) parts.push(detail);
+				if (parts.length === 0) parts.push(`AI 请求失败 (${resp.status})`);
+
+				throw new Error(parts.join(" — "));
+			}
+
+			const data: ChatCompletionResponse = await resp.json();
+			logger.response(url, resp.status, data, Date.now());
+
+			const responsePromptTokens = data.usage?.prompt_tokens ?? 0;
+			const completionTokens = data.usage?.completion_tokens ?? 0;
+			useAppMetaStore.getState().incrementAPIUsage(provider, true, responsePromptTokens, completionTokens);
+
+			const content = data.choices?.[0]?.message?.content ?? "";
+			if (
+				provider === "mimo" &&
+				content.includes(
+					"The request was rejected because it was considered high risk",
+				)
+			) {
+				throw new Error("MiMo 内容审核拦截，避免输入不安全或敏感内容 — 421");
+			}
+
+			return content;
+		} catch (err) {
+			if (err instanceof Error && err.message === "请求已被取消") {
+				throw err;
+			}
+			if (attempt === MAX_RETRIES - 1) {
+				throw err;
+			}
+			logger.warn(`AI 请求异常，准备重试 (attempt ${attempt + 1}/${MAX_RETRIES})`, { error: err });
+			await waitForRetry(attempt);
+		}
 	}
 
-	return content;
+	throw new Error("AI 请求失败");
 }
 
 /**

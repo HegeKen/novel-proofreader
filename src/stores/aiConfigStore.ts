@@ -59,8 +59,8 @@ export const useAIConfigStore = create<AIConfigState>()(
 		{
 			name: "novel-proofreader-ai-config",
 			partialize: (state) => ({
-				aiConfig: state.aiConfig,
-				apiKeyMap: state.apiKeyMap,
+				aiConfig: { ...state.aiConfig, apiKey: "" },
+				apiKeyMap: {},
 			}),
 			onRehydrateStorage: () => (state) => {
 				if (state) {
