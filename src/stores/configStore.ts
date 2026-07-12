@@ -29,6 +29,7 @@ export interface PromptConfig {
 	voiceDesign: string;
 	majorEvents: string;
 	majorEventsMerge: string;
+	novelEvents: string;
 }
 
 export interface ProofreadConfig {
@@ -75,6 +76,7 @@ const DEFAULT_PROMPT_CONFIG: PromptConfig = {
 	voiceDesign: "",
 	majorEvents: "",
 	majorEventsMerge: "",
+	novelEvents: "",
 };
 
 const DEFAULT_PROOFREAD_CONFIG: ProofreadConfig = {

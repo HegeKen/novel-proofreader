@@ -1,9 +1,13 @@
 import React, { useState, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useCharacterStore } from "../stores/characterStore";
+import { useNovelStore } from "../stores/novelStore";
 import type { NovelEvent } from "../types";
 import { Icons } from "./Icons";
 import { useAppMetaStore } from "../stores/appMetaStore";
+import { generateNovelEvents } from "../utils/aiClient";
+import { useAIConfigStore } from "../stores/aiConfigStore";
+import { logger } from "../utils/logger";
 
 interface NovelEventModalProps {
 	novelId: string | null;
@@ -15,6 +19,8 @@ interface EventFormData {
 	title: string;
 	description: string;
 	timeOrder: number;
+	timeInfo: string;
+	chapter: string;
 	involvedCharacterIds: string[];
 }
 
@@ -22,6 +28,8 @@ const emptyForm: EventFormData = {
 	title: "",
 	description: "",
 	timeOrder: 1,
+	timeInfo: "",
+	chapter: "",
 	involvedCharacterIds: [],
 };
 
@@ -34,16 +42,20 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 	const novelCharactersMap = useCharacterStore((s) => s.novelCharacters);
 	const characters = useMemo(() => (novelId ? novelCharactersMap[novelId] ?? [] : []), [novelCharactersMap, novelId]);
 
+	const chapters = useNovelStore((s) => s.chapters);
+	const aiConfig = useAIConfigStore((s) => s.aiConfig);
+
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [formData, setFormData] = useState<EventFormData>(emptyForm);
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+	const [isGenerating, setIsGenerating] = useState(false);
 
 	const sortedEvents = [...storeEvents].sort((a, b) => a.timeOrder - b.timeOrder);
 
 	const handleAdd = useCallback(() => {
 		setEditingId("__new__");
 		const nextOrder = sortedEvents.length > 0 ? Math.max(...sortedEvents.map((e) => e.timeOrder)) + 1 : 1;
-		setFormData({ title: "", description: "", timeOrder: nextOrder, involvedCharacterIds: [] });
+		setFormData({ title: "", description: "", timeOrder: nextOrder, timeInfo: "", chapter: "", involvedCharacterIds: [] });
 	}, [sortedEvents]);
 
 	const handleEdit = useCallback((evt: NovelEvent) => {
@@ -52,6 +64,8 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 			title: evt.title,
 			description: evt.description,
 			timeOrder: evt.timeOrder,
+			timeInfo: evt.timeInfo,
+			chapter: evt.chapter,
 			involvedCharacterIds: [...evt.involvedCharacterIds],
 		});
 	}, []);
@@ -99,6 +113,85 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		}));
 	}, []);
 
+	const handleGenerateWithAI = useCallback(async () => {
+		if (!novelId || !chapters.length || isGenerating) return;
+
+		setIsGenerating(true);
+		useAppMetaStore.getState().showToast("正在分析小说内容生成大事记...", "info");
+		logger.proofread("[NovelEventModal] 开始 AI 生成大事记");
+
+		try {
+			const novelContent = chapters.map((ch) => `${ch.title}\n${ch.content}`).join("\n\n");
+			const characterNames = characters.map((ch) => ch.name).join("、");
+
+			const result = await generateNovelEvents(
+				novelContent,
+				characterNames,
+				aiConfig,
+				(current, total, phase) => {
+					const phaseText = phase === "analyze" ? "分析中" : "合并中";
+					useAppMetaStore.getState().showToast(`${phaseText} ${current}/${total}`, "info");
+				}
+			);
+
+			if (!result || !Array.isArray(result.events) || result.events.length === 0) {
+				useAppMetaStore.getState().showToast("未生成任何事件，请重试", "error");
+				return;
+			}
+
+			const nextOrder = sortedEvents.length > 0 ? Math.max(...sortedEvents.map((e) => e.timeOrder)) : 0;
+			let addedCount = 0;
+
+			for (let i = 0; i < result.events.length; i++) {
+				const evt = result.events[i];
+				if (!evt.title) continue;
+
+				const involvedCharacterIds: string[] = [];
+				if (evt.involvedCharacterNames && Array.isArray(evt.involvedCharacterNames)) {
+					for (const charName of evt.involvedCharacterNames) {
+						const matchedChar = characters.find((ch) =>
+							ch.name.includes(charName) || charName.includes(ch.name)
+						);
+						if (matchedChar) {
+							involvedCharacterIds.push(matchedChar.id);
+						}
+					}
+				}
+
+				addEvent(novelId, {
+					title: evt.title,
+					description: evt.description || "",
+					timeOrder: (evt.timeOrder || i + 1) + nextOrder,
+					timeInfo: evt.timeInfo || "",
+					chapter: evt.chapter || "",
+					involvedCharacterIds,
+				});
+				addedCount++;
+			}
+
+			useAppMetaStore.getState().showToast(`成功生成 ${addedCount} 个大事记`, "success");
+			logger.proofread(`[NovelEventModal] AI 生成成功，添加了 ${addedCount} 个事件`);
+		} catch (err) {
+			logger.errorGeneric("[NovelEventModal] AI 生成失败:", err);
+			const errorMessage = err instanceof Error ? err.message : "生成失败";
+			if (errorMessage.includes("网络") || errorMessage.includes("network") || errorMessage.includes("fetch")) {
+				useAppMetaStore.getState().showToast("生成失败，请检查网络连接", "error");
+			} else if (errorMessage.includes("配置")) {
+				useAppMetaStore.getState().showToast("生成失败，请检查 AI 配置", "error");
+			} else if (errorMessage.includes("401")) {
+				useAppMetaStore.getState().showToast("生成失败，API Key 无效", "error");
+			} else if (errorMessage.includes("402")) {
+				useAppMetaStore.getState().showToast("生成失败，账户余额不足", "error");
+			} else if (errorMessage.includes("429")) {
+				useAppMetaStore.getState().showToast("生成失败，请求频率超限，请稍后重试", "error");
+			} else {
+				useAppMetaStore.getState().showToast(`生成失败：${errorMessage.slice(0, 50)}`, "error");
+			}
+		} finally {
+			setIsGenerating(false);
+		}
+	}, [novelId, chapters, characters, aiConfig, addEvent, sortedEvents, isGenerating]);
+
 	if (!show || !novelId) return null;
 
 	return createPortal(
@@ -142,6 +235,26 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 										setFormData({ ...formData, timeOrder: Math.max(1, parseInt(e.target.value) || 1) })
 									}
 									min={1}
+								/>
+							</div>
+							<div className="form-field">
+								<label>发生章节</label>
+								<input
+									type="text"
+									className="config-input"
+									value={formData.chapter}
+									onChange={(e) => setFormData({ ...formData, chapter: e.target.value })}
+									placeholder="如：第1章、第一章"
+								/>
+							</div>
+							<div className="form-field">
+								<label>时间信息</label>
+								<input
+									type="text"
+									className="config-input"
+									value={formData.timeInfo}
+									onChange={(e) => setFormData({ ...formData, timeInfo: e.target.value })}
+									placeholder="如：三年后、清晨、某日傍晚"
 								/>
 							</div>
 							<div className="form-field">
@@ -192,15 +305,11 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 					<div className="event-list">
 						<div className="event-list-header">
 							<span className="event-list-count">共 {sortedEvents.length} 个事件</span>
-							<button className="btn btn-sm" onClick={handleAdd} disabled={editingId !== null}>
-								<Icons.plus size={14} />
-								<span>新增</span>
-							</button>
 						</div>
 						{sortedEvents.length === 0 && (
 							<div className="event-list-empty">
 								<Icons.list size={24} />
-								<p>暂无大事记，点击"新增"添加</p>
+								<p>暂无大事记，点击下方"新增"添加</p>
 							</div>
 						)}
 						{sortedEvents.map((evt, idx) => (
@@ -208,6 +317,14 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 								<div className="event-item-order">{idx + 1}</div>
 								<div className="event-item-body">
 									<div className="event-item-title">{evt.title}</div>
+									<div className="event-item-meta">
+										{evt.chapter && (
+											<span className="event-item-chapter">{evt.chapter}</span>
+										)}
+										{evt.timeInfo && (
+											<span className="event-item-time-info">{evt.timeInfo}</span>
+										)}
+									</div>
 									{evt.description && (
 										<div className="event-item-desc">{evt.description}</div>
 									)}
@@ -260,6 +377,28 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 							</div>
 						))}
 					</div>
+				</div>
+
+				{/* 底部操作按钮 */}
+				<div className="character-actions-fab-wrapper">
+					<button
+						className="btn"
+						onClick={handleAdd}
+						disabled={editingId !== null}
+						title="新增大事记"
+					>
+						<Icons.plus size={16} />
+						<span>新增</span>
+					</button>
+					<button
+						className="btn"
+						onClick={handleGenerateWithAI}
+						disabled={editingId !== null || isGenerating || !chapters.length}
+						title="AI 分析小说内容生成大事记"
+					>
+						<Icons.brain size={16} />
+						<span>{isGenerating ? "生成中..." : "AI 生成"}</span>
+					</button>
 				</div>
 			</div>
 		</div>,

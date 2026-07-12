@@ -583,9 +583,9 @@ export function useAICheck() {
 							},
 						];
 
-						// 添加 5 秒超时
+						// 添加 15 秒超时
 						const timeoutPromise = new Promise<never>((_, reject) => {
-							setTimeout(() => reject(new Error('PROOFREAD_TIMEOUT')), 10000);
+							setTimeout(() => reject(new Error('PROOFREAD_TIMEOUT')), 15000);
 						});
 
 						let reply: string;
@@ -602,7 +602,7 @@ export function useAICheck() {
 									startIndex: 0,
 									endIndex: 0,
 									errorType: "timeout",
-									suggestion: "请求超时（10秒），已跳过此段落",
+									suggestion: "请求超时（15秒），已跳过此段落",
 									originalText: currentItem.slice(0, 50),
 									correctedText: "",
 									applied: false,
@@ -611,7 +611,7 @@ export function useAICheck() {
 								updateParagraphResult(chapter.id, originalIndex, {
 									errors: [timeoutError],
 									status: "error",
-									errorMessage: "请求超时（10秒）",
+									errorMessage: "请求超时（15秒）",
 								});
 								return;
 							}

@@ -12,6 +12,7 @@ import {
 	VOICE_DESIGN_SYSTEM_PROMPT,
 	MAJOR_EVENTS_SYSTEM_PROMPT,
 	MAJOR_EVENTS_MERGE_PROMPT,
+	NOVEL_EVENTS_SYSTEM_PROMPT,
 } from "../../utils/aiClient";
 
 export interface PromptConfig {
@@ -28,6 +29,7 @@ export interface PromptConfig {
 	voiceDesign: string;
 	majorEvents: string;
 	majorEventsMerge: string;
+	novelEvents: string;
 }
 
 export const DEFAULTS: Record<keyof PromptConfig, string> = {
@@ -44,6 +46,7 @@ export const DEFAULTS: Record<keyof PromptConfig, string> = {
 	voiceDesign: VOICE_DESIGN_SYSTEM_PROMPT,
 	majorEvents: MAJOR_EVENTS_SYSTEM_PROMPT,
 	majorEventsMerge: MAJOR_EVENTS_MERGE_PROMPT,
+	novelEvents: NOVEL_EVENTS_SYSTEM_PROMPT,
 };
 
 export const LABELS: Record<keyof PromptConfig, { label: string; hint: string; rows: number }> = {
@@ -60,4 +63,5 @@ export const LABELS: Record<keyof PromptConfig, { label: string; hint: string; r
 	voiceDesign: { label: "音色设计生成 Prompt", hint: "用于根据角色信息生成TTS音色描述", rows: 6 },
 	majorEvents: { label: "角色大事件分析 Prompt（单批）", hint: "用于逐批分析角色在文本片段中的关键经历", rows: 6 },
 	majorEventsMerge: { label: "角色大事件合并 Prompt", hint: "用于合并各批次大事件结果，去重排序", rows: 6 },
+	novelEvents: { label: "小说大事记生成 Prompt", hint: "用于从小说内容中提取并生成完整的大事记", rows: 8 },
 };

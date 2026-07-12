@@ -8,7 +8,7 @@ import { useCharacterStore } from "../stores/characterStore";
 import { useProofreadMetaStore } from "../stores/proofreadMetaStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
 import { useConfigStore } from "../stores/configStore";
-import type { CharacterInfo, CharacterRelationship, CharacterRole, NovelCategory, NovelWorldbuilding, RelationType } from "../types";
+import type { CharacterInfo, CharacterRelationship, CharacterRole, NovelCategory, NovelWorldbuilding, RelationType, NovelEvent } from "../types";
 import { synthesizeSpeechWithVoice } from "../utils/ttsService";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
@@ -912,6 +912,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const setNodePositions = useCharacterStore((s) => s.setNodePositions);
 	const getWorldbuilding = useCharacterStore((s) => s.getWorldbuilding);
 	const setWorldbuilding = useCharacterStore((s) => s.setWorldbuilding);
+	const setEvents = useCharacterStore((s) => s.setEvents);
 
 	// 世界观状态
 	const wb = useMemo(() => getWorldbuilding(novelId), [getWorldbuilding, novelId]);
@@ -1224,7 +1225,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		dialect: "",
 		aliases: [],
 		relationTerms: [],
-		majorEvents: "",
 	});
 	const [showAddForm, setShowAddForm] = useState(false);
 	const [newAlias, setNewAlias] = useState("");
@@ -1380,7 +1380,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			socialStatus: editForm.socialStatus,
 			personality: editForm.personality,
 			background: editForm.background,
-			keyExperiences: editForm.keyExperiences,
 			characterArc: editForm.characterArc,
 			notes: editForm.notes,
 			voice: editForm.voice,
@@ -1496,12 +1495,10 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				socialStatus: char.socialStatus || "",
 				personality: char.personality || "",
 				background: char.background || "",
-				keyExperiences: char.keyExperiences || [],
 				characterArc: char.characterArc || "",
 				notes: char.notes || "",
 				voice: char.voice || "",
 				voiceDesignPrompt: char.voiceDesignPrompt || "",
-				majorEvents: char.majorEvents || "",
 			})),
 			relationships: relationships.map(rel => ({
 				id: rel.id,
@@ -1517,10 +1514,10 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			ignoredCharacterNames,
 			novelCategory,
 			worldbuilding: getWorldbuilding(novelId) || null,
+			events: allEvents,
 		};
 		
 		const dataStr = JSON.stringify(exportData, null, 2);
-		// 使用小说名称作为文件名前缀
 		const safeName = (novelName || "小说设置").replace(/[\\/:*?"<>|]/g, "_");
 		const fileName = `${safeName}-小说设置-${new Date().toISOString().split("T")[0]}.json`;
 
@@ -1548,7 +1545,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			logger.errorGeneric("CharacterSettings - 导出失败:", e);
 			useAppMetaStore.getState().showToast("导出失败，请重试", "error");
 		}
-	}, [sortedCharacters, relationships, novelName, novelId, nodePositions, ignoredWords, ignoredCharacterNames, novelCategory, setExportModal, getWorldbuilding]);
+	}, [sortedCharacters, relationships, novelName, novelId, nodePositions, ignoredWords, ignoredCharacterNames, novelCategory, setExportModal, getWorldbuilding, allEvents]);
 
 	// 导入角色
 	const handleImportCharacters = useCallback(async () => {
@@ -1571,10 +1568,11 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					let importedNovelCategory: NovelCategory | null = null;
 					let importedIgnoredCharacterNames: string[] = [];
 					let importedWorldbuilding: NovelWorldbuilding | null = null;
+					let importedEvents: NovelEvent[] = [];
 
 					// 兼容新旧格式
 					if (imported.version && Array.isArray(imported.characters)) {
-						// 新格式：{ version, characters, relationships, nodePositions, ignoredWords, novelCategory, ignoredCharacterNames, worldbuilding }
+						// 新格式：{ version, characters, relationships, nodePositions, ignoredWords, novelCategory, ignoredCharacterNames, worldbuilding, events }
 						importedChars = imported.characters;
 						importedRelationships = imported.relationships || [];
 						importedNodePositions = imported.nodePositions || {};
@@ -1582,6 +1580,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						importedNovelCategory = imported.novelCategory || null;
 						importedIgnoredCharacterNames = imported.ignoredCharacterNames || [];
 						importedWorldbuilding = imported.worldbuilding || null;
+						importedEvents = imported.events || [];
 					} else if (Array.isArray(imported)) {
 						// 旧格式：CharacterInfo[]
 						importedChars = imported;
@@ -1629,14 +1628,13 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 									socialStatus: importedChar.socialStatus || "",
 									personality: importedChar.personality || "",
 									background: importedChar.background || "",
-									keyExperiences: importedChar.keyExperiences || [],
+
 									characterArc: importedChar.characterArc || "",
 									notes: importedChar.notes || "",
 									voice: importedChar.voice || "",
 									voiceDesignPrompt: importedChar.voiceDesignPrompt || "",
 									aliases: importedChar.aliases || [],
 									relationTerms: importedChar.relationTerms || [],
-									majorEvents: importedChar.majorEvents || "",
 								};
 							}
 							idMapping.set(importedChar.id, existing.id);
@@ -1655,14 +1653,13 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 								socialStatus: importedChar.socialStatus || "",
 								personality: importedChar.personality || "",
 								background: importedChar.background || "",
-								keyExperiences: importedChar.keyExperiences || [],
+
 								characterArc: importedChar.characterArc || "",
 								notes: importedChar.notes || "",
 								voice: importedChar.voice || "",
 								voiceDesignPrompt: importedChar.voiceDesignPrompt || "",
 								aliases: importedChar.aliases || [],
 								relationTerms: importedChar.relationTerms || [],
-								majorEvents: importedChar.majorEvents || "",
 							};
 							if (!mergedIds.has(importedChar.id)) {
 								mergedChars.push(charWithId);
@@ -1726,13 +1723,31 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						setWorldbuilding(novelId, importedWorldbuilding!);
 					}
 
+					// --- 导入大事记（使用ID映射修正涉及角色ID） ---
+					if (importedEvents.length > 0) {
+						const resolvedEvents: NovelEvent[] = [];
+						for (const evt of importedEvents) {
+							const resolvedCharacterIds: string[] = [];
+							for (const charId of evt.involvedCharacterIds || []) {
+								resolvedCharacterIds.push(idMapping.get(charId) || charId);
+							}
+							resolvedEvents.push({
+								...evt,
+								id: evt.id || `evt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+								involvedCharacterIds: resolvedCharacterIds,
+							});
+						}
+						setEvents(novelId, resolvedEvents);
+					}
+
 					const msg = `导入完成！新增 ${addedCount} 个角色，更新 ${updatedCount} 个角色` +
 						(importedRelCount > 0 ? `，导入 ${importedRelCount} 条关系` : "") +
 						(Object.keys(importedNodePositions).length > 0 ? "，导入节点位置" : "") +
 						(importedIgnoredWords.length > 0 ? `，导入 ${importedIgnoredWords.length} 个忽略词` : "") +
 						(importedNovelCategory ? "，导入小说分类" : "") +
 						(importedIgnoredCharacterNames.length > 0 ? `，导入 ${importedIgnoredCharacterNames.length} 个忽略角色` : "") +
-						(hasWorldbuilding ? "，导入世界观设定" : "");
+						(hasWorldbuilding ? "，导入世界观设定" : "") +
+						(importedEvents.length > 0 ? `，导入 ${importedEvents.length} 个大事记` : "");
 					useAppMetaStore.getState().showToast(msg, "success");
 				} catch (err) {
 					useAppMetaStore.getState().showToast("文件解析失败：" + (err instanceof Error ? err.message : String(err)), "error");
@@ -1741,7 +1756,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			reader.readAsText(file);
 		};
 		input.click();
-	}, [novelId, novelCharacters, setCharactersForNovel, setRelationshipsForNovel, setNodePositions, setIgnoredWords, setNovelCategory, setIgnoredCharacterNames, setWorldbuilding]);
+	}, [novelId, novelCharacters, setCharactersForNovel, setRelationshipsForNovel, setNodePositions, setIgnoredWords, setNovelCategory, setIgnoredCharacterNames, setWorldbuilding, setEvents]);
 
 	// 使用AI分析整本小说提取角色和关系
 	const handleAnalyzeCharacters = useCallback(async () => {
@@ -1808,14 +1823,13 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						socialStatus: char.socialStatus || "",
 						personality: char.personality || "",
 						background: char.background || "",
-						keyExperiences: char.keyExperiences || [],
+
 						characterArc: char.characterArc || "",
 						notes: char.description,
 						voice: "",
 						voiceDesignPrompt: char.voiceDesignPrompt,
 						aliases: char.aliases,
 						relationTerms: [] as string[],
-						majorEvents: char.majorEvents || "",
 						order: newCharactersWithIds.length,
 					});
 					existingNames.add(char.name.toLowerCase());
@@ -2231,8 +2245,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
   "voiceDesignPrompt": "音色设计描述",
   "dialect": "方言",
   "aliases": ["别称1", "别称2"],
-  "relationTerms": ["关系代称1", "关系代称2"],
-  "majorEvents": "角色大事件"
+  "relationTerms": ["关系代称1", "关系代称2"]
 }`;
 
 			const userPrompt = `请根据以下角色现有信息，完善和丰富角色卡片中的各个字段：
@@ -3057,7 +3070,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 												)}
 
 												{/* 角色档案：结构化信息 */}
-												{(char.age || char.identity || char.socialStatus || char.personality || char.appearance || char.background || char.characterArc || (char.keyExperiences && char.keyExperiences.length > 0)) && (
+												{(char.age || char.identity || char.socialStatus || char.personality || char.appearance || char.background || char.characterArc) && (
 													<div className="character-profile-section">
 														<div className="profile-grid">
 															{char.age && (
@@ -3084,35 +3097,25 @@ ${JSON.stringify(existingInfo, null, 2)}
 																	<span className="profile-value">{char.personality}</span>
 																</div>
 															)}
+															{char.appearance && (
+																<div className="profile-item">
+																	<span className="profile-label">外貌</span>
+																	<span className="profile-value">{char.appearance}</span>
+																</div>
+															)}
+															{char.background && (
+																<div className="profile-item">
+																	<span className="profile-label">出身</span>
+																	<span className="profile-value">{char.background}</span>
+																</div>
+															)}
+															{char.characterArc && (
+																<div className="profile-item">
+																	<span className="profile-label">弧光</span>
+																	<span className="profile-value">{char.characterArc}</span>
+																</div>
+															)}
 														</div>
-														{char.appearance && (
-															<div className="profile-detail">
-																<span className="profile-label">外貌</span>
-																<span className="profile-value">{char.appearance}</span>
-															</div>
-														)}
-														{char.background && (
-															<div className="profile-detail">
-																<span className="profile-label">出身</span>
-																<span className="profile-value">{char.background}</span>
-															</div>
-														)}
-														{char.characterArc && (
-															<div className="profile-detail">
-																<span className="profile-label">弧光</span>
-																<span className="profile-value">{char.characterArc}</span>
-															</div>
-														)}
-														{char.keyExperiences && char.keyExperiences.length > 0 && (
-															<div className="profile-detail">
-																<span className="profile-label">关键经历</span>
-																<ul className="profile-experiences">
-																	{char.keyExperiences.map((exp, idx) => (
-																		<li key={idx}>{exp}</li>
-																	))}
-																</ul>
-															</div>
-														)}
 													</div>
 												)}
 
@@ -3121,30 +3124,36 @@ ${JSON.stringify(existingInfo, null, 2)}
 													const charEvents = allEvents
 														.filter((evt) => evt.involvedCharacterIds.includes(char.id))
 														.sort((a, b) => a.timeOrder - b.timeOrder);
-													if (charEvents.length === 0 && !char.majorEvents) return null;
+													if (charEvents.length === 0) return null;
 													return (
 														<div className="character-major-events-section">
 															<div className="events-label">
 																<Icons.list size={14} />
 																角色大事件
 															</div>
-															{charEvents.length > 0 ? (
-																<div className="events-timeline">
-																	{charEvents.map((evt) => (
-																		<div key={evt.id} className="events-timeline-item">
-																			<div className="events-timeline-dot" />
-																			<div className="events-timeline-body">
-																				<div className="events-timeline-title">{evt.title}</div>
-																				{evt.description && (
-																					<div className="events-timeline-desc">{evt.description}</div>
-																				)}
-																			</div>
+															<div className="events-timeline">
+																{charEvents.map((evt) => (
+																	<div key={evt.id} className="events-timeline-item">
+																		<div className="events-timeline-dot" />
+																		<div className="events-timeline-body">
+																			<div className="events-timeline-title">{evt.title}</div>
+																			{(evt.chapter || evt.timeInfo) && (
+																				<div className="events-timeline-meta">
+																					{evt.chapter && (
+																						<span className="events-timeline-chapter">{evt.chapter}</span>
+																					)}
+																					{evt.timeInfo && (
+																						<span className="events-timeline-time">{evt.timeInfo}</span>
+																					)}
+																				</div>
+																			)}
+																			{evt.description && (
+																				<div className="events-timeline-desc">{evt.description}</div>
+																			)}
 																		</div>
-																	))}
-																</div>
-															) : (
-																<div className="events-content">{char.majorEvents}</div>
-															)}
+																	</div>
+																))}
+															</div>
 														</div>
 													);
 												})()}

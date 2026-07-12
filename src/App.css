@@ -682,6 +682,33 @@ select {
 .btn-import-novel:active {
 	transform: scale(0.98)}
 
+.novel-list-actions {
+	display: flex;
+	gap: 6px;
+	align-items: center}
+
+.btn-refresh-novel {
+	padding: 8px 12px;
+	font-size: 13px;
+	font-weight: 500;
+	display: flex;
+	align-items: center;
+	gap: 6px}
+
+.btn-refresh-novel svg {
+	flex-shrink: 0;
+	display: block;
+	width: 16px;
+	height: 16px}
+
+.btn-refresh-novel:hover {
+	background: var(--bg-hover);
+	border-color: var(--border-strong);
+	transform: translateY(-1px);
+	box-shadow: var(--shadow-sm)}
+.btn-refresh-novel:active {
+	transform: scale(0.98)}
+
 .novel-list-items {
 	flex: 1;
 	overflow-y: auto;
@@ -2709,6 +2736,7 @@ color: var(--text-primary)}
 .proofread-toolbar [class*="Select"] span,
 .proofread-toolbar [class*="Select"] svg,
 .proofread-progress-bar {
+	position: relative;
 	height: 3px;
 	background: rgba(0, 0, 0, 0.1);
 	width: 100%}
@@ -2717,6 +2745,21 @@ color: var(--text-primary)}
 	height: 100%;
 	background: linear-gradient(90deg, #22c55e, #16a34a);
 	transition: width 0.3s ease}
+
+.proofread-progress-bar .progress-fill.progress-retry-timeout {
+	background: linear-gradient(90deg, #fa8c16, #fa541c)}
+
+.proofread-progress-bar .progress-label {
+	position: absolute;
+	top: -22px;
+	right: 8px;
+	font-size: 11px;
+	color: #fa8c16;
+	font-variant-numeric: tabular-nums;
+	background: rgba(250, 140, 22, 0.1);
+	padding: 2px 8px;
+	border-radius: 4px;
+}
 
 .error-count {
 	font-size: 12px;
@@ -2736,6 +2779,45 @@ color: var(--text-primary)}
 .error-count strong {
 	font-weight: 600;
 	color: var(--yellow)}
+
+.btn-retry-timeout {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+	padding: 4px 10px;
+	background: rgba(250, 140, 22, 0.12);
+	color: #fa8c16;
+	border: 1px solid rgba(250, 140, 22, 0.4);
+	border-radius: var(--r-md);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+	font-variant-numeric: tabular-nums;
+}
+.btn-retry-timeout:hover:not(:disabled) {
+	background: rgba(250, 140, 22, 0.2);
+	border-color: #fa8c16;
+	transform: translateY(-1px);
+}
+.btn-retry-timeout:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.error-count-divider {
+	margin: 0 6px;
+	color: rgba(0, 0, 0, 0.2);
+}
+
+.error-count-timeout {
+	font-size: 12px;
+	color: #fa8c16;
+	font-variant-numeric: tabular-nums;
+	padding: 4px 10px;
+	background: rgba(250, 140, 22, 0.08);
+	border-radius: var(--r-md);
+	display: inline-block;
+}
 
 .btn-cancel {
 	padding: 6px 14px;
@@ -5328,6 +5410,28 @@ color: var(--text-primary)}
 	font-weight: 500;
 	color: var(--text-primary)}
 
+.events-timeline-meta {
+	display: flex;
+	gap: 6px;
+	margin-top: 3px;
+	flex-wrap: wrap}
+
+.events-timeline-chapter {
+	font-size: 11px;
+	padding: 1px 5px;
+	border-radius: 3px;
+	background: var(--glass-bg);
+	color: var(--accent);
+	border: 1px solid var(--glass-border)}
+
+.events-timeline-time {
+	font-size: 11px;
+	padding: 1px 5px;
+	border-radius: 3px;
+	background: rgba(245, 158, 11, 0.1);
+	color: #f59e0b;
+	border: 1px solid rgba(245, 158, 11, 0.2)}
+
 .events-timeline-desc {
 	margin-top: 2px;
 	color: var(--text-secondary);
@@ -5348,10 +5452,19 @@ color: var(--text-primary)}
 
 /* 大事记弹窗 */
 .novel-event-modal {
-	max-width: 600px;
-	max-height: 75vh;
+	width: 700px;
+	max-height: 85vh;
+	background: var(--glass-bg-strong);
+	backdrop-filter: blur(var(--glass-blur-strong));
+	-webkit-backdrop-filter: blur(var(--glass-blur-strong));
+	border: 1px solid var(--glass-border);
+	border-radius: 20px;
+	overflow: hidden;
 	display: flex;
-	flex-direction: column}
+	flex-direction: column;
+	box-shadow:
+		var(--shadow-lg),
+		0 0 60px rgba(10, 132, 255, 0.12)}
 
 .novel-event-modal .config-body {
 	flex: 1;
@@ -5431,6 +5544,28 @@ color: var(--text-primary)}
 	font-size: 14px;
 	font-weight: 500;
 	color: var(--text-primary)}
+
+.event-item-meta {
+	display: flex;
+	gap: 8px;
+	margin-top: 4px;
+	flex-wrap: wrap}
+
+.event-item-chapter {
+	font-size: 11px;
+	padding: 2px 6px;
+	border-radius: 4px;
+	background: var(--glass-bg);
+	color: var(--accent);
+	border: 1px solid var(--glass-border)}
+
+.event-item-time-info {
+	font-size: 11px;
+	padding: 2px 6px;
+	border-radius: 4px;
+	background: rgba(245, 158, 11, 0.1);
+	color: #f59e0b;
+	border: 1px solid rgba(245, 158, 11, 0.2)}
 
 .event-item-desc {
 	font-size: 12px;

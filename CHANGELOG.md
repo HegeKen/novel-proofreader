@@ -1,5 +1,50 @@
 # Proof Reader Changelog
 
+## v0.12.5 (2026-07-12)
+
+### ✨ 功能更新
+
+**小说大事记系统**
+- 新增「小说大事记」配置面板，采用 glass 态设计（700px 宽度、85vh 最大高度）
+- 支持 AI 自动生成事件：读取小说章节和角色列表，调用大模型生成 5-15 个关键事件
+- 事件包含标题、描述（20-50字）、时间顺序、涉及角色等字段
+- AI 生成支持大体积小说切片处理：自动按段落分割为 80K 字符批次，合并结果后去重
+- 优化 AI 提示词，提取 10-30 个事件，包含具体时间描述和发生章节信息
+
+**时间信息详细分析**
+- NovelEvent 接口新增 `timeInfo`（具体时间描述）和 `chapter`（发生章节）字段
+- 事件卡片显示蓝色章节标签和橙色时间信息标签
+- AI 分析小说时自动提取时间点、时间段、时间跨度等信息
+
+**小说列表刷新功能**
+- 小说列表新增「刷新」按钮，点击重新加载 storage 目录下的所有 .txt 文件
+- 刷新后自动选择第一个加载的小说
+
+**角色信息优化**
+- 移除角色设置中的「关键经历」字段，优化布局结构
+- 外貌、出身、弧光字段改为内联网格布局，空间不足时自动换行
+
+**Prompt 管理中心化**
+- NOVEL_EVENTS_SYSTEM_PROMPT 移入 aiClient.ts 统一管理
+- promptConfig.ts、configStore.ts、ConfigModal.tsx 支持中心化配置管理
+
+### 🐛 Bug 修复
+
+- 修复角色设置导出在非 Tauri 环境下 `window.__TAURI__` 未定义的问题，添加 `isTauri()` 检查和浏览器 Blob 降级方案
+- 修复小说事件导出/导入功能缺失问题，添加 `novelEvents` 在 exportData 和 import 解析逻辑中的处理
+- 修复 ESLint `react-hooks/exhaustive-deps` 错误（CharacterSettings.tsx、NovelEventModal.tsx）
+- 修复 AI 生成事件时全局 `majorEvents` 与小说事件的冲突，统一使用 `involvedCharacterIds` 过滤
+
+### 🔧 改进优化
+
+- 统一模态框样式规范：使用 `.modal-overlay`、`.config-modal`、`.config-header`、`.close-btn` 类名
+- 统一操作按钮样式：`action-btn` 悬停效果包含渐变背景、颜色变化、边框变色、阴影和缩放
+- 角色操作按钮（新增、导入、导出、扫描、清空全部）改为固定悬浮按钮（FAB），位于屏幕右下角
+- 优化 AI 事件生成错误处理：区分网络错误、API Key 错误、余额不足、速率限制等场景
+- 大体积小说 AI 生成容错增强：单批次失败不中断处理，合并失败时返回原始批次数据
+
+---
+
 ## v0.12.3 (2026-07-05)
 
 ### ✨ 功能更新

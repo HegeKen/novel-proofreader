@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Novel, Chapter } from "../types";
-import { saveNovelToStorage } from "../utils/fileExport";
+import { saveNovelToStorage, loadNovelsFromStorage, loadNovelContent } from "../utils/fileExport";
 import { normalizeCJKVariants } from "../utils/normalizeCJK";
 import { logger } from "../utils/logger";
 
@@ -52,7 +52,9 @@ export interface NovelState {
 	clearScriptResults: () => void;
 
 	saveCache: () => void;
+	saveCurrentNovel: () => void;
 	clearAllCache: () => void;
+	refreshNovels: () => Promise<void>;
 }
 
 function syncNovelsFromChapters(chapters: Chapter[], novels: Novel[], novelId: string | null): Novel[] {
@@ -361,6 +363,10 @@ export const useNovelStore = create<NovelState>()(
 				}));
 			},
 
+			saveCurrentNovel: () => {
+				saveCurrentNovel(get());
+			},
+
 			clearAllCache: () =>
 				set({
 					novels: [],
@@ -371,6 +377,41 @@ export const useNovelStore = create<NovelState>()(
 					proofreadStatus: {},
 					scriptResults: {},
 				}),
+
+			refreshNovels: async () => {
+				logger.info('[novelStore]', '刷新小说列表');
+				const storedFileNames = await loadNovelsFromStorage();
+				if (storedFileNames.length === 0) {
+					set({ novels: [], currentNovelId: null, chapters: [], currentChapterIndex: 0 });
+					return;
+				}
+
+				const loadedNovels: Novel[] = [];
+				for (const fileName of storedFileNames) {
+					const content = await loadNovelContent(fileName);
+					if (content) {
+						loadedNovels.push({
+							id: `novel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+							name: fileName.replace(/\.txt$/i, ''),
+							fullText: content,
+							importedAt: Date.now(),
+							chapters: [],
+						});
+					}
+				}
+
+				if (loadedNovels.length > 0) {
+					const selectedNovel = loadedNovels[0];
+					set({
+						novels: loadedNovels,
+						currentNovelId: selectedNovel.id,
+						chapters: [],
+						currentChapterIndex: 0,
+					});
+				} else {
+					set({ novels: [], currentNovelId: null, chapters: [], currentChapterIndex: 0 });
+				}
+			},
 		}),
 		{
 			name: "novel-proofreader-novels",

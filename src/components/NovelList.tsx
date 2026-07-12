@@ -26,6 +26,7 @@ export function NovelList({
 	const removeNovel = useNovelStore((s) => s.removeNovel);
 	const selectNovel = useNovelStore((s) => s.selectNovel);
 	const setChapters = useNovelStore((s) => s.setChapters);
+	const refreshNovels = useNovelStore((s) => s.refreshNovels);
 	const setShowCharacterSettings = useUIStore((s) => s.setShowCharacterSettings);
 	const getReadingProgress = useAppMetaStore((s) => s.getReadingProgress);
 	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
@@ -142,13 +143,22 @@ export function NovelList({
 					<Icons.library size={14} />
 					小说库
 				</span>
-				<button
-					className={isMobile ? "btn-mobile" : "btn-import-novel"}
-					onClick={handleImport}
-					title="导入新小说"
-				>
-					<Icons.import size={18} />
-				</button>
+				<div className="novel-list-actions">
+					<button
+						className={isMobile ? "btn-mobile" : "btn-import-novel"}
+						onClick={handleImport}
+						title="导入新小说"
+					>
+						<Icons.import size={18} />
+					</button>
+					<button
+						className={isMobile ? "btn-mobile" : "btn-refresh-novel"}
+						onClick={refreshNovels}
+						title="刷新小说列表"
+					>
+						<Icons.refresh size={18} />
+					</button>
+				</div>
 			</div>
 			<div className="novel-list-items">
 				{novels.length === 0 ? (

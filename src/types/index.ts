@@ -202,7 +202,6 @@ export interface CharacterInfo {
 	socialStatus?: string; // 社会地位（如：贵族、平民、江湖高手等）
 	personality?: string; // 核心性格特质（如：沉稳内敛、开朗活泼等）
 	background?: string; // 出身背景（如：名门望族、寒门子弟、孤儿等）
-	keyExperiences?: string[]; // 关键人生经历列表
 	characterArc?: string; // 角色弧光（成长变化、内心转变等）
 	notes?: string; // 人物小传（整合各维度信息的完整描述）
 	voice?: string; // 为该角色指定的音色
@@ -220,6 +219,8 @@ export interface NovelEvent {
 	title: string;
 	description: string;
 	timeOrder: number; // 时间顺序（数字越小越早）
+	timeInfo: string; // 具体时间描述（如：第一章、三年后、清晨等）
+	chapter: string; // 发生章节（如：第1章）
 	involvedCharacterIds: string[]; // 涉及的角色ID列表
 }
 

@@ -6,6 +6,7 @@ import { useNovelStore } from "../stores/novelStore";
 import { useProofreadStore } from "../stores/proofreadStore";
 import { useAICheck } from "../hooks/useAICheck";
 import { useMobile } from "../hooks/useMobile";
+import { useConfigStore } from "../stores/configStore";
 import { buildParagraphIndexMap } from "../utils/formatters";
 import { EmptyState } from "./EmptyState";
 import { splitParagraphs } from "../utils/chapterSplit";
@@ -25,6 +26,7 @@ const ERROR_TYPE_LABELS: Record<string, { icon: keyof typeof Icons; label: strin
 	punctuation: { icon: "punctuation", label: "标点" },
 	variant: { icon: "sparkle", label: "变体字" },
 	network: { icon: "alertCircle", label: "网络错误" },
+	timeout: { icon: "clock", label: "超时" },
 };
 
 const ERROR_TYPE_COLORS: Record<string, string> = {
@@ -34,6 +36,7 @@ const ERROR_TYPE_COLORS: Record<string, string> = {
 	punctuation: "#52c41a",
 	variant: "#9254de",
 	network: "#722ed1",
+	timeout: "#fa8c16",
 };
 
 /** 采纳动画时长（ms） */
@@ -43,11 +46,13 @@ const ANIM_NEW_MS = 1200;
 
 export function ProofreadPanel() {
 	const { isMobile } = useMobile();
+	const proofreadConfig = useConfigStore((s) => s.proofreadConfig);
 	
 	const chapters = useNovelStore((s) => s.chapters);
 	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
 	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
 	const replaceParagraphText = useNovelStore((s) => s.replaceParagraphText);
+	const saveCurrentNovel = useNovelStore((s) => s.saveCurrentNovel);
 	const results = useProofreadStore((s) => s.results);
 	const setResults = useProofreadStore((s) => s.setResults);
 	const highlightedParagraph = useProofreadStore((s) => s.highlightedParagraph);
@@ -73,6 +78,8 @@ export function ProofreadPanel() {
 	const [showIgnoredWordsModal, setShowIgnoredWordsModal] = useState(false);
 	const [showQueuePanel, setShowQueuePanel] = useState(false);
 	const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
+	const [isRetryingTimeouts, setIsRetryingTimeouts] = useState(false);
+	const [retryTimeoutProgress, setRetryTimeoutProgress] = useState(0);
 	// 动画互斥：防止快速连续点击"采纳"
 	const animatingRef = useRef(false);
 	// 滚动容器 ref
@@ -100,12 +107,24 @@ export function ProofreadPanel() {
 	const checkedLines = useMemo(() => {
 		return chapterResults.filter((r) => r.status === "done" || r.status === "error").length;
 	}, [chapterResults]);
+
+	// 收集所有存在超时错误的段落原始索引
+	const timeoutParagraphIndices = useMemo(() => {
+		return chapterResults
+			.filter((r) => r.errors.some((e) => e.errorType === "timeout"))
+			.map((r) => r.paragraphIndex);
+	}, [chapterResults]);
 	
 	// 计算进度百分比
 	const progressPercent = useMemo(() => {
+		if (isRetryingTimeouts) {
+			const total = timeoutParagraphIndices.length;
+			if (total === 0) return 0;
+			return Math.round((retryTimeoutProgress / total) * 100);
+		}
 		if (totalLines === 0) return 0;
 		return Math.round((checkedLines / totalLines) * 100);
-	}, [checkedLines, totalLines]);
+	}, [isRetryingTimeouts, timeoutParagraphIndices.length, retryTimeoutProgress, checkedLines, totalLines]);
 
 	// 建立过滤后索引到原始索引的映射
 	const paragraphIndexMap = useMemo(() => {
@@ -193,6 +212,57 @@ export function ProofreadPanel() {
 		setSingleCheckingLine(filteredIndex);
 		await checkSingleLine(originalIndex, () => setSingleCheckingLine(null));
 	};
+
+	// 一键重新校对所有因超时跳过的段落
+	const handleRetryTimeoutErrors = useCallback(async () => {
+		if (checking || timeoutParagraphIndices.length === 0) return;
+
+		const maxConcurrent = proofreadConfig.enableParallelProcessing
+			? proofreadConfig.maxConcurrentBatches > 0
+				? proofreadConfig.maxConcurrentBatches
+				: 4
+			: 1;
+
+		setIsRetryingTimeouts(true);
+		setRetryTimeoutProgress(0);
+		setChecking(true);
+		logger.proofread(`handleRetryTimeoutErrors: 重新校对 ${timeoutParagraphIndices.length} 个超时段落, 并发数=${maxConcurrent}`);
+
+		let completed = 0;
+		let activeCount = 0;
+		const tasks: Promise<void>[] = [];
+
+		const processOne = async (originalIndex: number) => {
+			try {
+				const filteredIndex = paragraphIndexMap.indexOf(originalIndex);
+				if (filteredIndex < 0) return;
+				await checkSingleLine(originalIndex, () => {});
+			} finally {
+				completed++;
+				setRetryTimeoutProgress(completed);
+				activeCount--;
+			}
+		};
+
+		try {
+			for (const originalIndex of timeoutParagraphIndices) {
+				while (activeCount >= maxConcurrent) {
+					await new Promise(resolve => setTimeout(resolve, 100));
+				}
+				activeCount++;
+				tasks.push(processOne(originalIndex));
+			}
+			await Promise.all(tasks);
+			addToast("success", `已重新校对 ${timeoutParagraphIndices.length} 个超时段落`);
+		} catch (err) {
+			logger.proofread(`handleRetryTimeoutErrors 出错: ${err instanceof Error ? err.message : String(err)}`);
+			addToast("error", "重新校对失败");
+		} finally {
+			setChecking(false);
+			setIsRetryingTimeouts(false);
+			setRetryTimeoutProgress(0);
+		}
+	}, [checking, timeoutParagraphIndices, paragraphIndexMap, checkSingleLine, addToast, proofreadConfig]);
 
 	// 滚动到指定段落
 	const scrollToParagraph = useCallback((index: number) => {
@@ -371,6 +441,7 @@ export function ProofreadPanel() {
 					addToast("error", `采纳失败："${err.originalText}" 不在当前段落中`);
 				} else {
 					addToast("success", "已采纳修改");
+					saveCurrentNovel();
 				}
 
 				setTimeout(() => {
@@ -405,6 +476,7 @@ export function ProofreadPanel() {
 			setHighlightedParagraph,
 			addToast,
 			updateErrorIndices,
+			saveCurrentNovel,
 		],
 	);
 
@@ -437,11 +509,21 @@ export function ProofreadPanel() {
 		}
 		logger.proofread(`findFirstUnhandledErrorParagraph: checking ${chapterResults.length} results`);
 		for (const result of chapterResults) {
-			const hasUnhandledError = result.errors.some(
-				(e) => !e.applied && !e.skipped,
+			const hasNormalUnhandledError = result.errors.some(
+				(e) => !e.applied && !e.skipped && e.errorType !== "timeout",
 			);
-			if (hasUnhandledError) {
+			if (hasNormalUnhandledError) {
 				logger.proofread(`findFirstUnhandledErrorParagraph: found at index ${result.paragraphIndex}`);
+				return result.paragraphIndex;
+			}
+		}
+		logger.proofread(`findFirstUnhandledErrorParagraph: no normal unhandled errors found, checking timeout errors`);
+		for (const result of chapterResults) {
+			const hasTimeoutError = result.errors.some(
+				(e) => e.errorType === "timeout",
+			);
+			if (hasTimeoutError) {
+				logger.proofread(`findFirstUnhandledErrorParagraph: found timeout error at index ${result.paragraphIndex}`);
 				return result.paragraphIndex;
 			}
 		}
@@ -468,13 +550,14 @@ export function ProofreadPanel() {
 		);
 	}
 
-	const totalErrors = chapterResults.reduce(
-		(sum, r) => sum + r.errors.length,
+	const normalErrors = chapterResults.reduce(
+		(sum, r) =>
+			sum + r.errors.filter((e) => e.errorType !== "timeout").length,
 		0,
 	);
-	const remainingErrors = chapterResults.reduce(
+	const remainingNormalErrors = chapterResults.reduce(
 		(sum, r) =>
-			sum + r.errors.filter((e) => !e.applied && !e.skipped).length,
+			sum + r.errors.filter((e) => !e.applied && !e.skipped && e.errorType !== "timeout").length,
 		0,
 	);
 
@@ -538,18 +621,36 @@ export function ProofreadPanel() {
 					</div>
 					<div className="toolbar-row toolbar-row-2">
 						<div className="toolbar-row-left">
-							{totalErrors > 0 && (
+							{normalErrors > 0 && (
 								<span
-									className={`error-count${remainingErrors > 0 ? " clickable" : ""}`}
+									className={`error-count${remainingNormalErrors > 0 ? " clickable" : ""}`}
 									onClick={handleErrorCountClick}
 								>
-									发现 <strong>{totalErrors}</strong> 个问题
-									{remainingErrors < totalErrors && (
+									发现 <strong>{normalErrors}</strong> 个问题
+									{remainingNormalErrors < normalErrors && (
 										<span className="remaining-count">
-											，剩余 <strong>{remainingErrors}</strong> 个未处理
+											，剩余 <strong>{remainingNormalErrors}</strong> 个未处理
 										</span>
 									)}
 								</span>
+							)}
+							{timeoutParagraphIndices.length > 0 && (
+								<>
+									{normalErrors > 0 && <span className="error-count-divider">|</span>}
+									<span className="error-count-timeout">
+										<strong>{timeoutParagraphIndices.length}</strong> 个超时
+									</span>
+								</>
+							)}
+							{timeoutParagraphIndices.length > 0 && (
+								<button
+									className={isMobile ? "btn-mobile" : "btn"}
+									onClick={handleRetryTimeoutErrors}
+									disabled={checking}
+									title={`重新校对 ${timeoutParagraphIndices.length} 个超时段落`}
+								>
+									<Icons.refresh size={14} />
+								</button>
 							)}
 						</div>
 						<div className="toolbar-row-right">
@@ -584,9 +685,14 @@ export function ProofreadPanel() {
 			{(checking || checkedLines > 0) && (
 				<div className="proofread-progress-bar">
 					<div 
-						className="progress-fill" 
+						className={`progress-fill ${isRetryingTimeouts ? 'progress-retry-timeout' : ''}`} 
 						style={{ width: `${progressPercent}%` }}
 					></div>
+					{isRetryingTimeouts && (
+						<span className="progress-label">
+							重新校对超时中 {retryTimeoutProgress}/{timeoutParagraphIndices.length}
+						</span>
+					)}
 				</div>
 			)}
 		</div>

@@ -311,6 +311,31 @@ pnpm tauri android build      # Android 端
 - Xiaomi Mimo
 - 任何 OpenAI 兼容接口
 
+## 致谢 (Credits)
+
+### 开发致谢
+
+本项目通过 TRAE AI 编程工具开发，主要使用以下大模型进行代码生成、调试和优化（排名不分先后）：
+
+- **TRAE** — AI 编程助手，基于 Claude 系列模型提供代码生成、重构、调试等全方位开发支持
+- **DeepSeek** — DeepSeek 系列模型用于复杂逻辑实现、代码审查与优化
+- **Xiaomi MiClaw** — 手机端 AI 编程助手，初始版本由 MiClaw 完成开发
+
+### 功能模型支持
+
+本项目运行时支持的 AI 大模型（排名不分先后）：
+
+- **OpenAI** — GPT-4o / GPT-4o-mini 用于 AI 校对、角色分析、剧本转换等核心功能
+- **DeepSeek** — DeepSeek-V3 / DeepSeek-R1 用于校对与文本分析
+- **通义千问 (Alibaba Cloud)** — Qwen-Max / Qwen-Plus 用于校对与角色分析
+- **SiliconFlow** — 提供多模型聚合 API 服务
+- **Xiaomi Mimo** — Mimo TTS 模型用于情感朗读与角色音色设计
+- **LM Studio** — 本地模型运行与调试
+- **Ollama** — 本地模型便捷部署与测试
+- **vLLM** — 高性能推理引擎，为部分 API 网关提供后端支持
+
+感谢上述团队与社区提供的优质模型和服务，使本项目得以实现多样化的 AI 功能。
+
 ## 更新日志
 
 查看 [CHANGELOG.md](CHANGELOG.md) 获取详细的版本更新记录。

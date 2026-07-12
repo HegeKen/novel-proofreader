@@ -1228,7 +1228,6 @@ export const CHARACTER_ANALYSIS_SYSTEM_PROMPT = `你是小说角色分析专家�
       "socialStatus": "社会地位（如：贵族、平民、江湖高手、皇室成员等）",
       "personality": "核心性格特质（如：沉稳内敛、开朗活泼、心机深沉、善良正直等）",
       "background": "出身背景（如：名门望族、寒门子弟、孤儿、世家传承等）",
-      "keyExperiences": ["关键人生经历1", "关键人生经历2", "重要转折点"],
       "characterArc": "角色弧光描述（角色成长变化、内心转变、价值观演变等）",
       "description": "人物完整小传描述（整合以上信息，100-300字）",
       "appearances": ["首次出场章节或位置描述"],
@@ -1325,7 +1324,6 @@ export interface CharacterAnalysisResult {
 		socialStatus?: string;
 		personality?: string;
 		background?: string;
-		keyExperiences?: string[];
 		characterArc?: string;
 		description: string;
 		voiceDesignPrompt?: string;
@@ -1476,7 +1474,6 @@ export async function analyzeCharactersInBatches(
 		try {
 			// 先对数组字段做程序化并集，确保不丢失任何信息
 			const mergedAliases = [...new Set(fragments.flatMap(f => f.aliases || []))];
-			const mergedKeyExperiences = [...new Set(fragments.flatMap(f => f.keyExperiences || []))];
 			const mergedAppearances = [...new Set(fragments.flatMap(f => f.appearances || []))];
 
 			// 将片段格式化为可读的文本，标注来源阶段
@@ -1487,7 +1484,6 @@ export async function analyzeCharactersInBatches(
 			// 在 prompt 中附带已合并的数组字段，明确要求 AI 保留
 			const premergedInfo = `\n\n## 已合并的完整数据（必须全部保留，不可丢弃）\n` +
 				`- 所有别名（aliases）：${JSON.stringify(mergedAliases)}\n` +
-				`- 所有关键经历（keyExperiences）：${JSON.stringify(mergedKeyExperiences)}\n` +
 				`- 所有出场位置（appearances）：${JSON.stringify(mergedAppearances)}`;
 
 			const systemPrompt = CHARACTER_FRAGMENT_SUMMARIZE_PROMPT
@@ -1508,7 +1504,6 @@ export async function analyzeCharactersInBatches(
 			if (summarized && summarized.name) {
 				// 确保数组字段包含所有片段的并集
 				summarized.aliases = [...new Set([...(summarized.aliases || []), ...mergedAliases])];
-				summarized.keyExperiences = [...new Set([...(summarized.keyExperiences || []), ...mergedKeyExperiences])];
 				summarized.appearances = [...new Set([...(summarized.appearances || []), ...mergedAppearances])];
 				allCharacters.push(summarized);
 			} else {
@@ -1601,7 +1596,6 @@ export const CHARACTER_FRAGMENT_SUMMARIZE_PROMPT = `你是小说角色分析专�
   "socialStatus": "整合所有阶段的社会地位",
   "personality": "整合所有阶段的核心性格特质",
   "background": "出身背景",
-  "keyExperiences": ["所有阶段中提到的所有关键经历，不可遗漏，按时间顺序排列"],
   "characterArc": "角色从出场到结局的完整成长弧光",
   "description": "整合所有阶段信息的完整人物小传（150-400字），涵盖角色从出场到结局的完整历程",
   "appearances": ["所有阶段提到的出场位置描述"],
@@ -1614,7 +1608,7 @@ export const CHARACTER_FRAGMENT_SUMMARIZE_PROMPT = `你是小说角色分析专�
 - 不要臆造信息，只基于提供的片段数据
 - 每个字段都要填写，不要留空（除非确实没有任何信息）
 - **关键原则：宁可内容多一些、详细一些，也不要遗漏任何阶段的信息**
-- aliases 和 keyExperiences 必须包含"已合并的完整数据"中的所有项
+- aliases 必须包含"已合并的完整数据"中的所有项
 - majorEvents 必须涵盖角色从首次出场到结局的所有阶段事件
 - description 字段要整合所有阶段信息，写一段涵盖全文历程的人物小传`;
 
@@ -1789,6 +1783,213 @@ export const MAJOR_EVENTS_MERGE_PROMPT = `你是小说剧情分析专家。以�
 3. 保留尽可能多的核心事件，越详尽越好
 4. 去除冗余和次要信息
 5. 每个事件用一句话概括，清晰明了`;
+
+/** 小说大事记生成系统 prompt */
+export const NOVEL_EVENTS_SYSTEM_PROMPT = `你是一位专业的小说编辑助手。请根据以下小说内容，提取并生成一份完整的小说大事记。
+
+严格按照以下 JSON 模板格式返回数据，不要包含任何额外说明文字：
+{
+  "events": [
+    {
+      "title": "事件标题",
+      "description": "事件详细描述（20-50字）",
+      "timeOrder": 1,
+      "timeInfo": "具体时间描述（如：第一章、三年后、清晨、某日傍晚等）",
+      "chapter": "发生章节（如：第1章）",
+      "involvedCharacterNames": ["角色A", "角色B"],
+      "id": "evt-001"
+    }
+  ]
+}
+
+要求：
+1. 提取小说中发生的所有重要事件，按照时间顺序排列，越详细越好
+2. 仔细分析全文中的所有时间信息，包括章节标题、正文中提到的时间点、时间段、时间跨度等
+3. 每个事件包含：title（标题）、description（描述）、timeOrder（时间顺序编号）、timeInfo（具体时间描述，从原文中提取或推断）、chapter（发生章节）、involvedCharacterNames（涉及角色名称数组）、id（事件ID，格式为 evt-xxx）
+4. 事件数量不做限制，尽可能详细记录每个重要时间点发生的事件
+5. timeOrder 从 1 开始递增，不要重复
+6. timeInfo 字段要尽可能详细，包含具体的时间描述、时间段、时间跨度等
+7. chapter 字段填写事件发生的章节名称或章节号
+8. involvedCharacterNames 使用小说中的实际角色名称
+9. 只输出 JSON 格式，不要包含 markdown 代码块标记或其他文字`;
+
+/** 小说大事记合并系统 prompt — 合并去重排序 */
+export const NOVEL_EVENTS_MERGE_PROMPT = `你是小说剧情分析专家。以下是从小说不同文本片段中提取出的事件列表，请将这些事件合并、去重并按时间顺序排列。
+
+严格按照以下 JSON 模板格式返回数据，不要包含任何额外说明文字：
+{
+  "events": [
+    {
+      "title": "事件标题",
+      "description": "事件详细描述（20-50字）",
+      "timeOrder": 1,
+      "timeInfo": "具体时间描述",
+      "chapter": "发生章节",
+      "involvedCharacterNames": ["角色A", "角色B"],
+      "id": "evt-001"
+    }
+  ]
+}
+
+要求：
+1. 合并意思相近或重复的事件
+2. 按故事发展的时间顺序排列
+3. 保留尽可能多的核心事件，越详尽越好
+4. 去除冗余和次要信息
+5. timeOrder 从 1 开始递增，不要重复
+6. 只输出 JSON 格式，不要包含 markdown 代码块标记或其他文字`;
+
+/**
+ * 分批分析整本小说，提取小说大事记
+ * @param fullText 小说全文
+ * @param characterNames 角色名称列表
+ * @param config AI配置
+ * @param onProgress 进度回调
+ * @returns 小说大事记结果
+ */
+export interface NovelEventsResult {
+  events: Array<{
+    title: string;
+    description: string;
+    timeOrder: number;
+    timeInfo: string;
+    chapter: string;
+    involvedCharacterNames: string[];
+    id: string;
+  }>;
+}
+
+export async function generateNovelEvents(
+  fullText: string,
+  characterNames: string,
+  config: AIConfig,
+  onProgress?: (current: number, total: number, phase: "analyze" | "merge") => void,
+): Promise<NovelEventsResult> {
+  if (!config.apiKey || !config.baseURL) {
+    throw new Error("AI配置不完整");
+  }
+
+  const batchSize = 80000;
+  const chunks = splitByParagraphs(fullText, batchSize);
+
+  if (chunks.length === 0) {
+    return { events: [] };
+  }
+
+  const configForCall = {
+    baseURL: config.baseURL,
+    apiKey: config.apiKey,
+    model: config.model,
+    customHeaders: config.customHeaders || {},
+    maxCharsPerRequest: config.maxCharsPerRequest || 0,
+    enableLogging: config.enableLogging || false,
+  };
+
+  const allEventsFromChunks: NovelEventsResult["events"] = [];
+  const failedBatches: number[] = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    onProgress?.(i + 1, chunks.length, "analyze");
+
+    const userPrompt = `请分析以下小说文本片段（第 ${i + 1}/${chunks.length} 部分），提取其中的重要事件并生成大事记：
+
+小说角色列表：${characterNames || "暂无"}
+
+${chunks[i]}`;
+
+    const messages: ChatMessage[] = [
+      { role: "system", content: NOVEL_EVENTS_SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ];
+
+    try {
+      const response = await sendChatCompletion(messages, configForCall);
+
+      let result: NovelEventsResult | null = null;
+      try {
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          result = JSON.parse(jsonMatch[0]);
+        }
+      } catch (parseErr) {
+        logger.warn(`[NovelEvents] 批次 ${i + 1} JSON 解析失败:`, parseErr);
+      }
+
+      if (result && Array.isArray(result.events)) {
+        for (const evt of result.events) {
+          if (evt.title) {
+            allEventsFromChunks.push({
+              ...evt,
+              id: `evt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            });
+          }
+        }
+        logger.info(`[NovelEvents] 批次 ${i + 1} 解析成功: ${result.events.length} 个事件`);
+      } else {
+        failedBatches.push(i + 1);
+        logger.warn(`[NovelEvents] 批次 ${i + 1} 返回空结果`);
+      }
+    } catch (err) {
+      failedBatches.push(i + 1);
+      logger.warn(`[NovelEvents] 批次 ${i + 1} 分析失败:`, err);
+    }
+  }
+
+  if (allEventsFromChunks.length === 0) {
+    if (failedBatches.length === chunks.length) {
+      throw new Error(`所有 ${chunks.length} 个批次分析均失败，请检查网络连接或AI配置`);
+    }
+    return { events: [] };
+  }
+
+  if (chunks.length === 1) {
+    if (failedBatches.length > 0) {
+      logger.warn("[NovelEvents] 单个批次分析失败");
+    }
+    return { events: allEventsFromChunks };
+  }
+
+  onProgress?.(1, 1, "merge");
+
+  const eventsJson = JSON.stringify(allEventsFromChunks);
+  const mergePrompt = `以下是从小说各文本片段中提取出的事件列表，请合并去重并按时间顺序排列：
+
+${eventsJson}`;
+
+  const mergeMessages: ChatMessage[] = [
+    { role: "system", content: NOVEL_EVENTS_MERGE_PROMPT },
+    { role: "user", content: mergePrompt },
+  ];
+
+  try {
+    const finalResponse = await sendChatCompletion(mergeMessages, configForCall);
+
+    let finalResult: NovelEventsResult | null = null;
+    try {
+      const jsonMatch = finalResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        finalResult = JSON.parse(jsonMatch[0]);
+      }
+    } catch (parseErr) {
+      logger.warn("[NovelEvents] 合并阶段 JSON 解析失败:", parseErr);
+    }
+
+    if (finalResult && Array.isArray(finalResult.events)) {
+      if (failedBatches.length > 0) {
+        logger.warn(`[NovelEvents] 有 ${failedBatches.length} 个批次分析失败，结果可能不完整`);
+      }
+      return finalResult;
+    }
+  } catch (err) {
+    logger.warn("[NovelEvents] 合并阶段失败，返回原始结果:", err);
+  }
+
+  if (failedBatches.length > 0) {
+    logger.warn(`[NovelEvents] 有 ${failedBatches.length} 个批次分析失败，合并阶段也失败，返回原始结果`);
+  }
+
+  return { events: allEventsFromChunks };
+}
 
 /**
  * 分批分析整本小说，提取角色的大事件
