@@ -69,7 +69,7 @@ export function TTSConfigSection({ onOpenWordReplacement }: Props) {
 						]} />
 				</div>
 				<div className="form-field">
-					<label>语速 ({ttsConfig.speed})</label>
+					<label>语速 ({ttsConfig.speed}) <span style={{ fontSize: "11px", color: "#999", fontWeight: "normal" }}>（5=日常对话自然语速，3=舒缓叙述，7=激动急切）</span></label>
 					<input type="range" min="1" max="10" value={ttsConfig.speed}
 						onChange={(e) => updateTTSConfig({ speed: parseInt(e.target.value) })} className="config-range" />
 				</div>

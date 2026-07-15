@@ -2,6 +2,7 @@ import type { TTSConfig } from "../stores/configStore";
 import { logger } from "./logger";
 import { useAppMetaStore } from "../stores/appMetaStore";
 import { applyWordReplacements } from "../stores/wordReplacementStore";
+import { Queue } from "./concurrent";
 
 // 有效的 MiMo 语音列表
 const VALID_VOICES = ["mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean"];
@@ -112,6 +113,7 @@ export interface TTSSentence {
 	audioBuffer?: ArrayBuffer;
 	isPlaying: boolean;
 	isCompleted: boolean;
+	speed?: number;
 }
 
 const MIMO_TTS_MODEL = "mimo-v2.5-tts";
@@ -156,7 +158,8 @@ async function _synthesizeSpeech(
 	config: TTSConfig,
 	voice: string,
 	voiceDesignPrompt?: string,
-	logTag: string = "发起 TTS 请求"
+	logTag: string = "发起 TTS 请求",
+	speedOverride?: number
 ): Promise<ArrayBuffer> {
 	let processedText = applyWordReplacements(text);
 
@@ -166,7 +169,8 @@ async function _synthesizeSpeech(
 
 	const apiKey = config.apiKey;
 	const validatedVoice = getValidVoice(voice);
-	const speed = config.speed;
+	const effectiveSpeed = (speedOverride !== undefined && speedOverride >= 1 && speedOverride <= 10) ? speedOverride : config.speed;
+	const speed = effectiveSpeed;
 	const volume = config.volume;
 
 	if (!apiKey) {
@@ -191,18 +195,24 @@ async function _synthesizeSpeech(
 
 	const messages: Array<{ role: string; content: string }> = [];
 
+	// 语速贴近现实说明：5 为正常对话语速（约每分钟 220 字），3 偏慢（抒情/叙述），7 偏快（激动/紧急）
+	// 避免极端值（1/10）导致不自然的效果
+	const realisticSpeedHint = `语速：${speed}（参考：5=日常对话自然语速约220字/分钟，3=舒缓叙述，7=激动急切；避免过快或过慢，保持自然流畅）`;
+	const volumeHint = `音量：${volume}（1最低，10最高）`;
+	const naturalDeliveryHint = `要求：像真人在日常生活里说话，情感克制内敛，自然真实，避免舞台腔/播音腔/过度戏剧化。`;
+
 	if (useVoiceDesign) {
 		const processedPrompt = applyWordReplacements(voiceDesignPrompt!);
-		messages.push({ 
-			role: "user", 
-			content: `${processedPrompt}\n\n语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）` 
+		messages.push({
+			role: "user",
+			content: `${processedPrompt}\n\n${realisticSpeedHint}\n${volumeHint}\n${naturalDeliveryHint}`
 		});
 		messages.push({ role: "assistant", content: processedText.replace(/^\([^)]+\)\s*/, '') });
 	} else {
 		messages.push({ role: "assistant", content: processedText.replace(/^\(([^,，]+)[,，][^)]*\)\s*/, '($1) ') });
 		messages.push({
 			role: "user",
-			content: `语速：${speed}（1最慢，10最快）\n音量：${volume}（1最低，10最高）\n照读以下文本，一字不改，包括标点。`,
+			content: `${realisticSpeedHint}\n${volumeHint}\n${naturalDeliveryHint}\n照读以下文本，一字不改，包括标点。`,
 		});
 	}
 
@@ -210,9 +220,9 @@ async function _synthesizeSpeech(
 		model,
 		messages,
 		max_completion_tokens: 1024,
-		audio: useVoiceDesign 
+		audio: useVoiceDesign
 			? { optimize_text_preview: false }
-			: { voice: validatedVoice, optimize_text_preview: false },
+			: { voice: validatedVoice },
 	};
 
 	logger.tts(logTag, { text: text.slice(0, 50) + "...", voice: validatedVoice, speed, volume });
@@ -279,18 +289,20 @@ async function _synthesizeSpeech(
 export async function synthesizeSpeech(
 	text: string,
 	config: TTSConfig,
-	voiceDesignPrompt?: string
+	voiceDesignPrompt?: string,
+	speedOverride?: number
 ): Promise<ArrayBuffer> {
-	return _synthesizeSpeech(text, config, config.voice, voiceDesignPrompt, "发起 TTS 请求");
+	return _synthesizeSpeech(text, config, config.voice, voiceDesignPrompt, "发起 TTS 请求", speedOverride);
 }
 
 export async function synthesizeSpeechWithVoice(
 	text: string,
 	config: TTSConfig,
 	voice: string,
-	voiceDesignPrompt?: string
+	voiceDesignPrompt?: string,
+	speedOverride?: number
 ): Promise<ArrayBuffer> {
-	return _synthesizeSpeech(text, config, voice, voiceDesignPrompt, "发起 TTS 请求（角色配音）");
+	return _synthesizeSpeech(text, config, voice, voiceDesignPrompt, "发起 TTS 请求（角色配音）", speedOverride);
 }
 
 export function playAudio(arrayBuffer: ArrayBuffer, signal?: AbortSignal): Promise<void> {
@@ -360,6 +372,26 @@ export function playAudio(arrayBuffer: ArrayBuffer, signal?: AbortSignal): Promi
 		audio.src = url;
 		audio.load();
 	});
+}
+
+/**
+ * 从带语速建议的文本中解析出语速和清理后的文本
+ * AI 情感增强输出的格式为：(标签|语速N)文本
+ * 本函数提取语速值，并将文本恢复为 (标签)文本 格式
+ * @returns { text: 清理后的文本, speed: 语速值（1-10）或 undefined }
+ */
+export function parseSpeedFromText(text: string): { text: string; speed?: number } {
+	const match = text.match(/^\(([^)]+?)\|(\d+)\)/);
+	if (!match) {
+		return { text };
+	}
+	const label = match[1];
+	const speed = parseInt(match[2], 10);
+	if (isNaN(speed) || speed < 1 || speed > 10) {
+		return { text };
+	}
+	const cleanedText = text.replace(/^\(([^)]+?)\|\d+\)/, `(${label})`);
+	return { text: cleanedText, speed };
 }
 
 export function splitTextIntoSentences(text: string): string[] {
@@ -675,6 +707,8 @@ export class TTSPlayer {
 
 			try {
 				let audioBuffer = sentence.audioBuffer;
+				const { text: cleanText, speed: speedHint } = parseSpeedFromText(sentence.text);
+				const effectiveSpeed = speedHint ?? sentence.speed;
 
 				if (!audioBuffer && this.config.audioCacheEnabled) {
 					// 尝试从全局缓存获取
@@ -683,8 +717,8 @@ export class TTSPlayer {
 
 					if (!audioBuffer) {
 						// 需要生成音频
-						logger.tts("生成句子音频", { index, fromCache: false });
-						audioBuffer = await synthesizeSpeech(sentence.text, this.config);
+						logger.tts("生成句子音频", { index, fromCache: false, speedHint: effectiveSpeed });
+						audioBuffer = await synthesizeSpeech(cleanText, this.config, undefined, effectiveSpeed);
 						// 缓存到全局和本地
 						audioCache.set(cacheKey, audioBuffer, this.config);
 						this.sentences[index] = { ...this.sentences[index], audioBuffer };
@@ -695,8 +729,8 @@ export class TTSPlayer {
 					}
 				} else if (!audioBuffer) {
 					// 缓存未启用，直接生成音频
-					logger.tts("生成句子音频（缓存未启用）", { index, fromCache: false });
-					audioBuffer = await synthesizeSpeech(sentence.text, this.config);
+					logger.tts("生成句子音频（缓存未启用）", { index, fromCache: false, speedHint: effectiveSpeed });
+					audioBuffer = await synthesizeSpeech(cleanText, this.config, undefined, effectiveSpeed);
 				} else {
 					logger.tts("使用本地缓存音频", { index, fromCache: true });
 				}
@@ -779,6 +813,7 @@ export interface ScriptDialogue {
 	isPlaying: boolean;
 	isCompleted: boolean;
 	paragraphIndex?: number;
+	speed?: number;
 }
 
 export function parseScriptContent(content: string): { characters: string[]; dialogues: ScriptDialogue[] } {
@@ -827,7 +862,7 @@ export class ScriptTTSPlayer {
 	private onComplete?: () => void;
 	private cancelCurrentAudio: (() => void) | null = null;
 	private abortController: AbortController | null = null;
-	private audioQueue: { buffer: ArrayBuffer; dialogueIndex: number }[] = [];
+	private audioQueue = new Queue<{ buffer: ArrayBuffer; dialogueIndex: number }>();
 	private isProcessingQueue: boolean = false;
 	private isStreamComplete: boolean = false;
 	private resumeResolve?: () => void;
@@ -940,7 +975,7 @@ export class ScriptTTSPlayer {
 		this.isPlaying = false;
 		this.isPaused = false;
 		this.currentIndex = 0;
-		this.audioQueue = [];
+		this.audioQueue = new Queue<{ buffer: ArrayBuffer; dialogueIndex: number }>();
 		this.isProcessingQueue = false;
 		this.isStreamComplete = false;
 		this.dialogues = this.dialogues.map((d) => ({
@@ -962,7 +997,7 @@ export class ScriptTTSPlayer {
 				this.cancelCurrentAudio = null;
 			}
 			// 清空音频队列，避免播放旧的音频
-			this.audioQueue = [];
+			this.audioQueue = new Queue<{ buffer: ArrayBuffer; dialogueIndex: number }>();
 			this.currentIndex = index;
 			this.dialogues = this.dialogues.map((d, i) => ({
 				...d,
@@ -1013,7 +1048,7 @@ export class ScriptTTSPlayer {
 	 * 流式添加对话并立即开始生成音频
 	 * 用于边分析边播放的场景
 	 */
-	async addDialogueStream(character: string, text: string, paragraphIndex?: number, voiceDesignPrompt?: string): Promise<void> {
+	async addDialogueStream(character: string, text: string, paragraphIndex?: number, voiceDesignPrompt?: string, speed?: number): Promise<void> {
 		const voiceMap: Record<string, string> = this.config.characterVoices || {};
 		const defaultVoice = this.config.voice || "冰糖";
 		const voice = voiceMap[character] || defaultVoice;
@@ -1027,10 +1062,11 @@ export class ScriptTTSPlayer {
 			isPlaying: false,
 			isCompleted: false,
 			paragraphIndex,
+			speed,
 		};
 
 		this.dialogues.push(newDialogue);
-		logger.tts("流式添加对话", { index: newDialogue.index, character, voice, voiceDesign: !!voiceDesignPrompt, paragraphIndex, text: text.slice(0, 30) + "..." });
+		logger.tts("流式添加对话", { index: newDialogue.index, character, voice, voiceDesign: !!voiceDesignPrompt, paragraphIndex, speed, text: text.slice(0, 30) + "..." });
 		this.notifyUpdate();
 
 		await this.generateAndQueueAudio(newDialogue);
@@ -1069,11 +1105,13 @@ export class ScriptTTSPlayer {
 	 */
 	private async generateAndQueueAudio(dialogue: ScriptDialogue): Promise<void> {
 		try {
-			logger.tts("开始生成音频", { index: dialogue.index, character: dialogue.character, voiceDesign: !!dialogue.voiceDesignPrompt });
-			const audioBuffer = await synthesizeSpeechWithVoice(dialogue.text, this.config, dialogue.voice, dialogue.voiceDesignPrompt);
+			logger.tts("开始生成音频", { index: dialogue.index, character: dialogue.character, voiceDesign: !!dialogue.voiceDesignPrompt, speedHint: dialogue.speed });
+			const { text: cleanText, speed: speedHint } = parseSpeedFromText(dialogue.text);
+			const effectiveSpeed = speedHint ?? dialogue.speed;
+			const audioBuffer = await synthesizeSpeechWithVoice(cleanText, this.config, dialogue.voice, dialogue.voiceDesignPrompt, effectiveSpeed);
 			
-			this.audioQueue.push({ buffer: audioBuffer, dialogueIndex: dialogue.index });
-			logger.tts("音频生成完成并加入队列", { index: dialogue.index, queueLength: this.audioQueue.length });
+			this.audioQueue.enqueue({ buffer: audioBuffer, dialogueIndex: dialogue.index });
+			logger.tts("音频生成完成并加入队列", { index: dialogue.index, queueLength: this.audioQueue.size() });
 			
 			if (!this.isProcessingQueue) {
 				this.processAudioQueue();
@@ -1090,7 +1128,7 @@ export class ScriptTTSPlayer {
 		if (this.isProcessingQueue) return;
 		this.isProcessingQueue = true;
 
-		logger.tts("开始处理音频队列", { queueLength: this.audioQueue.length, currentIndex: this.currentIndex });
+		logger.tts("开始处理音频队列", { queueLength: this.audioQueue.size(), currentIndex: this.currentIndex });
 
 		if (!this.isPlaying) {
 			this.isPlaying = true;
@@ -1101,16 +1139,41 @@ export class ScriptTTSPlayer {
 		const signal = this.abortController.signal;
 
 		while (this.isPlaying && !this.isPaused && !signal.aborted) {
-			if (this.audioQueue.length === 0) {
+			if (this.audioQueue.isEmpty()) {
 				if (this.isStreamComplete && this.currentIndex >= this.dialogues.length) {
 					logger.tts("所有对话播放完成");
 					break;
 				}
-				await new Promise(resolve => setTimeout(resolve, 100));
+				const queueItem = await this.audioQueue.dequeue();
+				if (!queueItem) continue;
+				const { buffer: audioBuffer, dialogueIndex } = queueItem;
+				
+				if (dialogueIndex !== this.currentIndex) {
+					logger.tts("跳过过期音频", { queueDialogueIndex: dialogueIndex, currentIndex: this.currentIndex });
+					continue;
+				}
+				const currentDialogue = this.dialogues[this.currentIndex];
+				if (!currentDialogue) break;
+
+				this.dialogues = this.dialogues.map((d, i) => ({
+					...d,
+					isPlaying: i === this.currentIndex,
+					isCompleted: i < this.currentIndex,
+				}));
+				this.notifyUpdate();
+
+				try {
+					logger.tts("播放队列音频", { index: this.currentIndex, character: currentDialogue.character, bufferSize: audioBuffer.byteLength });
+					await playAudio(audioBuffer, signal);
+					this.currentIndex++;
+				} catch (error) {
+					logger.errorGeneric("播放音频失败", { index: this.currentIndex, error });
+					break;
+				}
 				continue;
 			}
 
-			const queueItem = this.audioQueue.shift();
+			const queueItem = await this.audioQueue.dequeue();
 			if (!queueItem) continue;
 
 			const { buffer: audioBuffer, dialogueIndex } = queueItem;
@@ -1202,6 +1265,8 @@ export class ScriptTTSPlayer {
 
 			try {
 				let audioBuffer = dialogue.audioBuffer;
+				const { text: cleanText, speed: speedHint } = parseSpeedFromText(dialogue.text);
+				const effectiveSpeed = speedHint ?? dialogue.speed;
 
 				if (!audioBuffer && this.config.audioCacheEnabled) {
 					// 尝试从全局缓存获取
@@ -1210,8 +1275,8 @@ export class ScriptTTSPlayer {
 
 					if (!audioBuffer) {
 						// 需要生成音频
-						logger.tts("生成对话音频", { index, character: dialogue.character, fromCache: false, voiceDesign: !!dialogue.voiceDesignPrompt });
-						audioBuffer = await synthesizeSpeechWithVoice(dialogue.text, this.config, dialogue.voice, dialogue.voiceDesignPrompt);
+						logger.tts("生成对话音频", { index, character: dialogue.character, fromCache: false, voiceDesign: !!dialogue.voiceDesignPrompt, speedHint: effectiveSpeed });
+						audioBuffer = await synthesizeSpeechWithVoice(cleanText, this.config, dialogue.voice, dialogue.voiceDesignPrompt, effectiveSpeed);
 						// 缓存到全局和本地
 						audioCache.set(cacheKey, audioBuffer, this.config);
 						this.dialogues[index] = { ...this.dialogues[index], audioBuffer };
@@ -1222,8 +1287,8 @@ export class ScriptTTSPlayer {
 					}
 				} else if (!audioBuffer) {
 					// 缓存未启用，直接生成音频
-					logger.tts("生成对话音频（缓存未启用）", { index, character: dialogue.character, fromCache: false, voiceDesign: !!dialogue.voiceDesignPrompt });
-					audioBuffer = await synthesizeSpeechWithVoice(dialogue.text, this.config, dialogue.voice, dialogue.voiceDesignPrompt);
+					logger.tts("生成对话音频（缓存未启用）", { index, character: dialogue.character, fromCache: false, voiceDesign: !!dialogue.voiceDesignPrompt, speedHint: effectiveSpeed });
+					audioBuffer = await synthesizeSpeechWithVoice(cleanText, this.config, dialogue.voice, dialogue.voiceDesignPrompt, effectiveSpeed);
 				} else {
 					logger.tts("使用本地缓存音频", { index, character: dialogue.character, fromCache: true });
 				}

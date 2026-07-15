@@ -28,15 +28,16 @@ export function AITestSection({ config }: { config: { baseUrl: string; apiKey: s
 	};
 
 	const renderInline = (text: string): string => {
-		return text
-			.replace(/<script[\s\S]*?<\/script>/gi, '')
-			.replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
-			.replace(/on\w+="[^"]*"/gi, '')
-			.replace(/on\w+='[^']*'/gi, '')
-			.replace(/javascript:/gi, '')
-			.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-			.replace(/\*(.+?)\*/g, '<em>$1</em>')
-			.replace(/`(.+?)`/g, '<code>$1</code>');
+		let result = text;
+		result = result.replace(/&/g, '&amp;');
+		result = result.replace(/</g, '&lt;');
+		result = result.replace(/>/g, '&gt;');
+		result = result.replace(/"/g, '&quot;');
+		result = result.replace(/'/g, '&#039;');
+		result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+		result = result.replace(/\*(.+?)\*/g, '<em>$1</em>');
+		result = result.replace(/`(.+?)`/g, '<code>$1</code>');
+		return result;
 	};
 
 	return (

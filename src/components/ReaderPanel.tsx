@@ -1227,7 +1227,7 @@ export function ReaderPanel({
 									/>
 								</div>
 								<div className="tts-setting-item">
-									<label>语速</label>
+									<label>语速 <span style={{ fontSize: "10px", color: "#999" }}>（5=日常对话，3=舒缓，7=激动）</span></label>
 									<div className="tts-slider-group">
 										<input
 											type="range"

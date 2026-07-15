@@ -125,9 +125,13 @@ export function HomePage({ onStart }: HomePageProps) {
 
 	// 处理 Markdown 样式的文本，将 `code` 转换为 code 标签
 	const parseMarkdownText = (text: string) => {
-		// 处理行内代码 `code`
-		let parsed = text.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
-		// 处理加粗 **text**
+		let parsed = text;
+		parsed = parsed.replace(/&/g, '&amp;');
+		parsed = parsed.replace(/</g, '&lt;');
+		parsed = parsed.replace(/>/g, '&gt;');
+		parsed = parsed.replace(/"/g, '&quot;');
+		parsed = parsed.replace(/'/g, '&#039;');
+		parsed = parsed.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
 		parsed = parsed.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
 		return parsed;
 	};
@@ -296,12 +300,12 @@ export function HomePage({ onStart }: HomePageProps) {
 					{onStart && (
 						<button className={isMobile ? "btn-mobile" : "btn"} onClick={handleStartApp}>
 							<Icons.book size={16} />
-							<span>使用网页版</span>
+							{!isMobile && <span>使用网页版</span>}
 						</button>
 					)}
-					<button className={isMobile ? "btn-mobile btn" : "btn"} onClick={() => setShowDownloadModal(true)}>
+					<button className={isMobile ? "btn-mobile" : "btn"} onClick={() => setShowDownloadModal(true)}>
 						<Icons.download size={16} />
-						<span>下载应用</span>
+						{!isMobile && <span>下载应用</span>}
 					</button>
 				</div>
 			</header>

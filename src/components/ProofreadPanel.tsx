@@ -15,6 +15,7 @@ import { IgnoredWordsManager } from "./IgnoredWordsManager";
 import { ToastContainer } from "./Toast";
 import { ProofreadQueuePanel } from "./ProofreadQueuePanel";
 import { logger } from "../utils/logger";
+import { Semaphore } from "../utils/concurrent";
 import type { ToastMessage } from "./Toast";
 import type { CheckGranularity, ProofreadError } from "../types";
 
@@ -229,8 +230,8 @@ export function ProofreadPanel() {
 		logger.proofread(`handleRetryTimeoutErrors: 重新校对 ${timeoutParagraphIndices.length} 个超时段落, 并发数=${maxConcurrent}`);
 
 		let completed = 0;
-		let activeCount = 0;
 		const tasks: Promise<void>[] = [];
+		const semaphore = new Semaphore(maxConcurrent);
 
 		const processOne = async (originalIndex: number) => {
 			try {
@@ -240,16 +241,13 @@ export function ProofreadPanel() {
 			} finally {
 				completed++;
 				setRetryTimeoutProgress(completed);
-				activeCount--;
+				semaphore.release();
 			}
 		};
 
 		try {
 			for (const originalIndex of timeoutParagraphIndices) {
-				while (activeCount >= maxConcurrent) {
-					await new Promise(resolve => setTimeout(resolve, 100));
-				}
-				activeCount++;
+				await semaphore.acquire();
 				tasks.push(processOne(originalIndex));
 			}
 			await Promise.all(tasks);

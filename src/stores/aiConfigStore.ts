@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AIConfig, AIProvider } from "../types";
 import { setLoggerEnabled } from "../utils/logger";
-import { secureStorageSet, secureStorageGet } from "../utils/secureStorage";
+import { secureStorageSet, secureStorageGet, preloadSecureStorage } from "../utils/secureStorage";
 
 export interface AIConfigState {
 	aiConfig: AIConfig;
@@ -62,9 +62,17 @@ export const useAIConfigStore = create<AIConfigState>()(
 				aiConfig: { ...state.aiConfig, apiKey: "" },
 				apiKeyMap: {},
 			}),
-			onRehydrateStorage: () => (state) => {
+			onRehydrateStorage: () => async (state) => {
 				if (state) {
 					setLoggerEnabled(state.aiConfig.enableLogging);
+					await preloadSecureStorage();
+					const providers: AIProvider[] = ['openai', 'deepseek', 'siliconflow', 'mimo', 'lmstudio', 'ollama', 'vllm', 'custom'];
+					for (const provider of providers) {
+						const savedKey = secureStorageGet(`apiKey-${provider}`);
+						if (savedKey) {
+							state.apiKeyMap[provider] = savedKey;
+						}
+					}
 				}
 			},
 		},

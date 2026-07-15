@@ -19,6 +19,7 @@ import {
 } from "../utils/aiClient";
 import { logger } from "../utils/logger";
 import { startProofreadService, stopProofreadService } from "../utils/androidService";
+import { Semaphore } from "../utils/concurrent";
 import type {
 	ParagraphResult,
 	ProofreadError,
@@ -486,17 +487,13 @@ export function useAICheck() {
 				};
 
 				// 使用 Promise 池实现多线程并发处理
-				let activeCount = 0;
+				const semaphore = new Semaphore(maxConcurrent);
 				const results: Promise<void>[] = [];
 				for (const batch of batches) {
 					if (controller.signal.aborted) break;
-					// 等待直到有空闲槽位
-					while (activeCount >= maxConcurrent) {
-						await new Promise(resolve => setTimeout(resolve, 100));
-					}
-					activeCount++;
+					await semaphore.acquire();
 					const promise = processBatch(batch).finally(() => {
-						activeCount--;
+						semaphore.release();
 					});
 					results.push(promise);
 				}
@@ -657,16 +654,13 @@ export function useAICheck() {
 				};
 
 				// 使用 Promise 池实现多线程并发处理
-				let activeCount = 0;
+				const semaphore = new Semaphore(maxConcurrent);
 				const paragraphTasks: Promise<void>[] = [];
 				for (let i = startFrom; i < filteredItems.length; i++) {
 					if (controller.signal.aborted) break;
-					while (activeCount >= maxConcurrent) {
-						await new Promise(resolve => setTimeout(resolve, 100));
-					}
-					activeCount++;
+					await semaphore.acquire();
 					const promise = processParagraphItem(i).finally(() => {
-						activeCount--;
+						semaphore.release();
 					});
 					paragraphTasks.push(promise);
 				}

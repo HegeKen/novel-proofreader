@@ -753,9 +753,8 @@ select {
 .novel-item-name {
 	font-size: 14px;
 	font-weight: 500;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	white-space: pre-wrap;
+	word-break: break-word;
 	transition: all var(--duration)}
 
 .novel-item-meta {
@@ -6319,7 +6318,14 @@ color: var(--text-primary)}
 		padding: 0 12px;
 		padding-top: env(safe-area-inset-top, 0);
 		min-height: calc(52px + env(safe-area-inset-top, 0));
-		height: auto}
+		height: auto;
+		background: var(--glass-bg-strong);
+		backdrop-filter: blur(var(--glass-blur-strong));
+		-webkit-backdrop-filter: blur(var(--glass-blur-strong));
+		border-bottom: 1px solid var(--border);
+		position: sticky;
+		top: 0;
+		z-index: 100}
 
 	.app-title {
 		font-size: 14px}
@@ -6340,7 +6346,9 @@ color: var(--text-primary)}
 	.header-right {
 		flex-shrink: 0;
 		gap: 6px;
-		margin-left: auto}
+		margin-left: auto;
+		display: flex;
+		align-items: center}
 
 	.btn-theme-toggle {
 		font-size: 0;
@@ -6400,6 +6408,19 @@ color: var(--text-primary)}
 		border-color: var(--accent);
 		transform: scale(1.08);
 		box-shadow: var(--shadow-md), 0 0 0 1px var(--accent)}
+
+	.home-page .btn-mobile {
+		width: 32px;
+		height: 32px}
+
+	.home-page .header-right .btn {
+		font-size: 12px;
+		padding: 6px 12px;
+		border-radius: 20px;
+		font-weight: 500}
+
+	.home-page .header-right .btn svg {
+		display: none}
 
 	/* Mobile Tab Bar */
 	.mobile-tab-bar {
@@ -7080,25 +7101,125 @@ color: var(--text-primary)}
 		justify-content: center}
 
 	.hero-section {
-		padding: 60px 16px 80px}
+		padding: 40px 16px 60px;
+		min-height: 60vh;
+		flex-direction: column;
+		justify-content: center}
+
+	.hero-content {
+		max-width: 400px}
+
+	.hero-icon {
+		width: 100px;
+		height: 100px;
+		margin: 0 auto 20px;
+		border-radius: 28px;
+		padding: 12px}
+
+	.hero-icon img {
+		width: 60px;
+		height: 60px}
 
 	.hero-title {
-		font-size: 32px}
+		font-size: 28px;
+		margin-bottom: 8px}
 
 	.hero-subtitle {
-		font-size: 16px}
+		font-size: 15px;
+		margin-bottom: 12px}
 
 	.hero-description {
-		font-size: 14px}
+		font-size: 13px;
+		line-height: 1.6;
+		margin-bottom: 20px;
+		padding: 0 8px}
 
 	.section-title {
-		font-size: 24px}
+		font-size: 22px;
+		margin-bottom: 32px}
 
 	.features-grid {
-		grid-template-columns: 1fr}
+		grid-template-columns: 1fr;
+		gap: 16px}
 
 	.feature-card {
-		padding: 20px}
+		padding: 20px 16px;
+		border-radius: 16px}
+
+	.feature-card .feature-icon {
+		width: 40px;
+		height: 40px;
+		margin: 0 auto 10px;
+		border-radius: 12px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--bg-overlay)}
+
+	.feature-card .feature-title {
+		font-size: 14px;
+		margin-bottom: 6px}
+
+	.feature-card .feature-description {
+		font-size: 11px;
+		line-height: 1.5;
+		color: var(--text-muted)}
+
+	.feature-card:hover {
+		transform: none;
+		box-shadow: var(--shadow-md)}
+
+	.feature-card:active {
+		transform: scale(0.98)}
+
+	.about-section {
+		padding: 20px 16px}
+
+	.changelog-section {
+		margin-top: 24px;
+		padding-top: 24px}
+
+	.changelog-title {
+		font-size: 18px;
+		margin-bottom: 16px}
+
+	.timeline {
+		padding-left: 12px}
+
+	.timeline-item {
+		gap: 12px}
+
+	.timeline-line {
+		width: 30px}
+
+	.timeline-dot {
+		width: 24px;
+		height: 24px;
+		font-size: 12px}
+
+	.timeline-content {
+		flex: 1}
+
+	.timeline-header {
+		flex-direction: column;
+		gap: 2px;
+		margin-bottom: 8px}
+
+	.timeline-version {
+		font-size: 13px;
+		font-weight: 600}
+
+	.timeline-date {
+		font-size: 11px;
+		color: var(--text-muted)}
+
+	.timeline-body {
+		font-size: 12px}
+
+	.home-page footer {
+		padding: 20px 16px;
+		font-size: 11px;
+		text-align: center}
 
 	.queue-panel {
 		width: calc(100% - 32px);
@@ -9510,6 +9631,12 @@ color: var(--text-primary)}
 	display: grid;
 	grid-template-columns: repeat(3, 1fr);
 	gap: 24px}
+
+@media (max-width: 768px) {
+	.features-grid {
+		grid-template-columns: 1fr;
+		gap: 16px}
+}
 
 .feature-card {
 	background: var(--glass-bg);

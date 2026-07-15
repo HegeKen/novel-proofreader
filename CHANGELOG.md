@@ -1,5 +1,50 @@
 # Proof Reader Changelog
 
+## v0.13.0 (2026-07-15)
+
+### ✨ 功能更新
+
+**TTS API Key 持久化修复**
+- 修复 Android 应用重装后 TTS API Key 丢失的问题
+- 根因：`secureStorageGet` 是同步 API 而 AES 解密是异步操作，导致应用初始化时返回 null
+- `secureStorage.ts` 新增 `preloadSecureStorage()` 函数，异步解密并缓存所有 `secure-` 前缀的数据
+- `configStore.ts` 和 `aiConfigStore.ts` 使用 `onRehydrateStorage` 钩子，在加载 API Key 前调用 `preloadSecureStorage()`
+- 确保 API Key 在应用启动时从加密存储中正确恢复
+
+**TTS 语速系统升级**
+- 新增语速建议系统，支持 1-10 语速范围（5=日常对话约220字/分钟，3=舒缓叙述，7=激动急切）
+- AI 剧本 TTS 情感增强提示词新增语速标注格式：`(标签|语速)`，如 `(平静|5)`
+- `_synthesizeSpeech` 支持 `speedOverride` 参数，允许根据情感标签动态调整语速
+- 计算朗读时长的算法优化，贴近现实语速（5=220字/分钟，3=160字/分钟，7=280字/分钟）
+
+**情感标注原则优化**
+- 新增"贴近生活、自然真实"核心原则，强调克制内敛，避免舞台腔/播音腔
+- 日常对话优先使用"平静""温柔""无奈"等克制标签，真正激动时才使用"愤怒""恐惧""动情"
+- 语速必须与情绪匹配：平静=5，激动=7-8，抒情=3-4
+
+**并发工具模块**
+- 新增 `src/utils/concurrent.ts` 文件，提供 Queue 并发队列工具
+- TTS 服务引入队列机制，优化音频合成并发处理
+
+**HomePage 移动端设计优化**
+- 移动端按钮仅显示图标（隐藏 `<span>` 文本），桌面端保留图标+文本
+- 修复 CSS 级联规则问题，确保移动端样式正确生效
+- 优化 Header 玻璃态设计和按钮样式
+
+### 🐛 Bug 修复
+
+- 修复 Android 端安全存储初始化时序问题，确保 API Key 在 Store 加载前完成解密
+- 修复非 Tauri 环境下 `optimize_text_preview` 参数导致的 400 错误（移除该参数）
+
+### 🔧 改进优化
+
+- 安全存储初始化流程优化，异步解密操作前置到 Store 加载之前
+- `aiClient.ts` 剧本 TTS 增强提示词全面升级，新增语速选择指南和情感原则
+- `ttsService.ts` 新增现实语速说明和自然朗读要求
+- `useTTS.ts` 传递 `segment.speed` 参数到 `addDialogueStream`，支持按段落动态语速
+
+---
+
 ## v0.12.5 (2026-07-12)
 
 ### ✨ 功能更新

@@ -118,6 +118,39 @@ function ensureInit(): void {
 }
 
 /**
+ * 预加载所有安全存储数据到内存缓存
+ * 必须在应用初始化时调用，确保后续同步读取能拿到数据
+ */
+export async function preloadSecureStorage(): Promise<void> {
+	ensureInit();
+	await initPromise!;
+	try {
+		const keysToLoad: string[] = [];
+		for (let i = 0; i < localStorage.length; i++) {
+			const rawKey = localStorage.key(i);
+			if (rawKey?.startsWith(STORAGE_PREFIX)) {
+				keysToLoad.push(rawKey.slice(STORAGE_PREFIX.length));
+			}
+		}
+		for (const key of keysToLoad) {
+			if (!memoryCache.has(key)) {
+				const encrypted = localStorage.getItem(`${STORAGE_PREFIX}${key}`);
+				if (encrypted) {
+					try {
+						const decrypted = await decrypt(encrypted);
+						memoryCache.set(key, decrypted);
+					} catch {
+						localStorage.removeItem(`${STORAGE_PREFIX}${key}`);
+					}
+				}
+			}
+		}
+	} catch (e) {
+		logger.errorGeneric('secureStorage - Preload failed:', e);
+	}
+}
+
+/**
  * 安全存储敏感数据（加密后存储）
  * 写入内存缓存（同步）+ 异步持久化到 localStorage
  */

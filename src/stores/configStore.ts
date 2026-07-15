@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { secureStorageSet, secureStorageGet } from "../utils/secureStorage";
+import { secureStorageSet, secureStorageGet, preloadSecureStorage } from "../utils/secureStorage";
 
 
 export interface TTSConfig {
@@ -124,6 +124,15 @@ export const useConfigStore = create<ConfigState>()(
 				promptConfig: state.promptConfig,
 				proofreadConfig: state.proofreadConfig,
 			}),
+			onRehydrateStorage: () => async (state) => {
+				if (state) {
+					await preloadSecureStorage();
+					const savedKey = secureStorageGet("tts-api-key");
+					if (savedKey) {
+						state.ttsConfig.apiKey = savedKey;
+					}
+				}
+			},
 		},
 	),
 );

@@ -43,8 +43,8 @@ export function useTTS() {
 	// 计算文本的预计朗读时长（秒）
 	const calculateDuration = useCallback((text: string): number => {
 		const speed = ttsConfig.speed || 5;
-		// 平均语速约为每分钟150-200字，根据语速设置调整
-		const baseWpm = 180;
+		// 贴近现实语速：5=日常对话约220字/分钟，3=抒情叙述约160字/分钟，7=激动急切约280字/分钟
+		const baseWpm = 220;
 		const adjustedWpm = Math.round(baseWpm * (speed / 5));
 		const charCount = text.length;
 		const avgCharsPerWord = 2.5;
@@ -367,7 +367,7 @@ export function useTTS() {
 						const actualSpeaker = segment.speaker === '旁白' ? narratorName : segment.speaker;
 						if (!characterVoices[actualSpeaker]) characterVoices[actualSpeaker] = getVoiceForCharacter(actualSpeaker);
 						const dialectText = applyDialectLabel(actualSpeaker, segment.text);
-						await scriptTTS.addDialogueStream(actualSpeaker, dialectText, i, getVoiceDesignPromptForCharacter(actualSpeaker));
+						await scriptTTS.addDialogueStream(actualSpeaker, dialectText, i, getVoiceDesignPromptForCharacter(actualSpeaker), segment.speed);
 					}
 					cachedResult.characters.forEach(c => allCharacters.add(c));
 					newCache.set(i, cachedResult);
@@ -386,7 +386,7 @@ export function useTTS() {
 						const actualSpeaker = segment.speaker === '旁白' ? narratorName : segment.speaker;
 						if (!characterVoices[actualSpeaker]) characterVoices[actualSpeaker] = getVoiceForCharacter(actualSpeaker);
 						const dialectText = applyDialectLabel(actualSpeaker, segment.text);
-						await scriptTTS.addDialogueStream(actualSpeaker, dialectText, i, getVoiceDesignPromptForCharacter(actualSpeaker));
+						await scriptTTS.addDialogueStream(actualSpeaker, dialectText, i, getVoiceDesignPromptForCharacter(actualSpeaker), segment.speed);
 					}
 					result.characters.forEach(c => allCharacters.add(c));
 					if (result.characters.length === 0 && result.segments.length > 0) {
