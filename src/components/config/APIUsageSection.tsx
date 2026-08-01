@@ -13,6 +13,15 @@ export function APIUsageSection() {
 	const errorRate = apiUsage.totalRequests > 0
 		? Math.round((apiUsage.failedRequests / apiUsage.totalRequests) * 100) : 0;
 
+	const avgDuration = apiUsage.totalRequests > 0 && apiUsage.totalDuration > 0
+		? Math.round(apiUsage.totalDuration / apiUsage.totalRequests) : 0;
+
+	const formatDuration = (ms: number): string => {
+		if (ms < 1000) return `${ms}ms`;
+		if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+		return `${Math.floor(ms / 60000)}m ${((ms % 60000) / 1000).toFixed(0)}s`;
+	};
+
 	const recentDays = useMemo(() => {
 		const days: string[] = [];
 		for (let i = 6; i >= 0; i--) {
@@ -78,6 +87,21 @@ export function APIUsageSection() {
 					<div className="usage-stat-header"><div className="usage-stat-icon"><Icons.download size={16} /></div></div>
 					<div className="usage-stat-value">{formatLargeNumber(apiUsage.outputTokens)}</div>
 					<div className="usage-stat-label">输出 Token</div>
+				</div>
+				<div className="usage-stat-card duration">
+					<div className="usage-stat-header"><div className="usage-stat-icon"><Icons.clock size={16} /></div></div>
+					<div className="usage-stat-value">{formatDuration(avgDuration)}</div>
+					<div className="usage-stat-label">平均耗时</div>
+				</div>
+				<div className="usage-stat-card duration-min">
+					<div className="usage-stat-header"><div className="usage-stat-icon"><Icons.sparkles size={16} /></div></div>
+					<div className="usage-stat-value">{formatDuration(apiUsage.minDuration)}</div>
+					<div className="usage-stat-label">最快耗时</div>
+				</div>
+				<div className="usage-stat-card duration-max">
+					<div className="usage-stat-header"><div className="usage-stat-icon"><Icons.alertTriangle size={16} /></div></div>
+					<div className="usage-stat-value">{formatDuration(apiUsage.maxDuration)}</div>
+					<div className="usage-stat-label">最慢耗时</div>
 				</div>
 			</div>
 			<div className="usage-progress">
@@ -153,6 +177,10 @@ export function APIUsageSection() {
 														<span className="tooltip-color output-color" />
 														<span className="tooltip-text">输出: {formatLargeNumber(outputTokens)} tokens</span>
 													</div>
+													<div className="tooltip-item duration">
+														<span className="tooltip-color duration-color" />
+														<span className="tooltip-text">耗时: {formatDuration(dayStats.duration || 0)}</span>
+													</div>
 												</div>
 											</div>
 										)}
@@ -178,18 +206,23 @@ export function APIUsageSection() {
 			{Object.keys(apiUsage.providerStats ?? {}).length > 0 && (
 				<div className="provider-stats">
 					<div className="provider-stats-header"><Icons.cache size={12} />按提供商统计</div>
-					{Object.entries(apiUsage.providerStats ?? {}).map(([provider, stats], index) => (
-						<div key={provider} className="provider-stat-item">
-							<div className="provider-stat-info">
-								<div className="provider-stat-icon">{index + 1}</div>
-								<span className="provider-stat-name">{provider}</span>
+					{Object.entries(apiUsage.providerStats ?? {}).map(([provider, stats], index) => {
+						const providerAvgDuration = stats.requests > 0 && stats.duration > 0
+							? Math.round(stats.duration / stats.requests) : 0;
+						return (
+							<div key={provider} className="provider-stat-item">
+								<div className="provider-stat-info">
+									<div className="provider-stat-icon">{index + 1}</div>
+									<span className="provider-stat-name">{provider}</span>
+								</div>
+								<div className="provider-stat-details">
+									<span className="provider-stat-requests">{stats.requests} 请求</span>
+									<span className="provider-stat-success"><Icons.check size={12} />{stats.success} 成功</span>
+									<span className="provider-stat-duration"><Icons.clock size={12} />{formatDuration(providerAvgDuration)}</span>
+								</div>
 							</div>
-							<div className="provider-stat-details">
-								<span className="provider-stat-requests">{stats.requests} 请求</span>
-								<span className="provider-stat-success"><Icons.check size={12} />{stats.success} 成功</span>
-							</div>
-						</div>
-					))}
+						);
+					})}
 				</div>
 			)}
 			<button className="btn-reset-usage" onClick={resetAPIUsage}>

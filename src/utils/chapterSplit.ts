@@ -98,12 +98,12 @@ export function splitChapters(
 	if (sorted.length === 0) {
 		const chapters: Chapter[] = [];
 		let start = 0;
-		let id = 1;
+		let id = 0;
 		while (start < fullText.length) {
 			const end = Math.min(start + chunkSize, fullText.length);
 			chapters.push({
 				id,
-				title: `第 ${id} 段`,
+				title: `第 ${id + 1} 段`,
 				startIndex: start,
 				endIndex: end,
 				content: fullText.slice(start, end),

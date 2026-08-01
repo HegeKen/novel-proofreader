@@ -20,6 +20,7 @@ export function useTTS() {
 	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
 	const currentNovelId = useNovelStore((s) => s.currentNovelId);
 	const getCharacters = useCharacterStore((s) => s.getCharacters);
+	const getEvents = useCharacterStore((s) => s.getEvents);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
 	const promptConfig = useConfigStore((s) => s.promptConfig);
 	const aiConfig = useAIConfigStore((s) => s.aiConfig);
@@ -197,10 +198,23 @@ export function useTTS() {
 			dialect: c.dialect,
 		})) : [];
 
+		const currentChapter = chapters[currentChapterIndex];
+		const chapterTitle = currentChapter?.title || '';
+
+		const relevantEvents = currentNovelId ? getEvents(currentNovelId).filter(evt => {
+			if (!evt.chapter || !chapterTitle) return false;
+			const eventChapter = evt.chapter;
+			const dotIndex = eventChapter.indexOf("·");
+			const eventChapterName = dotIndex > 0 ? eventChapter.slice(dotIndex + 1).trim() : eventChapter;
+			const chapterDotIndex = chapterTitle.indexOf("·");
+			const currentChapterName = chapterDotIndex > 0 ? chapterTitle.slice(chapterDotIndex + 1).trim() : chapterTitle;
+			return eventChapterName.includes(currentChapterName) || currentChapterName.includes(eventChapterName);
+		}).slice(0, 10) : [];
+
 		try {
 			const messages: ChatMessage[] = [
 				{ role: 'system', content: promptConfig.readingModeTts || READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT },
-				{ role: 'user', content: buildReadingModeTTSEnhanceUserPrompt(paraText, contextBefore, contextAfter, configuredCharacters) }
+				{ role: 'user', content: buildReadingModeTTSEnhanceUserPrompt(paraText, contextBefore, contextAfter, configuredCharacters, relevantEvents) }
 			];
 			const response = await sendChatCompletion(messages, aiConfig);
 			const jsonMatch = response.match(/\{[\s\S]*\}/);
@@ -209,7 +223,7 @@ export function useTTS() {
 		} catch {
 			return null;
 		}
-	}, [aiConfig, currentNovelId, getCharacters, promptConfig.readingModeTts]);
+	}, [aiConfig, currentNovelId, getCharacters, promptConfig.readingModeTts, getEvents, chapters, currentChapterIndex]);
 
 	const handleTTSToggle = useCallback(() => {
 		if (ttsPlaying) {

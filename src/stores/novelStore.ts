@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Novel, Chapter } from "../types";
-import { saveNovelToStorage, loadNovelsFromStorage, loadNovelContent } from "../utils/fileExport";
+import { saveNovelToStorage, loadNovelsFromStorage } from "../utils/fileExport";
 import { normalizeCJKVariants } from "../utils/normalizeCJK";
 import { logger } from "../utils/logger";
 
@@ -418,18 +418,15 @@ export const useNovelStore = create<NovelState>()(
 
 				const loadedNovels: Novel[] = [];
 				for (const fileName of storedFileNames) {
-					const content = await loadNovelContent(fileName);
-					if (content) {
-						const name = fileName.replace(/\.txt$/i, '');
-						const existingNovel = existingNovels.find((n) => n.name === name);
-						loadedNovels.push({
-							id: existingNovel?.id ?? `novel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-							name,
-							fullText: content,
-							importedAt: existingNovel?.importedAt ?? Date.now(),
-							chapters: existingNovel?.chapters ?? [],
-						});
-					}
+					const name = fileName.replace(/\.txt$/i, '');
+					const existingNovel = existingNovels.find((n) => n.name === name);
+					loadedNovels.push({
+						id: existingNovel?.id ?? `novel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+						name,
+						fullText: existingNovel?.fullText ?? '',
+						importedAt: existingNovel?.importedAt ?? Date.now(),
+						chapters: existingNovel?.chapters ?? [],
+					});
 				}
 
 				if (loadedNovels.length > 0) {

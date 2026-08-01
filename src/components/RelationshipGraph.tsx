@@ -833,27 +833,70 @@ ${existingRelationships.length > 0 ? JSON.stringify(existingRelationships, null,
 
 			if (!Array.isArray(parsed)) throw new Error("AI返回结果格式错误");
 
-			// 创建角色名称到ID的映射
 			const nameToId: Record<string, string> = {};
 			characters.forEach(c => { nameToId[c.name] = c.id; });
 
-			let addedCount = 0;
+			const normalizeKey = (sourceName: string, targetName: string): string => {
+				const names = [sourceName, targetName].sort();
+				return `${names[0]}|${names[1]}`;
+			};
+
+			const mergedRelations: Record<string, {
+				sourceName: string;
+				targetName: string;
+				relationType: string[];
+				customRelationType?: string;
+				sourceNickname: string[];
+				targetNickname: string[];
+			}> = {};
+
 			for (const rel of parsed) {
+				const key = normalizeKey(rel.sourceName, rel.targetName);
+				if (!mergedRelations[key]) {
+					mergedRelations[key] = {
+						sourceName: rel.sourceName,
+						targetName: rel.targetName,
+						relationType: [...rel.relationType],
+						customRelationType: rel.customRelationType,
+						sourceNickname: [...rel.sourceNickname],
+						targetNickname: [...rel.targetNickname],
+					};
+				} else {
+					const existing = mergedRelations[key];
+					const existingRelationTypes = new Set(existing.relationType);
+					const newTypes = rel.relationType.filter(t => !existingRelationTypes.has(t));
+					existing.relationType = [...existing.relationType, ...newTypes];
+
+					const existingSourceNicknames = new Set(existing.sourceNickname);
+					const newSourceNicks = rel.sourceNickname.filter(n => !existingSourceNicknames.has(n));
+					existing.sourceNickname = [...existing.sourceNickname, ...newSourceNicks];
+
+					const existingTargetNicknames = new Set(existing.targetNickname);
+					const newTargetNicks = rel.targetNickname.filter(n => !existingTargetNicknames.has(n));
+					existing.targetNickname = [...existing.targetNickname, ...newTargetNicks];
+
+					if (rel.customRelationType && !existing.customRelationType) {
+						existing.customRelationType = rel.customRelationType;
+					}
+				}
+			}
+
+			let addedCount = 0;
+			for (const rel of Object.values(mergedRelations)) {
 				const sourceId = nameToId[rel.sourceName];
 				const targetId = nameToId[rel.targetName];
 				if (!sourceId || !targetId || sourceId === targetId) continue;
 
-				// 检查是否已存在相同关系
 				const existing = getRelationBetween(sourceId, targetId);
 				if (existing) {
-					// 补充称呼和关系类型
+					const existingRelationTypes = new Set<string>(existing.relationType || []);
+					const newTypes = rel.relationType.filter(t => !existingRelationTypes.has(t)) as RelationType[];
 					const newSourceNicknames = rel.sourceNickname.filter(n => !existing.sourceNickname.includes(n));
 					const newTargetNicknames = rel.targetNickname.filter(n => !existing.targetNickname.includes(n));
-					const hasNewRelationType = rel.relationType.length > 0 && (!existing.relationType || existing.relationType.length === 0);
 					const hasNewCustomType = rel.customRelationType && (!existing.customRelationType || existing.customRelationType !== rel.customRelationType);
-					if (newSourceNicknames.length > 0 || newTargetNicknames.length > 0 || hasNewRelationType || hasNewCustomType) {
+					if (newTypes.length > 0 || newSourceNicknames.length > 0 || newTargetNicknames.length > 0 || hasNewCustomType) {
 						updateRelationship(novelId, existing.id, {
-							relationType: rel.relationType.length > 0 ? rel.relationType as RelationType[] : existing.relationType,
+							relationType: [...existing.relationType || [], ...newTypes] as RelationType[],
 							customRelationType: rel.customRelationType || existing.customRelationType,
 							sourceNickname: [...existing.sourceNickname, ...newSourceNicknames],
 							targetNickname: [...existing.targetNickname, ...newTargetNicknames],

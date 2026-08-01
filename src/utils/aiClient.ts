@@ -138,6 +138,7 @@ export async function sendChatCompletion(
 	config: AIConfig,
 	signal?: AbortSignal,
 ): Promise<string> {
+	const startTime = Date.now();
 	const url = `${config.baseURL.replace(/\/+$/, "")}/chat/completions`;
 
 	const headers: Record<string, string> = {
@@ -149,7 +150,7 @@ export async function sendChatCompletion(
 	}
 
 	const promptTokens = Math.floor(messages.reduce((acc, m) => acc + (m.content?.length || 0), 0) * 0.5);
-	const minMaxTokens = Math.max(65536, Math.floor(promptTokens * 1.5));
+	const minMaxTokens = Math.max(131072, Math.floor(promptTokens * 1.5));
 
 	const body = {
 		model: config.model,
@@ -177,7 +178,8 @@ export async function sendChatCompletion(
 					continue;
 				}
 
-				useAppMetaStore.getState().incrementAPIUsage(provider, false);
+				const duration = Date.now() - startTime;
+				useAppMetaStore.getState().incrementAPIUsage(provider, false, 0, 0, duration);
 				const friendly = ERROR_MESSAGES[provider]?.[resp.status];
 				const detail = extractDetailError(text);
 
@@ -194,7 +196,8 @@ export async function sendChatCompletion(
 
 			const responsePromptTokens = data.usage?.prompt_tokens ?? 0;
 			const completionTokens = data.usage?.completion_tokens ?? 0;
-			useAppMetaStore.getState().incrementAPIUsage(provider, true, responsePromptTokens, completionTokens);
+			const duration = Date.now() - startTime;
+			useAppMetaStore.getState().incrementAPIUsage(provider, true, responsePromptTokens, completionTokens, duration);
 
 			const content = data.choices?.[0]?.message?.content ?? "";
 			if (
@@ -212,6 +215,8 @@ export async function sendChatCompletion(
 				throw err;
 			}
 			if (attempt === MAX_RETRIES - 1) {
+				const duration = Date.now() - startTime;
+				useAppMetaStore.getState().incrementAPIUsage(provider, false, 0, 0, duration);
 				throw err;
 			}
 			logger.warn(`AI 请求异常，准备重试 (attempt ${attempt + 1}/${MAX_RETRIES})`, { error: err });
@@ -219,6 +224,8 @@ export async function sendChatCompletion(
 		}
 	}
 
+	const duration = Date.now() - startTime;
+	useAppMetaStore.getState().incrementAPIUsage(provider, false, 0, 0, duration);
 	throw new Error("AI 请求失败");
 }
 
@@ -941,7 +948,8 @@ export function buildReadingModeTTSEnhanceUserPrompt(
         paragraphText: string,
         contextBefore: string,
         contextAfter: string,
-        configuredCharacters: Array<{ name: string; aliases: string[]; voice?: string; role?: string; relationTerms?: string[]; dialect?: string }>
+        configuredCharacters: Array<{ name: string; aliases: string[]; voice?: string; role?: string; relationTerms?: string[]; dialect?: string }>,
+        novelEvents?: Array<{ title: string; description: string; chapter: string; timeInfo: string }>
 ): string {
         const chars = configuredCharacters.length ? configuredCharacters.map(c => {
                 const alias = c.aliases?.length ? `（别称：${c.aliases.join('、')}）` : '';
@@ -967,10 +975,15 @@ export function buildReadingModeTTSEnhanceUserPrompt(
                 ? `\n重要：如果配置了旁白角色"${narratorChar.name}"，所有旁白(narration)必须使用该角色朗读，speaker设为"${narratorChar.name}"。` 
                 : '\n重要：如果没有配置旁白角色，旁白speaker设为"旁白"。';
         
+        // 构建小说大事记上下文
+        const eventsContext = novelEvents && novelEvents.length > 0
+                ? `\n\n【小说大事记-当前章节涉及的关键事件】\n以下事件发生在当前章节或与之紧密相关，是理解当前段落情感基调的重要背景：\n${novelEvents.map((evt, idx) => `${idx + 1}. [${evt.chapter}] ${evt.title}：${evt.description}`).join('\n')}\n\n请根据这些事件背景来判断当前段落的情感基调，例如：如果之前发生了悲剧事件，当前段落可能带有悲伤或压抑的情绪；如果之前发生了喜事，当前段落可能带有开心或轻松的情绪。`
+                : '';
+        
         return `分析段落，识别人物并判断情绪，为每个 segment 给出语速建议(speed 1-10)。情感要贴近生活、自然真实，克制内敛，避免舞台腔/过度戏剧化；日常对话优先用"平静/温柔/无奈"等克制标签+speed=5，真正激动时才用"愤怒/恐惧/动情"+speed=7-8；旁白默认"平静"+speed=5，仅在大起大落处换标签。
 
 已配置角色：
-${chars}${narratorInstruction}${dialectInstruction}
+${chars}${narratorInstruction}${dialectInstruction}${eventsContext}
 
 【上下文信息-仅用于分析，不要输出】
 - 上文参考：${contextBefore || '无'}
@@ -1503,10 +1516,6 @@ export async function analyzeCharactersInBatches(
 			throw new Error("分析已取消");
 		}
 
-		// 进度统一计算：第一阶段占前 total 步，第二阶段占后续步数
-		// 在第一阶段结束前无法知道第二阶段的实际步数，先用 total 显示
-		onProgress?.(i + 1, total, "analyze");
-
 		const messages: ChatMessage[] = [
 			{ role: "system", content: CHARACTER_ANALYSIS_SYSTEM_PROMPT },
 			{ role: "user", content: userPromptTemplate.replace("{chunk}", chunks[i]) },
@@ -1546,6 +1555,10 @@ export async function analyzeCharactersInBatches(
 			}
 		} catch (err) {
 			logger.warn("[CharacterAnalysis] 批次分析失败:", err);
+		} finally {
+			// 进度统一计算：第一阶段占前 total 步，第二阶段占后续步数
+			// 在第一阶段结束前无法知道第二阶段的实际步数，先用 total 显示
+			onProgress?.(i + 1, total, "analyze");
 		}
 	}
 
@@ -1579,7 +1592,6 @@ export async function analyzeCharactersInBatches(
 
 		// 多个片段，需要综合分析
 		phase2Current++;
-		onProgress?.(phase2Current, summarizeBatchCount, "summarize");
 
 		try {
 			// 先对数组字段做程序化并集，确保不丢失任何信息
@@ -1624,6 +1636,8 @@ export async function analyzeCharactersInBatches(
 			logger.warn(`[CharacterAnalysis] 角色「${name}」综合分析失败:`, err);
 			// 失败时使用第一个片段作为兜底
 			allCharacters.push(fragments[0]);
+		} finally {
+			onProgress?.(phase2Current, summarizeBatchCount, "summarize");
 		}
 	}
 
@@ -1911,8 +1925,9 @@ export const NOVEL_EVENTS_SYSTEM_PROMPT = `你是一位专业的小说编辑助�
       "title": "事件标题",
       "description": "事件详细描述（20-50字）",
       "timeOrder": 1,
+      "chapterOrder": 1,
       "timeInfo": "具体时间描述（如：第一章、三年后、清晨、某日傍晚等）",
-      "chapter": "发生章节（如：第1章）",
+      "chapter": "发生章节（如：第一卷·第1章）",
       "involvedCharacterNames": ["角色A", "角色B"],
       "id": "evt-001"
     }
@@ -1922,13 +1937,37 @@ export const NOVEL_EVENTS_SYSTEM_PROMPT = `你是一位专业的小说编辑助�
 要求：
 1. 提取小说中发生的所有重要事件，按照时间顺序排列，越详细越好
 2. 仔细分析全文中的所有时间信息，包括章节标题、正文中提到的时间点、时间段、时间跨度等
-3. 每个事件包含：title（标题）、description（描述）、timeOrder（时间顺序编号）、timeInfo（具体时间描述，从原文中提取或推断）、chapter（发生章节）、involvedCharacterNames（涉及角色名称数组）、id（事件ID，格式为 evt-xxx）
+3. 每个事件包含：title（标题）、description（描述）、timeOrder（时间顺序编号）、chapterOrder（行文顺序编号）、timeInfo（具体时间描述，从原文中提取或推断）、chapter（发生章节）、involvedCharacterNames（涉及角色名称数组）、id（事件ID，格式为 evt-xxx）
 4. 事件数量不做限制，尽可能详细记录每个重要时间点发生的事件
-5. timeOrder 从 1 开始递增，不要重复
-6. timeInfo 字段要尽可能详细，包含具体的时间描述、时间段、时间跨度等
-7. chapter 字段填写事件发生的章节名称或章节号
-8. involvedCharacterNames 使用小说中的实际角色名称
-9. 只输出 JSON 格式，不要包含 markdown 代码块标记或其他文字`;
+5. timeOrder 从 1 开始递增，表示故事时间线顺序（数字越小越早发生）
+6. chapterOrder 从 1 开始递增，表示阅读顺序/行文顺序（数字越小越早在小说中出现）
+7. 注意：timeOrder 和 chapterOrder 是两个不同的概念！如果小说使用插叙/倒叙，同一事件的 timeOrder 和 chapterOrder 会不同。例如：倒叙中先读到的事件，chapterOrder 小但 timeOrder 大；插叙中回忆的事件，chapterOrder 大但 timeOrder 小
+8. timeInfo 字段要尽可能详细，包含具体的时间描述、时间段、时间跨度等
+
+【章节格式严格规范】
+9. chapter 字段必须统一使用"第X卷·第Y章"格式，卷编号和章节编号必须使用**阿拉伯数字**！例如：
+   - "第1卷·第1章"（正确）
+   - "第2卷·第10章"（正确）
+   - "第1卷·序章"（正确）
+   - "第一卷·第1章"（错误！卷编号必须用阿拉伯数字）
+   - "第1卷·第一章"（错误！章节编号必须用阿拉伯数字）
+   - "第一卷·第一章"（错误！卷和章节编号都必须用阿拉伯数字）
+   - "第1卷"（错误！必须包含章节名）
+   - "第1章"（错误！必须包含卷名）
+   - "第12章·第1卷"（错误！卷名必须在前面）
+10. 卷名必须在章节名前面，用"·"分隔，格式为"第N卷·第M章"（N和M为阿拉伯数字）
+11. 卷编号必须使用阿拉伯数字（第1卷、第2卷、第10卷...），禁止使用中文数字（第一卷、第二卷...）
+12. 章节编号必须使用阿拉伯数字（第1章、第2章、第10章...），禁止使用中文数字（第一章、第二章...）
+13. 如果事件发生在多个章节，使用最先出现的章节
+14. 如果无法确定具体章节，使用最接近的章节
+
+【排序规则】
+15. 卷的顺序必须严格按照数字大小：第1卷 < 第2卷 < ... < 第8卷 < ...
+16. 同一卷内的章节顺序必须严格按照数字大小：第1章 < 第2章 < ... < 第10章 < ...
+17. chapterOrder 必须与章节的阅读顺序完全一致，不要打乱卷和章节的自然顺序
+18. timeOrder 必须与故事时间线一致，如果小说是线性叙事，timeOrder 应该与 chapterOrder 一致
+19. involvedCharacterNames 使用小说中的实际角色名称
+20. 只输出 JSON 格式，不要包含 markdown 代码块标记或其他文字`;
 
 /** 小说大事记合并系统 prompt — 合并去重排序 */
 export const NOVEL_EVENTS_MERGE_PROMPT = `你是小说剧情分析专家。以下是从小说不同文本片段中提取出的事件列表，请将这些事件合并、去重并按时间顺序排列。
@@ -1940,8 +1979,9 @@ export const NOVEL_EVENTS_MERGE_PROMPT = `你是小说剧情分析专家。以�
       "title": "事件标题",
       "description": "事件详细描述（20-50字）",
       "timeOrder": 1,
+      "chapterOrder": 1,
       "timeInfo": "具体时间描述",
-      "chapter": "发生章节",
+      "chapter": "发生章节（如：第1卷·第1章）",
       "involvedCharacterNames": ["角色A", "角色B"],
       "id": "evt-001"
     }
@@ -1953,8 +1993,33 @@ export const NOVEL_EVENTS_MERGE_PROMPT = `你是小说剧情分析专家。以�
 2. 按故事发展的时间顺序排列
 3. 保留尽可能多的核心事件，越详尽越好
 4. 去除冗余和次要信息
-5. timeOrder 从 1 开始递增，不要重复
-6. 只输出 JSON 格式，不要包含 markdown 代码块标记或其他文字`;
+5. timeOrder 从 1 开始递增，不要重复，表示故事时间线顺序
+6. chapterOrder 从 1 开始递增，不要重复，表示阅读顺序/行文顺序
+7. 注意：timeOrder 和 chapterOrder 是两个不同的概念！如果小说使用插叙/倒叙，同一事件的 timeOrder 和 chapterOrder 会不同
+
+【章节格式严格规范】
+8. chapter 字段必须统一使用"第X卷·第Y章"格式，卷编号和章节编号必须使用**阿拉伯数字**！例如：
+   - "第1卷·第1章"（正确）
+   - "第2卷·第10章"（正确）
+   - "第1卷·序章"（正确）
+   - "第一卷·第1章"（错误！卷编号必须用阿拉伯数字）
+   - "第1卷·第一章"（错误！章节编号必须用阿拉伯数字）
+   - "第一卷·第一章"（错误！卷和章节编号都必须用阿拉伯数字）
+   - "第1卷"（错误！必须包含章节名）
+   - "第1章"（错误！必须包含卷名）
+   - "第12章·第1卷"（错误！卷名必须在前面）
+9. 卷名必须在章节名前面，用"·"分隔，格式为"第N卷·第M章"（N和M为阿拉伯数字）
+10. 卷编号必须使用阿拉伯数字（第1卷、第2卷、第10卷...），禁止使用中文数字（第一卷、第二卷...）
+11. 章节编号必须使用阿拉伯数字（第1章、第2章、第10章...），禁止使用中文数字（第一章、第二章...）
+12. 如果发现章节格式不一致（如"第12章·第一卷"、"第一卷·第一章"），必须修正为正确格式（"第1卷·第12章"）
+
+【排序规则】
+13. 卷的顺序必须严格按照数字大小：第1卷 < 第2卷 < ... < 第8卷 < ...
+14. 同一卷内的章节顺序必须严格按照数字大小：第1章 < 第2章 < ... < 第10章 < ...
+15. chapterOrder 必须与章节的阅读顺序完全一致，不要打乱卷和章节的自然顺序
+16. 先按卷排序，再按章节排序，确保所有第1卷的事件排在第2卷之前
+
+17. 只输出 JSON 格式，不要包含 markdown 代码块标记或其他文字`;
 
 /**
  * 分批分析整本小说，提取小说大事记
@@ -1969,6 +2034,7 @@ export interface NovelEventsResult {
     title: string;
     description: string;
     timeOrder: number;
+    chapterOrder: number;
     timeInfo: string;
     chapter: string;
     involvedCharacterNames: string[];
@@ -1981,6 +2047,8 @@ export async function generateNovelEvents(
   characterNames: string,
   config: AIConfig,
   onProgress?: (current: number, total: number, phase: "analyze" | "merge") => void,
+  skipMerge?: boolean,
+  existingEvents?: Array<{ title: string; description: string; timeOrder: number; chapterOrder: number; chapter: string; timeInfo: string }>,
 ): Promise<NovelEventsResult> {
   if (!config.apiKey || !config.baseURL) {
     throw new Error("AI配置不完整");
@@ -2006,11 +2074,22 @@ export async function generateNovelEvents(
   const failedBatches: number[] = [];
 
   for (let i = 0; i < chunks.length; i++) {
-    onProgress?.(i + 1, chunks.length, "analyze");
+    const existingEventsContext = existingEvents && existingEvents.length > 0
+      ? `
+
+【现有大事记参考（请避免重复，新事件的 timeOrder 和 chapterOrder 需要与以下事件衔接）】
+${existingEvents.map((evt, idx) => `${idx + 1}. [时间顺序:${evt.timeOrder}][行文顺序:${evt.chapterOrder}][${evt.chapter}] ${evt.title}：${evt.description}`).join('\n')}
+
+注意：
+1. 新生成的事件不要与上述现有事件重复
+2. timeOrder 和 chapterOrder 需要与现有事件的编号衔接，不要从 1 重新开始
+3. 如果现有事件的最大 timeOrder 是 N，新事件的 timeOrder 应从 N+1 开始（或根据事件实际时间位置插入）
+4. 如果现有事件的最大 chapterOrder 是 M，新事件的 chapterOrder 应从 M+1 开始（或根据事件实际行文位置插入）`
+      : '';
 
     const userPrompt = `请分析以下小说文本片段（第 ${i + 1}/${chunks.length} 部分），提取其中的重要事件并生成大事记：
 
-小说角色列表：${characterNames || "暂无"}
+小说角色列表：${characterNames || "暂无"}${existingEventsContext}
 
 ${chunks[i]}`;
 
@@ -2049,6 +2128,8 @@ ${chunks[i]}`;
     } catch (err) {
       failedBatches.push(i + 1);
       logger.warn(`[NovelEvents] 批次 ${i + 1} 分析失败:`, err);
+    } finally {
+      onProgress?.(i + 1, chunks.length, "analyze");
     }
   }
 
@@ -2059,14 +2140,12 @@ ${chunks[i]}`;
     return { events: [] };
   }
 
-  if (chunks.length === 1) {
+  if (chunks.length === 1 || skipMerge) {
     if (failedBatches.length > 0) {
       logger.warn("[NovelEvents] 单个批次分析失败");
     }
     return { events: allEventsFromChunks };
   }
-
-  onProgress?.(1, 1, "merge");
 
   const eventsJson = JSON.stringify(allEventsFromChunks);
   const mergePrompt = `以下是从小说各文本片段中提取出的事件列表，请合并去重并按时间顺序排列：
@@ -2099,6 +2178,8 @@ ${eventsJson}`;
     }
   } catch (err) {
     logger.warn("[NovelEvents] 合并阶段失败，返回原始结果:", err);
+  } finally {
+    onProgress?.(1, 1, "merge");
   }
 
   if (failedBatches.length > 0) {

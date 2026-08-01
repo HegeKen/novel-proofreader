@@ -16,7 +16,7 @@ export interface AppMetaState {
 	readingReminderMinutes: number;
 	toastMessages: ToastMessage[];
 
-	incrementAPIUsage: (provider: string, success: boolean, inputTokens?: number, outputTokens?: number) => void;
+	incrementAPIUsage: (provider: string, success: boolean, inputTokens?: number, outputTokens?: number, duration?: number) => void;
 	resetAPIUsage: () => void;
 
 	setNovelCategory: (novelId: string, category: NovelCategory) => void;
@@ -49,6 +49,9 @@ export const useAppMetaStore = create<AppMetaState>()(
 				totalTokens: 0,
 				inputTokens: 0,
 				outputTokens: 0,
+				totalDuration: 0,
+				minDuration: 0,
+				maxDuration: 0,
 				lastReset: Date.now(),
 				providerStats: {},
 				dailyStats: {},
@@ -59,7 +62,7 @@ export const useAppMetaStore = create<AppMetaState>()(
 			readingReminderMinutes: 30,
 			toastMessages: [],
 
-			incrementAPIUsage: (provider, success, inputTokens = 0, outputTokens = 0) =>
+			incrementAPIUsage: (provider, success, inputTokens = 0, outputTokens = 0, duration = 0) =>
 				set((state) => {
 					const totalTokens = inputTokens + outputTokens;
 					const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
@@ -68,16 +71,41 @@ export const useAppMetaStore = create<AppMetaState>()(
 					const currentInputTokens = state.apiUsage.inputTokens || 0;
 					const currentOutputTokens = state.apiUsage.outputTokens || 0;
 					const currentDailyStats = state.apiUsage.dailyStats || {};
+					const currentTotalDuration = state.apiUsage.totalDuration || 0;
+					const currentMinDuration = state.apiUsage.minDuration || 0;
+					const currentMaxDuration = state.apiUsage.maxDuration || 0;
+
+					// 计算总耗时统计
+					const newTotalDuration = currentTotalDuration + duration;
+					let newMinDuration = currentMinDuration;
+					let newMaxDuration = currentMaxDuration;
+					if (duration > 0) {
+						newMinDuration = currentMinDuration === 0 ? duration : Math.min(currentMinDuration, duration);
+						newMaxDuration = currentMaxDuration === 0 ? duration : Math.max(currentMaxDuration, duration);
+					}
 
 					// 更新提供商统计
 					const providerStats = { ...state.apiUsage.providerStats };
+					const prevProvider = providerStats[provider];
+					const prevProviderDuration = prevProvider?.duration || 0;
+					const prevProviderMin = prevProvider?.minDuration || 0;
+					const prevProviderMax = prevProvider?.maxDuration || 0;
+					let newProviderMin = prevProviderMin;
+					let newProviderMax = prevProviderMax;
+					if (duration > 0) {
+						newProviderMin = prevProviderMin === 0 ? duration : Math.min(prevProviderMin, duration);
+						newProviderMax = prevProviderMax === 0 ? duration : Math.max(prevProviderMax, duration);
+					}
 					providerStats[provider] = {
-						requests: (providerStats[provider]?.requests || 0) + 1,
-						success: (providerStats[provider]?.success || 0) + (success ? 1 : 0),
-						failure: (providerStats[provider]?.failure || 0) + (success ? 0 : 1),
-						tokens: (providerStats[provider]?.tokens || 0) + totalTokens,
-						inputTokens: (providerStats[provider]?.inputTokens || 0) + inputTokens,
-						outputTokens: (providerStats[provider]?.outputTokens || 0) + outputTokens,
+						requests: (prevProvider?.requests || 0) + 1,
+						success: (prevProvider?.success || 0) + (success ? 1 : 0),
+						failure: (prevProvider?.failure || 0) + (success ? 0 : 1),
+						tokens: (prevProvider?.tokens || 0) + totalTokens,
+						inputTokens: (prevProvider?.inputTokens || 0) + inputTokens,
+						outputTokens: (prevProvider?.outputTokens || 0) + outputTokens,
+						duration: prevProviderDuration + duration,
+						minDuration: newProviderMin,
+						maxDuration: newProviderMax,
 					};
 
 					// 更新每日统计
@@ -89,24 +117,50 @@ export const useAppMetaStore = create<AppMetaState>()(
 							failure: 0,
 							inputTokens: 0,
 							outputTokens: 0,
+							duration: 0,
+							minDuration: 0,
+							maxDuration: 0,
 							providerStats: {},
 						};
 					}
+					const prevDaily = dailyStats[today];
+					let newDailyMin = prevDaily.minDuration;
+					let newDailyMax = prevDaily.maxDuration;
+					if (duration > 0) {
+						newDailyMin = prevDaily.minDuration === 0 ? duration : Math.min(prevDaily.minDuration, duration);
+						newDailyMax = prevDaily.maxDuration === 0 ? duration : Math.max(prevDaily.maxDuration, duration);
+					}
+					const prevDailyProvider = prevDaily.providerStats[provider];
+					const prevDailyProviderDuration = prevDailyProvider?.duration || 0;
+					const prevDailyProviderMin = prevDailyProvider?.minDuration || 0;
+					const prevDailyProviderMax = prevDailyProvider?.maxDuration || 0;
+					let newDailyProviderMin = prevDailyProviderMin;
+					let newDailyProviderMax = prevDailyProviderMax;
+					if (duration > 0) {
+						newDailyProviderMin = prevDailyProviderMin === 0 ? duration : Math.min(prevDailyProviderMin, duration);
+						newDailyProviderMax = prevDailyProviderMax === 0 ? duration : Math.max(prevDailyProviderMax, duration);
+					}
 					dailyStats[today] = {
-						...dailyStats[today],
-						requests: dailyStats[today].requests + 1,
-						success: dailyStats[today].success + (success ? 1 : 0),
-						failure: dailyStats[today].failure + (success ? 0 : 1),
-						inputTokens: dailyStats[today].inputTokens + inputTokens,
-						outputTokens: dailyStats[today].outputTokens + outputTokens,
+						...prevDaily,
+						requests: prevDaily.requests + 1,
+						success: prevDaily.success + (success ? 1 : 0),
+						failure: prevDaily.failure + (success ? 0 : 1),
+						inputTokens: prevDaily.inputTokens + inputTokens,
+						outputTokens: prevDaily.outputTokens + outputTokens,
+						duration: prevDaily.duration + duration,
+						minDuration: newDailyMin,
+						maxDuration: newDailyMax,
 						providerStats: {
-							...dailyStats[today].providerStats,
+							...prevDaily.providerStats,
 							[provider]: {
-								requests: (dailyStats[today].providerStats[provider]?.requests || 0) + 1,
-								success: (dailyStats[today].providerStats[provider]?.success || 0) + (success ? 1 : 0),
-								failure: (dailyStats[today].providerStats[provider]?.failure || 0) + (success ? 0 : 1),
-								inputTokens: (dailyStats[today].providerStats[provider]?.inputTokens || 0) + inputTokens,
-								outputTokens: (dailyStats[today].providerStats[provider]?.outputTokens || 0) + outputTokens,
+								requests: (prevDailyProvider?.requests || 0) + 1,
+								success: (prevDailyProvider?.success || 0) + (success ? 1 : 0),
+								failure: (prevDailyProvider?.failure || 0) + (success ? 0 : 1),
+								inputTokens: (prevDailyProvider?.inputTokens || 0) + inputTokens,
+								outputTokens: (prevDailyProvider?.outputTokens || 0) + outputTokens,
+								duration: prevDailyProviderDuration + duration,
+								minDuration: newDailyProviderMin,
+								maxDuration: newDailyProviderMax,
 							},
 						},
 					};
@@ -120,6 +174,9 @@ export const useAppMetaStore = create<AppMetaState>()(
 							totalTokens: state.apiUsage.totalTokens + totalTokens,
 							inputTokens: currentInputTokens + inputTokens,
 							outputTokens: currentOutputTokens + outputTokens,
+							totalDuration: newTotalDuration,
+							minDuration: newMinDuration,
+							maxDuration: newMaxDuration,
 							providerStats,
 							dailyStats,
 						},
@@ -135,6 +192,9 @@ export const useAppMetaStore = create<AppMetaState>()(
 						totalTokens: 0,
 						inputTokens: 0,
 						outputTokens: 0,
+						totalDuration: 0,
+						minDuration: 0,
+						maxDuration: 0,
 						lastReset: Date.now(),
 						providerStats: {},
 						dailyStats: {},

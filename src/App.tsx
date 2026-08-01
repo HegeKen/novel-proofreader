@@ -144,46 +144,29 @@ export default function App() {
 
 	useEffect(() => {
 		if (novels.length === 0) {
-			// 首次启动，从文件系统加载所有小说
 			loadNovelsFromStorage().then(async (storedFileNames) => {
 				if (storedFileNames.length > 0) {
 					const loadedNovels: typeof novels = [];
 					for (const fileName of storedFileNames) {
-						const content = await loadNovelContent(fileName);
-						if (content) {
-							const novelId = `novel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-							loadedNovels.push({
-								id: novelId,
-								name: fileName.replace(/\.txt$/i, ''),
-								fullText: content,
-								importedAt: Date.now(),
-								chapters: [],
-							});
-						}
+						const novelId = `novel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+						loadedNovels.push({
+							id: novelId,
+							name: fileName.replace(/\.txt$/i, ''),
+							fullText: '',
+							importedAt: Date.now(),
+							chapters: [],
+						});
 					}
 					
 					if (loadedNovels.length > 0) {
-						const persistedState = useNovelStore.getState();
-						const currentOldNovel = persistedState.novels.find(n => n.id === persistedState.currentNovelId);
-						const matchedNovel = currentOldNovel
-							? loadedNovels.find(n => n.name === currentOldNovel.name)
-							: undefined;
-						const selectedNovel = matchedNovel || loadedNovels[0];
 						useNovelStore.setState({
 							novels: loadedNovels,
-							currentNovelId: selectedNovel.id,
+							currentNovelId: loadedNovels[0].id,
 						});
-						const chapters = splitChapters(selectedNovel.fullText);
-						const progress = useAppMetaStore.getState().getReadingProgress(selectedNovel.id);
-						useNovelStore.setState({ chapters });
-						if (progress) {
-							useNovelStore.setState({ currentChapterIndex: progress.currentChapterIndex });
-						}
 					}
 				}
 			});
 		} else if (novels.some((n) => !n.fullText)) {
-			// 已有小说元数据但 fullText 为空，从文件系统恢复
 			restoreFullTextFromStorage();
 		}
 	}, [novels, restoreFullTextFromStorage]);
@@ -222,6 +205,19 @@ export default function App() {
 				const chapters = splitChapters(novel.fullText);
 				logger.info('[App]', `trySelect: 设置章节，共 ${chapters.length} 章`);
 				setChapters(chapters);
+			} else {
+				(async () => {
+					const fileName = ensureTxtFilename(novel.name);
+					const content = await loadNovelContent(fileName);
+					if (content) {
+						useNovelStore.setState((state) => ({
+							novels: state.novels.map(n => n.id === novel.id ? { ...n, fullText: content } : n),
+						}));
+						const chapters = splitChapters(content);
+						logger.info('[App]', `trySelect: 设置章节，共 ${chapters.length} 章`);
+						setChapters(chapters);
+					}
+				})();
 			}
 			if (params.chapter !== undefined && params.chapter >= 0) {
 				logger.info('[App]', `trySelect: 设置初始章节 ${params.chapter}`);

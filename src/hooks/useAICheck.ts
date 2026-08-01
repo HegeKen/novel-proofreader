@@ -580,40 +580,7 @@ export function useAICheck() {
 							},
 						];
 
-						// 添加 15 秒超时
-						const timeoutPromise = new Promise<never>((_, reject) => {
-							setTimeout(() => reject(new Error('PROOFREAD_TIMEOUT')), 15000);
-						});
-
-						let reply: string;
-						try {
-							reply = await Promise.race([
-								sendChatCompletion(messages, aiConfig, controller.signal),
-								timeoutPromise
-							]);
-						} catch (timeoutErr) {
-							if ((timeoutErr as Error).message === 'PROOFREAD_TIMEOUT') {
-								const currentItem = filteredItems[filteredIdx] || "";
-								const timeoutError: ProofreadError = {
-									id: `err-${chapter.id}-${originalIndex}-timeout-${Date.now()}`,
-									startIndex: 0,
-									endIndex: 0,
-									errorType: "timeout",
-									suggestion: "请求超时（15秒），已跳过此段落",
-									originalText: currentItem.slice(0, 50),
-									correctedText: "",
-									applied: false,
-									skipped: false,
-								};
-								updateParagraphResult(chapter.id, originalIndex, {
-									errors: [timeoutError],
-									status: "error",
-									errorMessage: "请求超时（15秒）",
-								});
-								return;
-							}
-							throw timeoutErr;
-						}
+						const reply = await sendChatCompletion(messages, aiConfig, controller.signal);
 						const raw = extractJSON(reply);
 
 						const errors = parseAIProofreadResponse(raw, chapter.id, originalIndex, item, ignoredWords);
@@ -713,9 +680,13 @@ export function useAICheck() {
 		async (
 			originalIndex: number,
 			setSingleCheckingLine: (v: number | null) => void,
+			onComplete?: () => void,
 		) => {
 			const chapter = chapters[currentChapterIndex];
-			if (!chapter) return;
+			if (!chapter) {
+				onComplete?.();
+				return;
+			}
 
 			// 获取所有段落（包含空段落）
 			const allParagraphs = splitParagraphs(chapter.content);
@@ -723,6 +694,7 @@ export function useAICheck() {
 			// 验证原始索引是否有效
 			if (originalIndex < 0 || originalIndex >= allParagraphs.length) {
 				setSingleCheckingLine(null);
+				onComplete?.();
 				return;
 			}
 
@@ -731,6 +703,7 @@ export function useAICheck() {
 			// 如果是空段落，直接返回
 			if (lineText.trim() === "") {
 				setSingleCheckingLine(null);
+				onComplete?.();
 				return;
 			}
 
@@ -782,24 +755,26 @@ export function useAICheck() {
 						content: buildProofreadUserPrompt(lineText, relevantIgnoredWords),
 					},
 				];
+
 				const reply = await sendChatCompletion(messages, aiConfig);
 				const raw = extractJSON(reply);
 
 				const errors = parseAIProofreadResponse(raw, chapter.id, originalIndex, lineText, ignoredWords);
 
 				updateParagraphResult(chapter.id, originalIndex, {
-					errors,
-					status: "done",
-				});
-			} catch (err: unknown) {
-				const msg = err instanceof Error ? err.message : String(err);
-				updateParagraphResult(chapter.id, originalIndex, {
-					status: "error",
-					errorMessage: msg,
-				});
-			} finally {
-				setSingleCheckingLine(null);
-			}
+				errors,
+				status: "done",
+			});
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			updateParagraphResult(chapter.id, originalIndex, {
+				status: "error",
+				errorMessage: msg,
+			});
+		} finally {
+			setSingleCheckingLine(null);
+			onComplete?.();
+		}
 		},
 		[
 			chapters,

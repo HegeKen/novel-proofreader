@@ -39,7 +39,7 @@ export interface AIConfig {
 }
 
 /** 错误类型 */
-export type ErrorType = "typo" | "format" | "grammar" | "punctuation" | "variant" | "network" | "timeout";
+export type ErrorType = "typo" | "format" | "grammar" | "punctuation" | "variant" | "network";
 
 /** 单个检测错误 */
 export interface ProofreadError {
@@ -120,6 +120,9 @@ export interface APIUsage {
 	totalTokens: number; // 保留兼容性，等于 inputTokens + outputTokens
 	inputTokens: number; // 输入 token（prompt tokens）
 	outputTokens: number; // 输出 token（completion tokens）
+	totalDuration: number; // 总耗时（毫秒）
+	minDuration: number; // 最小耗时（毫秒）
+	maxDuration: number; // 最大耗时（毫秒）
 	lastReset: number;
 	providerStats: Record<string, {
 		requests: number;
@@ -128,6 +131,9 @@ export interface APIUsage {
 		tokens: number; // 保留兼容性
 		inputTokens: number;
 		outputTokens: number;
+		duration: number; // 总耗时（毫秒）
+		minDuration: number; // 最小耗时（毫秒）
+		maxDuration: number; // 最大耗时（毫秒）
 	}>;
 	/** 按日期统计（key 为 YYYY-MM-DD 格式） */
 	dailyStats: Record<string, {
@@ -136,12 +142,18 @@ export interface APIUsage {
 		failure: number;
 		inputTokens: number;
 		outputTokens: number;
+		duration: number; // 总耗时（毫秒）
+		minDuration: number; // 最小耗时（毫秒）
+		maxDuration: number; // 最大耗时（毫秒）
 		providerStats: Record<string, {
 			requests: number;
 			success: number;
 			failure: number;
 			inputTokens: number;
 			outputTokens: number;
+			duration: number; // 总耗时（毫秒）
+			minDuration: number; // 最小耗时（毫秒）
+			maxDuration: number; // 最大耗时（毫秒）
 		}>;
 	}>;
 }
@@ -218,7 +230,8 @@ export interface NovelEvent {
 	id: string;
 	title: string;
 	description: string;
-	timeOrder: number; // 时间顺序（数字越小越早）
+	timeOrder: number; // 时间顺序（故事时间线，数字越小越早）
+	chapterOrder: number; // 行文顺序（阅读顺序/章节顺序，数字越小越早出现）
 	timeInfo: string; // 具体时间描述（如：第一章、三年后、清晨等）
 	chapter: string; // 发生章节（如：第1章）
 	involvedCharacterIds: string[]; // 涉及的角色ID列表
