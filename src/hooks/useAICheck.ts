@@ -13,8 +13,10 @@ import {
 	sendChatCompletion,
 	PROOFREAD_SYSTEM_PROMPT,
 	PROOFREAD_SYSTEM_PROMPT_CHAPTER,
+	PROOFREAD_SYSTEM_PROMPT_DUAL,
 	buildProofreadUserPrompt,
 	buildProofreadSystemPrompt,
+	buildDualParagraphUserPrompt,
 	extractJSON,
 } from "../utils/aiClient";
 import { logger } from "../utils/logger";
@@ -24,6 +26,7 @@ import type {
 	ParagraphResult,
 	ProofreadError,
 	CheckGranularity,
+	MergeSuggestion,
 } from "../types";
 
 // 从配置中读取并发设置，默认为4
@@ -203,6 +206,88 @@ function parseAIProofreadResponse(
 	
 	logger.proofread(`[parseAIProofreadResponse] 解析完成: 总项数=${raw.length}, 成功=${errors.length}, 过滤=${filteredCount}`);
 	return errors;
+}
+
+/** 解析双段落校对响应，返回两个段落各自的错误列表和合并建议 */
+function parseDualParagraphResponse(
+	raw: Record<string, unknown>,
+	chapterId: number,
+	paragraph1Index: number,
+	paragraph2Index: number,
+	paragraph1: string,
+	paragraph2: string,
+	ignoredWords: string[],
+): {
+	errors1: ProofreadError[];
+	errors2: ProofreadError[];
+	mergeSuggestion: MergeSuggestion | null;
+} {
+	const errors1: ProofreadError[] = [];
+	const errors2: ProofreadError[] = [];
+
+	// 解析错误列表
+	const errorList = raw.errors;
+	if (Array.isArray(errorList)) {
+		for (const item of errorList) {
+			if (typeof item !== "object" || item === null) continue;
+			const o = item as Record<string, unknown>;
+
+			const line = Number(o.line) || 1;
+			const find = String(o.find ?? "");
+			const replace = String(o.replace ?? "");
+			const errType = String(o.type ?? "");
+			const suggest = String(o.reason ?? "");
+
+			if (!find || find === replace) continue;
+
+			const paragraph = line === 2 ? paragraph2 : paragraph1;
+			const paragraphIndex = line === 2 ? paragraph2Index : paragraph1Index;
+
+			// 过滤忽略词
+			const isIgnored = ignoredWords.some(word => word && (find.includes(word) || word.includes(find)));
+			if (isIgnored) continue;
+
+			const located = locateTextInParagraph(paragraph, find);
+			if (!located) continue;
+
+			const error: ProofreadError = {
+				id: `err-${chapterId}-${paragraphIndex}-${line === 2 ? 'd2' : 'd1'}-${errors1.length + errors2.length}`,
+				startIndex: located.start,
+				endIndex: located.end,
+				errorType: (errType as ProofreadError["errorType"]) || "typo",
+				suggestion: suggest,
+				originalText: paragraph.slice(located.start, located.end),
+				correctedText: replace,
+				applied: false,
+				skipped: false,
+			};
+
+			if (line === 2) {
+				errors2.push(error);
+			} else {
+				errors1.push(error);
+			}
+		}
+	}
+
+	// 解析合并建议
+	let mergeSuggestion: MergeSuggestion | null = null;
+	const mergeRaw = raw.merge_suggestion as Record<string, unknown> | undefined;
+	if (mergeRaw) {
+		const shouldMerge = Boolean(mergeRaw.should_merge);
+		if (shouldMerge) {
+			mergeSuggestion = {
+				targetParagraphIndex: paragraph2Index,
+				reason: String(mergeRaw.reason ?? ""),
+				mergedText: mergeRaw.merged_text ? String(mergeRaw.merged_text) : undefined,
+				applied: false,
+			};
+		}
+	}
+
+	logger.proofread(`[parseDualParagraphResponse] 解析完成: 第1段错误=${errors1.length}, 第2段错误=${errors2.length}, 合并建议=${mergeSuggestion ? '是' : '否'}`);
+
+	return { errors1, errors2, mergeSuggestion };
 }
 
 export function useAICheck() {
@@ -544,7 +629,7 @@ export function useAICheck() {
 				});
 				setResults(chapter.id, initial);
 
-				// 多线程并发处理段落
+				// 多线程并发处理段落（双段落合并请求）
 				const processParagraphItem = async (filteredIdx: number) => {
 					if (controller.signal.aborted) return;
 
@@ -620,16 +705,185 @@ export function useAICheck() {
 					}
 				};
 
-				// 使用 Promise 池实现多线程并发处理
+				// 处理双段落配对请求
+				const processParagraphPair = async (idx1: number, idx2: number) => {
+					if (controller.signal.aborted) return;
+
+					const origIdx1 = indexMap[idx1];
+					const origIdx2 = indexMap[idx2];
+
+					const item1 = filteredItems[idx1];
+					const item2 = filteredItems[idx2];
+
+					// 检查两个段落的长度是否适合合并请求
+					const combinedLength = item1.length + item2.length;
+					if (combinedLength > 8000) {
+						// 如果太长，分别处理
+						logger.proofread(`双段落总长度=${combinedLength} 超过8000，改为分别处理`);
+						await processParagraphItem(idx1);
+						if (!controller.signal.aborted) {
+							await processParagraphItem(idx2);
+						}
+						return;
+					}
+
+					logger.proofread(`双段落检测: idx1=${idx1}(orig=${origIdx1}, len=${item1.length}), idx2=${idx2}(orig=${origIdx2}, len=${item2.length})`);
+
+					updateParagraphResult(chapter.id, origIdx1, { status: "checking" });
+					updateParagraphResult(chapter.id, origIdx2, { status: "checking" });
+
+					try {
+						// 如果任一段落太短，改为分别处理
+						if (item1.trim().length < 5 || item2.trim().length < 5) {
+							logger.proofread(`双段落中有段落过短，改为分别处理`);
+							if (item1.trim().length < 5) {
+								updateParagraphResult(chapter.id, origIdx1, { status: "done" });
+							} else {
+								await processParagraphItem(idx1);
+							}
+							if (!controller.signal.aborted) {
+								if (item2.trim().length < 5) {
+									updateParagraphResult(chapter.id, origIdx2, { status: "done" });
+								} else {
+									await processParagraphItem(idx2);
+								}
+							}
+							return;
+						}
+
+						// 合并两个段落的忽略词
+						const combinedIgnoredWords = ignoredWords.filter(
+							word => word && (item1.includes(word) || item2.includes(word))
+						);
+
+						const systemPrompt = buildProofreadSystemPrompt(
+							PROOFREAD_SYSTEM_PROMPT_DUAL,
+							combinedIgnoredWords,
+						);
+
+						const userPrompt = buildDualParagraphUserPrompt(item1, item2, combinedIgnoredWords);
+
+						logger.proofread(`发送双段落请求: 总长度=${combinedLength}`);
+
+						const messages = [
+							{ role: "system" as const, content: systemPrompt },
+							{ role: "user" as const, content: userPrompt },
+						];
+
+						const reply = await sendChatCompletion(messages, aiConfig, controller.signal);
+						const parsed = extractJSON(reply);
+
+						// 解析双段落响应
+						let result: ReturnType<typeof parseDualParagraphResponse>;
+						if (parsed && !Array.isArray(parsed)) {
+							result = parseDualParagraphResponse(
+								parsed as Record<string, unknown>,
+								chapter.id,
+								origIdx1,
+								origIdx2,
+								item1,
+								item2,
+								ignoredWords,
+							);
+						} else {
+							// 如果 AI 返回的是数组格式，按单段落解析处理
+							logger.proofread(`AI 返回数组格式，分别解析两个段落`);
+							const errors1 = parseAIProofreadResponse(
+								Array.isArray(parsed) ? parsed : [],
+								chapter.id,
+								origIdx1,
+								item1,
+								ignoredWords,
+							);
+							const errors2 = parseAIProofreadResponse(
+								[], // 没有第二段的错误
+								chapter.id,
+								origIdx2,
+								item2,
+								ignoredWords,
+							);
+							result = { errors1, errors2, mergeSuggestion: null };
+						}
+
+						// 更新两个段落的结果
+						const result1: ParagraphResult = {
+							paragraphIndex: origIdx1,
+							originalText: item1,
+							errors: result.errors1,
+							status: "done",
+						};
+
+						// 如果有合并建议，存储在第一个段落的 mergeSuggestion 中
+						if (result.mergeSuggestion) {
+							result1.mergeSuggestion = result.mergeSuggestion;
+						}
+
+						updateParagraphResult(chapter.id, origIdx1, result1);
+						updateParagraphResult(chapter.id, origIdx2, {
+							paragraphIndex: origIdx2,
+							originalText: item2,
+							errors: result.errors2,
+							status: "done",
+						});
+
+						// 保存校对进度
+						if (currentNovelId) {
+							saveProofreadProgress(currentNovelId, chapter.id, idx2, false);
+						}
+					} catch (err: unknown) {
+						if (err instanceof DOMException && err.name === "AbortError")
+							return;
+						const msg = err instanceof Error ? err.message : String(err);
+						logger.proofread(`双段落检测失败: ${msg}, 改为分别处理`);
+
+						// 失败时回退为分别处理
+						updateParagraphResult(chapter.id, origIdx1, { status: "pending", errors: [] });
+						updateParagraphResult(chapter.id, origIdx2, { status: "pending", errors: [] });
+						await processParagraphItem(idx1);
+						if (!controller.signal.aborted) {
+							await processParagraphItem(idx2);
+						}
+					}
+				};
+
+				// 使用 Promise 池实现多线程并发处理（双段落配对）
 				const semaphore = new Semaphore(maxConcurrent);
 				const paragraphTasks: Promise<void>[] = [];
-				for (let i = startFrom; i < filteredItems.length; i++) {
+
+				// 从 startFrom 开始处理，确保不会跳过或重复处理段落
+				let i = startFrom;
+				// 如果 startFrom 是奇数，先单独处理这个段落，然后从下一个偶数索引开始配对
+				if (startFrom % 2 !== 0 && i < filteredItems.length) {
+					if (controller.signal.aborted) {
+						// aborted, skip
+					} else {
+						await semaphore.acquire();
+						const promise = processParagraphItem(i).finally(() => {
+							semaphore.release();
+						});
+						paragraphTasks.push(promise);
+					}
+					i++;
+				}
+				for (; i < filteredItems.length; i += 2) {
 					if (controller.signal.aborted) break;
-					await semaphore.acquire();
-					const promise = processParagraphItem(i).finally(() => {
-						semaphore.release();
-					});
-					paragraphTasks.push(promise);
+
+					const hasPartner = i + 1 < filteredItems.length;
+					if (hasPartner) {
+						// 双段落配对
+						await semaphore.acquire();
+						const promise = processParagraphPair(i, i + 1).finally(() => {
+							semaphore.release();
+						});
+						paragraphTasks.push(promise);
+					} else {
+						// 最后一个段落没有配对，单独处理
+						await semaphore.acquire();
+						const promise = processParagraphItem(i).finally(() => {
+							semaphore.release();
+						});
+						paragraphTasks.push(promise);
+					}
 				}
 				await Promise.all(paragraphTasks);
 

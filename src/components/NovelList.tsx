@@ -6,6 +6,7 @@ import { useUIStore } from "../stores/uiStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { saveNovelToStorage, deleteNovelFromStorage, createCharacterTemplate, loadNovelContent } from "../utils/fileExport";
+import { loadNovelText, deleteNovelText, getNovelStorageKey } from "../utils/novelStorage";
 import { splitChapters } from "../utils/chapterSplit";
 import { decodeTextBuffer } from "../utils/decodeText";
 import { formatFileSize, formatDateTime } from "../utils/formatters";
@@ -82,9 +83,14 @@ export function NovelList({
 
 		let fullText = novel.fullText;
 		if (!fullText) {
-			// fullText 未持久化到 localStorage，从文件系统恢复
+			// fullText 未持久化到 localStorage，从文件系统或 IndexedDB 恢复
 			const fileName = `${novel.name}.txt`;
-			const content = await loadNovelContent(fileName);
+			// 优先从 Tauri FS 加载
+			let content = await loadNovelContent(fileName);
+			// 如果 Tauri FS 没有，从 IndexedDB 加载
+			if (!content) {
+				content = await loadNovelText(getNovelStorageKey(novel.name));
+			}
 			if (content) {
 				fullText = content;
 				// 更新 store 中的 fullText
@@ -119,6 +125,7 @@ export function NovelList({
 			onConfirm: async () => {
 				if (novel) {
 					await deleteNovelFromStorage(`${novel.name}.txt`);
+					await deleteNovelText(getNovelStorageKey(novel.name));
 				}
 				removeNovel(id);
 				setConfirmModal(prev => ({ ...prev, show: false }));

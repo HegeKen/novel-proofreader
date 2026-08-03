@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Novel, Chapter } from "../types";
 import { saveNovelToStorage, loadNovelsFromStorage } from "../utils/fileExport";
+import { saveNovelText, getNovelStorageKey } from "../utils/novelStorage";
 import { normalizeCJKVariants } from "../utils/normalizeCJK";
 import { logger } from "../utils/logger";
 
@@ -44,6 +45,14 @@ export interface NovelState {
 	) => number;
 	replaceLine: (chapterId: number, lineIndex: number, newLine: string) => void;
 
+	/** 合并两个相邻段落 */
+	mergeParagraphs: (
+		chapterId: number,
+		firstParagraphIndex: number,
+		secondParagraphIndex: number,
+		mergedText?: string,
+	) => boolean;
+
 	/** 追加内容到指定章节末尾（用于AI续写） */
 	appendToChapter: (chapterIndex: number, content: string) => void;
 
@@ -69,6 +78,8 @@ function saveCurrentNovel(state: { currentNovelId: string | null; novels: Novel[
 	const novel = state.novels.find(n => n.id === state.currentNovelId);
 	if (novel) {
 		void saveNovelToStorage(`${novel.name}.txt`, novel.fullText);
+		// 同步到 IndexedDB（防止 localStorage 溢出后数据丢失）
+		void saveNovelText(getNovelStorageKey(novel.name), novel.fullText);
 	}
 }
 
@@ -359,6 +370,50 @@ export const useNovelStore = create<NovelState>()(
 				saveCurrentNovel(get());
 			},
 
+			mergeParagraphs: (chapterId, firstParagraphIndex, secondParagraphIndex, mergedText) => {
+				logger.info('[novelStore]', `合并段落: chapterId=${chapterId}, firstIndex=${firstParagraphIndex}, secondIndex=${secondParagraphIndex}`);
+				let success = false;
+				set((state) => {
+					const chapters = state.chapters.map((ch) => {
+						if (ch.id !== chapterId) return ch;
+						const paragraphs = ch.content.split("\n");
+
+						// 验证索引有效性
+						if (firstParagraphIndex < 0 || firstParagraphIndex >= paragraphs.length) return ch;
+						if (secondParagraphIndex < 0 || secondParagraphIndex >= paragraphs.length) return ch;
+
+						// 确保 secondParagraphIndex > firstParagraphIndex
+						if (secondParagraphIndex <= firstParagraphIndex) return ch;
+
+						// 构建合并后的文本
+						const firstText = paragraphs[firstParagraphIndex];
+						const secondText = paragraphs[secondParagraphIndex];
+						const merged = mergedText || `${firstText}${secondText.startsWith('\n') ? '' : '\n'}${secondText}`;
+
+						// 替换第一个段落为合并文本，移除第二个段落
+						paragraphs.splice(firstParagraphIndex, 1, merged);
+						paragraphs.splice(secondParagraphIndex - 1, 1); // -1 因为已删除一个
+
+						success = true;
+						return { ...ch, content: paragraphs.join("\n") };
+					});
+
+					if (success) {
+						const novels = syncNovelsFromChapters(chapters, state.novels, state.currentNovelId);
+						return { chapters, novels };
+					}
+					return state;
+				});
+
+				if (success) {
+					logger.info('[novelStore]', '段落合并成功');
+					saveCurrentNovel(get());
+				} else {
+					logger.warn('[novelStore]', '段落合并失败');
+				}
+				return success;
+			},
+
 			appendToChapter: (chapterIndex, content) => {
 				logger.info('[novelStore]', `追加内容到章节: chapterIndex=${chapterIndex}, 新增 ${content.length} 字符`);
 				set((state) => {
@@ -445,8 +500,27 @@ export const useNovelStore = create<NovelState>()(
 		}),
 		{
 			name: "novel-proofreader-novels",
-			version: 0,
+			version: 1,
 			migrate: (persistedState) => persistedState as NovelState,
+			// 排除 fullText 和 chapters content，避免 localStorage 溢出
+			// 大文本通过 IndexedDB / Tauri FS 单独存储
+			partialize: (state) => ({
+				...state,
+				// 清空 novels 中的 fullText，只保留元数据
+				novels: state.novels.map(n => ({
+					...n,
+					fullText: "",
+					chapters: n.chapters.map(ch => ({
+						title: ch.title,
+						content: "",
+					})),
+				})),
+				// 清空当前章节内容，只保留结构
+				chapters: state.chapters.map(ch => ({
+					...ch,
+					content: "",
+				})),
+			}),
 		},
 	),
 );

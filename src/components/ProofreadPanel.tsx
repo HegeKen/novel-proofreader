@@ -16,7 +16,7 @@ import { ProofreadQueuePanel } from "./ProofreadQueuePanel";
 import { logger } from "../utils/logger";
 
 import type { ToastMessage } from "./Toast";
-import type { CheckGranularity, ProofreadError } from "../types";
+import type { CheckGranularity, ProofreadError, ParagraphResult } from "../types";
 
 
 const ERROR_TYPE_LABELS: Record<string, { icon: keyof typeof Icons; label: string }> = {
@@ -49,6 +49,7 @@ export function ProofreadPanel() {
 	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
 	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
 	const replaceParagraphText = useNovelStore((s) => s.replaceParagraphText);
+	const mergeParagraphs = useNovelStore((s) => s.mergeParagraphs);
 	const saveCurrentNovel = useNovelStore((s) => s.saveCurrentNovel);
 	const results = useProofreadStore((s) => s.results);
 	const setResults = useProofreadStore((s) => s.setResults);
@@ -433,6 +434,124 @@ export function ProofreadPanel() {
 		[toggleErrorSkipped, addToast],
 	);
 
+	/** 接受段落合并建议 */
+	const handleAcceptMerge = useCallback(
+		(paraResult: (typeof chapterResults)[number]) => {
+			const mergeSuggestion = paraResult.mergeSuggestion;
+			if (!mergeSuggestion || mergeSuggestion.applied) return;
+
+			const state = useNovelStore.getState();
+			const currentChapter = state.chapters[state.currentChapterIndex];
+			if (!currentChapter) {
+				addToast("error", "无法合并：未找到当前章节");
+				return;
+			}
+
+			const chapterId = currentChapter.id;
+			const firstIndex = paraResult.paragraphIndex;
+			const secondIndex = mergeSuggestion.targetParagraphIndex;
+
+			logger.proofread(`接受合并建议: chapterId=${chapterId}, firstIndex=${firstIndex}, secondIndex=${secondIndex}`);
+
+			// 先保存合并前的结果引用，用于后续重建
+			const oldResults = useProofreadStore.getState().results[chapterId] || [];
+
+			const success = mergeParagraphs(
+				chapterId,
+				firstIndex,
+				secondIndex,
+				mergeSuggestion.mergedText,
+			);
+
+			if (success) {
+				addToast("success", "段落合并成功");
+
+				// 合并成功后，重新构建校对结果：
+				// 1. 获取合并后的章节内容
+				const newState = useNovelStore.getState();
+				const newChapter = newState.chapters[newState.currentChapterIndex];
+				if (!newChapter) return;
+
+				const newParagraphs = splitParagraphs(newChapter.content);
+
+				// 2. 构建新的段落结果，保留原有的错误结果（如果段落仍然存在）
+				const newResults: ParagraphResult[] = newParagraphs.map((para, newIdx) => {
+					// 找到对应的旧结果：
+					// - 如果 newIdx < firstIndex，索引不变
+					// - 如果 newIdx === firstIndex，这是合并后的段落，合并两个旧结果
+					// - 如果 newIdx > firstIndex，索引减1
+					if (newIdx < firstIndex) {
+						return oldResults[newIdx] || {
+							paragraphIndex: newIdx,
+							originalText: para,
+							errors: [],
+							status: para.trim() === "" ? "done" : "pending" as const,
+						};
+					} else if (newIdx === firstIndex) {
+						// 合并后的段落：合并两个段落的错误，清除合并建议
+						const result1 = oldResults[firstIndex];
+						const result2 = oldResults[secondIndex];
+						const mergedErrors = [
+							...(result1?.errors || []),
+							...(result2?.errors || []),
+						];
+						return {
+							paragraphIndex: newIdx,
+							originalText: para,
+							errors: mergedErrors,
+							status: "pending" as const, // 标记为待重新检测
+							mergeSuggestion: undefined,
+						};
+					} else {
+						// 后续段落：索引减1
+						const oldIdx = newIdx + 1;
+						const oldResult = oldResults[oldIdx];
+						if (oldResult) {
+							return {
+								...oldResult,
+								paragraphIndex: newIdx,
+								originalText: para,
+							};
+						}
+						return {
+							paragraphIndex: newIdx,
+							originalText: para,
+							errors: [],
+							status: para.trim() === "" ? "done" : "pending" as const,
+						};
+					}
+				});
+
+				// 3. 更新校对结果
+				setResults(chapterId, newResults);
+
+				// 4. 重新校对合并后的段落
+				setTimeout(() => {
+					checkSingleLine(firstIndex, () => {});
+				}, 300);
+			} else {
+				addToast("error", "段落合并失败");
+			}
+		},
+		[mergeParagraphs, checkSingleLine, setResults, addToast],
+	);
+
+	/** 拒绝段落合并建议（标记为已处理） */
+	const handleRejectMerge = useCallback(
+		(paraResult: (typeof chapterResults)[number]) => {
+			const mergeSuggestion = paraResult.mergeSuggestion;
+			if (!mergeSuggestion) return;
+
+			// 直接清除合并建议
+			const { updateParagraphResult } = useProofreadStore.getState();
+			updateParagraphResult(chapter?.id ?? -1, paraResult.paragraphIndex, {
+				...paraResult,
+				mergeSuggestion: undefined,
+			});
+		},
+		[chapter],
+	);
+
 	// 查找第一个未处理错误所在的段落索引
 	const findFirstUnhandledErrorParagraph = useCallback(() => {
 		if (!chapter) {
@@ -758,6 +877,49 @@ export function ProofreadPanel() {
 											</div>
 										);
 									})}
+								</div>
+							)}
+
+							{/* 段落合并建议 */}
+							{paraResult.mergeSuggestion && !paraResult.mergeSuggestion.applied && (
+								<div className="merge-suggestion">
+									<div className="merge-suggestion-header">
+										<Icons.sparkle size={14} />
+										<span>段落合并建议</span>
+									</div>
+									<div className="merge-suggestion-reason">
+										{paraResult.mergeSuggestion.reason || "AI建议将此段落与下一段合并"}
+									</div>
+									{paraResult.mergeSuggestion.mergedText && (
+										<div className="merge-suggestion-preview">
+											<span className="preview-label">合并后预览：</span>
+											<span className="preview-text">
+												{paraResult.mergeSuggestion.mergedText.slice(0, 200)}
+												{paraResult.mergeSuggestion.mergedText.length > 200 ? "…" : ""}
+											</span>
+										</div>
+									)}
+									<div className="merge-suggestion-actions">
+										<button
+											className="btn-merge-accept"
+											onClick={(e) => {
+												e.stopPropagation();
+												handleAcceptMerge(paraResult);
+											}}
+										>
+											<Icons.combine size={14} />
+											合并段落
+										</button>
+										<button
+											className="btn-merge-reject"
+											onClick={(e) => {
+												e.stopPropagation();
+												handleRejectMerge(paraResult);
+											}}
+										>
+											忽略
+										</button>
+									</div>
 								</div>
 							)}
 						</div>

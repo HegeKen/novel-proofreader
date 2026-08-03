@@ -62,6 +62,20 @@ export interface ParagraphResult {
 	errors: ProofreadError[];
 	status: "pending" | "checking" | "done" | "error";
 	errorMessage?: string;
+	/** 段落合并建议（AI 判定此段落应与下一段合并） */
+	mergeSuggestion?: MergeSuggestion;
+}
+
+/** 段落合并建议 */
+export interface MergeSuggestion {
+	/** 建议合并的目标段落索引（与当前段落合并） */
+	targetParagraphIndex: number;
+	/** AI 给出的合并原因 */
+	reason: string;
+	/** 合并后的建议文本（可选，用户可采纳或忽略） */
+	mergedText?: string;
+	/** 是否已被采纳 */
+	applied: boolean;
 }
 
 /** 检测粒度 */

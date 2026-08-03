@@ -6,6 +6,7 @@ import { useNovelStore } from "../stores/novelStore";
 import { splitChapters } from "../utils/chapterSplit";
 import { decodeTextBuffer } from "../utils/decodeText";
 import { saveNovelToStorage, ensureTxtFilename } from "../utils/fileExport";
+import { saveNovelText, getNovelStorageKey } from "../utils/novelStorage";
 import { logger } from "../utils/logger";
 import type { Novel } from "../types";
 
@@ -46,7 +47,9 @@ export function useFileImport() {
 				};
 
 				addNovel(novel);
+				// 同时保存到 Tauri FS 和 IndexedDB（双保险）
 				await saveNovelToStorage(ensureTxtFilename(novel.name), novel.fullText);
+				await saveNovelText(getNovelStorageKey(novel.name), text);
 				logger.file(`文件导入完成: ${novel.name}`);
 				resolve();
 			};

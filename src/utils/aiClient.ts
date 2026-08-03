@@ -576,6 +576,61 @@ export function buildProofreadUserPrompt(
 	return prompt;
 }
 
+/** 双段落校对系统 prompt（同时检查两段并给出合并建议） */
+export const PROOFREAD_SYSTEM_PROMPT_DUAL = `你是小说文字编辑。系统会给你两个连续段落（第1段和第2段），你需要：
+
+1. 分别检查两个段落中的文字错误
+2. 评估两个段落的分割是否合理：
+   - 段落过短（少于10字）且语义连贯 → 建议合并
+   - 段落被强行截断（如一句话被拆成两段） → 建议合并
+   - 两段属于同一语义单元（如连续对话、同一描写） → 建议合并
+   - 段落长度均衡且语义独立 → 保持分割
+
+输出JSON格式：
+{
+  "errors": [
+    {
+      "line": 1,  // 1=第1段, 2=第2段
+      "find": "原文连续片段，含错误及前后至少3字符，10-40字",
+      "replace": "修正后片段",
+      "type": "typo|format|punctuation|grammar|variant",
+      "reason": "≤10汉字"
+    }
+  ],
+  "merge_suggestion": {
+    "should_merge": true/false,
+    "reason": "合并或不合并的原因，≤30字",
+    "merged_text": "建议合并后的文本（仅当should_merge=true时提供，使用换行符分隔原两段内容）"
+  }
+}
+
+类型说明：
+- typo：错别字
+- format：排版空格空行
+- punctuation：标点致命错误
+- grammar：病句
+- variant：康熙字典变体字/异体字/旧字形
+
+约束：find精确复制且唯一；同行的find不重叠；无法定位则跳过；无错返回空数组[]；变体字检测优先级高于普通错别字。`;
+
+/** 构建双段落校对 user prompt */
+export function buildDualParagraphUserPrompt(
+	paragraph1: string,
+	paragraph2: string,
+	ignoredWords?: string[],
+): string {
+	const normalized1 = normalizeCJKVariants(paragraph1);
+	const normalized2 = normalizeCJKVariants(paragraph2);
+
+	let prompt = `请检查以下两个连续段落，并评估段落分割是否合理：\n\n【第1段】\n${normalized1}\n\n【第2段】\n${normalized2}`;
+
+	if (ignoredWords && ignoredWords.length > 0) {
+		prompt += `\n\n【强制约束】以下词语在本文中出现时，绝对不能标记为错误（这些是人名、地名、专有名词或特殊术语），即使它们看起来像错别字：\n${ignoredWords.join("、")}\n\n请直接跳过这些词语，不要在返回结果中包含它们。`;
+	}
+
+	return prompt;
+}
+
 /** 剧本转换系统 prompt */
 export const SCRIPT_SYSTEM_PROMPT = `你是剧本改编编剧。将小说章节转为中文影视拍摄剧本格式。输出纯JSON，无markdown，不要任何开场白。
 

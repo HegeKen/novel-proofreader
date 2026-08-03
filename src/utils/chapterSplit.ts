@@ -100,7 +100,17 @@ export function splitChapters(
 		let start = 0;
 		let id = 0;
 		while (start < fullText.length) {
-			const end = Math.min(start + chunkSize, fullText.length);
+			let end = Math.min(start + chunkSize, fullText.length);
+
+			// 尝试在段落边界处断章，避免在段落中间截断
+			if (end < fullText.length) {
+				const breakPos = fullText.lastIndexOf('\n', end);
+				// 确保断点不会太靠前（至少保留 chunkSize 的一半）
+				if (breakPos > start + Math.floor(chunkSize / 2)) {
+					end = breakPos + 1; // +1 包含换行符
+				}
+			}
+
 			chapters.push({
 				id,
 				title: `第 ${id + 1} 段`,

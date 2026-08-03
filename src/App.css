@@ -2981,6 +2981,111 @@ color: var(--text-primary)}
 .error-item.skipped {
 	opacity: 0.5}
 
+/* 段落合并建议 */
+.merge-suggestion {
+	margin-top: 12px;
+	padding: 12px 14px;
+	border-radius: var(--r-sm);
+	background: linear-gradient(135deg, rgba(82, 196, 26, 0.08), rgba(122, 162, 247, 0.08));
+	border: 1px solid rgba(82, 196, 26, 0.3);
+	animation: mergeSuggestionFadeIn 0.3s ease;
+}
+
+@keyframes mergeSuggestionFadeIn {
+	from { opacity: 0; transform: translateY(-4px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+.merge-suggestion-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #52c41a;
+	margin-bottom: 8px;
+}
+
+.merge-suggestion-reason {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-bottom: 8px;
+	line-height: 1.5;
+}
+
+.merge-suggestion-preview {
+	background: var(--bg-surface);
+	padding: 8px 10px;
+	border-radius: var(--r-sm);
+	font-size: 12px;
+	color: var(--text);
+	margin-bottom: 10px;
+	line-height: 1.5;
+	border: 1px solid var(--border);
+}
+
+.preview-label {
+	display: block;
+	font-size: 11px;
+	color: var(--text-muted);
+	margin-bottom: 4px;
+	font-weight: 500;
+}
+
+.preview-text {
+	display: block;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.merge-suggestion-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.btn-merge-accept {
+	padding: 6px 14px;
+	border-radius: var(--r-sm);
+	font-size: 12px;
+	font-weight: 500;
+	background: linear-gradient(135deg, #52c41a, #389e0d);
+	color: #fff;
+	border: none;
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	transition: all 0.2s ease;
+	cursor: pointer;
+}
+
+.btn-merge-accept:hover {
+	background: linear-gradient(135deg, #73d13d, #52c41a);
+	box-shadow: 0 2px 8px rgba(82, 196, 26, 0.3);
+	transform: translateY(-1px);
+}
+
+.btn-merge-accept:active {
+	transform: translateY(0);
+}
+
+.btn-merge-reject {
+	padding: 6px 14px;
+	border-radius: var(--r-sm);
+	font-size: 12px;
+	font-weight: 500;
+	background: var(--bg-surface);
+	color: var(--text-muted);
+	border: 1px solid var(--border);
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.btn-merge-reject:hover {
+	background: var(--bg-hover);
+	color: var(--text);
+	border-color: var(--border-strong);
+}
+
 /* 单行检测按钮 */
 .btn-single-check {
 	position: absolute;

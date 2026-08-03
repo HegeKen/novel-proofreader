@@ -18,6 +18,7 @@ import { useProofreadMetaStore } from "./stores/proofreadMetaStore";
 import { splitChapters } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
 import { exportToFile, loadNovelsFromStorage, loadNovelContent, saveNovelToStorage, ensureTxtFilename, exportAllData } from "./utils/fileExport";
+import { loadNovelText, getNovelStorageKey } from "./utils/novelStorage";
 import { formatDateTime } from "./utils/formatters";
 import { parseURLParams, updateURLParams } from "./utils/urlParams";
 import { Icons } from "./components/Icons";
@@ -118,8 +119,15 @@ export default function App() {
 		const updatedNovels = await Promise.all(state.novels.map(async (novel) => {
 			if (novel.fullText) return novel; // 已有全文，跳过
 			const fileName = ensureTxtFilename(novel.name);
-			if (!storedFileNames.includes(fileName)) return novel;
-			const content = await loadNovelContent(fileName);
+			// 优先从 Tauri FS 加载
+			let content: string | null = null;
+			if (storedFileNames.includes(fileName)) {
+				content = await loadNovelContent(fileName);
+			}
+			// 如果 Tauri FS 没有，从 IndexedDB 加载
+			if (!content) {
+				content = await loadNovelText(getNovelStorageKey(novel.name));
+			}
 			if (!content) return novel;
 			updated = true;
 			return { ...novel, fullText: content };
@@ -208,7 +216,11 @@ export default function App() {
 			} else {
 				(async () => {
 					const fileName = ensureTxtFilename(novel.name);
-					const content = await loadNovelContent(fileName);
+					// 优先从 Tauri FS 加载，回退到 IndexedDB
+					let content = await loadNovelContent(fileName);
+					if (!content) {
+						content = await loadNovelText(getNovelStorageKey(novel.name));
+					}
 					if (content) {
 						useNovelStore.setState((state) => ({
 							novels: state.novels.map(n => n.id === novel.id ? { ...n, fullText: content } : n),
