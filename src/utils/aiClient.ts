@@ -5,6 +5,7 @@ import type { AIConfig, NovelWorldbuilding } from "../types";
 import { logger } from "./logger";
 import { normalizeCJKVariants } from "./normalizeCJK";
 import { useAppMetaStore } from "../stores/appMetaStore";
+import { ANOMALY_PROMPT_TEXT } from "./punctuationCheck";
 
 export interface ChatMessage {
 	role: "system" | "user" | "assistant";
@@ -517,7 +518,9 @@ export const PROOFREAD_SYSTEM_PROMPT = `你是小说文字编辑。输出JSON数
    - 旧字形「鉨」→「镍」
 
 示例：[{"line":3,"find":"他很高兴地笑了。","replace":"他很高兴地笑了。","type":"typo","reason":"的/地混用"}]
-约束：find精确复制且唯一；同行的find不重叠；无法定位则跳过；无错返回[]；变体字检测优先级高于普通错别字。`;
+约束：find精确复制且唯一；同行的find不重叠；无法定位则跳过；无错返回[]；变体字检测优先级高于普通错别字。
+
+${ANOMALY_PROMPT_TEXT}`;
 /** 校对系统 prompt（章节级别 - 每行返回一条错误） */
 export const PROOFREAD_SYSTEM_PROMPT_CHAPTER = `你是小说文字编辑，校对整章JSON（key为行号，value为段落文本）。逐行检查typo(错别字)/format(排版空格空行)/punctuation(标点致命错误)/grammar(病句)/variant(康熙变体字)。输出JSON数组，字段：lineNumber(与输入key一致，string)、column(错误起始列，从1计数)、find(原文连续片段，含错误及前后各≥3字符，8-40字)、replace(修正后)、type、reason(≤10汉字)。严格约束：lineNumber须存在；column基于该行逐字符计算(含空格标点)；find精确复制；不跨行；无错返回[]；只输出JSON数组，无markdown。
 
@@ -548,7 +551,9 @@ export const PROOFREAD_SYSTEM_PROMPT_CHAPTER = `你是小说文字编辑，校�
    - 俗字「巛」→「川」
    - 旧字形「鉨」→「镍」
 
-示例输入{"0":"第一章","1":"倾盘大雨。"} → [{"lineNumber":"1","column":5,"find":"倾盘大雨。","replace":"倾盆大雨。","type":"typo","reason":"错别字"}]。的/地/得错误：find含错误及前后各≥2字符。优先级：变体字>错别字>语法>排版>标点。不修改风格化/口语化表达。`;
+示例输入{"0":"第一章","1":"倾盘大雨。"} → [{"lineNumber":"1","column":5,"find":"倾盘大雨。","replace":"倾盆大雨。","type":"typo","reason":"错别字"}]。的/地/得错误：find含错误及前后各≥2字符。优先级：变体字>错别字>语法>排版>标点。不修改风格化/口语化表达。
+
+${ANOMALY_PROMPT_TEXT}`;
 /** 构建带忽略词的系统 prompt */
 export function buildProofreadSystemPrompt(
 	basePrompt: string,
@@ -577,20 +582,36 @@ export function buildProofreadUserPrompt(
 }
 
 /** 双段落校对系统 prompt（同时检查两段并给出合并建议） */
-export const PROOFREAD_SYSTEM_PROMPT_DUAL = `你是小说文字编辑。系统会给你两个连续段落（第1段和第2段），你需要：
+export const PROOFREAD_SYSTEM_PROMPT_DUAL = `你是小说文字编辑。系统会给你两个连续段落（第1段和第2段）。
 
-1. 分别检查两个段落中的文字错误
-2. 评估两个段落的分割是否合理：
-   - 段落过短（少于10字）且语义连贯 → 建议合并
-   - 段落被强行截断（如一句话被拆成两段） → 建议合并
-   - 两段属于同一语义单元（如连续对话、同一描写） → 建议合并
-   - 段落长度均衡且语义独立 → 保持分割
+## 首要任务：逐段校对错误
+分别检查两个段落中的文字错误。错误检测是首要任务，必须确保每个段落的错误都被完整检测出来。
 
-输出JSON格式：
+上下文完整性要求（避免误判的关键）：
+1. 如错误靠近句末，find必须包含句末标点（句号、问号、感叹号、逗号等）
+2. find应包含完整的语义单元（完整词语、完整句子片段），不要截断词语
+3. 上下文完整性优先于字数限制，宁可超出字数也要保证完整
+4. 如错误涉及句子结构，应包含足够上下文以判断是否真正错误
+5. 禁止为满足字数限制而删除必要的标点或截断词语
+
+变体字精校规则：
+1. 识别康熙字典中的生僻异体字、旧字形、俗字、讹字
+2. 识别Unicode扩展区中的生僻字（U+2F00-U+2FFF康熙部首区、U+3400-U+4DBF扩展A区等）
+3. 将变体字修正为现代通用标准汉字
+4. 常见变体字示例：丼→井、氼→溺、仌→冰、羣→群、刄→刃、巛→川、鉨→镍
+
+## 附加任务：评估段落分割
+在校对完成后，评估两个段落的分割是否合理：
+- 段落过短（少于10字），不是对话且语义连贯 → 建议合并
+- 段落被强行截断（如一句话被拆成两段） → 建议合并
+- 两段属于同一语义单元（如连续对话、同一描写） → 建议合并
+- 段落长度均衡且语义独立 → 保持分割
+
+输出JSON格式（严格遵守，只输出JSON对象，不要markdown）：
 {
   "errors": [
     {
-      "line": 1,  // 1=第1段, 2=第2段
+      "line": 1,
       "find": "原文连续片段，含错误及前后至少3字符，10-40字",
       "replace": "修正后片段",
       "type": "typo|format|punctuation|grammar|variant",
@@ -599,19 +620,18 @@ export const PROOFREAD_SYSTEM_PROMPT_DUAL = `你是小说文字编辑。系统�
   ],
   "merge_suggestion": {
     "should_merge": true/false,
-    "reason": "合并或不合并的原因，≤30字",
-    "merged_text": "建议合并后的文本（仅当should_merge=true时提供，使用换行符分隔原两段内容）"
+    "reason": "合并或不合并的原因，≤30字"
   }
 }
 
-类型说明：
-- typo：错别字
-- format：排版空格空行
-- punctuation：标点致命错误
-- grammar：病句
-- variant：康熙字典变体字/异体字/旧字形
+注意：
+- errors中的line字段：1表示该错误属于第1段，2表示该错误属于第2段
+- 即使某段无错误，另一段的错误也必须完整返回
+- 类型说明：typo=错别字, format=排版空格空行, punctuation=标点致命错误, grammar=病句, variant=康熙变体字
+- 约束：find精确复制且唯一；同段的find不重叠；无法定位则跳过；两段均无错时errors返回[]；变体字检测优先级高于普通错别字
+- 无错时merge_suggestion也要返回（should_merge=false，reason说明原因）
 
-约束：find精确复制且唯一；同行的find不重叠；无法定位则跳过；无错返回空数组[]；变体字检测优先级高于普通错别字。`;
+${ANOMALY_PROMPT_TEXT}`;
 
 /** 构建双段落校对 user prompt */
 export function buildDualParagraphUserPrompt(
@@ -1075,11 +1095,12 @@ export interface ParagraphEmotionResult {
 /**
  * 从 AI 响应中提取 JSON 数组（容错处理）
  */
-export function extractJSON(text: string): unknown[] {
+export function extractJSON(text: string): unknown {
 	// 尝试直接解析
 	try {
 		const parsed = JSON.parse(text);
 		if (Array.isArray(parsed)) return parsed;
+		if (typeof parsed === 'object' && parsed !== null) return parsed;
 		return [];
 	} catch {
 		// 继续尝试提取
@@ -1091,6 +1112,18 @@ export function extractJSON(text: string): unknown[] {
 		try {
 			const parsed = JSON.parse(codeBlockMatch[1]);
 			if (Array.isArray(parsed)) return parsed;
+			if (typeof parsed === 'object' && parsed !== null) return parsed;
+		} catch {
+			// 继续
+		}
+	}
+
+	// 尝试提取 { ... } 对象（优先于数组，因为对象可能包含 errors 数组）
+	const objectMatch = text.match(/\{[\s\S]*\}/);
+	if (objectMatch) {
+		try {
+			const parsed = JSON.parse(objectMatch[0]);
+			if (typeof parsed === 'object' && parsed !== null) return parsed;
 		} catch {
 			// 继续
 		}
@@ -1107,6 +1140,16 @@ export function extractJSON(text: string): unknown[] {
 		}
 	}
 
+	return [];
+}
+
+/** 将 extractJSON 结果规范化为错误数组（兼容对象和数组两种格式） */
+export function normalizeErrors(raw: unknown): unknown[] {
+	if (Array.isArray(raw)) return raw;
+	if (typeof raw === 'object' && raw !== null) {
+		const obj = raw as Record<string, unknown>;
+		if (Array.isArray(obj.errors)) return obj.errors;
+	}
 	return [];
 }
 

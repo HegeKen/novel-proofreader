@@ -19,6 +19,7 @@ import { useAIConfigStore } from "../stores/aiConfigStore";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
+import { PeakHourBanner } from "./PeakHourBanner";
 import { logger } from "../utils/logger";
 
 export function ReaderPanel({
@@ -57,6 +58,7 @@ export function ReaderPanel({
 	const setReadingReminderMinutes = useAppMetaStore((s) => s.setReadingReminderMinutes);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
 	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
+	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 
 	const tts = useTTS();
 	const readingProgress = useReadingProgress();
@@ -405,7 +407,7 @@ export function ReaderPanel({
 				scrollToParagraph(highlightedParagraph);
 			}, 50);
 		}
-	}, [highlightedParagraph, scrollToParagraph]);
+	}, [highlightedParagraph, scrollToParagraph, chapter?.content]);
 
 	// TTS 高亮段落变化时自动滚动
 	useEffect(() => {
@@ -448,6 +450,12 @@ export function ReaderPanel({
 		setParagraphEmotionCache(new Map());
 		logger.tts("切换章节，清除段落情感缓存");
 	}, [currentChapterIndex, setParagraphEmotionCache]);
+
+	// 章节内容变更时清理段落 refs（如合并段落等操作）
+	useEffect(() => {
+		if (!chapter) return;
+		paragraphRefs.current = [];
+	}, [chapter?.content]);
 
 	// 阅读模式下，监听滚动自动更新阅读进度
 	useEffect(() => {
@@ -1260,6 +1268,7 @@ export function ReaderPanel({
 			{/* 阅读模式底部工具栏 */}
 			{readingMode && (
 				<div className="desktop-reader-bar">
+					<PeakHourBanner baseURL={aiConfig.baseURL} model={aiConfig.model} />
 					{/* 播放控制条 - 放在 actions 上方 */}
 					{(ttsPlaying || isStreamTTSPlaying || enhancedTTSPreparing) && (
 						<div className="desktop-tts-playback-controls">

@@ -20,7 +20,7 @@
 	.select-all-btn, .select-none-btn, .quick-btn, .action-btn,
 	.character-action-btn, .btn-reset-usage,
 	.btn-save, .btn-test, .btn-add-word,
-	.start-btn, .download-btn, .graph-toolbar-btn,
+	.start-btn, .download-btn, 
 	.btn-clear-queue, .btn-start-queue, .btn-add-selected,
 	.relation-action-btn, .nickname-add-btn, .btn-sm,
 	.nav-btn, .close-btn, .mobile-proofread-toggle,
@@ -1016,6 +1016,28 @@ select {
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	flex: 1}
+
+.chapter-main {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	flex: 1;
+	min-width: 0;
+	gap: 2px}
+
+.chapter-main .chapter-title {
+	flex: none;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap}
+
+.chapter-wordcount {
+	font-size: 11px;
+	color: var(--text-tertiary, #999);
+	font-weight: 400;
+	line-height: 1;
+	text-align: left}
 
 .proofread-icon {
 	color: var(--success, #22c55e);
@@ -2606,6 +2628,49 @@ color: var(--text-primary)}
 	align-items: center;
 	justify-content: center}
 
+/* 高峰时段横幅 */
+.peak-hour-banner {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 8px;
+	background: linear-gradient(90deg, rgba(250, 173, 20, 0.15), rgba(250, 173, 20, 0.08));
+	border-bottom: 1px solid rgba(250, 173, 20, 0.3);
+	overflow: hidden;
+	flex-shrink: 0;
+}
+
+.peak-hour-banner-icon {
+	color: #faad14;
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+}
+
+.peak-hour-banner-marquee {
+	flex: 1;
+	overflow: hidden;
+	white-space: nowrap;
+}
+
+.peak-hour-banner-text {
+	display: inline-block;
+	font-size: 12px;
+	color: #d48806;
+	line-height: 1.5;
+	animation: peak-hour-scroll 20s linear infinite;
+	padding-left: 100%;
+}
+
+@keyframes peak-hour-scroll {
+	0% {
+		transform: translateX(0);
+	}
+	100% {
+		transform: translateX(-100%);
+	}
+}
+
 .proofread-header {
 	position: sticky;
 	top: 0;
@@ -2745,6 +2810,19 @@ color: var(--text-primary)}
 .error-count strong {
 	font-weight: 600;
 	color: var(--yellow)}
+
+/* 合并建议提示（校对错误全部处理完后显示） */
+.error-count.merge-info {
+	display: inline-flex;
+	align-items: center;
+	color: var(--accent);
+	border-color: var(--accent-dim);
+	gap: 4px}
+
+.error-count.merge-info:hover {
+	background: var(--accent-dim);
+	border-color: var(--accent);
+	color: var(--accent)}
 
 .error-count-divider {
 	margin: 0 6px;
@@ -9743,6 +9821,21 @@ color: var(--text-primary)}
 	line-height: 1.7;
 	margin: 0 auto 24px}
 
+.hero-actions {
+	display: flex;
+	gap: 12px;
+	justify-content: center;
+	flex-wrap: wrap}
+
+.hero-actions .btn-outline {
+	background: transparent;
+	border: 1px solid var(--accent, #007aff);
+	color: var(--accent, #007aff)}
+
+.hero-actions .btn-outline:hover {
+	background: var(--accent, #007aff);
+	color: #fff}
+
 
 .start-btn:hover {
 	transform: translateY(-2px);
@@ -10798,34 +10891,7 @@ color: var(--text-primary)}
 	padding: 12px 0;
 	border-bottom: 1px solid var(--glass-border)}
 
-.graph-toolbar-btn {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	padding: 8px 14px;
-	border-radius: 6px;
-	font-size: 13px;
-	background: var(--bg-surface);
-	border: 1px solid var(--glass-border);
-	color: var(--text-secondary);
-	cursor: pointer;
-	transition: all var(--duration) var(--ease)}
 
-.graph-toolbar-btn:hover {
-	background: var(--bg-hover);
-	color: var(--text-primary)}
-
-.graph-toolbar-btn.primary {
-	background: var(--accent);
-	border-color: var(--accent);
-	color: white}
-
-.graph-toolbar-btn.primary:hover {
-	background: var(--accent-hover)}
-
-.graph-toolbar-btn:disabled {
-	opacity: 0.5;
-	cursor: not-allowed}
 
 .graph-toolbar-info {
 	flex: 1;
@@ -11585,3 +11651,509 @@ color: var(--text-primary)}
 
 .word-replacement-tips li:last-child {
 	margin-bottom: 0}
+
+/* ============================================================
+   文本对比全屏视图
+   ============================================================ */
+.feature-card-clickable {
+	cursor: pointer}
+
+.feature-card-clickable:hover {
+	border-color: var(--accent, #007aff)}
+
+.diff-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 9999;
+	background: var(--bg-primary, #fff);
+	display: flex;
+	flex-direction: column;
+	animation: diff-fade-in 0.2s ease}
+
+@keyframes diff-fade-in {
+	from { opacity: 0 }
+	to { opacity: 1 }
+}
+
+.diff-modal {
+	width: 100%;
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	background-color: #0f0f23;
+	overflow: hidden}
+
+.diff-body {
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+	padding: 16px 24px;
+	background-color: #0f0f23;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;}
+
+/* 输入区 - 左右各占一半 */
+.diff-input-section {
+	display: flex;
+	gap: 12px;
+	align-items: stretch;
+	flex: 1 1 50%;
+	min-height: 160px}
+
+/* 折叠状态下的输入区 */
+.diff-input-collapsed {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 8px 12px;
+	background: var(--bg-secondary);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	flex-shrink: 0}
+
+.diff-collapsed-info {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex: 1;
+	min-width: 0}
+
+.diff-collapsed-label {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-primary);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis}
+
+.diff-collapsed-meta {
+	font-size: 11px;
+	color: var(--text-tertiary, #999)}
+
+.diff-swap-btn.collapsed button {
+	width: 28px;
+	height: 28px}
+
+.diff-collapse-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--bg-secondary);
+	color: var(--text-secondary);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+	flex-shrink: 0}
+
+.diff-collapse-toggle:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary)}
+
+.diff-input-panel {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+	overflow: hidden}
+
+.diff-input-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 8px}
+
+.diff-input-label {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-primary);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis}
+
+.diff-input-actions {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	flex-shrink: 0}
+
+.diff-source-btn {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 10px;
+	font-size: 12px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--bg-secondary);
+	color: var(--text-secondary);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+	white-space: nowrap}
+
+.diff-source-btn:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary)}
+
+.diff-source-btn.active {
+	background: var(--accent, #007aff);
+	color: #fff;
+	border-color: var(--accent, #007aff)}
+
+.diff-novel-select {
+	font-size: 12px;
+	padding: 4px 8px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--bg-secondary);
+	color: var(--text-primary);
+	max-width: 160px;
+	cursor: pointer}
+
+.diff-clear-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 4px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--bg-secondary);
+	color: var(--text-tertiary, #999);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.diff-clear-btn:hover {
+	background: var(--red-dim, rgba(239, 68, 68, 0.1));
+	color: var(--red, #ef4444);
+	border-color: var(--red, #ef4444)}
+
+/* 文本展示区域 - 沿用 reader-content 背景 */
+.diff-text-display {
+	flex: 1;
+	min-height: 120px;
+	overflow-y: auto;
+	padding: 16px 20px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	background: transparent;
+	font-size: 14px;
+	line-height: 1.8;
+	transition: all var(--duration) var(--ease)}
+
+.diff-text-display.empty {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 100px;
+	border-style: dashed;
+	background: var(--bg-secondary, rgba(0,0,0,0.03))}
+
+.diff-text-display.paste-mode {
+	padding: 0;
+	cursor: text}
+
+.diff-text-placeholder {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+	color: var(--text-tertiary, #999);
+	font-size: 13px;
+	text-align: center;
+	pointer-events: none}
+
+.diff-text-placeholder svg {
+	opacity: 0.5}
+
+/* 段落容器 - line-text 风格 */
+.diff-text-paragraphs {
+	display: flex;
+	flex-direction: column;
+	gap: 2px}
+
+.diff-text-paragraph {
+	display: flex;
+	align-items: flex-start;
+	padding: 4px 0;
+	border-bottom: 1px solid var(--border-light, rgba(0,0,0,0.03));
+	text-indent: 2em}
+
+.diff-text-paragraph .line-text {
+	flex: 1;
+	min-width: 0;
+	color: var(--text-primary);
+	font-size: 14px;
+	line-height: 1.8;
+	white-space: pre-wrap;
+	word-break: break-word;
+	text-indent: 0}
+
+/* 粘贴模式 textarea */
+.diff-paste-textarea {
+	width: 100%;
+	height: 100%;
+	min-height: 160px;
+	padding: 16px 20px;
+	border: none;
+	border-radius: var(--r-md);
+	background: transparent;
+	color: var(--text-primary);
+	font-size: 14px;
+	line-height: 1.8;
+	font-family: inherit;
+	resize: none;
+	outline: none;
+	text-indent: 0}
+
+.diff-paste-textarea::placeholder {
+	color: var(--text-tertiary, #999)}
+
+.diff-paste-textarea:focus {
+	outline: none}
+
+/* 深色模式适配 */
+@media (prefers-color-scheme: dark) {
+	.diff-text-display.empty {
+		background: var(--bg-secondary, #2a2a2a)}
+
+	.diff-paste-textarea {
+		color: var(--text-primary, #eee)}
+
+	.diff-text-paragraph {
+		border-bottom-color: rgba(255,255,255,0.05)}
+}
+
+.hidden-file-input {
+	display: none}
+
+.diff-swap-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0}
+
+.diff-swap-btn button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	border: 1px solid var(--border);
+	border-radius: 50%;
+	background: var(--bg-secondary);
+	color: var(--text-secondary);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.diff-swap-btn button:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary);
+	transform: rotate(180deg)}
+
+/* 操作栏 */
+.diff-actions {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	flex-wrap: wrap;
+	padding: 8px 0;
+	border-top: 1px solid var(--border);
+	border-bottom: 1px solid var(--border)}
+
+.diff-filter-toggle {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	color: var(--text-secondary);
+	cursor: pointer;
+	user-select: none}
+
+.diff-filter-toggle input {
+	cursor: pointer}
+
+.diff-stats {
+	display: flex;
+	gap: 16px;
+	font-size: 13px;
+	margin-left: auto}
+
+.diff-stat-added {
+	color: #22c55e;
+	font-weight: 600}
+
+.diff-stat-removed {
+	color: #ef4444;
+	font-weight: 600}
+
+.diff-stat-modified {
+	color: #f59e0b;
+	font-weight: 600}
+
+/* 结果区 - 占满剩余空间 */
+.diff-result {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0;
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	overflow: hidden;
+	background: var(--bg-secondary)}
+
+.diff-result-header {
+	display: flex;
+	border-bottom: 1px solid var(--border);
+	background: var(--bg-primary);
+	flex-shrink: 0}
+
+.diff-result-name {
+	flex: 1;
+	padding: 10px 14px;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-primary);
+	text-align: center;
+	border-right: 1px solid var(--border)}
+
+.diff-result-name:last-child {
+	border-right: none}
+
+.diff-result-content {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	overflow: hidden}
+
+.diff-result-col {
+	flex: 1;
+	overflow-y: auto;
+	overflow-x: hidden;
+	font-family: "SF Mono", "Menlo", "Consolas", monospace;
+	font-size: 13px;
+	line-height: 1.7}
+
+.diff-result-left {
+	border-right: 1px solid var(--border)}
+
+/* 高亮样式 */
+.diff-line {
+	display: flex;
+	align-items: stretch;
+	min-height: 22px;
+	border-bottom: 1px solid var(--border-light, rgba(0,0,0,0.04))}
+
+.diff-line-number {
+	flex-shrink: 0;
+	width: 44px;
+	padding: 3px 8px;
+	text-align: right;
+	color: var(--text-tertiary, #999);
+	font-size: 11px;
+	user-select: none;
+	background: var(--bg-primary);
+	border-right: 1px solid var(--border-light, rgba(0,0,0,0.04))}
+
+.diff-line-content {
+	flex: 1;
+	padding: 3px 10px;
+	white-space: pre-wrap;
+	word-break: break-all;
+	min-width: 0;
+	color: var(--text-primary)}
+
+.diff-line-equal {
+	background: transparent}
+
+.diff-line-added {
+	background: rgba(34, 197, 94, 0.08)}
+
+.diff-line-added .diff-line-content {
+	background: rgba(34, 197, 94, 0.04)}
+
+.diff-line-removed {
+	background: rgba(239, 68, 68, 0.08)}
+
+.diff-line-removed .diff-line-content {
+	background: rgba(239, 68, 68, 0.04)}
+
+.diff-line-modified {
+	background: rgba(245, 158, 11, 0.06)}
+
+.diff-line-modified .diff-line-content {
+	background: rgba(245, 158, 11, 0.03)}
+
+/* 占位行：保持行高一致，无内容 */
+.diff-line-placeholder {
+	min-height: 1.8em;
+	border-bottom: 1px solid transparent}
+
+.diff-char-added {
+	background: rgba(34, 197, 94, 0.3);
+	color: #15803d;
+	border-radius: 2px;
+	padding: 0 1px}
+
+.diff-char-removed {
+	background: rgba(239, 68, 68, 0.25);
+	color: #b91c1c;
+	text-decoration: line-through;
+	border-radius: 2px;
+	padding: 0 1px}
+
+.diff-char-equal {
+	color: var(--text-primary)}
+
+/* diff 弹窗组件内的按钮样式覆盖 */
+.diff-modal .spin {
+	animation: spin 1s linear infinite}
+
+.diff-modal .btn-primary {
+	background: var(--accent, #007aff);
+	color: #fff;
+	border: none;
+	padding: 8px 18px;
+	font-size: 14px}
+
+.diff-modal .btn-primary:hover:not(:disabled) {
+	opacity: 0.9}
+
+.diff-modal .btn-primary:disabled {
+	opacity: 0.5;
+	cursor: not-allowed}
+
+.diff-modal .btn-secondary {
+	background: var(--bg-secondary, #f0f0f0);
+	color: var(--text-primary);
+	border: 1px solid var(--border, #ddd);
+	padding: 8px 18px;
+	font-size: 14px}
+
+.diff-modal .btn-secondary:hover:not(:disabled) {
+	background: var(--bg-hover, #e8e8e8);
+	border-color: var(--accent, #007aff)}
+
+.diff-modal .btn-secondary:disabled {
+	opacity: 0.5;
+	cursor: not-allowed}
+
+/* 当前激活的对比模式按钮高亮 */
+.diff-modal .btn-primary.active {
+	background: var(--accent, #007aff);
+	color: #fff;
+	box-shadow: 0 0 0 2px var(--accent, #007aff) inset}
+
+.diff-modal .btn-secondary.active {
+	background: var(--accent, #007aff);
+	color: #fff;
+	border-color: var(--accent, #007aff);
+	box-shadow: 0 0 0 2px var(--accent, #007aff) inset}
+
+/* 文本对比弹窗 end */

@@ -2726,7 +2726,7 @@ dependencies = [
 
 [[package]]
 name = "proofreader"
-version = "0.13.3"
+version = "0.13.5"
 dependencies = [
  "serde",
  "serde_json",

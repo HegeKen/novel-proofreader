@@ -61,7 +61,10 @@ const ChapterItem = forwardRef<HTMLButtonElement, {
 				title={`${chapter.title}${isProofread ? " (已校对)" : ""}`}
 			>
 				<span className="chapter-number">{index + 1}</span>
-				<span className="chapter-title">{chapter.title}</span>
+				<span className="chapter-main">
+					<span className="chapter-title">{chapter.title}</span>
+					<span className="chapter-wordcount">{chapter.content.replace(/\s/g, '').length} 字</span>
+				</span>
 				{isProofread && (
 					<Icons.circleCheckBig size={16} className="proofread-icon" />
 				)}
@@ -443,7 +446,7 @@ export function ChapterNav({
 				<button
 					className="btn"
 					onClick={onOpenCJKVariantScan}
-					title="检查康熙变体字"
+					title="检查变体字及半角全角字符"
 				>
 					<Icons.search size={14} />
 					变体字

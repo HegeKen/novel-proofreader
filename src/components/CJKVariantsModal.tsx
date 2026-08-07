@@ -28,6 +28,7 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 	const blockLabels: Record<string, string> = {
 		"kangxi": "康熙部首",
 		"cjk-supplement": "CJK 部首补充",
+		"width": "半角字符",
 	};
 
 	const handleScan = useCallback(() => {
@@ -84,7 +85,7 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 						<span className="title-icon">
 							<Icons.search size={16} />
 						</span>
-						<span>康熙变体字检查</span>
+						<span>变体字 & 半角全角字符检查</span>
 					</div>
 					<button className="close-btn" onClick={onClose}>
 						<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
@@ -97,7 +98,7 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 					{entries.length === 0 && !scanning && (
 						<div className="cjk-variants-empty">
 							<Icons.search size={48} className="empty-icon" />
-							<p>点击"开始扫描"检查整本小说中的康熙变体字</p>
+							<p>点击"开始扫描"检查整本小说中的康熙变体字及半角字母/数字/符号</p>
 							{!currentNovel && <p className="text-muted">请先导入小说</p>}
 							<button
 								className="btn"

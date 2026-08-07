@@ -73,6 +73,8 @@ import {
 	Brain,
 	Info,
 	MapPin,
+	GitCompareArrows,
+	ZoomIn,
 } from "lucide-react";
 
 export const Icons = {
@@ -157,6 +159,8 @@ export const Icons = {
 	globe: Globe,
 	externalLink: ExternalLink,
 	info: Info,
+	compare: GitCompareArrows,
+	zoomIn: ZoomIn,
 };
 
 export type IconName = keyof typeof Icons;

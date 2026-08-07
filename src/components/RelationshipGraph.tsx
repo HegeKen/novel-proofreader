@@ -49,6 +49,7 @@ export function RelationshipGraph({
 	const addRelationship = useCharacterStore((s) => s.addRelationship);
 	const updateRelationship = useCharacterStore((s) => s.updateRelationship);
 	const removeRelationship = useCharacterStore((s) => s.removeRelationship);
+	const setRelationshipsForNovel = useCharacterStore((s) => s.setRelationshipsForNovel);
 	const storeNodePositions = useCharacterStore((s) => s.nodePositions);
 	const nodePositions = useMemo(() => storeNodePositions[novelId] ?? {}, [storeNodePositions, novelId]);
 
@@ -65,6 +66,7 @@ export function RelationshipGraph({
 
 	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 	const [isGeneratingRelationships, setIsGeneratingRelationships] = useState(false);
+	const [isMergingRelationships, setIsMergingRelationships] = useState(false);
 
 	const [relationForm, setRelationForm] = useState<{
 		sourceId: string;
@@ -924,6 +926,178 @@ ${existingRelationships.length > 0 ? JSON.stringify(existingRelationships, null,
 		}
 	}, [characters, relationships, aiConfig, novelId, addRelationship, updateRelationship, getRelationBetween]);
 
+	// AI 梳理合并现有角色关系：将角色+关系数据发给 AI，由 AI 整合后替换现有关系
+	const handleMergeRelationships = useCallback(async () => {
+		if (relationships.length === 0) {
+			useAppMetaStore.getState().showToast("暂无关系可梳理", "warning");
+			return;
+		}
+		if (!aiConfig.apiKey || !aiConfig.baseURL) {
+			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			return;
+		}
+
+		setIsMergingRelationships(true);
+		try {
+			// 构建角色名→ID 映射
+			const nameToId: Record<string, string> = {};
+			characters.forEach(c => { nameToId[c.name] = c.id; });
+
+			// 构建当前角色关系数据
+			const currentRels = relationships.map(r => {
+				const srcChar = characters.find(c => c.id === r.sourceId);
+				const tgtChar = characters.find(c => c.id === r.targetId);
+				return {
+					sourceName: srcChar?.name || "未知",
+					targetName: tgtChar?.name || "未知",
+					relationType: r.relationType || [],
+					customRelationType: r.customRelationType || "",
+					sourceNickname: r.sourceNickname || [],
+					targetNickname: r.targetNickname || [],
+				};
+			});
+
+			// 角色简要信息
+			const charsInfo = characters.map(c => ({
+				name: c.name,
+				gender: c.gender,
+				role: c.role || "",
+				identity: c.identity || "",
+				aliases: c.aliases || [],
+				relationTerms: c.relationTerms || [],
+			}));
+
+			const systemPrompt = `你是一位小说角色关系梳理专家。请根据角色信息和现有关系数据，梳理并合并重复、矛盾的关系，输出整理后的完整关系列表。
+
+## 要求
+- 合并同一对角色之间的多条关系为一条（合并 relationType、sourceNickname、targetNickname）
+- 去除自相矛盾或明显错误的关系
+- 补充缺失的称呼（基于角色信息和关系类型推断）
+- 每对角色只保留一条关系
+- 关系类型从以下中选择，可以多选：couple(夫妻)、lover(恋人)、ex-lover(前任)、father-son(父子)、father-daughter(父女)、mother-son(母子)、mother-daughter(母女)、brother(兄弟)、sister(姐妹)、brother-sister(兄妹)、sister-brother(姐弟)、mother-daughter-in-law(婆媳)、father-daughter-in-law(公媳)、mother-son-in-law(岳母女婿)、father-son-in-law(翁婿)、co-parents-male(亲家公)、co-parents-female(亲家母)、relative(亲戚)、classmate(同学)、friend(朋友)、bestie(闺蜜)、rival(竞争对手)、arch-enemy(宿敌)、enemy(仇人)、master-disciple(师徒)、teacher-student(师生)、employer-employee(上下级)、colleague(同事)、neighbor(邻居)、stranger(陌生人)、other(其他)
+- 如果关系类型不属于以上具体类型，使用 "other" 并在 customRelationType 中用中文描述
+- 严格按照JSON格式输出
+
+## 输出格式
+输出一个JSON数组，每个元素包含：
+{
+  "sourceName": "源角色名称（必须匹配输入中的name）",
+  "targetName": "目标角色名称（必须匹配输入中的name）",
+  "relationType": ["关系类型数组"],
+  "customRelationType": "当relationType包含other时填写中文描述，否则为空字符串",
+  "sourceNickname": ["源角色对目标角色的称呼"],
+  "targetNickname": ["目标角色对源角色的称呼"]
+}`;
+
+			const userPrompt = `## 角色列表
+${JSON.stringify(charsInfo, null, 2)}
+
+## 现有关系（共 ${currentRels.length} 条）
+${JSON.stringify(currentRels, null, 2)}
+
+请梳理以上关系，合并重复项，输出整理后的JSON数组。`;
+
+			const messages: ChatMessage[] = [
+				{ role: "system", content: systemPrompt },
+				{ role: "user", content: userPrompt },
+			];
+
+			const config = {
+				baseURL: aiConfig.baseURL,
+				apiKey: aiConfig.apiKey,
+				model: aiConfig.model,
+				customHeaders: {} as Record<string, string>,
+				maxCharsPerRequest: 0,
+				enableLogging: false,
+			};
+
+			const response = await sendChatCompletion(messages, config);
+
+			// 解析JSON
+			let parsed: Array<{
+				sourceName: string;
+				targetName: string;
+				relationType: string[];
+				customRelationType?: string;
+				sourceNickname: string[];
+				targetNickname: string[];
+			}>;
+
+			try {
+				parsed = JSON.parse(response);
+			} catch {
+				const jsonMatch = response.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+				if (jsonMatch) {
+					parsed = JSON.parse(jsonMatch[1]);
+				} else {
+					const arrMatch = response.match(/\[[\s\S]*\]/);
+					if (arrMatch) {
+						parsed = JSON.parse(arrMatch[0]);
+					} else {
+						throw new Error("无法解析AI返回结果");
+					}
+				}
+			}
+
+			if (!Array.isArray(parsed)) throw new Error("AI返回结果格式错误");
+
+			// 合并同一对角色的多条关系
+			const normalizeKey = (sourceName: string, targetName: string): string => {
+				const names = [sourceName, targetName].sort();
+				return `${names[0]}|${names[1]}`;
+			};
+
+			const mergedMap: Record<string, typeof parsed[0]> = {};
+			for (const rel of parsed) {
+				const key = normalizeKey(rel.sourceName, rel.targetName);
+				if (!mergedMap[key]) {
+					mergedMap[key] = {
+						sourceName: rel.sourceName,
+						targetName: rel.targetName,
+						relationType: [...new Set(rel.relationType)],
+						customRelationType: rel.customRelationType || "",
+						sourceNickname: [...rel.sourceNickname],
+						targetNickname: [...rel.targetNickname],
+					};
+				} else {
+					const existing = mergedMap[key];
+					existing.relationType = [...new Set([...existing.relationType, ...rel.relationType])];
+					existing.sourceNickname = [...new Set([...existing.sourceNickname, ...rel.sourceNickname])];
+					existing.targetNickname = [...new Set([...existing.targetNickname, ...rel.targetNickname])];
+					if (rel.customRelationType && !existing.customRelationType) {
+						existing.customRelationType = rel.customRelationType;
+					}
+				}
+			}
+
+			// 转换为 CharacterRelationship 格式并替换
+			const newRelationships: CharacterRelationship[] = [];
+			for (const rel of Object.values(mergedMap)) {
+				const sourceId = nameToId[rel.sourceName];
+				const targetId = nameToId[rel.targetName];
+				if (!sourceId || !targetId || sourceId === targetId) continue;
+
+				newRelationships.push({
+					id: `rel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${newRelationships.length}`,
+					novelId,
+					sourceId,
+					targetId,
+					relationType: rel.relationType as RelationType[],
+					customRelationType: rel.customRelationType || undefined,
+					sourceNickname: rel.sourceNickname || [],
+					targetNickname: rel.targetNickname || [],
+				});
+			}
+
+			setRelationshipsForNovel(novelId, newRelationships);
+			useAppMetaStore.getState().showToast(`关系梳理完成，共 ${newRelationships.length} 条关系`, "success");
+		} catch (err) {
+			useAppMetaStore.getState().showToast("关系梳理失败: " + (err instanceof Error ? err.message : String(err)), "error");
+		} finally {
+			setIsMergingRelationships(false);
+		}
+	}, [characters, relationships, aiConfig, novelId, setRelationshipsForNovel]);
+
 	const getSourceSuggestions = useCallback(
 		(input: string) => {
 			if (!input.trim()) return [];
@@ -993,15 +1167,24 @@ ${existingRelationships.length > 0 ? JSON.stringify(existingRelationships, null,
 					<span>{filteredGraphEdges.length} 条关系</span>
 				</div>
 				<div className="graph-toolbar-actions">
-					<button
-						className="graph-toolbar-btn"
-						onClick={handleGenerateRelationships}
-						disabled={isGeneratingRelationships || characters.length < 2}
-					>
-						<Icons.sparkle size={12} />
-						<span>{isGeneratingRelationships ? "生成中..." : "AI生成关系"}</span>
-					</button>
-				</div>
+				<button
+					className="btn"
+					onClick={handleGenerateRelationships}
+					disabled={isGeneratingRelationships || characters.length < 2}
+				>
+					<Icons.sparkle size={12} />
+					<span>{isGeneratingRelationships ? "生成中..." : "AI生成关系"}</span>
+				</button>
+				<button
+					className="btn"
+					onClick={handleMergeRelationships}
+					disabled={isMergingRelationships || relationships.length === 0}
+					title="将现有关系发给AI梳理合并，替换现有关系"
+				>
+					<Icons.combine size={12} />
+					<span>{isMergingRelationships ? "梳理中..." : "AI梳理关系"}</span>
+				</button>
+			</div>
 			</div>
 
 			<div

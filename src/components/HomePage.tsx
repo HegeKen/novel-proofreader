@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Users, Cloud, MessageSquare, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { Icons } from "./Icons";
+import { DiffModal } from "./DiffModal";
 import { useMobile } from "../hooks/useMobile";
 import { logger } from "../utils/logger";
 import { useAppMetaStore } from "../stores/appMetaStore";
@@ -20,6 +21,7 @@ export function HomePage({ onStart }: HomePageProps) {
 	const [allReleases, setAllReleases] = useState<GitHubRelease[]>([]);
 	const [showDownloadModal, setShowDownloadModal] = useState(false);
 	const [downloadingAsset, setDownloadingAsset] = useState<string | null>(null);
+	const [showDiffModal, setShowDiffModal] = useState(false);
 
 	// 镜像源选择弹窗状态
 	const [mirrorPickerAsset, setMirrorPickerAsset] = useState<{ url: string; fileName: string; displayName: string; size: number } | null>(null);
@@ -217,9 +219,20 @@ export function HomePage({ onStart }: HomePageProps) {
 			description: "基于 AI 的智能文本校对，自动检测排版错误、标点问题、用词不当等",
 		},
 		{
+			icon: Icons.compare,
+			title: "文本对比",
+			description: "精确到单字符的双文本对比，高亮显示所有差异，支持从文件或小说库导入",
+			onClick: () => setShowDiffModal(true),
+		},
+		{
 			icon: Icons.book,
 			title: "小说阅读",
 			description: "优雅的阅读体验，支持章节拆分、阅读进度记忆",
+		},
+		{
+			icon: Icons.brain,
+			title: "AI 角色分析",
+			description: "自动提取小说角色、人物关系，生成人物档案与关系图",
 		},
 		{
 			icon: Icons.script,
@@ -227,20 +240,25 @@ export function HomePage({ onStart }: HomePageProps) {
 			description: "一键将小说转换为剧本格式，方便影视创作",
 		},
 		{
+			icon: Icons.bookAudio,
+			title: "情感朗读",
+			description: "基于 TTS 的情感朗读，支持多种角色音色和语速调节",
+		},
+		{
 			icon: Users,
 			title: "人物关系图",
 			description: "自动分析小说人物关系，可视化展示角色联系",
 		},
 		{
+			icon: Icons.grammar,
+			title: "变体字检查",
+			description: "检测康熙变体字、半角全角字符等排版问题，一键标准化",
+		},
+		{
 			icon: Cloud,
 			title: "数据安全",
 			description: "本地处理，隐私保护，所有数据仅存储在您的设备上",
-		},
-		{
-			icon: Icons.download,
-			title: "多格式导出",
-			description: "支持 TXT 格式导出，方便分享和备份",
-		},
+		}
 	];
 
 	const renderDownloadButton = (asset: NonNullable<GitHubRelease>["assets"][0], platformKey: string, index: number, isDownloading: boolean) => {
@@ -324,11 +342,17 @@ export function HomePage({ onStart }: HomePageProps) {
 					</p>
 
 					{onStart && (
+					<div className="hero-actions">
 						<button className="btn" onClick={handleStartApp}>
 							<Icons.book size={20} />
 							<span>立即体验网页版 V{WEB_VERSION}</span>
 						</button>
-					)}
+						<button className="btn btn-outline" onClick={() => setShowDiffModal(true)}>
+							<Icons.compare size={20} />
+							<span>文本对比</span>
+						</button>
+					</div>
+				)}
 				</div>
 				<div className="hero-decoration">
 					<div className="decoration-circle circle-1"></div>
@@ -341,7 +365,11 @@ export function HomePage({ onStart }: HomePageProps) {
 				<h2 className="section-title">核心功能</h2>
 				<div className="features-grid">
 					{features.map((feature, index) => (
-						<div key={index} className="feature-card">
+						<div
+							key={index}
+							className={`feature-card ${feature.onClick ? "feature-card-clickable" : ""}`}
+							onClick={feature.onClick}
+						>
 							<div className="feature-icon">
 								<feature.icon size={28} />
 							</div>
@@ -593,6 +621,8 @@ export function HomePage({ onStart }: HomePageProps) {
 					</div>
 				</div>
 			)}
+
+			<DiffModal open={showDiffModal} onClose={() => setShowDiffModal(false)} />
 
 			<footer className="footer">
 				<p>

@@ -361,14 +361,86 @@ export interface CJKVariantEntry {
 	/** Unicode 码点 */
 	codePoint: string;
 	/** 所属区块标识 */
-	block: "kangxi" | "cjk-supplement";
+	block: "kangxi" | "cjk-supplement" | "width";
 }
+
+/**
+ * 将全角字符（仅字母、数字、空格）转换为对应的半角字符。
+ * 注意：标点符号不转换，中文小说中标点应保持全角。
+ *
+ * 规则：
+ * - ０-９ (U+FF10-U+FF19) → 0-9 (U+0030-U+0039)
+ * - Ａ-Ｚ (U+FF21-U+FF3A) → A-Z (U+0041-U+005A)
+ * - ａ-ｚ (U+FF41-U+FF5A) → a-z (U+0061-U+007A)
+ * - 全角空格 U+3000 → 半角空格 U+0020
+ *
+ * 不转换：全角标点符号（！？，．：；（）等），中文小说中标点应保持全角
+ *
+ * @param char 单个字符
+ * @returns 转换后的半角字符，未匹配则返回 null
+ */
+export function fullwidthToHalfwidthChar(char: string): string | null {
+	if (!char || char.length !== 1) return null;
+	const code = char.codePointAt(0)!;
+
+	// 全角空格 → 半角空格
+	if (code === 0x3000) return " ";
+
+	// 仅转换全角字母和数字（U+FF10-U+FF19 数字、U+FF21-U+FF3A 大写、U+FF41-U+FF5A 小写）
+	// 排除标点符号（U+FF01-U+FF0F, U+FF1A-U+FF20, U+FF3B-U+FF40, U+FF5B-U+FF5E）
+	if (
+		(code >= 0xFF10 && code <= 0xFF19) || // ０-９
+		(code >= 0xFF21 && code <= 0xFF3A) || // Ａ-Ｚ
+		(code >= 0xFF41 && code <= 0xFF5A)    // ａ-ｚ
+	) {
+		return String.fromCodePoint(code - 0xFEE0);
+	}
+
+	return null;
+}
+
+/**
+ * 判断字符是否是全角字母/数字/空格（即能被转换为半角的字符）
+ * 注意：不含标点符号，中文小说中标点应保持全角
+ */
+export function isFullwidthAlphaNumSymbol(code: number): boolean {
+	if (code === 0x3000) return true; // 全角空格
+	return (
+		(code >= 0xFF10 && code <= 0xFF19) || // ０-９
+		(code >= 0xFF21 && code <= 0xFF3A) || // Ａ-Ｚ
+		(code >= 0xFF41 && code <= 0xFF5A)    // ａ-ｚ
+	);
+}
+
+/**
+ * 全角→半角映射表（用于扫描）：全角字符 → 半角字符
+ * 仅包含字母、数字、空格，不含标点符号（中文小说标点应保持全角）
+ */
+export const FULLWIDTH_TO_HALFWIDTH_MAP: Record<string, string> = (() => {
+	const map: Record<string, string> = {};
+	// 全角空格
+	map["\u3000"] = " ";
+	// ０１２３４５６７８９ (U+FF10-U+FF19)
+	for (let code = 0xFF10; code <= 0xFF19; code++) {
+		map[String.fromCodePoint(code)] = String.fromCodePoint(code - 0xFEE0);
+	}
+	// Ａ-Ｚ (U+FF21-U+FF3A)
+	for (let code = 0xFF21; code <= 0xFF3A; code++) {
+		map[String.fromCodePoint(code)] = String.fromCodePoint(code - 0xFEE0);
+	}
+	// ａ-ｚ (U+FF41-U+FF5A)
+	for (let code = 0xFF41; code <= 0xFF5A; code++) {
+		map[String.fromCodePoint(code)] = String.fromCodePoint(code - 0xFEE0);
+	}
+	return map;
+})();
 
 /**
  * 将文本中的 CJK 变体字/部首字标准化为现代通用汉字
  * 覆盖范围：
  * - 康熙部首 (U+2F00-U+2FDF)
  * - CJK 部首补充 (U+2E80-U+2EFF)
+ * - 全角字母/数字/空格 → 半角（标点符号保持全角，符合中文排版规范）
  * - 对已应用 NFKC 标准化的文本同样有效（兼容性字符会被 NFKC 转换，但部首类不会）
  *
  * @param text 原始文本
@@ -380,11 +452,19 @@ export function normalizeCJKVariants(text: string): string {
 	const result: string[] = [];
 	for (const char of text) {
 		const codePoint = char.codePointAt(0)!;
-		// 只对 U+2E80-U+2FDF 范围内的字符进行查表替换
+		// 1. 康熙部首 / CJK 部首补充替换
 		if (codePoint >= 0x2E80 && codePoint <= 0x2FDF) {
 			const replacement =
 				KANGXI_RADICAL_TO_STANDARD[char] ??
 				CJK_RADICAL_SUPPLEMENT_TO_STANDARD[char];
+			if (replacement) {
+				result.push(replacement);
+				continue;
+			}
+		}
+		// 2. 全角 → 半角（仅字母/数字/空格，标点符号保持全角）
+		if (isFullwidthAlphaNumSymbol(codePoint)) {
+			const replacement = FULLWIDTH_TO_HALFWIDTH_MAP[char];
 			if (replacement) {
 				result.push(replacement);
 				continue;
@@ -397,14 +477,17 @@ export function normalizeCJKVariants(text: string): string {
 
 /**
  * 扫描文本中的所有 CJK 变体/部首字符，返回统计信息
+ * 同时扫描全角字母/数字/符号，归类为 "width" 类型
  */
 export function scanCJKVariants(text: string): CJKVariantEntry[] {
 	if (!text) return [];
 
-	const countMap = new Map<string, { count: number; mapping: { standard: string; block: "kangxi" | "cjk-supplement" } }>();
+	const countMap = new Map<string, { count: number; mapping: { standard: string; block: "kangxi" | "cjk-supplement" | "width" } }>();
 
 	for (const char of text) {
 		const codePoint = char.codePointAt(0)!;
+
+		// 1. 康熙部首
 		if (codePoint >= 0x2E80 && codePoint <= 0x2FDF) {
 			const replacement = KANGXI_RADICAL_TO_STANDARD[char];
 			if (replacement) {
@@ -425,6 +508,20 @@ export function scanCJKVariants(text: string): CJKVariantEntry[] {
 				} else {
 					countMap.set(char, { count: 1, mapping: { standard: replacement2, block: "cjk-supplement" } });
 				}
+				continue;
+			}
+		}
+
+		// 2. 全角字母/数字/空格（标点符号不扫描，中文小说中标点应保持全角）
+		if (isFullwidthAlphaNumSymbol(codePoint)) {
+			const replacement = FULLWIDTH_TO_HALFWIDTH_MAP[char];
+			if (replacement) {
+				const existing = countMap.get(char);
+				if (existing) {
+					existing.count++;
+				} else {
+					countMap.set(char, { count: 1, mapping: { standard: replacement, block: "width" } });
+				}
 			}
 		}
 	}
@@ -435,7 +532,7 @@ export function scanCJKVariants(text: string): CJKVariantEntry[] {
 			variant,
 			standard: data.mapping.standard,
 			count: data.count,
-			codePoint: `U+${variant.codePointAt(0)!.toString(16).toUpperCase()}`,
+			codePoint: `U+${variant.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`,
 			block: data.mapping.block,
 		}))
 		.sort((a, b) => b.count - a.count);

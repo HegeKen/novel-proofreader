@@ -45,12 +45,11 @@ export interface NovelState {
 	) => number;
 	replaceLine: (chapterId: number, lineIndex: number, newLine: string) => void;
 
-	/** 合并两个相邻段落 */
+	/** 合并两个相邻段落（客户端直接拼接，无需 AI 返回合并文本） */
 	mergeParagraphs: (
 		chapterId: number,
 		firstParagraphIndex: number,
 		secondParagraphIndex: number,
-		mergedText?: string,
 	) => boolean;
 
 	/** 追加内容到指定章节末尾（用于AI续写） */
@@ -370,29 +369,27 @@ export const useNovelStore = create<NovelState>()(
 				saveCurrentNovel(get());
 			},
 
-			mergeParagraphs: (chapterId, firstParagraphIndex, secondParagraphIndex, mergedText) => {
-				logger.info('[novelStore]', `合并段落: chapterId=${chapterId}, firstIndex=${firstParagraphIndex}, secondIndex=${secondParagraphIndex}`);
-				let success = false;
-				set((state) => {
-					const chapters = state.chapters.map((ch) => {
-						if (ch.id !== chapterId) return ch;
-						const paragraphs = ch.content.split("\n");
+			mergeParagraphs: (chapterId, firstParagraphIndex, secondParagraphIndex) => {
+			logger.info('[novelStore]', `合并段落: chapterId=${chapterId}, firstIndex=${firstParagraphIndex}, secondIndex=${secondParagraphIndex}`);
+			let success = false;
+			set((state) => {
+				const chapters = state.chapters.map((ch) => {
+					if (ch.id !== chapterId) return ch;
+					const paragraphs = ch.content.split("\n");
 
-						// 验证索引有效性
-						if (firstParagraphIndex < 0 || firstParagraphIndex >= paragraphs.length) return ch;
-						if (secondParagraphIndex < 0 || secondParagraphIndex >= paragraphs.length) return ch;
+					// 验证索引有效性
+					if (firstParagraphIndex < 0 || firstParagraphIndex >= paragraphs.length) return ch;
+					if (secondParagraphIndex < 0 || secondParagraphIndex >= paragraphs.length) return ch;
 
-						// 确保 secondParagraphIndex > firstParagraphIndex
-						if (secondParagraphIndex <= firstParagraphIndex) return ch;
+					// 确保 secondParagraphIndex > firstParagraphIndex
+					if (secondParagraphIndex <= firstParagraphIndex) return ch;
 
-						// 构建合并后的文本
-						const firstText = paragraphs[firstParagraphIndex];
-						const secondText = paragraphs[secondParagraphIndex];
-						const merged = mergedText || `${firstText}${secondText.startsWith('\n') ? '' : '\n'}${secondText}`;
+					// 客户端直接拼接两段（不使用 \n 连接，避免 splitParagraphs 再次拆分）
+					const merged = `${paragraphs[firstParagraphIndex]}${paragraphs[secondParagraphIndex]}`;
 
 						// 替换第一个段落为合并文本，移除第二个段落
 						paragraphs.splice(firstParagraphIndex, 1, merged);
-						paragraphs.splice(secondParagraphIndex - 1, 1); // -1 因为已删除一个
+						paragraphs.splice(secondParagraphIndex, 1); // secondIndex 不需要调整（splice 替换操作不改变后续索引）
 
 						success = true;
 						return { ...ch, content: paragraphs.join("\n") };

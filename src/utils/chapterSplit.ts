@@ -5,12 +5,17 @@ import type { Chapter } from "../types";
 import { logger } from "./logger";
 import { normalizeCJKVariants } from "./normalizeCJK";
 
+/** 空白字符类（包含半角空格、制表符、全角空格、不间断空格等 CJK 常用空白） */
+const WS = '[ \\t\\u3000\\u00A0]';
+const WS_PLUS = `${WS}+`;
+const WS_OPT = `${WS}*`;
+
 /** 卷名正则 */
 const VOLUME_PATTERNS = [
-	/(?:^|\n)\s*(第[一二三四五六七八九十百千万零\d]+卷(?:[ \t]+[^\n]+)?)/g,
-	/(?:^|\n)\s*(卷[一二三四五六七八九十百千万零\d]+(?:[ \t]+[^\n]+)?)/g,
-	/(?:^|\n)\s*(Vol\.?\s*\d+(?:[ \t]+[^\n]+)?)/gi,
-	/(?:^|\n)\s*(Volume\s*\d+(?:[ \t]+[^\n]+)?)/gi,
+	new RegExp(`(?:^|\\n)\\s*(第[一二三四五六七八九十百千万零\\d]+卷(?:${WS_PLUS}[^\\n]+)?)`, 'g'),
+	new RegExp(`(?:^|\\n)\\s*(卷[一二三四五六七八九十百千万零\\d]+(?:${WS_PLUS}[^\\n]+)?)`, 'g'),
+	new RegExp(`(?:^|\\n)\\s*(Vol\\.?\\s*\\d+(?:${WS_PLUS}[^\\n]+)?)`, 'gi'),
+	new RegExp(`(?:^|\\n)\\s*(Volume\\s*\\d+(?:${WS_PLUS}[^\\n]+)?)`, 'gi'),
 ];
 
 /** 章节名正则 */
@@ -21,21 +26,29 @@ const VOLUME_PATTERNS = [
 const KANGXI_DIGITS = '\\u2F00\\u2F02\\u2F03\\u2F04\\u2F05\\u2F06\\u2F07\\u2F08\\u2F09\\u2F0A\\u2F0B\\u2F17';
 const ARCHAIC_DIGITS = '廿卅卌';
 const CHAPTER_PATTERNS = [
-	`(?:^|\\n)\\s*(第[\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]+[章回节部篇](?:[ \\t]+[^\\n]+)?)`,
+	`(?:^|\\n)\\s*(第[\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]+[章回节部篇](?:${WS_PLUS}[^\\n]+)?)`,
 	// 支持不带"第"字的章节号，如"四十一章"、"四十五章"
 	// 注意：对于"回"这个词，要求至少两个数字字符以避免匹配"一回"等日常用语
-	`(?:^|\\n)\\s*([\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]{2,}[章回节部篇](?:[ \\t]+[^\\n]+)?)`,
-	`(?:^|\\n)\\s*([\\d二三四五六七八九十百千万零０１２３４５６７８９\\u2F02\\u2F03\\u2F04\\u2F05\\u2F06\\u2F07\\u2F08\\u2F09\\u2F0A\\u2F0B\\u2F17${ARCHAIC_DIGITS}][\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]*[章节部篇](?:[ \\t]+[^\\n]+)?)`,
+	`(?:^|\\n)\\s*([\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]{2,}[章回节部篇](?:${WS_PLUS}[^\\n]+)?)`,
+	`(?:^|\\n)\\s*([\\d二三四五六七八九十百千万零０１２３４５６７８９\\u2F02\\u2F03\\u2F04\\u2F05\\u2F06\\u2F07\\u2F08\\u2F09\\u2F0A\\u2F0B\\u2F17${ARCHAIC_DIGITS}][\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]*[章节部篇](?:${WS_PLUS}[^\\n]+)?)`,
 	// 支持章节号与"章"之间有空格的情况，如"第四十五 章与虎谋皮"
-	`(?:^|\\n)\\s*(第[\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]+)[ \\t]+([章回节部篇][ \\t]*[^\\n]+)?`,
-	`(?:^|\\n)\\s*([\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]{2,})[ \\t]+([章回节部篇][ \\t]*[^\\n]+)?`,
-	`(?:^|\\n)\\s*(序章|序言|前言|引子|楔子|尾声|后记|番外(?:[\\d一二三四五六七八九十０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]+)?(?:[ \\t]+[^\\n]+)?|结局(?:[ \\t]+[^\\n]+)?)`,
-	/(?:^|\n)\s*(Chapter\s+\d+(?:[ \t]+[^\n]+)?)/gi,
-	/(?:^|\n)\s*(PROLOGUE|EPILOGUE|AFTERWORD(?:[ \t]+[^\n]+)?)/gi,
+	`(?:^|\\n)\\s*(第[\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]+)${WS_PLUS}([章回节部篇]${WS_OPT}[^\\n]+)?`,
+	`(?:^|\\n)\\s*([\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]{2,})${WS_PLUS}([章回节部篇]${WS_OPT}[^\\n]+)?`,
+	`(?:^|\\n)\\s*(序章|序言|前言|引子|楔子|尾声|后记|番外(?:[\\d一二三四五六七八九十０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]+)?(?:${WS_PLUS}[^\\n]+)?|结局(?:${WS_PLUS}[^\\n]+)?)`,
+	new RegExp(`(?:^|\\n)\\s*(Chapter\\s+\\d+(?:${WS_PLUS}[^\\n]+)?)`, 'gi'),
+	new RegExp(`(?:^|\\n)\\s*(PROLOGUE|EPILOGUE|AFTERWORD(?:${WS_PLUS}[^\\n]+)?)`, 'gi'),
 ].map(p => new RegExp(p, 'g'));
 
 /** 按字符数强制分割的阈值 */
 const DEFAULT_CHUNK_SIZE = 5000;
+
+/**
+ * CJK 感知的 trim：去除首尾空白（含全角空格 U+3000、不间断空格 U+00A0 等）
+ */
+function trimCJK(str: string): string {
+	// \s 已涵盖半角空格、制表、换行等；额外补上 U+3000（全角空格）和 U+00A0（不间断空格）
+	return str.replace(/^[\s\u3000\u00A0]+|[\s\u3000\u00A0]+$/g, "");
+}
 
 interface MatchItem {
 	title: string;
@@ -60,7 +73,7 @@ export function splitChapters(
 		let m: RegExpExecArray | null;
 		while ((m = pattern.exec(fullText)) !== null) {
 			matches.push({
-				title: m[1].trim(),
+				title: trimCJK(m[1]),
 				index: m.index,
 				isVolume: true,
 			});
@@ -73,9 +86,9 @@ export function splitChapters(
 		let m: RegExpExecArray | null;
 		while ((m = pattern.exec(fullText)) !== null) {
 			// 处理多捕获组的情况（如"第四十五 章"会匹配两个组）
-			let title = m[1].trim();
+			let title = trimCJK(m[1]);
 			if (m[2]) {
-				title += m[2].trim();
+				title += trimCJK(m[2]);
 			}
 			matches.push({
 				title: title,

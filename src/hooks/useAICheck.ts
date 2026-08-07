@@ -18,7 +18,9 @@ import {
 	buildProofreadSystemPrompt,
 	buildDualParagraphUserPrompt,
 	extractJSON,
+	normalizeErrors,
 } from "../utils/aiClient";
+import { processAnomalyError } from "../utils/punctuationCheck";
 import { logger } from "../utils/logger";
 import { startProofreadService, stopProofreadService } from "../utils/androidService";
 import { Semaphore } from "../utils/concurrent";
@@ -36,7 +38,7 @@ const getMaxConcurrentBatches = (enableParallel: boolean, configuredMax: number)
 };
 
 /** 在段落文本中定位 AI 返回的错误位置 */
-function locateTextInParagraph(
+export function locateTextInParagraph(
 	para: string,
 	matchText: string,
 	column?: number,
@@ -118,6 +120,43 @@ function locateTextInParagraph(
 	return null;
 }
 
+/** 跨段落 fallback 定位：在当前段落找不到时，搜索前后 radius 段范围内 */
+export function locateTextWithFallback(
+	paragraphs: string[],
+	currentIndex: number,
+	matchText: string,
+	column?: number,
+	radius: number = 3,
+): { start: number; end: number; paragraphIndex: number } | null {
+	// 1. 先在当前段落尝试
+	const currentPara = paragraphs[currentIndex];
+	if (currentPara !== undefined) {
+		const located = locateTextInParagraph(currentPara, matchText, column);
+		if (located) {
+			return { ...located, paragraphIndex: currentIndex };
+		}
+	}
+
+	// 2. 在前后 radius 段内搜索
+	const searchOrder: number[] = [];
+	for (let offset = 1; offset <= radius; offset++) {
+		if (currentIndex - offset >= 0) searchOrder.push(currentIndex - offset);
+		if (currentIndex + offset < paragraphs.length) searchOrder.push(currentIndex + offset);
+	}
+
+	for (const idx of searchOrder) {
+		const para = paragraphs[idx];
+		if (!para || para.trim() === "") continue;
+		const located = locateTextInParagraph(para, matchText, column);
+		if (located) {
+			logger.proofread(`[fallback] 文本在邻段找到: 目标段落=${currentIndex}, 实际段落=${idx}, matchText="${matchText.slice(0, 20)}"`);
+			return { ...located, paragraphIndex: idx };
+		}
+	}
+
+	return null;
+}
+
 /** 解析 AI 校对响应，返回标准化的 ProofreadError 数组 */
 function parseAIProofreadResponse(
 	raw: unknown[],
@@ -125,6 +164,7 @@ function parseAIProofreadResponse(
 	paragraphIndex: number,
 	paragraph: string,
 	ignoredWords: string[],
+	allParagraphs?: string[],
 ): ProofreadError[] {
 	const errors: ProofreadError[] = [];
 	let filteredCount = 0;
@@ -140,6 +180,7 @@ function parseAIProofreadResponse(
 		const errType = String(o.type ?? o.error_type ?? "");
 		const suggest = String(o.reason ?? o.suggestion ?? "");
 		const aiColumn = o.column !== undefined ? Number(o.column) : undefined;
+		const anomalyNo = o.anomaly_no !== undefined && o.anomaly_no !== null ? Number(o.anomaly_no) : undefined;
 
 		// 过滤条件1：无错误标记
 		if (['无错误', 'none', 'no_error', 'no-error', 'noerror', 'nil', 'null', ''].includes(errType.toLowerCase())) {
@@ -158,15 +199,15 @@ function parseAIProofreadResponse(
 			continue;
 		}
 
-		// 过滤条件3：原文本和修改内容完全相同（放宽条件：仅当完全一致时过滤）
-		if (matchText === correctText) {
+		// 过滤条件3：原文本和修改内容完全相同（放宽条件：仅当完全一致时过滤；有 anomaly_no 时跳过此过滤）
+		if (!anomalyNo && matchText === correctText) {
 			logger.proofread(`[过滤] 原文本和修改内容完全相同: "${matchText}"`);
 			filteredCount++;
 			continue;
 		}
 		
-		// 过滤条件4：去除空格后相同（保留大小写差异）
-		if (matchText.replace(/\s/g, '') === correctText.replace(/\s/g, '') && matchText === correctText) {
+		// 过滤条件4：去除空格后相同（保留大小写差异；有 anomaly_no 时跳过此过滤）
+		if (!anomalyNo && matchText.replace(/\s/g, '') === correctText.replace(/\s/g, '') && matchText === correctText) {
 			logger.proofread(`[过滤] 去除空格后且原文相同: "${matchText}" vs "${correctText}"`);
 			filteredCount++;
 			continue;
@@ -180,7 +221,20 @@ function parseAIProofreadResponse(
 			continue;
 		}
 
-		const located = locateTextInParagraph(paragraph, matchText, aiColumn);
+		// 尝试在当前段落定位
+		let located = locateTextInParagraph(paragraph, matchText, aiColumn);
+		let actualParagraph = paragraph;
+		let actualParagraphIndex = paragraphIndex;
+
+		// 当前段落找不到时，跨段落 fallback 搜索
+		if (!located && allParagraphs) {
+			const fallbackResult = locateTextWithFallback(allParagraphs, paragraphIndex, matchText, aiColumn);
+			if (fallbackResult) {
+				located = { start: fallbackResult.start, end: fallbackResult.end };
+				actualParagraphIndex = fallbackResult.paragraphIndex;
+				actualParagraph = allParagraphs[fallbackResult.paragraphIndex];
+			}
+		}
 		
 		// 过滤条件6：无法定位
 		if (!located) {
@@ -190,15 +244,27 @@ function parseAIProofreadResponse(
 		}
 
 		// 成功添加错误
-		logger.proofread(`[成功] 添加错误: matchText="${matchText.slice(0, 30)}", correctText="${correctText.slice(0, 30)}", type="${errType}"`);
+		// 如果 AI 返回了 anomaly_no，本地验证并覆盖修复文本
+		let finalCorrectText = correctText;
+		if (anomalyNo) {
+			const anomalyResult = processAnomalyError(actualParagraph, anomalyNo);
+			if (!anomalyResult) {
+				logger.proofread(`[过滤] anomaly_no=${anomalyNo} 本地验证未通过，跳过`);
+				filteredCount++;
+				continue;
+			}
+			finalCorrectText = anomalyResult.correctedText;
+		}
+
+		logger.proofread(`[成功] 添加错误: matchText="${matchText.slice(0, 30)}", correctText="${finalCorrectText.slice(0, 30)}", type="${errType}", 段落索引=${actualParagraphIndex}${anomalyNo ? `, anomaly_no=${anomalyNo}` : ''}`);
 		errors.push({
-			id: `err-${chapterId}-${paragraphIndex}-${errors.length}`,
+			id: `err-${chapterId}-${actualParagraphIndex}-${errors.length}`,
 			startIndex: located.start,
 			endIndex: located.end,
 			errorType: (errType as ProofreadError["errorType"]) || "typo",
 			suggestion: suggest,
-			originalText: paragraph.slice(located.start, located.end),
-			correctedText: correctText,
+			originalText: actualParagraph.slice(located.start, located.end),
+			correctedText: finalCorrectText,
 			applied: false,
 			skipped: false,
 		});
@@ -224,6 +290,11 @@ function parseDualParagraphResponse(
 } {
 	const errors1: ProofreadError[] = [];
 	const errors2: ProofreadError[] = [];
+	let filteredCount = 0;
+
+	// 构建双段落文本数组用于 fallback
+	const dualParagraphs = [paragraph1, paragraph2];
+	const dualIndices = [paragraph1Index, paragraph2Index];
 
 	// 解析错误列表
 	const errorList = raw.errors;
@@ -235,34 +306,97 @@ function parseDualParagraphResponse(
 			const line = Number(o.line) || 1;
 			const find = String(o.find ?? "");
 			const replace = String(o.replace ?? "");
-			const errType = String(o.type ?? "");
-			const suggest = String(o.reason ?? "");
+			const orig = String(o.original ?? o.original_text ?? "");
+			const corr = String(o.corrected ?? o.corrected_text ?? "");
+			const errType = String(o.type ?? o.error_type ?? "");
+			const suggest = String(o.reason ?? o.suggestion ?? "");
+			const aiColumn = o.column !== undefined ? Number(o.column) : undefined;
+			const anomalyNo = o.anomaly_no !== undefined && o.anomaly_no !== null ? Number(o.anomaly_no) : undefined;
 
-			if (!find || find === replace) continue;
+			const matchText = find || orig;
+			const correctText = replace || corr;
 
-			const paragraph = line === 2 ? paragraph2 : paragraph1;
-			const paragraphIndex = line === 2 ? paragraph2Index : paragraph1Index;
+			// 过滤1：无错误标记
+			if (['无错误', 'none', 'no_error', 'no-error', 'noerror', 'nil', 'null', ''].includes(errType.toLowerCase())) {
+				filteredCount++;
+				continue;
+			}
 
-			// 过滤忽略词
-			const isIgnored = ignoredWords.some(word => word && (find.includes(word) || word.includes(find)));
-			if (isIgnored) continue;
+			// 过滤2：matchText 为空
+			if (!matchText) {
+				filteredCount++;
+				continue;
+			}
 
-			const located = locateTextInParagraph(paragraph, find);
-			if (!located) continue;
+			// 过滤3：原文本和修改内容完全相同（有 anomaly_no 时跳过）
+			if (!anomalyNo && matchText === correctText) {
+				filteredCount++;
+				continue;
+			}
+
+			const targetLineIdx = line === 2 ? 1 : 0;
+			const targetParagraph = dualParagraphs[targetLineIdx];
+
+			// 过滤4：忽略词
+			const isIgnored = ignoredWords.some(word => word && (matchText.includes(word) || word.includes(matchText)));
+			if (isIgnored) {
+				filteredCount++;
+				continue;
+			}
+
+			// 先在指定段落尝试定位
+			let located = locateTextInParagraph(targetParagraph, matchText, aiColumn);
+			let actualLineIdx = targetLineIdx;
+
+			// 如果指定段落找不到，在另一个段落中 fallback 搜索
+			if (!located) {
+				const otherLineIdx = targetLineIdx === 0 ? 1 : 0;
+				const otherParagraph = dualParagraphs[otherLineIdx];
+				if (otherParagraph) {
+					const fallbackLocated = locateTextInParagraph(otherParagraph, matchText, aiColumn);
+					if (fallbackLocated) {
+						logger.proofread(`[双段落fallback] line=${line}的文本在另一段落找到，将分配给第${otherLineIdx + 1}段`);
+						located = fallbackLocated;
+						actualLineIdx = otherLineIdx;
+					}
+				}
+			}
+
+			// 过滤5：无法定位
+			if (!located) {
+				logger.proofread(`[双段落过滤] 无法定位: line=${line}, matchText="${matchText.slice(0, 30)}", 段落长度=${targetParagraph.length}`);
+				filteredCount++;
+				continue;
+			}
+
+			const actualParagraph = dualParagraphs[actualLineIdx];
+			const actualGlobalIdx = dualIndices[actualLineIdx];
+
+			// 如果 AI 返回了 anomaly_no，本地验证并覆盖修复文本
+			let finalCorrectText = correctText;
+			if (anomalyNo) {
+				const anomalyResult = processAnomalyError(actualParagraph, anomalyNo);
+				if (!anomalyResult) {
+					logger.proofread(`[双段落过滤] anomaly_no=${anomalyNo} 本地验证未通过，跳过`);
+					filteredCount++;
+					continue;
+				}
+				finalCorrectText = anomalyResult.correctedText;
+			}
 
 			const error: ProofreadError = {
-				id: `err-${chapterId}-${paragraphIndex}-${line === 2 ? 'd2' : 'd1'}-${errors1.length + errors2.length}`,
+				id: `err-${chapterId}-${actualGlobalIdx}-${actualLineIdx === 1 ? 'd2' : 'd1'}-${errors1.length + errors2.length}`,
 				startIndex: located.start,
 				endIndex: located.end,
 				errorType: (errType as ProofreadError["errorType"]) || "typo",
 				suggestion: suggest,
-				originalText: paragraph.slice(located.start, located.end),
-				correctedText: replace,
+				originalText: actualParagraph.slice(located.start, located.end),
+				correctedText: finalCorrectText,
 				applied: false,
 				skipped: false,
 			};
 
-			if (line === 2) {
+			if (actualLineIdx === 1) {
 				errors2.push(error);
 			} else {
 				errors1.push(error);
@@ -279,13 +413,12 @@ function parseDualParagraphResponse(
 			mergeSuggestion = {
 				targetParagraphIndex: paragraph2Index,
 				reason: String(mergeRaw.reason ?? ""),
-				mergedText: mergeRaw.merged_text ? String(mergeRaw.merged_text) : undefined,
 				applied: false,
 			};
 		}
 	}
 
-	logger.proofread(`[parseDualParagraphResponse] 解析完成: 第1段错误=${errors1.length}, 第2段错误=${errors2.length}, 合并建议=${mergeSuggestion ? '是' : '否'}`);
+	logger.proofread(`[parseDualParagraphResponse] 解析完成: 总项=${Array.isArray(errorList) ? errorList.length : 0}, 第1段成功=${errors1.length}, 第2段成功=${errors2.length}, 过滤=${filteredCount}, 合并建议=${mergeSuggestion ? '是' : '否'}`);
 
 	return { errors1, errors2, mergeSuggestion };
 }
@@ -421,7 +554,7 @@ export function useAICheck() {
 							aiConfig,
 							controller.signal,
 						);
-						const raw = extractJSON(reply);
+						const raw = normalizeErrors(extractJSON(reply));
 
 						// 收集该批次所有错误，按原始行号分组
 						const errorsByLine: ProofreadError[][] = paragraphs.map(() => []);
@@ -666,14 +799,55 @@ export function useAICheck() {
 						];
 
 						const reply = await sendChatCompletion(messages, aiConfig, controller.signal);
-						const raw = extractJSON(reply);
+						const raw = normalizeErrors(extractJSON(reply));
 
-						const errors = parseAIProofreadResponse(raw, chapter.id, originalIndex, item, ignoredWords);
+						const errors = parseAIProofreadResponse(raw, chapter.id, originalIndex, item, relevantIgnoredWords, allLines);
 
-						updateParagraphResult(chapter.id, originalIndex, {
-							errors,
+						// 将 errors 按实际段落索引分组，分配到正确的段落
+						const groupedErrors = new Map<number, ProofreadError[]>();
+						for (const err of errors) {
+							// 从 id 中解析段落索引: err-{chapterId}-{paragraphIndex}-...
+							const parts = err.id.split('-');
+							if (parts.length >= 3) {
+								const paraIdx = parseInt(parts[2], 10);
+								if (!isNaN(paraIdx)) {
+									if (!groupedErrors.has(paraIdx)) groupedErrors.set(paraIdx, []);
+									groupedErrors.get(paraIdx)!.push(err);
+									continue;
+								}
+							}
+							// fallback: 放入原段落
+							if (!groupedErrors.has(originalIndex)) groupedErrors.set(originalIndex, []);
+							groupedErrors.get(originalIndex)!.push(err);
+						}
+
+						// 更新当前段落（标记为完成），合并已有错误
+						const state = useProofreadStore.getState();
+						const existingForCurrent = state.results[chapter.id]?.[originalIndex];
+						const newErrorsForCurrent = groupedErrors.get(originalIndex) ?? [];
+						const existingIdsForCurrent = new Set((existingForCurrent?.errors ?? []).map(e => e.id));
+						const mergedCurrentErrors = [
+							...(existingForCurrent?.errors ?? []),
+							...newErrorsForCurrent.filter(e => !existingIdsForCurrent.has(e.id))
+						];
+						state.updateParagraphResult(chapter.id, originalIndex, {
+							errors: mergedCurrentErrors,
 							status: "done",
 						});
+
+						// 将跨段落 errors 合并到对应段落（保留已有错误）
+						for (const [paraIdx, paraErrors] of groupedErrors) {
+							if (paraIdx === originalIndex) continue;
+							const existingResult = state.results[chapter.id]?.[paraIdx];
+							const existingIds = new Set((existingResult?.errors ?? []).map(e => e.id));
+							const mergedErrors = [
+								...(existingResult?.errors ?? []),
+								...paraErrors.filter(e => !existingIds.has(e.id))
+							];
+							state.updateParagraphResult(chapter.id, paraIdx, {
+								errors: mergedErrors,
+							});
+						}
 
 						// 保存校对进度
 						if (currentNovelId) {
@@ -771,37 +945,50 @@ export function useAICheck() {
 						];
 
 						const reply = await sendChatCompletion(messages, aiConfig, controller.signal);
+						logger.proofread(`双段落AI原始返回: ${reply.slice(0, 500)}${reply.length > 500 ? '...' : ''}`);
 						const parsed = extractJSON(reply);
+						logger.proofread(`双段落解析结果: ${Array.isArray(parsed) ? `数组[${parsed.length}]` : `对象 keys=${parsed ? Object.keys(parsed).join(',') : 'null'}`}`);
 
 						// 解析双段落响应
-						let result: ReturnType<typeof parseDualParagraphResponse>;
-						if (parsed && !Array.isArray(parsed)) {
-							result = parseDualParagraphResponse(
-								parsed as Record<string, unknown>,
-								chapter.id,
-								origIdx1,
-								origIdx2,
-								item1,
-								item2,
-								ignoredWords,
-							);
+					let result: ReturnType<typeof parseDualParagraphResponse>;
+					if (parsed && !Array.isArray(parsed)) {
+						result = parseDualParagraphResponse(
+							parsed as Record<string, unknown>,
+							chapter.id,
+							origIdx1,
+							origIdx2,
+							item1,
+							item2,
+							combinedIgnoredWords,
+						);
 						} else {
-							// 如果 AI 返回的是数组格式，按单段落解析处理
-							logger.proofread(`AI 返回数组格式，分别解析两个段落`);
-							const errors1 = parseAIProofreadResponse(
-								Array.isArray(parsed) ? parsed : [],
+							// AI 返回数组格式（单段落格式），尝试按文本匹配分配到对应段落
+							logger.proofread(`AI 返回数组格式，尝试按文本匹配分配到两个段落`);
+							const errorArray = Array.isArray(parsed) ? parsed : [];
+							// 构建双段落的 allParagraphs 用于 fallback
+							const dualParagraphs = [item1, item2];
+							const rawErrors: ProofreadError[] = parseAIProofreadResponse(
+								errorArray,
 								chapter.id,
-								origIdx1,
+								0,
 								item1,
-								ignoredWords,
+								combinedIgnoredWords,
+								dualParagraphs,
 							);
-							const errors2 = parseAIProofreadResponse(
-								[], // 没有第二段的错误
-								chapter.id,
-								origIdx2,
-								item2,
-								ignoredWords,
-							);
+							// 根据 originalText 实际在哪个段落中来重新分配，并修正 id 中的全局索引
+							const errors1: ProofreadError[] = [];
+							const errors2: ProofreadError[] = [];
+							for (const err of rawErrors) {
+								const inPara1 = locateTextInParagraph(item1, err.originalText);
+								const inPara2 = locateTextInParagraph(item2, err.originalText);
+								if (inPara1 && !inPara2) {
+									errors1.push({ ...err, id: `err-${chapter.id}-${origIdx1}-d1-${errors1.length}` });
+								} else if (inPara2 && !inPara1) {
+									errors2.push({ ...err, id: `err-${chapter.id}-${origIdx2}-d2-${errors2.length}` });
+								} else {
+									errors1.push({ ...err, id: `err-${chapter.id}-${origIdx1}-d1-${errors1.length}` });
+								}
+							}
 							result = { errors1, errors2, mergeSuggestion: null };
 						}
 
@@ -936,7 +1123,9 @@ export function useAICheck() {
 			setSingleCheckingLine: (v: number | null) => void,
 			onComplete?: () => void,
 		) => {
-			const chapter = chapters[currentChapterIndex];
+			// 从 store 获取最新章节，避免闭包过期（如合并段落后 chapters 已更新但 useCallback 未刷新）
+			const latestState = useNovelStore.getState();
+			const chapter = latestState.chapters[latestState.currentChapterIndex];
 			if (!chapter) {
 				onComplete?.();
 				return;
@@ -1011,14 +1200,53 @@ export function useAICheck() {
 				];
 
 				const reply = await sendChatCompletion(messages, aiConfig);
-				const raw = extractJSON(reply);
+				const raw = normalizeErrors(extractJSON(reply));
 
-				const errors = parseAIProofreadResponse(raw, chapter.id, originalIndex, lineText, ignoredWords);
+				const errors = parseAIProofreadResponse(raw, chapter.id, originalIndex, lineText, ignoredWords, allParagraphs);
 
-				updateParagraphResult(chapter.id, originalIndex, {
-				errors,
-				status: "done",
-			});
+				// 将 errors 按实际段落索引分组，分配到正确的段落
+				const groupedErrors = new Map<number, ProofreadError[]>();
+				for (const err of errors) {
+					const parts = err.id.split('-');
+					if (parts.length >= 3) {
+						const paraIdx = parseInt(parts[2], 10);
+						if (!isNaN(paraIdx)) {
+							if (!groupedErrors.has(paraIdx)) groupedErrors.set(paraIdx, []);
+							groupedErrors.get(paraIdx)!.push(err);
+							continue;
+						}
+					}
+					if (!groupedErrors.has(originalIndex)) groupedErrors.set(originalIndex, []);
+					groupedErrors.get(originalIndex)!.push(err);
+				}
+
+				// 更新当前段落（合并已有错误）
+				const state = useProofreadStore.getState();
+				const existingForCurrent = state.results[chapter.id]?.[originalIndex];
+				const newErrorsForCurrent = groupedErrors.get(originalIndex) ?? [];
+				const existingIdsForCurrent = new Set((existingForCurrent?.errors ?? []).map(e => e.id));
+				const mergedCurrentErrors = [
+					...(existingForCurrent?.errors ?? []),
+					...newErrorsForCurrent.filter(e => !existingIdsForCurrent.has(e.id))
+				];
+				state.updateParagraphResult(chapter.id, originalIndex, {
+					errors: mergedCurrentErrors,
+					status: "done",
+				});
+
+				// 将跨段落 errors 合并到对应段落
+				for (const [paraIdx, paraErrors] of groupedErrors) {
+					if (paraIdx === originalIndex) continue;
+					const existingResult = state.results[chapter.id]?.[paraIdx];
+					const existingIds = new Set((existingResult?.errors ?? []).map(e => e.id));
+					const mergedErrors = [
+						...(existingResult?.errors ?? []),
+						...paraErrors.filter(e => !existingIds.has(e.id))
+					];
+					state.updateParagraphResult(chapter.id, paraIdx, {
+						errors: mergedErrors,
+					});
+				}
 		} catch (err: unknown) {
 			const msg = err instanceof Error ? err.message : String(err);
 			updateParagraphResult(chapter.id, originalIndex, {
@@ -1031,8 +1259,6 @@ export function useAICheck() {
 		}
 		},
 		[
-			chapters,
-			currentChapterIndex,
 			currentNovelId,
 			aiConfig,
 			setResults,

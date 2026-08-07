@@ -4,7 +4,9 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useNovelStore } from "../stores/novelStore";
 import { useProofreadStore } from "../stores/proofreadStore";
+import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useAICheck } from "../hooks/useAICheck";
+import { locateTextWithFallback } from "../hooks/useAICheck";
 import { useMobile } from "../hooks/useMobile";
 import { buildParagraphIndexMap } from "../utils/formatters";
 import { EmptyState } from "./EmptyState";
@@ -13,6 +15,7 @@ import { Icons } from "./Icons";
 import { IgnoredWordsManager } from "./IgnoredWordsManager";
 import { ToastContainer } from "./Toast";
 import { ProofreadQueuePanel } from "./ProofreadQueuePanel";
+import { PeakHourBanner } from "./PeakHourBanner";
 import { logger } from "../utils/logger";
 
 import type { ToastMessage } from "./Toast";
@@ -45,6 +48,7 @@ const ANIM_NEW_MS = 1200;
 export function ProofreadPanel() {
 	const { isMobile } = useMobile();
 
+	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 	const chapters = useNovelStore((s) => s.chapters);
 	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
 	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
@@ -342,7 +346,7 @@ export function ProofreadPanel() {
 					endIndex: err.endIndex,
 				});
 
-				const replaced = replaceParagraphText(
+				let replaced = replaceParagraphText(
 					chapterId,
 					paraIndex,
 					err.originalText,
@@ -351,7 +355,37 @@ export function ProofreadPanel() {
 					err.endIndex,
 				);
 				logger.proofread(`采纳修改: chapterId=${chapterId}, paraIndex=${paraIndex}, original="${err.originalText}", corrected="${err.correctedText}", success=${replaced}`);
-				toggleErrorApplied(chapterId, paraIndex, err.id); // 使用原始段落索引
+
+				// 当前段落替换失败时，跨段落 fallback 重新定位
+				let actualParaIndex = paraIndex;
+				if (!replaced) {
+					const allParagraphs = splitParagraphs(currentChapter.content);
+					const fallback = locateTextWithFallback(allParagraphs, paraIndex, err.originalText);
+					if (fallback) {
+						actualParaIndex = fallback.paragraphIndex;
+						logger.proofread(`[fallback] 在段落 ${actualParaIndex} 中重新定位到 start=${fallback.start}, end=${fallback.end}`);
+						replaced = replaceParagraphText(
+							chapterId,
+							actualParaIndex,
+							err.originalText,
+							err.correctedText,
+							fallback.start,
+							fallback.end,
+						);
+						// 跨段落定位成功，切换高亮到实际段落
+						if (replaced) {
+							setHighlightedParagraph(actualParaIndex);
+						}
+						// 同步更新错误的位置信息，使其指向正确的段落和位置
+						toggleErrorApplied(chapterId, actualParaIndex, err.id);
+						if (replaced) {
+							const lengthDiff = err.correctedText.length - err.originalText.length;
+							updateErrorIndices(chapterId, actualParaIndex, fallback.start, lengthDiff);
+						}
+					}
+				} else {
+					toggleErrorApplied(chapterId, paraIndex, err.id);
+				}
 
 				// 记录采纳后状态
 				const afterState = useNovelStore.getState();
@@ -360,32 +394,37 @@ export function ProofreadPanel() {
 					currentChapterIndex: afterState.currentChapterIndex,
 					chaptersLength: afterState.chapters.length,
 					replaced,
+					actualParaIndex,
 					timestamp: Date.now()
 				}, null, 2));
 
 				// 更新同段落中剩余错误的索引（每次替换后都要更新，确保位置准确）
-				if (replaced) {
+				if (replaced && actualParaIndex === paraIndex) {
 					const lengthDiff = err.correctedText.length - err.originalText.length;
 					updateErrorIndices(chapterId, paraIndex, err.startIndex, lengthDiff);
 				}
 
 				if (!replaced) {
-					// AI 返回的文本在段落中找不到，显示错误提示
+					// 跨段落搜索后仍找不到，显示错误提示
 					addToast("error", `采纳失败："${err.originalText}" 不在当前段落中`);
 				} else {
 					addToast("success", "已采纳修改");
+					if (actualParaIndex !== paraIndex) {
+						addToast("info", `已自动定位到第 ${actualParaIndex + 1} 段`);
+					}
 					saveCurrentNovel();
 				}
 
 				setTimeout(() => {
 					// 阶段 3：高亮新文本（精确到替换后的位置）
-					// 替换后新文本的位置应该重新计算，因为新文本长度可能与原文本不同
-					const newStartIndex = err.startIndex;
-					const newEndIndex = err.startIndex + err.correctedText.length;
+					const newStartIndex = actualParaIndex !== paraIndex
+						? (locateTextWithFallback(splitParagraphs(useNovelStore.getState().chapters[state.currentChapterIndex]?.content ?? ""), actualParaIndex, err.correctedText)?.start ?? 0)
+						: err.startIndex;
+					const newEndIndex = newStartIndex + err.correctedText.length;
 
 					setApplyAnimation({
 						chapterId,
-						paragraphIndex: paraIndex, // 使用原始段落索引，与阅读区保持一致
+						paragraphIndex: actualParaIndex,
 						phase: "highlight-new",
 						errorId: err.id,
 						originalText: err.originalText,
@@ -457,11 +496,10 @@ export function ProofreadPanel() {
 			const oldResults = useProofreadStore.getState().results[chapterId] || [];
 
 			const success = mergeParagraphs(
-				chapterId,
-				firstIndex,
-				secondIndex,
-				mergeSuggestion.mergedText,
-			);
+			chapterId,
+			firstIndex,
+			secondIndex,
+		);
 
 			if (success) {
 				addToast("success", "段落合并成功");
@@ -491,10 +529,60 @@ export function ProofreadPanel() {
 						// 合并后的段落：合并两个段落的错误，清除合并建议
 						const result1 = oldResults[firstIndex];
 						const result2 = oldResults[secondIndex];
-						const mergedErrors = [
+						const allOldErrors = [
 							...(result1?.errors || []),
 							...(result2?.errors || []),
 						];
+
+						// 在合并后的文本中重新定位每个错误
+						const mergedErrors: ProofreadError[] = [];
+						for (const err of allOldErrors) {
+							if (err.applied) continue; // 已采纳的跳过
+							// 在合并后的段落中搜索 originalText
+							const foundIdx = para.indexOf(err.originalText);
+							if (foundIdx >= 0) {
+								mergedErrors.push({
+									...err,
+									startIndex: foundIdx,
+									endIndex: foundIdx + err.originalText.length,
+									id: `err-${chapterId}-${newIdx}-${mergedErrors.length}`,
+								});
+							} else {
+								// 空白不敏感搜索
+								const normalize = (s: string) => s.replace(/\s+/g, '');
+								const normalizedPara = normalize(para);
+								const normalizedMatch = normalize(err.originalText);
+								if (normalizedPara.includes(normalizedMatch)) {
+									let charCount = 0;
+									let realStart = -1;
+									for (let j = 0; j < para.length; j++) {
+										if (!/\s/.test(para[j])) {
+											if (charCount === normalizedPara.indexOf(normalizedMatch)) {
+												realStart = j;
+												break;
+											}
+											charCount++;
+										}
+									}
+									if (realStart >= 0) {
+										let realEnd = realStart;
+										let remaining = normalizedMatch.length;
+										while (realEnd < para.length && remaining > 0) {
+											if (!/\s/.test(para[realEnd])) remaining--;
+											realEnd++;
+										}
+										mergedErrors.push({
+											...err,
+											startIndex: realStart,
+											endIndex: realEnd,
+											id: `err-${chapterId}-${newIdx}-${mergedErrors.length}`,
+										});
+									}
+									// 找不到就跳过，不添加无法定位的错误
+								}
+							}
+						}
+						logger.proofread(`合并段落错误重定位: 原始错误数=${allOldErrors.length}, 重定位成功=${mergedErrors.length}`);
 						return {
 							paragraphIndex: newIdx,
 							originalText: para,
@@ -503,15 +591,22 @@ export function ProofreadPanel() {
 							mergeSuggestion: undefined,
 						};
 					} else {
-						// 后续段落：索引减1
-						const oldIdx = newIdx + 1;
-						const oldResult = oldResults[oldIdx];
+						// 后续段落：通过文本匹配找到对应的旧结果（比固定偏移更鲁棒）
+						const oldResult = oldResults.find(r => r && r.originalText === para);
 						if (oldResult) {
-							return {
+							const updatedResult = {
 								...oldResult,
 								paragraphIndex: newIdx,
 								originalText: para,
 							};
+							// 合并后后续段落索引前移1位，同步修正合并建议的目标段落索引
+							if (updatedResult.mergeSuggestion && updatedResult.mergeSuggestion.targetParagraphIndex > firstIndex) {
+								updatedResult.mergeSuggestion = {
+									...updatedResult.mergeSuggestion,
+									targetParagraphIndex: updatedResult.mergeSuggestion.targetParagraphIndex - 1,
+								};
+							}
+							return updatedResult;
 						}
 						return {
 							paragraphIndex: newIdx,
@@ -572,6 +667,22 @@ export function ProofreadPanel() {
 		return null;
 	}, [chapter, chapterResults]);
 
+	// 查找第一个待处理的合并建议所在段落索引
+	const findFirstPendingMergeParagraph = useCallback(() => {
+		for (const result of chapterResults) {
+			if (result.mergeSuggestion && !result.mergeSuggestion.applied) {
+				return result.paragraphIndex;
+			}
+		}
+		return null;
+	}, [chapterResults]);
+
+	// 待处理的合并建议数量
+	const pendingMergeCount = useMemo(
+		() => chapterResults.filter((r) => r.mergeSuggestion && !r.mergeSuggestion.applied).length,
+		[chapterResults],
+	);
+
 	// 点击错误计数时跳转到第一个未处理错误的段落
 	const handleErrorCountClick = useCallback(() => {
 		logger.proofread(`handleErrorCountClick triggered`);
@@ -582,6 +693,14 @@ export function ProofreadPanel() {
 			setHighlightedParagraph(firstUnhandledIndex);
 		}
 	}, [findFirstUnhandledErrorParagraph, setHighlightedParagraph]);
+
+	// 当所有校对错误处理完毕后，点击跳转到第一个待处理的合并建议段落
+	const handleMergeInfoClick = useCallback(() => {
+		const mergeIndex = findFirstPendingMergeParagraph();
+		if (mergeIndex !== null) {
+			setHighlightedParagraph(mergeIndex);
+		}
+	}, [findFirstPendingMergeParagraph, setHighlightedParagraph]);
 
 	if (!chapter) {
 		return (
@@ -603,6 +722,7 @@ export function ProofreadPanel() {
 
 	return (
 		<div className="proofread-panel notranslate" translate="no">
+			<PeakHourBanner baseURL={aiConfig.baseURL} model={aiConfig.model} />
 			<div className="proofread-header">
 				<div className="proofread-toolbar">
 					<div className="toolbar-row toolbar-row-1">
@@ -642,7 +762,10 @@ export function ProofreadPanel() {
 									<button
 										className={isMobile ? "btn-mobile" : "btn"}
 										disabled={currentChapterIndex <= 0}
-										onClick={() => setCurrentChapterIndex(currentChapterIndex - 1)}
+										onClick={() => {
+											saveCurrentNovel();
+											setCurrentChapterIndex(currentChapterIndex - 1);
+										}}
 										title={currentChapterIndex > 0 ? (chapters[currentChapterIndex - 1]?.title || `第 ${currentChapterIndex} 章`) : "已是第一章"}
 									>
 										<Icons.skipBack size={16} />
@@ -650,7 +773,10 @@ export function ProofreadPanel() {
 									<button
 										className={isMobile ? "btn-mobile" : "btn"}
 										disabled={currentChapterIndex >= chapters.length - 1}
-										onClick={() => setCurrentChapterIndex(currentChapterIndex + 1)}
+										onClick={() => {
+											saveCurrentNovel();
+											setCurrentChapterIndex(currentChapterIndex + 1);
+										}}
 										title={currentChapterIndex < chapters.length - 1 ? (chapters[currentChapterIndex + 1]?.title || `第 ${currentChapterIndex + 2} 章`) : "已是最后一章"}
 									>
 										<Icons.skipForward size={16} />
@@ -673,6 +799,16 @@ export function ProofreadPanel() {
 												，剩余 <strong>{remainingNormalErrors}</strong> 个未处理
 											</span>
 										)}
+									</span>
+								)}
+								{remainingNormalErrors === 0 && pendingMergeCount > 0 && (
+									<span
+										className="error-count clickable merge-info"
+										onClick={handleMergeInfoClick}
+										title="点击定位至合并建议段落"
+									>
+										<Icons.combine size={12} />
+										{pendingMergeCount} 个段落合并建议待处理
 									</span>
 								)}
 							</div>
@@ -766,10 +902,13 @@ export function ProofreadPanel() {
 							}}
 							className={`proofread-paragraph ${ttsPlaying && ttsHighlightedPara === paraResult.paragraphIndex ? "tts-highlighted" : highlightedParagraph === paraResult.paragraphIndex ? "highlighted" : ""}`}
 							onClick={() => {
-								setHighlightedParagraph(paraResult.paragraphIndex);
+								// 先清除再设置，确保 ReaderPanel 的 useEffect 一定触发滚动
+								setHighlightedParagraph(null);
+								setTimeout(() => {
+									setHighlightedParagraph(paraResult.paragraphIndex);
+								}, 0);
 								// 点击段落时自动切换起始行到该段落
 								if (!checking) {
-									// 设置原始段落索引（ReaderPanel 使用原始索引进行比较）
 									setStartLine(paraResult.paragraphIndex);
 								}
 							}}
@@ -888,18 +1027,9 @@ export function ProofreadPanel() {
 										<span>段落合并建议</span>
 									</div>
 									<div className="merge-suggestion-reason">
-										{paraResult.mergeSuggestion.reason || "AI建议将此段落与下一段合并"}
-									</div>
-									{paraResult.mergeSuggestion.mergedText && (
-										<div className="merge-suggestion-preview">
-											<span className="preview-label">合并后预览：</span>
-											<span className="preview-text">
-												{paraResult.mergeSuggestion.mergedText.slice(0, 200)}
-												{paraResult.mergeSuggestion.mergedText.length > 200 ? "…" : ""}
-											</span>
-										</div>
-									)}
-									<div className="merge-suggestion-actions">
+									{paraResult.mergeSuggestion.reason || "AI建议将此段落与下一段合并"}
+								</div>
+								<div className="merge-suggestion-actions">
 										<button
 											className="btn-merge-accept"
 											onClick={(e) => {

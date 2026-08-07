@@ -72,8 +72,6 @@ export interface MergeSuggestion {
 	targetParagraphIndex: number;
 	/** AI 给出的合并原因 */
 	reason: string;
-	/** 合并后的建议文本（可选，用户可采纳或忽略） */
-	mergedText?: string;
 	/** 是否已被采纳 */
 	applied: boolean;
 }

@@ -1062,6 +1062,9 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 关系管理弹窗状态
 	const [showManageRelationsModal, setShowManageRelationsModal] = useState(false);
 	const [editingRelation, setEditingRelation] = useState<CharacterRelationship | null>(null);
+	// 角色合并状态：将其他角色的关系合并到当前编辑关系的源角色
+	const [showMergeCharSelect, setShowMergeCharSelect] = useState(false);
+	const [mergeSourceId, setMergeSourceId] = useState<string | null>(null);
 
 	// 小说大事记弹窗
 	const [showEventModal, setShowEventModal] = useState(false);
@@ -1163,6 +1166,87 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			targetNickname: prev.targetNickname.filter((_, i) => i !== index),
 		}));
 	}, []);
+
+	// 合并角色关系：将 fromId 角色的所有关系转移到 toId 角色，然后删除 fromId 角色
+	const handleMergeCharacter = useCallback((fromId: string, toId: string) => {
+		if (fromId === toId) {
+			useAppMetaStore.getState().showToast("不能合并同一个角色", "warning");
+			return;
+		}
+
+		const allRels = getRelationshipsForNovel(novelId) ?? [];
+		const fromChar = characters.find(c => c.id === fromId);
+		const toChar = characters.find(c => c.id === toId);
+		if (!fromChar || !toChar) {
+			useAppMetaStore.getState().showToast("角色不存在", "error");
+			return;
+		}
+
+		// 构建合并后的关系列表
+		const mergedRels: CharacterRelationship[] = [];
+		const pairMap: Record<string, CharacterRelationship> = {};
+
+		const getPairKey = (id1: string, id2: string): string => {
+			const ids = [id1, id2].sort();
+			return `${ids[0]}|${ids[1]}`;
+		};
+
+		for (const rel of allRels) {
+			// 替换 fromId 为 toId
+			let newSourceId = rel.sourceId === fromId ? toId : rel.sourceId;
+			let newTargetId = rel.targetId === fromId ? toId : rel.targetId;
+
+			// 跳过自引用关系（合并后 source === target）
+			if (newSourceId === newTargetId) continue;
+
+			const key = getPairKey(newSourceId, newTargetId);
+			if (pairMap[key]) {
+				// 合并到已有关系
+				const existing = pairMap[key];
+				const existingTypes = new Set(existing.relationType || []);
+				const newTypes = (rel.relationType || []).filter(t => !existingTypes.has(t));
+				existing.relationType = [...(existing.relationType || []), ...newTypes] as RelationType[];
+
+				const existingSourceNicks = new Set(existing.sourceNickname);
+				existing.sourceNickname = [...existing.sourceNickname, ...(rel.sourceNickname || []).filter(n => !existingSourceNicks.has(n))];
+
+				const existingTargetNicks = new Set(existing.targetNickname);
+				existing.targetNickname = [...existing.targetNickname, ...(rel.targetNickname || []).filter(n => !existingTargetNicks.has(n))];
+
+				if (rel.customRelationType && !existing.customRelationType) {
+					existing.customRelationType = rel.customRelationType;
+				}
+			} else {
+				// 确定合并后关系的方向：保持原方向，但替换 ID
+				pairMap[key] = {
+					...rel,
+					sourceId: newSourceId,
+					targetId: newTargetId,
+					relationType: [...(rel.relationType || [])] as RelationType[],
+					sourceNickname: [...(rel.sourceNickname || [])],
+					targetNickname: [...(rel.targetNickname || [])],
+				};
+				mergedRels.push(pairMap[key]);
+			}
+		}
+
+		// 更新关系列表
+		setRelationshipsForNovel(novelId, mergedRels);
+
+		// 合并角色信息：将 fromId 的别名和关系称谓添加到 toId
+		const mergedAliases = [...new Set([...(toChar.aliases || []), ...(fromChar.aliases || [])])];
+		const mergedRelationTerms = [...new Set([...(toChar.relationTerms || []), ...(fromChar.relationTerms || [])])];
+		updateCharacter(novelId, toId, {
+			aliases: mergedAliases,
+			relationTerms: mergedRelationTerms,
+			notes: [toChar.notes || "", fromChar.notes || ""].filter(Boolean).join("\n\n[合并自 " + fromChar.name + "]\n"),
+		});
+
+		// 删除被合并的角色
+		removeCharacter(novelId, fromId);
+
+		useAppMetaStore.getState().showToast(`已将「${fromChar.name}」合并到「${toChar.name}」，转移 ${mergedRels.length} 条关系`, "success");
+	}, [novelId, characters, getRelationshipsForNovel, setRelationshipsForNovel, updateCharacter, removeCharacter]);
 
 	// 小说设置标签页状态：'list' | 'graph' | 'worldbuilding'
 	const [activeTab, setActiveTab] = useState<"list" | "graph" | "worldbuilding">("list");
@@ -1523,17 +1607,14 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		const safeName = (novelName || "小说设置").replace(/[\\/:*?"<>|]/g, "_");
 		const fileName = `${safeName}-小说设置-${new Date().toISOString().split("T")[0]}.json`;
 
-		// 移动端与桌面端统一使用 Tauri 原生保存对话框
-		try {
-			const { save } = await import("@tauri-apps/plugin-dialog");
-			const { writeTextFile } = await import("@tauri-apps/plugin-fs");
-			const filePath = await save({
-				defaultPath: fileName,
-				filters: [{ name: "JSON Files", extensions: ["json"] }],
-			});
-			if (filePath) {
-				await writeTextFile(filePath, dataStr);
-				logger.file("小说设置导出成功:", filePath);
+		// 检测是否为 Tauri 桌面环境（__TAURI_INTERNALS__ 是 Tauri 2.x，__TAURI__ 是旧版本）
+		const isTauriEnv = typeof window !== "undefined" &&
+			("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+
+		// 网页端：直接使用剪贴板复制
+		if (!isTauriEnv) {
+			try {
+				await copyToClipboard(dataStr);
 				setExportModal({
 					show: true,
 					success: true,
@@ -1542,12 +1623,66 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					characterCount: sortedCharacters.length,
 					relationshipCount: relationships.length,
 				});
+			} catch (clipErr) {
+				logger.errorGeneric("CharacterSettings - 网页端剪贴板复制失败:", clipErr);
+				useAppMetaStore.getState().showToast("复制失败，请手动复制", "error");
 			}
-		} catch (e) {
-			logger.errorGeneric("CharacterSettings - 导出失败:", e);
-			useAppMetaStore.getState().showToast("导出失败，请重试", "error");
+			return;
 		}
-	}, [sortedCharacters, relationships, novelName, novelId, nodePositions, ignoredWords, ignoredCharacterNames, novelCategory, setExportModal, getWorldbuilding, allEvents]);
+
+		// Tauri 环境：优先用原生保存；如果动态 import 插件失败（开发服务器/权限问题）也回退到剪贴板
+		let importedSave: any = null;
+		let importedWrite: any = null;
+		try {
+			const dialogModule = await import("@tauri-apps/plugin-dialog");
+			const fsModule = await import("@tauri-apps/plugin-fs");
+			importedSave = dialogModule.save;
+			importedWrite = fsModule.writeTextFile;
+		} catch (_importErr) {
+			importedSave = null;
+			importedWrite = null;
+		}
+
+		if (importedSave && importedWrite) {
+			try {
+				const filePath = await importedSave({
+					defaultPath: fileName,
+					filters: [{ name: "JSON Files", extensions: ["json"] }],
+				});
+				if (filePath) {
+					await importedWrite(filePath, dataStr);
+					logger.file("小说设置导出成功:", filePath);
+					setExportModal({
+						show: true,
+						success: true,
+						fileName,
+						dataStr,
+						characterCount: sortedCharacters.length,
+						relationshipCount: relationships.length,
+					});
+				}
+			} catch (e) {
+				logger.errorGeneric("CharacterSettings - Tauri保存文件失败:", e);
+				useAppMetaStore.getState().showToast("导出失败，请重试", "error");
+			}
+		} else {
+			// Tauri 环境但插件不可用 → 回退到剪贴板
+			try {
+				await copyToClipboard(dataStr);
+				setExportModal({
+					show: true,
+					success: true,
+					fileName,
+					dataStr,
+					characterCount: sortedCharacters.length,
+					relationshipCount: relationships.length,
+				});
+			} catch (clipErr) {
+				logger.errorGeneric("CharacterSettings - Tauri环境下回退剪贴板失败:", clipErr);
+				useAppMetaStore.getState().showToast("复制失败，请手动复制", "error");
+			}
+		}
+	}, [sortedCharacters, relationships, novelName, novelId, nodePositions, ignoredWords, ignoredCharacterNames, novelCategory, setExportModal, getWorldbuilding, allEvents, copyToClipboard]);
 
 	// 导入角色
 	const handleImportCharacters = useCallback(async () => {
@@ -3821,6 +3956,19 @@ ${JSON.stringify(existingInfo, null, 2)}
 								删除
 							</button>
 						)}
+						{/* 合并角色：将其他角色的关系合并到当前源角色 */}
+						<button
+							className="btn"
+							onClick={() => {
+								setMergeSourceId(relationForm.sourceId);
+								setShowMergeCharSelect(true);
+							}}
+							disabled={!relationForm.sourceId}
+							title="将另一个角色的所有关系合并到当前源角色，并删除该角色"
+						>
+							<Icons.combine size={14} />
+							合并角色
+						</button>
 						<button
 							className="btn"
 							onClick={() => setEditingRelation(null)}
@@ -3880,6 +4028,71 @@ ${JSON.stringify(existingInfo, null, 2)}
 						>
 							保存
 						</button>
+					</div>
+				</div>
+			</div>
+		)}
+
+		{/* 合并角色选择弹窗 */}
+		{showMergeCharSelect && mergeSourceId && (
+			<div className="modal-overlay" onClick={() => { setShowMergeCharSelect(false); setMergeSourceId(null); }}>
+				<div className="config-modal" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+					<div className="config-header">
+						<div className="config-title">
+							<Icons.combine size={18} />
+							<span>合并角色关系</span>
+						</div>
+						<button className="close-btn" onClick={() => { setShowMergeCharSelect(false); setMergeSourceId(null); }}>
+							<Icons.x size={18} />
+						</button>
+					</div>
+					<div className="config-body">
+						<p style={{ marginBottom: 12, color: "var(--text-secondary)", fontSize: 13 }}>
+							选择要合并到「<strong style={{ color: "var(--accent)" }}>{characters.find(c => c.id === mergeSourceId)?.name}</strong>」的角色。
+							该角色的所有关系将转移到目标角色，然后被删除。
+						</p>
+						<div className="character-merge-list" style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 300, overflowY: "auto" }}>
+							{sortedCharacters.filter(c => c.id !== mergeSourceId).map(c => {
+								const relCount = (getRelationshipsForNovel(novelId) ?? []).filter(
+									r => r.sourceId === c.id || r.targetId === c.id
+								).length;
+								return (
+									<button
+										key={c.id}
+										className="btn"
+										style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", textAlign: "left" }}
+										onClick={() => {
+											setConfirmModal({
+												show: true,
+												title: "合并角色",
+												message: `确定将「${c.name}」合并到「${characters.find(x => x.id === mergeSourceId)?.name}」吗？\n「${c.name}」的所有关系将转移，该角色将被删除。`,
+												danger: true,
+												onConfirm: () => {
+													handleMergeCharacter(c.id, mergeSourceId);
+													setShowMergeCharSelect(false);
+													setMergeSourceId(null);
+													setEditingRelation(null);
+													setConfirmModal(p => ({ ...p, show: false }));
+												},
+											});
+										}}
+									>
+										<span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+											<Icons.user size={14} />
+											{c.name}
+											{c.aliases && c.aliases.length > 0 && (
+												<span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+													（{c.aliases.slice(0, 3).join("、")}{c.aliases.length > 3 ? "…" : ""}）
+												</span>
+											)}
+										</span>
+										<span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+											{relCount} 条关系
+										</span>
+									</button>
+								);
+							})}
+						</div>
 					</div>
 				</div>
 			</div>

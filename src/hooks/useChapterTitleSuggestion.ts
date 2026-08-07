@@ -44,6 +44,8 @@ export function useChapterTitleSuggestion() {
 		const updatedChapters = [...chapters];
 		updatedChapters[chapterIndexInChapters] = { ...chapter, title: newTitle, content: newContent };
 		setChapters(updatedChapters);
+		// 采纳后立即保存，防止标题丢失
+		useNovelStore.getState().saveCurrentNovel();
 		setChapterTitleSuggestions(prev => { const n = { ...prev }; delete n[chapterId]; return n; });
 		setSuggestingChapterId(null);
 	}, [chapters, setChapters]);
