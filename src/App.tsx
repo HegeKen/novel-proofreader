@@ -18,7 +18,7 @@ import { useProofreadMetaStore } from "./stores/proofreadMetaStore";
 import { splitChapters } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
 import { exportToFile, loadNovelsFromStorage, loadNovelContent, saveNovelToStorage, ensureTxtFilename, exportAllData } from "./utils/fileExport";
-import { loadNovelText, getNovelStorageKey } from "./utils/novelStorage";
+import { loadNovelText, saveNovelText, getNovelStorageKey, listNovelKeys } from "./utils/novelStorage";
 import { formatDateTime } from "./utils/formatters";
 import { parseURLParams, updateURLParams } from "./utils/urlParams";
 import { generateId } from "./utils/id";
@@ -109,25 +109,26 @@ export default function App() {
 		audioCache.setPersistent(audioCachePersistent);
 	}, [audioCachePersistent]);
 
-	// 从文件系统恢复小说全文（因为 fullText 未持久化到 localStorage）
+	// 从文件系统/IndexedDB 恢复小说全文（因为 fullText 未持久化到 localStorage）
 	const restoreFullTextFromStorage = useCallback(async () => {
 		const state = useNovelStore.getState();
 		const currentNovelId = state.currentNovelId;
 		if (state.novels.length === 0) return;
 
-		const storedFileNames = await loadNovelsFromStorage();
-		if (storedFileNames.length === 0) return;
+		// Tauri 环境下尝试获取 FS 文件列表（Web 端为空，直接走 IndexedDB 恢复）
+		const isTauriEnv = typeof window !== "undefined" && "__TAURI__" in window;
+		const storedFileNames = isTauriEnv ? await loadNovelsFromStorage() : [];
 
 		let updated = false;
 		const updatedNovels = await Promise.all(state.novels.map(async (novel) => {
 			if (novel.fullText) return novel; // 已有全文，跳过
 			const fileName = ensureTxtFilename(novel.name);
-			// 优先从 Tauri FS 加载
+			// 优先从 Tauri FS 加载（仅 Tauri 且有该文件时）
 			let content: string | null = null;
 			if (storedFileNames.includes(fileName)) {
 				content = await loadNovelContent(fileName);
 			}
-			// 如果 Tauri FS 没有，从 IndexedDB 加载
+			// 如果 Tauri FS 没有（或 Web 端），从 IndexedDB 加载
 			if (!content) {
 				content = await loadNovelText(getNovelStorageKey(novel.name));
 			}
@@ -155,14 +156,24 @@ export default function App() {
 
 	useEffect(() => {
 		if (novels.length === 0) {
-			loadNovelsFromStorage().then(async (storedFileNames) => {
-				if (storedFileNames.length > 0) {
+			// 同时从 Tauri FS 与 IndexedDB 收集小说列表（Web 端依赖 IndexedDB）
+			Promise.all([loadNovelsFromStorage(), listNovelKeys()]).then(async ([storedFileNames, idbKeys]) => {
+				const names = new Set<string>();
+				for (const f of storedFileNames) {
+					if (f.toLowerCase().endsWith(".txt")) names.add(f.replace(/\.txt$/i, ""));
+				}
+				for (const key of idbKeys) {
+					// key 格式为 novel:名字
+					if (key.startsWith("novel:")) names.add(key.slice("novel:".length));
+				}
+
+				if (names.size > 0) {
 					const loadedNovels: typeof novels = [];
-					for (const fileName of storedFileNames) {
+					for (const name of names) {
 						const novelId = generateId("novel");
 						loadedNovels.push({
 							id: novelId,
-							name: fileName.replace(/\.txt$/i, ''),
+							name,
 							fullText: '',
 							importedAt: Date.now(),
 							chapters: [],
@@ -174,6 +185,8 @@ export default function App() {
 							novels: loadedNovels,
 							currentNovelId: loadedNovels[0].id,
 						});
+						// 设置后触发全文恢复（从 IndexedDB/FS 加载）
+						restoreFullTextFromStorage();
 					}
 				}
 			});
@@ -360,6 +373,8 @@ export default function App() {
 		const novel = novels.find((n) => n.id === currentNovelId);
 		if (novel?.fullText) {
 			await saveNovelToStorage(ensureTxtFilename(novel.name), novel.fullText);
+			// 同步到 IndexedDB（Web 端全文持久化依赖 IndexedDB，Tauri 端作为防丢失兜底）
+			await saveNovelText(getNovelStorageKey(novel.name), novel.fullText);
 		}
 		const now = new Date();
 		const timeStr = now.toLocaleTimeString("zh-CN", {

@@ -99,7 +99,6 @@ export async function loadNovelText(key: string): Promise<string | null> {
 
 		return new Promise((resolve) => {
 			request.onsuccess = () => {
-				db.close();
 				const result = request.result;
 				if (!result) {
 					logger.file(`[novelStorage] 未找到数据: key=${key}`);
@@ -111,7 +110,6 @@ export async function loadNovelText(key: string): Promise<string | null> {
 				resolve(text);
 			};
 			request.onerror = () => {
-				db.close();
 				logger.errorGeneric("[novelStorage]", "读取失败:", request.error);
 				resolve(null);
 			};
@@ -119,6 +117,31 @@ export async function loadNovelText(key: string): Promise<string | null> {
 	} catch (e) {
 		logger.errorGeneric("[novelStorage]", "读取异常:", e);
 		return null;
+	}
+}
+
+/** 列出 IndexedDB 中所有已存储的小说键（用于 Web 端刷新后恢复小说列表） */
+export async function listNovelKeys(): Promise<string[]> {
+	try {
+		const db = await openDB();
+		const tx = db.transaction(STORE_NAME, "readonly");
+		const store = tx.objectStore(STORE_NAME);
+		const request = store.getAllKeys();
+
+		return new Promise((resolve) => {
+			request.onsuccess = () => {
+				const keys = (request.result as IDBValidKey[]).map(String);
+				logger.file(`[novelStorage] 列出存储键: ${keys.length} 个`);
+				resolve(keys);
+			};
+			request.onerror = () => {
+				logger.errorGeneric("[novelStorage]", "列出键失败:", request.error);
+				resolve([]);
+			};
+		});
+	} catch (e) {
+		logger.errorGeneric("[novelStorage]", "列出键异常:", e);
+		return [];
 	}
 }
 
@@ -132,12 +155,10 @@ export async function deleteNovelText(key: string): Promise<boolean> {
 
 		return new Promise((resolve) => {
 			tx.oncomplete = () => {
-				db.close();
 				logger.file(`[novelStorage] 删除成功: key=${key}`);
 				resolve(true);
 			};
 			tx.onerror = () => {
-				db.close();
 				resolve(false);
 			};
 		});

@@ -509,7 +509,11 @@ export function useAICheck() {
 	}, []);
 
 	const checkChapter = useCallback(
-		async (granularity: CheckGranularity, startFrom: number = 0) => {
+		async (
+			granularity: CheckGranularity,
+			startFrom: number = 0,
+			onLineChecking?: (filteredIndex: number | null) => void,
+		) => {
 			// 从 store 实时读取最新章节，避免闭包捕获过期快照（批量队列场景下
 			// processQueue 持有的 checkChapter 引用可能早于 setCurrentChapterIndex）
 			const { chapters: latestChapters, currentChapterIndex: latestChapterIndex } = useNovelStore.getState();
@@ -813,6 +817,8 @@ export function useAICheck() {
 					logger.proofread(`检测第 ${filteredIdx + 1} 项: filteredIndex=${filteredIdx}, originalIndex=${originalIndex}, startFrom=${startFrom}`);
 
 					updateParagraphResult(chapter.id, originalIndex, { status: "checking" });
+					// 同步当前检测行（供 handleStartCheck 等调用方展示单行检测状态）
+					onLineChecking?.(filteredIdx);
 
 					try {
 						const item = filteredItems[filteredIdx];
@@ -922,6 +928,8 @@ export function useAICheck() {
 
 					updateParagraphResult(chapter.id, origIdx1, { status: "checking" });
 					updateParagraphResult(chapter.id, origIdx2, { status: "checking" });
+					// 同步当前检测行（以配对的第一行为代表）
+					onLineChecking?.(idx1);
 
 					try {
 						// 如果任一段落太短，改为分别处理
@@ -1090,6 +1098,8 @@ export function useAICheck() {
 					}
 				}
 				await Promise.all(paragraphTasks);
+				// 全部处理完成，清除单行检测状态
+				onLineChecking?.(null);
 
 				// 章节校对完成，标记为完成
 				if (currentNovelId) {

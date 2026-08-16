@@ -187,7 +187,8 @@ export function ProofreadPanel() {
 		const filteredStartLine = startLine !== null ? paragraphIndexMap.indexOf(startLine) : -1;
 		const actualStartLine = filteredStartLine >= 0 ? filteredStartLine : 0;
 		logger.proofread(`handleStartCheck 开始检测: granularity=${granularity}, startLine(原始)=${startLine ?? 0}, filteredStartLine=${actualStartLine}, totalLines=${totalLines}`);
-		await checkChapter(granularity, actualStartLine);
+		// line 粒度时同步当前检测行到 singleCheckingLine（与 checkSingleLine 的 UI 反馈一致）
+		await checkChapter(granularity, actualStartLine, granularity === "line" ? setSingleCheckingLine : undefined);
 		setChecking(false);
 	};
 
@@ -803,12 +804,13 @@ export function ProofreadPanel() {
 							>
 								<Icons.settings size={16} />
 							</button>
-							{checking ? (
-								<button className={isMobile ? "btn-mobile" : "btn"} onClick={cancelCheck}>
+							{/* 批量校对或单行检测进行中：显示取消按钮，点击停止当前校对任务 */}
+							{checking || singleCheckingLine !== null ? (
+								<button className={isMobile ? "btn-mobile" : "btn"} onClick={cancelCheck} title="停止当前校对任务">
 									<Icons.close size={16} />
 								</button>
 							) : (
-								<button className={isMobile ? "btn-mobile" : "btn"} onClick={handleStartCheck}>
+								<button className={isMobile ? "btn-mobile" : "btn"} onClick={handleStartCheck} title="开始校对">
 									<Icons.play size={16} />
 								</button>
 							)}

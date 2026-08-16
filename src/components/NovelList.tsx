@@ -6,7 +6,7 @@ import { useUIStore } from "../stores/uiStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { saveNovelToStorage, deleteNovelFromStorage, createCharacterTemplate, loadNovelContent } from "../utils/fileExport";
-import { loadNovelText, deleteNovelText, getNovelStorageKey } from "../utils/novelStorage";
+import { loadNovelText, saveNovelText, deleteNovelText, getNovelStorageKey } from "../utils/novelStorage";
 import { splitChapters } from "../utils/chapterSplit";
 import { decodeTextBuffer } from "../utils/decodeText";
 import { formatFileSize, formatDateTime } from "../utils/formatters";
@@ -64,6 +64,9 @@ export function NovelList({
 
 			// 保存小说到 storage
 			await saveNovelToStorage(`${novel.name}.txt`, text);
+
+			// 同步到 IndexedDB（Web 端全文持久化依赖 IndexedDB，Tauri 端作为防丢失兜底）
+			await saveNovelText(getNovelStorageKey(novel.name), text);
 
 			// 为新小说创建角色模板文件
 			await createCharacterTemplate(novel.name);

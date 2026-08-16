@@ -2517,10 +2517,16 @@ export async function generateChapterTitle(
 	_chapterNumber: number,
 	config: AIConfig,
 	signal?: AbortSignal,
+	novelEvents?: Array<{ title: string; description: string; chapter: string; timeInfo: string }>,
 ): Promise<string[]> {
 	// 构建用户prompt
 	const previousTitles = Object.keys(previousChapters).slice(-5); // 最多取前5章
 	const titlesText = previousTitles.map((title, idx) => `${idx + 1}. ${title}`).join("\n");
+
+	// 大事记参考（仅注入与当前章节相关的事件，避免无关信息干扰标题生成）
+	const eventsText = novelEvents && novelEvents.length > 0
+		? `\n\n【本章涉及的小说大事记参考】\n${novelEvents.map((evt, idx) => `${idx + 1}. [${evt.chapter || evt.timeInfo || "本章"}] ${evt.title}：${evt.description}`).join("\n")}\n请结合这些大事记，使生成的章节名能反映本章的关键事件与剧情走向。`
+		: "";
 	
 	const userPrompt = `请为以下章节生成合适的章节名：
 
@@ -2529,7 +2535,7 @@ ${chapterContent.slice(0, 1000)}...
 
 【前几章章节名参考】
 ${titlesText || "无"}
-
+${eventsText}
 请生成3-5个合适的章节名建议。`;
 
 	const messages: ChatMessage[] = [
