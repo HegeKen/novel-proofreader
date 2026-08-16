@@ -80,4 +80,67 @@ describe('splitChapters', () => {
 		const chapters = splitChapters(text)
 		expect(chapters.some(ch => ch.title.includes('楔子'))).toBe(true)
 	})
+
+	it('keeps long chapters intact when markers exist (no truncation)', () => {
+		const text = '第一章 开始\n' + '内容很长'.repeat(3000) + '\n第二章 继续\n' + '内容很长'.repeat(2000)
+		const chapters = splitChapters(text)
+		expect(chapters.length).toBe(2)
+		expect(chapters[0].content.length).toBeGreaterThan(10000)
+		expect(chapters[1].content.length).toBeGreaterThan(5000)
+	})
+
+	it('detects 一、二、三 chapter style (明确断章不被截断)', () => {
+		const text = '一、初入江湖\n内容一\n二、再遇故人\n内容二\n三、真相大白\n内容三'
+		const chapters = splitChapters(text)
+		expect(chapters.length).toBe(3)
+		expect(chapters[0].title).toContain('一、')
+		expect(chapters[2].title).toContain('三、')
+	})
+
+	it('detects （一）（二） bracketed chapter style', () => {
+		const text = '（一）初入江湖\n内容一\n（二）再遇故人\n内容二\n（三）真相大白\n内容三'
+		const chapters = splitChapters(text)
+		expect(chapters.length).toBe(3)
+		expect(chapters[0].title).toContain('（一）')
+	})
+
+	it('detects "1. 标题" numeric-separator chapter style', () => {
+		const text = '1. 初入江湖\n内容一\n2. 再遇故人\n内容二\n3. 真相大白\n内容三'
+		const chapters = splitChapters(text)
+		expect(chapters.length).toBe(3)
+		expect(chapters[0].title).toContain('1.')
+	})
+
+	it('detects 第X话 chapter style', () => {
+		const text = '第一话 相遇\n内容一\n第二话 离别\n内容二'
+		const chapters = splitChapters(text)
+		expect(chapters.length).toBe(2)
+		expect(chapters[0].title).toContain('第一话')
+	})
+
+	it('keeps full title with colon separator', () => {
+		const text = '第一章：风起\n内容一\n第二章：云涌\n内容二'
+		const chapters = splitChapters(text)
+		expect(chapters[0].title).toBe('第一章：风起')
+		expect(chapters[1].title).toBe('第二章：云涌')
+	})
+
+	it('detects English word chapters', () => {
+		const text = 'Chapter One: The Beginning\ncontent one\nChapter Two: The Middle\ncontent two'
+		const chapters = splitChapters(text)
+		expect(chapters.length).toBe(2)
+		expect(chapters[0].title).toContain('Chapter One')
+	})
+
+	it('does not treat a single enumerated line as chapter (needs >=2 same-style markers)', () => {
+		const text = '前言\n1. 这是一个要点\n后面是正文内容，没有任何章节标记。'
+		const chapters = splitChapters(text)
+		expect(chapters.length).toBe(1)
+	})
+
+	it('ignores lenient styles when strict chapter markers exist', () => {
+		const text = '第一章 开始\n正文\n1. 列表项一\n2. 列表项二\n第二章 继续\n正文'
+		const chapters = splitChapters(text)
+		expect(chapters.length).toBe(2)
+	})
 })

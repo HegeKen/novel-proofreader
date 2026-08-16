@@ -416,6 +416,8 @@ export default function App() {
 		if (tab === "task") {
 			setRightTab(tab);
 		}
+		// 角色扮演页面保留底部 tab 栏：切到其他 tab 时关闭角色扮演
+		setShowRoleplay(false);
 	};
 
 	return (
@@ -655,8 +657,10 @@ export default function App() {
 						</button>
 						{currentNovelId && (
 							<button
-								className="mobile-tab-btn"
+								className={`mobile-tab-btn ${showRoleplay ? "active" : ""}`}
 								onClick={() => setShowRoleplay(true)}
+								role="tab"
+								aria-selected={showRoleplay}
 								aria-label="角色扮演"
 							>
 								<Icons.messageSquare size={18} />

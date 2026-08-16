@@ -337,6 +337,10 @@ export interface RoleplayMessage {
 	characterId?: string;
 	content: string;
 	timestamp: number;
+	/** 用户消息被编辑前的原始内容（存在即表示该消息被编辑过，用于查看修改前后） */
+	originalContent?: string;
+	/** 用户消息被编辑前，其输入对应的后续回复链（编辑保存时保留旧回复，用于查看修改前的完整对话） */
+	originalReplies?: RoleplayMessage[];
 }
 
 /** 角色扮演会话 */

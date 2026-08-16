@@ -26,6 +26,7 @@ import {
 	ChevronDown,
 	ChevronUp,
 	ChevronRight,
+	ChevronLeft,
 	ArrowLeft,
 	Download,
 	Upload,
@@ -78,6 +79,7 @@ import {
 	ZoomIn,
 	MessageSquare,
 	Send,
+	Wallet,
 } from "lucide-react";
 
 export const Icons = {
@@ -117,6 +119,7 @@ export const Icons = {
 	chevronDown: ChevronDown,
 	chevronUp: ChevronUp,
 	chevronRight: ChevronRight,
+	chevronLeft: ChevronLeft,
 	arrowLeft: ArrowLeft,
 	download: Download,
 	downloadCloud: DownloadCloud,
@@ -167,6 +170,7 @@ export const Icons = {
 	zoomIn: ZoomIn,
 	messageSquare: MessageSquare,
 	send: Send,
+	wallet: Wallet,
 };
 
 export type IconName = keyof typeof Icons;

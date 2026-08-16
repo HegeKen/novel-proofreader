@@ -22,6 +22,11 @@ export interface RoleplayState {
 		sessionId: string,
 		message: Omit<RoleplayMessage, "id" | "timestamp">,
 	) => void;
+	/** 编辑一条消息的内容；若内容变化且首次编辑，把旧内容保存到 originalContent 用于查看修改前后 */
+	updateMessage: (novelId: string, sessionId: string, messageId: string, content: string) => void;
+	/** 截断指定消息之后的所有消息（用于编辑后重新生成，保留指定消息及其之前的内容）；
+	 *  若 saveRemoved 为 true，被删除的旧回复链会保存到该消息的 originalReplies（供查看修改前的完整对话） */
+	truncateMessagesAfter: (novelId: string, sessionId: string, messageId: string, saveRemoved?: boolean) => void;
 	clearMessages: (novelId: string, sessionId: string) => void;
 	setActiveSession: (novelId: string, sessionId: string | null) => void;
 	updateSession: (
@@ -87,6 +92,49 @@ export const useRoleplayStore = create<RoleplayState>()(
 					},
 				}));
 			},
+
+			updateMessage: (novelId, sessionId, messageId, content) =>
+				set((state) => ({
+					sessions: {
+						...state.sessions,
+						[novelId]: (state.sessions[novelId] ?? []).map((s) => {
+							if (s.id !== sessionId) return s;
+							const messages = s.messages.map((m) => {
+								if (m.id !== messageId) return m;
+								// 内容未变化则不动
+								if (m.content === content) return m;
+								// 首次编辑：记录原始内容
+								const originalContent = m.originalContent ?? m.content;
+								return { ...m, content, originalContent };
+							});
+							return { ...s, messages, updatedAt: Date.now() };
+						}),
+					},
+				})),
+
+			truncateMessagesAfter: (novelId, sessionId, messageId, saveRemoved) =>
+				set((state) => ({
+					sessions: {
+						...state.sessions,
+						[novelId]: (state.sessions[novelId] ?? []).map((s) => {
+							if (s.id !== sessionId) return s;
+							const idx = s.messages.findIndex((m) => m.id === messageId);
+							if (idx < 0) return s;
+							// 被删除的旧回复链（该消息之后的所有消息）
+							const removed = s.messages.slice(idx + 1);
+							let messages = s.messages.slice(0, idx + 1);
+							if (saveRemoved && removed.length > 0) {
+								// 把旧回复链保存到被编辑消息的 originalReplies（首次编辑时保留已有链）
+								messages = messages.map((m) =>
+									m.id === messageId
+										? { ...m, originalReplies: m.originalReplies ?? removed }
+										: m,
+								);
+							}
+							return { ...s, messages, updatedAt: Date.now() };
+						}),
+					},
+				})),
 
 			clearMessages: (novelId, sessionId) =>
 				set((state) => ({

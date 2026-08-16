@@ -515,7 +515,7 @@ select {
 	box-shadow: var(--shadow-inner);
 	/* Android 状态栏安全区域支持 */
 	padding-top: env(safe-area-inset-top, 0);
-	min-height: calc(64px + env(safe-area-inset-top, 0));
+	min-height: calc(env(safe-area-inset-top, 0));
 	position: sticky;
 	top: 0}
 
@@ -6834,7 +6834,7 @@ color: var(--text-primary)}
 	
 	/* Reading mode: extra space for desktop-reader-bar */
 	.app-body.app-body-reading-mode {
-		padding-bottom: calc(64px + env(safe-area-inset-bottom, 0))}
+		padding-bottom: calc(32px + env(safe-area-inset-bottom, 0))}
 
 	/* Desktop Reader Bar - Mobile Adaptation */
 	.desktop-reader-bar {
@@ -6913,7 +6913,7 @@ color: var(--text-primary)}
 		top: calc(56px + env(safe-area-inset-top, 0));
 		left: 0;
 		right: 0;
-		bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+		bottom: calc(32px + env(safe-area-inset-bottom, 0px));
 		z-index: 10}
 
 	.app-main {
@@ -6935,7 +6935,7 @@ color: var(--text-primary)}
 		top: calc(56px + env(safe-area-inset-top, 0));
 		left: 0;
 		right: 0;
-		bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+		bottom: calc(32px + env(safe-area-inset-bottom, 0px));
 		z-index: 10;
 		background: var(--bg-primary);
 		border-top: 1px solid var(--border)}
@@ -6952,7 +6952,7 @@ color: var(--text-primary)}
 		top: calc(56px + env(safe-area-inset-top, 0));
 		left: 0;
 		right: 0;
-		bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+		bottom: calc(52px + env(safe-area-inset-bottom, 0px));
 		z-index: 10}
 
 	.app-right.mobile-active {
@@ -7010,7 +7010,7 @@ color: var(--text-primary)}
 
 	.reader-content.reading-mode {
 		padding: 12px;
-		padding-bottom: calc(64px + env(safe-area-inset-bottom, 0) + 12px);
+		padding-bottom: calc(32px + env(safe-area-inset-bottom, 0) + 12px);
 		font-size: 14px;
 		line-height: var(--line-height, 32px)}
 
@@ -7901,6 +7901,70 @@ color: var(--text-primary)}
 
 .result-message .md-paragraph:last-child {
 	margin-bottom: 0}
+
+/* ── 账户余额 ── */
+.section-label .balance-actions {
+	margin-left: auto;
+	display: inline-flex;
+	align-items: center}
+
+.balance-actions .btn-sm {
+	padding: 3px 8px;
+	font-size: 12px;
+	min-height: 24px}
+
+.balance-loading,
+.balance-empty {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	color: var(--text-muted)}
+
+.balance-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px}
+
+.balance-item {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 14px;
+	background: var(--bg-overlay);
+	border: 1px solid var(--border);
+	border-radius: var(--r-md)}
+
+.balance-currency {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-secondary);
+	min-width: 44px}
+
+.balance-total {
+	font-size: 16px;
+	color: var(--text-primary)}
+
+.balance-total strong {
+	font-size: 20px;
+	font-weight: 700;
+	color: var(--accent, #3b82f6)}
+
+.balance-detail {
+	margin-left: auto;
+	font-size: 12px;
+	color: var(--text-muted)}
+
+.balance-unavailable {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 12px;
+	font-size: 13px;
+	color: #ef4444;
+	background: rgba(239, 68, 68, 0.08);
+	border: 1px solid rgba(239, 68, 68, 0.3);
+	border-radius: var(--r-md)}
 
 .result-message .md-heading {
 	font-weight: 600;
@@ -9418,7 +9482,7 @@ color: var(--text-primary)}
 		line-height: 1.5}
 
 	.reader-content.reading-mode {
-		padding-bottom: calc(64px + env(safe-area-inset-bottom, 0) + 12px)}
+		padding-bottom: calc(32px + env(safe-area-inset-bottom, 0) + 12px)}
 
 	.reader-content.reading-mode .reader-paragraph:last-child {
 		margin-bottom: 0}
@@ -12594,6 +12658,77 @@ color: var(--text-primary)}
 	background: var(--bg-hover);
 	color: var(--accent)}
 
+/* 用户消息编辑按钮与版本切换 */
+.roleplay-msg-edit,
+.roleplay-msg-edit-toggle,
+.roleplay-msg-regenerate {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 2px 6px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-muted);
+	font-size: 11px;
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.roleplay-msg-edit:hover,
+.roleplay-msg-edit-toggle:hover,
+.roleplay-msg-regenerate:hover:not(:disabled) {
+	background: var(--bg-hover);
+	color: var(--accent)}
+
+.roleplay-msg-regenerate:disabled {
+	opacity: 0.5;
+	cursor: not-allowed}
+
+.roleplay-msg-edit-toggle {
+	color: var(--accent);
+	border: 1px solid var(--border)}
+
+.roleplay-msg-bubble .roleplay-msg-original-tag {
+	display: block;
+	margin-top: 6px;
+	font-size: 11px;
+	color: var(--text-muted);
+	opacity: 0.8;
+	border-top: 1px dashed var(--border);
+	padding-top: 4px}
+
+/* 编辑态气泡 */
+.roleplay-msg-bubble.roleplay-msg-editing {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	background: var(--bg-surface);
+	border: 1px solid var(--accent)}
+
+.roleplay-edit-input {
+	width: 100%;
+	padding: 8px 10px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--bg-raised);
+	color: var(--text-primary);
+	font-size: 14px;
+	line-height: 1.6;
+	resize: vertical}
+
+.roleplay-edit-input:focus {
+	outline: none;
+	border-color: var(--accent)}
+
+.roleplay-edit-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px}
+
+.roleplay-edit-actions .btn {
+	padding: 5px 12px;
+	font-size: 12px}
+
 .roleplay-msg-bubble {
 	padding: 10px 14px;
 	border-radius: var(--r-md);
@@ -12620,6 +12755,16 @@ color: var(--text-primary)}
 
 .roleplay-msg.assistant .roleplay-msg-bubble {
 	border-top-left-radius: 4px}
+
+/* 多角色对话：assistant 气泡按角色性别着色左边框，与头像色呼应便于区分说话者 */
+.roleplay-msg.assistant.speaker-male .roleplay-msg-bubble {
+	border-left: 3px solid #3b82f6}
+
+.roleplay-msg.assistant.speaker-female .roleplay-msg-bubble {
+	border-left: 3px solid #ec4899}
+
+.roleplay-msg.assistant.speaker-other .roleplay-msg-bubble {
+	border-left: 3px solid #8b5cf6}
 
 .roleplay-msg-bubble.typing {
 	display: flex;
@@ -12732,9 +12877,12 @@ color: var(--text-primary)}
 
 /* ============================================================
    移动端角色扮演 - 全屏聊天 APP 风格
+   （底部保留 tab 栏：overlay 底部让出 tab 栏高度，层级置于 tab 栏之下）
    ============================================================ */
 .roleplay-mobile-overlay {
-	z-index: 1100;
+	z-index: 990;
+	/* 底部让出 mobile-tab-bar 的高度（64px），保证移动端聊天窗口底部 tab 栏可见可点 */
+	inset: 0 0 calc(52px + env(safe-area-inset-bottom)) 0;
 	display: flex;
 	align-items: stretch;
 	justify-content: stretch;

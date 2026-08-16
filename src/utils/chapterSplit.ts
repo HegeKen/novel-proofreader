@@ -25,18 +25,46 @@ const VOLUME_PATTERNS = [
 // \u5EFF=廿(二十) \u5341=卅(三十) \u534C=卌(四十)
 const KANGXI_DIGITS = '\\u2F00\\u2F02\\u2F03\\u2F04\\u2F05\\u2F06\\u2F07\\u2F08\\u2F09\\u2F0A\\u2F0B\\u2F17';
 const ARCHAIC_DIGITS = '廿卅卌';
+/** 章节号可用数字字符（普通数字、汉字数字、全角数字、康熙部首数字变体、古文数字） */
+const CHAPTER_DIGITS = `\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}`;
+/** "首位汉字数字"模式用：第一位允许汉字数字（不含"一"，避免"一章"等误判），其后任意 */
+const CHAPTER_DIGITS_LEAD = `\\d二三四五六七八九十百千万零０１２３４５６７８９\\u2F02\\u2F03\\u2F04\\u2F05\\u2F06\\u2F07\\u2F08\\u2F09\\u2F0A\\u2F0B\\u2F17${ARCHAIC_DIGITS}`;
+/** 章节后缀字（含"话"，兼容"第X话"；不带"第"的裸数字模式不含"话"，避免"二话不说"等误判） */
+const CHAPTER_SUFFIX = '章回节部篇话話';
+
+// 严格模式：匹配结果直接视为章节标记（"第一章""第1章：标题""【第1章】""Chapter One"等）
 const CHAPTER_PATTERNS = [
-	`(?:^|\\n)\\s*(第[\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]+[章回节部篇](?:${WS_PLUS}[^\\n]+)?)`,
+	// 第X章/回/节/部/篇/话；兼容"第一章：标题""第一章·标题""第一章、标题"等无空格分隔形式，
+	// 以及"【第一章】标题"等括号包裹形式
+	`(?:^|\\n)\\s*(?:[【\\[]\\s*)?(第[${CHAPTER_DIGITS}]+[${CHAPTER_SUFFIX}](?:${WS_PLUS}[^】\\]\\n]+|[：:、.．·\\-][^】\\]\\n]{0,60})?)(?:\\s*[】\\]])?`,
+	// 支持"第 1 章""第 一 章"（章节号与后缀之间有空白）
+	`(?:^|\\n)\\s*(?:[【\\[]\\s*)?(第\\s*[${CHAPTER_DIGITS}]+\\s*[${CHAPTER_SUFFIX}](?:${WS_PLUS}[^】\\]\\n]+|[：:、.．·\\-][^】\\]\\n]{0,60})?)(?:\\s*[】\\]])?`,
 	// 支持不带"第"字的章节号，如"四十一章"、"四十五章"
 	// 注意：对于"回"这个词，要求至少两个数字字符以避免匹配"一回"等日常用语
-	`(?:^|\\n)\\s*([\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]{2,}[章回节部篇](?:${WS_PLUS}[^\\n]+)?)`,
-	`(?:^|\\n)\\s*([\\d二三四五六七八九十百千万零０１２３４５６７８９\\u2F02\\u2F03\\u2F04\\u2F05\\u2F06\\u2F07\\u2F08\\u2F09\\u2F0A\\u2F0B\\u2F17${ARCHAIC_DIGITS}][\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]*[章节部篇](?:${WS_PLUS}[^\\n]+)?)`,
+	`(?:^|\\n)\\s*([${CHAPTER_DIGITS}]{2,}[${CHAPTER_SUFFIX}](?:${WS_PLUS}[^\\n]+)?)`,
+	// 首位为汉字数字的章节号，如"二十章"（第二位可为任意数字；不含"话"，避免"二话不说"等误判）
+	`(?:^|\\n)\\s*([${CHAPTER_DIGITS_LEAD}][${CHAPTER_DIGITS}]*[章节部篇](?:${WS_PLUS}[^\\n]+)?)`,
 	// 支持章节号与"章"之间有空格的情况，如"第四十五 章与虎谋皮"
-	`(?:^|\\n)\\s*(第[\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]+)${WS_PLUS}([章回节部篇]${WS_OPT}[^\\n]+)?`,
-	`(?:^|\\n)\\s*([\\d一二三四五六七八九十百千万零０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]{2,})${WS_PLUS}([章回节部篇]${WS_OPT}[^\\n]+)?`,
+	`(?:^|\\n)\\s*(第[${CHAPTER_DIGITS}]+)${WS_PLUS}([${CHAPTER_SUFFIX}]${WS_OPT}[^\\n]+)?`,
+	`(?:^|\\n)\\s*([${CHAPTER_DIGITS}]{2,})${WS_PLUS}([${CHAPTER_SUFFIX}]${WS_OPT}[^\\n]+)?`,
+	// 序章/楔子/番外等
 	`(?:^|\\n)\\s*(序章|序言|前言|引子|楔子|尾声|后记|番外(?:[\\d一二三四五六七八九十０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]+)?(?:${WS_PLUS}[^\\n]+)?|结局(?:${WS_PLUS}[^\\n]+)?)`,
-	new RegExp(`(?:^|\\n)\\s*(Chapter\\s+\\d+(?:${WS_PLUS}[^\\n]+)?)`, 'gi'),
+	// English：Chapter 1 / Ch.1 / Chapter One / Chapter I（含序章类）
+	new RegExp(`(?:^|\\n)\\s*((?:Chapter|Ch\\.?)\\s*(?:\\d+|[IVXLCDM]{1,7}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve|Thirteen|Fourteen|Fifteen|Sixteen|Seventeen|Eighteen|Nineteen|Twenty|Thirty|Forty|Fifty|Sixty|Seventy|Eighty|Ninety|Hundred|First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth|Ninth|Tenth)(?:${WS_PLUS}[^\\n]+)?)`, 'gi'),
 	new RegExp(`(?:^|\\n)\\s*(PROLOGUE|EPILOGUE|AFTERWORD(?:${WS_PLUS}[^\\n]+)?)`, 'gi'),
+].map(p => new RegExp(p, 'g'));
+
+/**
+ * 宽松模式章节标记：仅当全文没有任何严格章节标记时启用，
+ * 且同款标记出现 ≥2 处才视为"明确的断章约定"（防止把正文中的列举行误判为章节）。
+ * 覆盖："1. 标题""1、标题""1：标题""一、标题""（一）标题""（1）标题""【1】标题"等常见网文断章格式。
+ */
+const LENIENT_CHAPTER_PATTERNS = [
+	`(?:^|\\n)\\s*(\\d{1,3}(?!\\d)[、.．]\\s*[^\\n]{1,50})`,
+	`(?:^|\\n)\\s*(\\d{1,3}(?!\\d)[：:]\\s*[^\\n]{1,50})`,
+	`(?:^|\\n)\\s*([一二三四五六七八九十百千万]+[、.．]\\s*[^\\n]{1,50})`,
+	`(?:^|\\n)\\s*([（(【][一二三四五六七八九十百千万]+[）)】]\\s*[^\\n]{0,50})`,
+	`(?:^|\\n)\\s*([（(【]\\d{1,3}(?!\\d)[）)】]\\s*[^\\n]{0,50})`,
 ].map(p => new RegExp(p, 'g'));
 
 /** 按字符数强制分割的阈值 */
@@ -80,7 +108,7 @@ export function splitChapters(
 		}
 	}
 
-	// 收集所有章节名匹配
+	// 收集所有章节名匹配（严格模式）
 	for (const pattern of CHAPTER_PATTERNS) {
 		pattern.lastIndex = 0;
 		let m: RegExpExecArray | null;
@@ -98,6 +126,31 @@ export function splitChapters(
 		}
 	}
 
+	// 全文没有任何严格章节标记时，才尝试宽松模式（"一、标题""1. 标题""（一）标题"等）：
+	// 同款标记需出现 ≥2 处，视为"明确的断章约定"——既尊重原有断章、避免按字数截断，
+	// 也防止把正文中的列举行误判为章节
+	if (!matches.some((m) => !m.isVolume)) {
+		for (const pattern of LENIENT_CHAPTER_PATTERNS) {
+			pattern.lastIndex = 0;
+			const typeMatches: MatchItem[] = [];
+			let m: RegExpExecArray | null;
+			while ((m = pattern.exec(fullText)) !== null) {
+				let title = trimCJK(m[1]);
+				if (m[2]) {
+					title += trimCJK(m[2]);
+				}
+				typeMatches.push({
+					title: title,
+					index: m.index,
+					isVolume: false,
+				});
+			}
+			if (typeMatches.length >= 2) {
+				matches.push(...typeMatches);
+			}
+		}
+	}
+
 	// 去重并按位置排序
 	const unique = new Map<number, MatchItem>();
 	for (const m of matches) {
@@ -107,7 +160,7 @@ export function splitChapters(
 	}
 	const sorted = Array.from(unique.values()).sort((a, b) => a.index - b.index);
 
-	// 如果没有匹配到任何章节，按 chunkSize 强制分割
+	// 如果没有匹配到任何章节，按 chunkSize 强制分割（仅限全文确无任何断章标记的情况）
 	if (sorted.length === 0) {
 		const chapters: Chapter[] = [];
 		let start = 0;

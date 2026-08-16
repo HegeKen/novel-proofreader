@@ -4,6 +4,7 @@ import { useConfigStore } from "../stores/configStore";
 import type { AIProvider } from "../types";
 import { Icons } from "./Icons";
 import { AITestSection } from "./config/AITestSection";
+import { BalanceSection } from "./config/BalanceSection";
 import { APIUsageSection } from "./config/APIUsageSection";
 import { ProofreadSettingsSection } from "./config/ProofreadSettingsSection";
 import { TTSConfigSection } from "./config/TTSConfigSection";
@@ -187,6 +188,7 @@ function ConfigModalContent({
 									</div>
 								</div>
 							</div>
+							<BalanceSection baseUrl={config.baseUrl} apiKey={config.apiKey} />
 							<AITestSection config={config} />
 						</>
 					)}

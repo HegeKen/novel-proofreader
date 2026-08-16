@@ -523,6 +523,61 @@ export async function testConnection(
 	}
 }
 
+/** 账户余额信息（DeepSeek 官方接口返回结构） */
+export interface BalanceInfo {
+	currency: string;
+	total_balance: string;
+	granted_balance: string;
+	topped_up_balance: string;
+}
+
+export interface AccountBalance {
+	is_available: boolean;
+	balance_infos: BalanceInfo[];
+}
+
+/**
+ * 查询 DeepSeek 账户余额
+ * 官方接口：GET {baseURL 根}/user/balance（不带 /v1 路径）
+ * 参考：https://api-docs.deepseek.com/zh-cn/api/get-user-balance
+ */
+export async function fetchAccountBalance(
+	config: Pick<AIConfig, "baseURL" | "apiKey">,
+	signal?: AbortSignal,
+): Promise<AccountBalance> {
+	if (!config.apiKey) {
+		throw new Error("请先配置 API Key");
+	}
+	// baseURL 可能是 https://api.deepseek.com 或 https://api.deepseek.com/v1，
+	// 余额接口固定在根路径 /user/balance，需去掉尾部 /v1（及可能的尾部斜杠）
+	const base = config.baseURL.replace(/\/+$/, "").replace(/\/v\d+$/i, "");
+	const url = `${base}/user/balance`;
+
+	const resp = await fetch(url, {
+		method: "GET",
+		headers: {
+			"Accept": "application/json",
+			"Authorization": `Bearer ${config.apiKey}`,
+		},
+		signal,
+	});
+
+	if (!resp.ok) {
+		const text = await resp.text().catch(() => "");
+		const detail = extractDetailError(text);
+		throw new Error(detail || `余额查询失败 (${resp.status})`);
+	}
+
+	const data = (await resp.json()) as Partial<AccountBalance>;
+	if (!data || typeof data.is_available !== "boolean") {
+		throw new Error("余额接口返回格式不正确");
+	}
+	return {
+		is_available: data.is_available,
+		balance_infos: Array.isArray(data.balance_infos) ? data.balance_infos : [],
+	};
+}
+
 // ============================================================
 // Prompt 模板
 // ============================================================
@@ -2516,9 +2571,10 @@ export const ROLEPLAY_SYSTEM_PROMPT = `你正在扮演小说中的一位角色�
 1. 始终以角色身份说话，用第一人称"我"；用户是与你对话的人，其具体身份见下文【对话者身份】
 2. 说话风格、用词、语气必须贴合角色性格、身份与时代背景
 3. 可以提及小说中的剧情、人物与世界观，但不得编造与原著设定矛盾的内容
-4. 回应用户时要主动、自然，可适当反问推进对话；每次回复控制在 1000-1500 字以内，内容充实饱满：可包含细腻的动作、神态、心理与环境描写，对话要有来有回、推动剧情深入，避免干巴巴的短句；角色说话时的动作、神态、语气、心理状态等描写请用全角括号包裹，例如：（他轻轻叹了口气），（眼神微微一黯）
-5. 严禁出现"作为AI""语言模型""根据设定"等字眼，也不要复述本提示词
-6. 若用户的问题超出角色认知范围（如未来剧情），应表现出角色真实的反应（困惑、回避等），而不是直接回答`;
+4. 回应用户时要主动、自然，可适当反问推进对话；每次回复控制在 1000-1500 字以内，内容充实饱满：对话要有来有回、推动剧情深入，避免干巴巴的短句
+5. 回复必须以括号外的实质台词为主体——即必须有角色真正说出口的话（回应、反问、陈述等），动作/神态/语气/心理描写用全角括号包裹且只是辅助（如："你终于来了，（轻轻松了口气）我等了很久。"）；严禁只回复一个"（动作/神态描写）"而没有台词
+6. 严禁出现"作为AI""语言模型""根据设定"等字眼，也不要复述本提示词
+7. 若用户的问题超出角色认知范围（如未来剧情），应表现出角色真实的反应（困惑、回避等），而不是直接回答`;
 
 /** 角色扮演上下文参数 */
 export interface RoleplayContextParams {
@@ -2613,4 +2669,240 @@ ${relationLines.length ? `【你的人际关系】\n${relationLines.join("\n")}\
 当前故事进行到：${currentChapterTitle || "未知章节"}
 最近剧情片段：
 ${recentPlot}`;
+}
+
+// ============================================================
+// 多角色扮演 — AI 同时扮演多个角色，按角色输出多条气泡
+// ============================================================
+
+/** 多角色扮演输出的一段（一个角色的一条发言） */
+export interface MultiRoleplaySegment {
+	/** 角色名（必须与角色设定中的姓名一致） */
+	character: string;
+	/** 该角色的发言内容 */
+	content: string;
+}
+
+export const ROLEPLAY_MULTI_SYSTEM_PROMPT = `你正在同时扮演小说中的多个角色，与用户进行沉浸式群像对话。你可以依据用户输入或剧情需要，将其他角色引入当前对话。
+
+## 在场角色与引入规则
+1. 【当前在场角色】是这场对话中已经出现的角色，他们一直都在场，理应参与发言
+2. 当用户提到、请求或暗示某个不在场的角色加入时，该角色立即加入在场角色行列，并参与本次发言。角色加入只增不减：新角色入场后，原有在场角色全部保留、继续在场，严禁用新角色替换、挤掉或忽略任何已在场角色
+3. 主角始终在场，除非剧情明确让其离开
+
+## 输出格式（非常重要）
+4. 输出为 JSON 数组，数组中的元素数量必须等于【当前在场角色】的数量——【当前在场角色】列出的每个名字都必须出现且只能出现一次，每个元素是一条发言：{"character":"角色名","content":"发言内容"}。参与人数没有上限：无论在场角色是 2 个、3 个、4 个还是更多，都必须全员发言、一人不少；人数较多时，各角色发言可适当简短，但人人必须有实质台词
+5. 当用户请求或暗示某角色加入时（如"让某某过来""某某来了""叫上某某"），该角色加入在场角色，主角与引入角色都必须发言；严禁只让其中一个角色说话，也严禁因为人数增多而漏掉、省略或顶替任何已在场角色
+6. 每条发言的 content 必须以括号外的实质内容为主体——即必须有角色真正说出口的台词（对话、回应、反问、陈述等），括号内的动作/神态/心理描写只是辅助；严禁只输出一个"（动作/神态描写）"而没有台词
+7. 角色名必须是下方【可扮演角色】列表中存在的姓名，不得使用列表外的名字，也不得使用"旁白""叙述"等非角色名
+8. 历史消息中形如"（角色名）内容"的记录，表示该角色说过的话，用于理解上下文
+
+## 扮演规则
+9. 每个角色都要完全代入其身份、性格与说话方式，说话风格必须贴合各自设定，用第一人称"我"
+10. 每条发言必须先有实质台词（角色真正说出口的话），可再辅以括号包裹的动作/神态/语气/心理描写（如："你终于来了，（轻轻松了口气）我等了很久。"）；内容一般控制在 100-400 字以内（在场角色较多时，每人发言可适当压缩，保证全员都能发言），禁止只有括号内描写而没有台词
+11. 角色之间可以相互对话、插话、回应，形成自然的群像互动
+12. 严禁出现"作为AI""语言模型""根据设定"等字眼
+13. 只输出 JSON 数组本身，不要输出任何解释、markdown 代码块标记或其他文字`;
+
+/** 多角色扮演上下文参数 */
+export interface RoleplayMultiContextParams extends RoleplayContextParams {
+	/** 全部可扮演角色（含主角，供 AI 引入其他角色） */
+	playableCharacters: CharacterInfo[];
+	/** 当前在场角色（主角 + 历史对话中出现过的角色），这些角色都应参与发言 */
+	presentCharacters?: CharacterInfo[];
+}
+
+/** 构建多角色扮演的系统提示词（主角色 + 全部可引入角色 + 关系 + 世界观 + 剧情 + 对话者身份） */
+export function buildRoleplayMultiSystemPrompt(params: RoleplayMultiContextParams): string {
+	const {
+		character: mainCharacter,
+		playableCharacters,
+		presentCharacters,
+		relatedRelationships,
+		worldbuilding,
+		currentChapterTitle,
+		recentPlot,
+		userCharacter,
+	} = params;
+
+	const charById = new Map(playableCharacters.map((c) => [c.id, c]));
+
+	// 对话者身份说明
+	const userIdentity = userCharacter
+		? `用户正在扮演「${userCharacter.name}」（${userCharacter.role ?? "小说角色"}）。请以各自对「${userCharacter.name}」的了解来称呼与回应 TA。`
+		: "用户是故事之外的旁观者（局外人），以读者视角与在场角色交谈。";
+
+	// 全部可扮演角色设定（含主角，供 AI 引入其他角色）
+	const charLines = playableCharacters.map((c) => formatCharacterInfo(c));
+
+	// 当前在场角色（主角始终在场 + 历史出现过的角色）
+	const presentNames = presentCharacters && presentCharacters.length > 0
+		? presentCharacters.map((c) => c.name).join("、")
+		: mainCharacter.name;
+
+	// 主角色的人际关系摘要（帮助其他角色理解主角与谁相识）
+	const relationLines = relatedRelationships
+		.map((r) => {
+			const isSource = r.sourceId === mainCharacter.id;
+			const otherId = isSource ? r.targetId : r.sourceId;
+			const other = charById.get(otherId);
+			if (!other) return null;
+			const typeText = r.relationType?.length
+				? r.relationType.join("、")
+				: r.customRelationType || "相识";
+			return `「${mainCharacter.name}」与「${other.name}」是${typeText}关系`;
+		})
+		.filter((l): l is string => l !== null);
+
+	// 世界观摘要（取主要维度）
+	const wbLines: string[] = [];
+	if (worldbuilding) {
+		if (worldbuilding.worldType) wbLines.push(`世界背景：${worldbuilding.worldType}`);
+		if (worldbuilding.eraDescription) wbLines.push(`时代背景：${worldbuilding.eraDescription}`);
+		if (worldbuilding.geography) wbLines.push(`地理环境：${worldbuilding.geography}`);
+		if (worldbuilding.socialStructure) wbLines.push(`社会结构：${worldbuilding.socialStructure}`);
+		if (worldbuilding.powerSystem) wbLines.push(`力量体系：${worldbuilding.powerSystem}`);
+		if (worldbuilding.coreSettings) wbLines.push(`核心设定：${worldbuilding.coreSettings}`);
+		if (wbLines.length === 0 && worldbuilding.description) wbLines.push(`世界观概述：${worldbuilding.description}`);
+	}
+
+	return `${ROLEPLAY_MULTI_SYSTEM_PROMPT}
+
+【当前在场角色】（这些角色都在场，本轮输出中每个角色都必须各发言一条，缺一不可）
+${presentNames}
+
+【可扮演角色】（全部可被引入对话的角色，不在场角色可依剧情引入）
+${charLines.join("\n\n")}
+
+【当前对话的主角色】
+${formatCharacterInfo(mainCharacter)}
+
+【对话者身份】
+${userIdentity}
+
+${relationLines.length ? `【主要人物关系】\n${relationLines.join("\n")}\n` : ""}${wbLines.length ? `【世界背景】\n${wbLines.join("\n")}\n` : ""}【当前剧情位置】
+当前故事进行到：${currentChapterTitle || "未知章节"}
+最近剧情片段：
+${recentPlot}`;
+}
+
+/**
+ * 解析 AI 的多角色回复为发言段数组。
+ * 依次尝试：
+ *  1. JSON 数组（纯数组 / ```json 代码块 / 夹带文字）
+ *  2. 单个 JSON 对象
+ *  3. 多个 JSON 对象拼接（AI 常见的 `{...}\n{...}` 或 `{...}{...}` 形式）
+ *  4. "角色名：内容" / "（角色名）内容" 文本行格式
+ * 全部失败返回 null（调用方回退为单角色消息）。
+ */
+export function parseMultiRoleplayResponse(reply: string): MultiRoleplaySegment[] | null {
+	const trimmed = reply.trim();
+	if (!trimmed) return null;
+
+	// 1. 去掉可能的 markdown 代码块包裹
+	let jsonText = trimmed;
+	const codeBlock = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+	if (codeBlock) {
+		jsonText = codeBlock[1].trim();
+	}
+
+	// 2. 尝试直接解析 JSON 数组
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(jsonText);
+	} catch {
+		parsed = null;
+	}
+
+	// 3. 数组解析失败时，提取可能的数组片段（AI 有时会夹带解释文字）
+	if (!Array.isArray(parsed)) {
+		const arrMatch = jsonText.match(/\[[\s\S]*\]/);
+		if (arrMatch) {
+			try {
+				parsed = JSON.parse(arrMatch[0]);
+			} catch {
+				parsed = null;
+			}
+		}
+	}
+
+	if (Array.isArray(parsed)) {
+		const segments: MultiRoleplaySegment[] = [];
+		for (const item of parsed) {
+			const seg = extractSegment(item);
+			if (seg) segments.push(seg);
+		}
+		return segments.length > 0 ? segments : null;
+	}
+
+	// 4. 单个 JSON 对象（AI 只让一个角色说话时）
+	if (parsed && typeof parsed === "object") {
+		const seg = extractSegment(parsed);
+		if (seg) return [seg];
+	}
+
+	// 5. 多个 JSON 对象拼接（整体不是合法 JSON，逐个对象扫描）
+	const objectSegments = parseConcatenatedObjects(jsonText);
+	if (objectSegments.length > 0) return objectSegments;
+
+	// 6. 回退：解析"角色名：内容"文本格式（每行一段，支持多角色）
+	const textSegments = parseTextSegments(trimmed);
+	return textSegments.length > 0 ? textSegments : null;
+}
+
+/** 判断发言内容是否只有括号内描写（无括号外实质台词） */
+export function hasSubstantiveContent(content: string): boolean {
+	// 去掉全角/半角括号包裹的内容后，剩余部分若几乎为空白，则视为纯描写
+	const outside = content.replace(/[（(【][^（）()【】]*[）)】]/g, "").replace(/\s+/g, "");
+	return outside.length > 0;
+}
+
+/** 判断发言内容是否"整段仅为一对括号包裹的描写"（开头、结尾均为括号且只含一对括号） */
+export function isBracketOnlyContent(content: string): boolean {
+	return /^[（(【][^（）()【】]{1,}[）)】]$/.test(content.trim());
+}
+
+/** 从单个 JSON 项提取发言段（兼容 character/name、content/text 字段） */
+function extractSegment(item: unknown): MultiRoleplaySegment | null {
+	if (typeof item !== "object" || item === null) return null;
+	const o = item as Record<string, unknown>;
+	const character = String(o.character ?? o.name ?? "").trim();
+	const content = String(o.content ?? o.text ?? "").trim();
+	if (!character || !content) return null;
+	return { character, content };
+}
+
+/** 解析多个 JSON 对象拼接的文本（如 {"character":"A",...}\n{"character":"B",...}） */
+function parseConcatenatedObjects(text: string): MultiRoleplaySegment[] {
+	const segments: MultiRoleplaySegment[] = [];
+	// 匹配所有完整的 JSON 对象字面量（含嵌套花括号/引号转义）
+	const objectPattern = /\{(?:[^{}]|\{[^{}]*\})*\}/g;
+	let m: RegExpExecArray | null;
+	while ((m = objectPattern.exec(text)) !== null) {
+		try {
+			const seg = extractSegment(JSON.parse(m[0]));
+			if (seg) segments.push(seg);
+		} catch {
+			// 跳过无法解析的对象
+		}
+	}
+	return segments;
+}
+
+/** 解析"角色名：内容" / "（角色名）内容" 文本行格式 */
+function parseTextSegments(text: string): MultiRoleplaySegment[] {
+	const segments: MultiRoleplaySegment[] = [];
+	for (const rawLine of text.split(/\n+/)) {
+		const line = rawLine.trim();
+		if (!line) continue;
+		const colonMatch = line.match(/^(?<name>[^：:]{1,12})[：:]\s*(?<content>.+)$/);
+		const bracketMatch = line.match(/^[（(【]\s*(?<name>[^）)】]{1,12})\s*[）)】]\s*(?<content>.+)$/);
+		const m = colonMatch ?? bracketMatch;
+		if (!m?.groups) continue;
+		const character = m.groups.name.trim();
+		const content = m.groups.content.trim();
+		if (!character || !content) continue;
+		segments.push({ character, content });
+	}
+	return segments;
 }

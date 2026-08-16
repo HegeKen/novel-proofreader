@@ -9,6 +9,8 @@
 - 支持选择扮演角色、设定用户身份（局外人/扮演某角色）、绑定当前剧情位置（章节）
 - AI 系统提示词自动注入角色设定、人物关系、世界观与最近剧情片段，确保角色言行贴合原著
 - 对话支持流式发送、重新生成、清空会话、会话管理（多会话列表、删除、标题）
+- 消息支持编辑：修改用户输入后重新生成 AI 回复，保留修改历史（原始内容可对比查看）与旧回复链，编辑后自动截断后续消息
+- 实现多角色群像对话模式，AI 可同时扮演多个角色，按格式输出多段发言
 - 新增 `roleplayStore` 状态管理，会话与消息按小说持久化
 - 新增 `RoleplayProfileModal` 角色小传预览，`characterRoles.ts` 角色类型中文映射
 - 数据管理 Tab 支持单小说角色扮演数据清除，清除所有数据时同步清理角色扮演缓存
@@ -17,6 +19,9 @@
 **AI API Key 重启恢复**
 - 应用重启后自动从安全存储恢复当前提供商对应的 API Key，避免提示"请设置 AI Key"
 - TTS 情感朗读使用 AI Key 兜底读取逻辑（`getEffectiveAiApiKey`），重启后无需重新配置
+
+**DeepSeek 账户余额查询**
+- 新增账户余额查询展示组件 `BalanceSection`，支持自动刷新与加载/成功/失败状态展示
 
 **默认模型更新**
 - 默认 AI 模型调整为 `deepseek-v4-flash`
@@ -58,12 +63,15 @@
 
 ### ♻️ 优化
 
+- 优化移动端布局适配，修复底部导航栏样式问题
+- 更新高峰时段定价说明，修正价格倍率描述
 - `ProofreadPanel.displayResults` 由 O(n²) 线性查找改为预建 Map，千段级章节校对滚动明显更流畅
 - 校对相关函数统一从 store 实时读取最新章节，消除多处闭包过期隐患
 - 编码检测采样限制在前 64KB，避免大文件全量扫描
 
 ### 🛠️ 工程与工具链
 
+- 新增多项工具函数与测试用例，完善类型定义与状态管理
 - 修复 `pnpm lint` 完全无法运行的问题：TypeScript 从 7.0 降至 6.0.3（typescript-eslint 尚不支持 TS7 原生版），typescript-eslint 升级至 8.67
 - 清理从未生效的自动更新死代码：移除 `useAppUpdate.ts` 及 `@tauri-apps/plugin-updater` / `tauri-plugin-updater` 依赖（主页版本检测走 GitHub API 不受影响）
 - CSP `connect-src` 放行所有 HTTPS 域名，自定义 OpenAI 兼容 API（通义千问、vLLM 等）不再被 WebView 拦截
