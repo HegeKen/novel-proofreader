@@ -1119,7 +1119,7 @@ export function buildReadingModeTTSEnhanceUserPrompt(
         contextBefore: string,
         contextAfter: string,
         configuredCharacters: Array<{ name: string; aliases: string[]; voice?: string; role?: string; relationTerms?: string[]; dialect?: string }>,
-        novelEvents?: Array<{ title: string; description: string; chapter: string; timeInfo: string }>
+        novelEvents?: Array<{ title: string; description: string; chapter: string; timeInfo: string; volume?: string }>
 ): string {
         const chars = configuredCharacters.length ? configuredCharacters.map(c => {
                 const alias = c.aliases?.length ? `（别称：${c.aliases.join('、')}）` : '';
@@ -1147,7 +1147,7 @@ export function buildReadingModeTTSEnhanceUserPrompt(
         
         // 构建小说大事记上下文
         const eventsContext = novelEvents && novelEvents.length > 0
-                ? `\n\n【小说大事记-当前章节涉及的关键事件】\n以下事件发生在当前章节或与之紧密相关，是理解当前段落情感基调的重要背景：\n${novelEvents.map((evt, idx) => `${idx + 1}. [${evt.chapter}] ${evt.title}：${evt.description}`).join('\n')}\n\n请根据这些事件背景来判断当前段落的情感基调，例如：如果之前发生了悲剧事件，当前段落可能带有悲伤或压抑的情绪；如果之前发生了喜事，当前段落可能带有开心或轻松的情绪。`
+                ? `\n\n【小说大事记-当前章节涉及的关键事件】\n以下事件发生在当前章节或与之紧密相关，是理解当前段落情感基调的重要背景：\n${novelEvents.map((evt, idx) => `${idx + 1}. [${evt.volume ? evt.volume + "·" : ""}${evt.chapter}] ${evt.title}：${evt.description}`).join('\n')}\n\n请根据这些事件背景来判断当前段落的情感基调，例如：如果之前发生了悲剧事件，当前段落可能带有悲伤或压抑的情绪；如果之前发生了喜事，当前段落可能带有开心或轻松的情绪。`
                 : '';
         
         return `分析段落，识别人物并判断情绪，为每个 segment 给出语速建议(speed 1-10)。情感要贴近生活、自然真实，克制内敛，避免舞台腔/过度戏剧化；日常对话优先用"平静/温柔/无奈"等克制标签+speed=5，真正激动时才用"愤怒/恐惧/动情"+speed=7-8；旁白默认"平静"+speed=5，仅在大起大落处换标签。
@@ -2119,8 +2119,9 @@ export const NOVEL_EVENTS_SYSTEM_PROMPT = `你是一位专业的小说编辑助�
       "description": "事件详细描述（20-50字）",
       "timeOrder": 1,
       "chapterOrder": 1,
-      "timeInfo": "具体时间描述（如：第一章、三年后、清晨、某日傍晚等）",
-      "chapter": "发生章节（如：第一卷·第1章）",
+      "timeInfo": "具体时间描述（如：三年后、清晨、某日傍晚等）",
+      "chapter": "发生章节（如：第1章）",
+      "volume": "所属卷标题（如：第2卷 正文2，无分卷时省略该字段）",
       "involvedCharacterNames": ["角色A", "角色B"],
       "id": "evt-001"
     }
@@ -2130,7 +2131,7 @@ export const NOVEL_EVENTS_SYSTEM_PROMPT = `你是一位专业的小说编辑助�
 要求：
 1. 提取小说中发生的所有重要事件，按照时间顺序排列，越详细越好
 2. 仔细分析全文中的所有时间信息，包括章节标题、正文中提到的时间点、时间段、时间跨度等
-3. 每个事件包含：title（标题）、description（描述）、timeOrder（时间顺序编号）、chapterOrder（行文顺序编号）、timeInfo（具体时间描述，从原文中提取或推断）、chapter（发生章节）、involvedCharacterNames（涉及角色名称数组）、id（事件ID，格式为 evt-xxx）
+3. 每个事件包含：title（标题）、description（描述）、timeOrder（时间顺序编号）、chapterOrder（行文顺序编号）、timeInfo（具体时间描述，从原文中提取或推断）、chapter（发生章节）、volume（所属卷标题，可选）、involvedCharacterNames（涉及角色名称数组）、id（事件ID，格式为 evt-xxx）
 4. 事件数量不做限制，尽可能详细记录每个重要时间点发生的事件
 5. timeOrder 从 1 开始递增，表示故事时间线顺序（数字越小越早发生）
 6. chapterOrder 从 1 开始递增，表示阅读顺序/行文顺序（数字越小越早在小说中出现）
@@ -2138,29 +2139,26 @@ export const NOVEL_EVENTS_SYSTEM_PROMPT = `你是一位专业的小说编辑助�
 8. timeInfo 字段要尽可能详细，包含具体的时间描述、时间段、时间跨度等
 
 【章节格式严格规范】
-9. chapter 字段必须统一使用"第X卷·第Y章"格式，卷编号和章节编号必须使用**阿拉伯数字**！例如：
-   - "第1卷·第1章"（正确）
-   - "第2卷·第10章"（正确）
-   - "第1卷·序章"（正确）
-   - "第一卷·第1章"（错误！卷编号必须用阿拉伯数字）
-   - "第1卷·第一章"（错误！章节编号必须用阿拉伯数字）
-   - "第一卷·第一章"（错误！卷和章节编号都必须用阿拉伯数字）
-   - "第1卷"（错误！必须包含章节名）
-   - "第1章"（错误！必须包含卷名）
-   - "第12章·第1卷"（错误！卷名必须在前面）
-10. 卷名必须在章节名前面，用"·"分隔，格式为"第N卷·第M章"（N和M为阿拉伯数字）
-11. 卷编号必须使用阿拉伯数字（第1卷、第2卷、第10卷...），禁止使用中文数字（第一卷、第二卷...）
-12. 章节编号必须使用阿拉伯数字（第1章、第2章、第10章...），禁止使用中文数字（第一章、第二章...）
-13. 如果事件发生在多个章节，使用最先出现的章节
-14. 如果无法确定具体章节，使用最接近的章节
+9. chapter 字段只存放纯章节名（如"第1章"、"序章"），**不要包含卷名**！章节编号必须使用**阿拉伯数字**！例如：
+   - "第1章"（正确）
+   - "第10章"（正确）
+   - "序章"（正确）
+   - "第2卷·第1章"（错误！卷名不能放在 chapter 字段）
+   - "第一章"（错误！章节编号必须用阿拉伯数字）
+10. volume 字段存放所属卷标题，**必须从小说章节结构中提取卷标题原文**（如"第2卷 正文2"、"第二卷 风云再起"），不要自行改写为"第2卷"这样的简称。例如：
+    - 章节结构为"【第2卷 正文2】第1章"时，volume 填"第2卷 正文2"（正确）
+    - 章节结构为"【第二卷 风云再起】第1章"时，volume 填"第二卷 风云再起"（正确）
+11. 小说没有分卷结构时，省略 volume 字段
+12. 如果事件发生在多个章节，使用最先出现的章节
+13. 如果无法确定具体章节，使用最接近的章节
 
 【排序规则】
-15. 卷的顺序必须严格按照数字大小：第1卷 < 第2卷 < ... < 第8卷 < ...
-16. 同一卷内的章节顺序必须严格按照数字大小：第1章 < 第2章 < ... < 第10章 < ...
-17. chapterOrder 必须与章节的阅读顺序完全一致，不要打乱卷和章节的自然顺序
-18. timeOrder 必须与故事时间线一致，如果小说是线性叙事，timeOrder 应该与 chapterOrder 一致
-19. involvedCharacterNames 使用小说中的实际角色名称
-20. 只输出 JSON 格式，不要包含 markdown 代码块标记或其他文字`;
+14. 卷的顺序必须严格按照数字大小：第1卷 < 第2卷 < ... < 第8卷 < ...
+15. 同一卷内的章节顺序必须严格按照数字大小：第1章 < 第2章 < ... < 第10章 < ...
+16. chapterOrder 必须与章节的阅读顺序完全一致，不要打乱卷和章节的自然顺序
+17. timeOrder 必须与故事时间线一致，如果小说是线性叙事，timeOrder 应该与 chapterOrder 一致
+18. involvedCharacterNames 使用小说中的实际角色名称
+19. 只输出 JSON 格式，不要包含 markdown 代码块标记或其他文字`;
 
 /** 小说大事记合并系统 prompt — 合并去重排序 */
 export const NOVEL_EVENTS_MERGE_PROMPT = `你是小说剧情分析专家。以下是从小说不同文本片段中提取出的事件列表，请将这些事件合并、去重并按时间顺序排列。
@@ -2174,7 +2172,8 @@ export const NOVEL_EVENTS_MERGE_PROMPT = `你是小说剧情分析专家。以�
       "timeOrder": 1,
       "chapterOrder": 1,
       "timeInfo": "具体时间描述",
-      "chapter": "发生章节（如：第1卷·第1章）",
+      "chapter": "发生章节（如：第1章）",
+      "volume": "所属卷标题（如：第2卷 正文2，无分卷时省略该字段）",
       "involvedCharacterNames": ["角色A", "角色B"],
       "id": "evt-001"
     }
@@ -2191,28 +2190,23 @@ export const NOVEL_EVENTS_MERGE_PROMPT = `你是小说剧情分析专家。以�
 7. 注意：timeOrder 和 chapterOrder 是两个不同的概念！如果小说使用插叙/倒叙，同一事件的 timeOrder 和 chapterOrder 会不同
 
 【章节格式严格规范】
-8. chapter 字段必须统一使用"第X卷·第Y章"格式，卷编号和章节编号必须使用**阿拉伯数字**！例如：
-   - "第1卷·第1章"（正确）
-   - "第2卷·第10章"（正确）
-   - "第1卷·序章"（正确）
-   - "第一卷·第1章"（错误！卷编号必须用阿拉伯数字）
-   - "第1卷·第一章"（错误！章节编号必须用阿拉伯数字）
-   - "第一卷·第一章"（错误！卷和章节编号都必须用阿拉伯数字）
-   - "第1卷"（错误！必须包含章节名）
-   - "第1章"（错误！必须包含卷名）
-   - "第12章·第1卷"（错误！卷名必须在前面）
-9. 卷名必须在章节名前面，用"·"分隔，格式为"第N卷·第M章"（N和M为阿拉伯数字）
-10. 卷编号必须使用阿拉伯数字（第1卷、第2卷、第10卷...），禁止使用中文数字（第一卷、第二卷...）
-11. 章节编号必须使用阿拉伯数字（第1章、第2章、第10章...），禁止使用中文数字（第一章、第二章...）
-12. 如果发现章节格式不一致（如"第12章·第一卷"、"第一卷·第一章"），必须修正为正确格式（"第1卷·第12章"）
+8. chapter 字段只存放纯章节名（如"第1章"、"序章"），**不要包含卷名**！章节编号必须使用**阿拉伯数字**！例如：
+   - "第1章"（正确）
+   - "第10章"（正确）
+   - "序章"（正确）
+   - "第2卷·第1章"（错误！卷名不能放在 chapter 字段）
+   - "第一章"（错误！章节编号必须用阿拉伯数字）
+9. volume 字段存放所属卷标题，**必须从事件原有的 volume 字段或小说章节结构中提取卷标题原文**（如"第2卷 正文2"），不要自行改写为"第2卷"这样的简称
+10. 如果事件列表中的条目没有 volume 字段，说明该事件无分卷，省略 volume 字段即可
+11. 如果发现事件里卷和章节被合并写成了"第X卷·第Y章"格式，必须拆开：chapter 只保留"第Y章"，volume 填卷标题
 
 【排序规则】
-13. 卷的顺序必须严格按照数字大小：第1卷 < 第2卷 < ... < 第8卷 < ...
-14. 同一卷内的章节顺序必须严格按照数字大小：第1章 < 第2章 < ... < 第10章 < ...
-15. chapterOrder 必须与章节的阅读顺序完全一致，不要打乱卷和章节的自然顺序
-16. 先按卷排序，再按章节排序，确保所有第1卷的事件排在第2卷之前
+12. 卷的顺序必须严格按照数字大小：第1卷 < 第2卷 < ... < 第8卷 < ...
+13. 同一卷内的章节顺序必须严格按照数字大小：第1章 < 第2章 < ... < 第10章 < ...
+14. chapterOrder 必须与章节的阅读顺序完全一致，不要打乱卷和章节的自然顺序
+15. 先按卷排序，再按章节排序，确保所有第1卷的事件排在第2卷之前
 
-17. 只输出 JSON 格式，不要包含 markdown 代码块标记或其他文字`;
+16. 只输出 JSON 格式，不要包含 markdown 代码块标记或其他文字`;
 
 /**
  * 分批分析整本小说，提取小说大事记
@@ -2230,6 +2224,7 @@ export interface NovelEventsResult {
     chapterOrder: number;
     timeInfo: string;
     chapter: string;
+    volume?: string;
     involvedCharacterNames: string[];
     id: string;
   }>;
@@ -2241,7 +2236,7 @@ export async function generateNovelEvents(
   config: AIConfig,
   onProgress?: (current: number, total: number, phase: "analyze" | "merge") => void,
   skipMerge?: boolean,
-  existingEvents?: Array<{ title: string; description: string; timeOrder: number; chapterOrder: number; chapter: string; timeInfo: string }>,
+  existingEvents?: Array<{ title: string; description: string; timeOrder: number; chapterOrder: number; chapter: string; timeInfo: string; volume?: string }>,
 ): Promise<NovelEventsResult> {
   if (!config.apiKey || !config.baseURL) {
     throw new Error("AI配置不完整");
@@ -2271,7 +2266,7 @@ export async function generateNovelEvents(
       ? `
 
 【现有大事记参考（请避免重复，新事件的 timeOrder 和 chapterOrder 需要与以下事件衔接）】
-${existingEvents.map((evt, idx) => `${idx + 1}. [时间顺序:${evt.timeOrder}][行文顺序:${evt.chapterOrder}][${evt.chapter}] ${evt.title}：${evt.description}`).join('\n')}
+${existingEvents.map((evt, idx) => `${idx + 1}. [时间顺序:${evt.timeOrder}][行文顺序:${evt.chapterOrder}][${evt.volume ? evt.volume + "·" : ""}${evt.chapter}] ${evt.title}：${evt.description}`).join('\n')}
 
 注意：
 1. 新生成的事件不要与上述现有事件重复
@@ -2517,7 +2512,7 @@ export async function generateChapterTitle(
 	_chapterNumber: number,
 	config: AIConfig,
 	signal?: AbortSignal,
-	novelEvents?: Array<{ title: string; description: string; chapter: string; timeInfo: string }>,
+	novelEvents?: Array<{ title: string; description: string; chapter: string; timeInfo: string; volume?: string }>,
 ): Promise<string[]> {
 	// 构建用户prompt
 	const previousTitles = Object.keys(previousChapters).slice(-5); // 最多取前5章
@@ -2525,7 +2520,7 @@ export async function generateChapterTitle(
 
 	// 大事记参考（仅注入与当前章节相关的事件，避免无关信息干扰标题生成）
 	const eventsText = novelEvents && novelEvents.length > 0
-		? `\n\n【本章涉及的小说大事记参考】\n${novelEvents.map((evt, idx) => `${idx + 1}. [${evt.chapter || evt.timeInfo || "本章"}] ${evt.title}：${evt.description}`).join("\n")}\n请结合这些大事记，使生成的章节名能反映本章的关键事件与剧情走向。`
+		? `\n\n【本章涉及的小说大事记参考】\n${novelEvents.map((evt, idx) => `${idx + 1}. [${evt.volume ? evt.volume + "·" : ""}${evt.chapter || evt.timeInfo || "本章"}] ${evt.title}：${evt.description}`).join("\n")}\n请结合这些大事记，使生成的章节名能反映本章的关键事件与剧情走向。`
 		: "";
 	
 	const userPrompt = `请为以下章节生成合适的章节名：

@@ -7,10 +7,18 @@ import { generateChapterTitle } from "../utils/aiClient";
 import { logger } from "../utils/logger";
 
 /** 从大事记中筛选与指定章节相关的事件（按 chapter 字段匹配章节标题，或 timeInfo 提及章节） */
+interface ChapterEventRef {
+	title: string;
+	description: string;
+	chapter: string;
+	timeInfo: string;
+	volume?: string;
+}
+
 function filterEventsForChapter(
-	events: Array<{ title: string; description: string; chapter: string; timeInfo: string }>,
+	events: ChapterEventRef[],
 	chapterTitle: string,
-): Array<{ title: string; description: string; chapter: string; timeInfo: string }> {
+): ChapterEventRef[] {
 	const title = chapterTitle?.trim();
 	if (!title) return [];
 	const titleKey = title.replace(/\s+/g, "").toLowerCase();
@@ -57,6 +65,7 @@ export function useChapterTitleSuggestion() {
 					description: evt.description,
 					chapter: evt.chapter,
 					timeInfo: evt.timeInfo,
+					volume: evt.volume,
 				})),
 				chapter.title,
 			);

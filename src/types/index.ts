@@ -245,7 +245,8 @@ export interface NovelEvent {
 	timeOrder: number; // 时间顺序（故事时间线，数字越小越早）
 	chapterOrder: number; // 行文顺序（阅读顺序/章节顺序，数字越小越早出现）
 	timeInfo: string; // 具体时间描述（如：第一章、三年后、清晨等）
-	chapter: string; // 发生章节（如：第1章）
+	chapter: string; // 发生章节（如：第1章、第一章）
+	volume?: string; // 所属分卷标题（如：第一卷·风起，无分卷时为空）
 	involvedCharacterIds: string[]; // 涉及的角色ID列表
 }
 

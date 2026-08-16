@@ -80,6 +80,7 @@ import {
 	MessageSquare,
 	Send,
 	Wallet,
+	ArrowDownUp,
 } from "lucide-react";
 
 export const Icons = {
@@ -171,6 +172,7 @@ export const Icons = {
 	messageSquare: MessageSquare,
 	send: Send,
 	wallet: Wallet,
+	arrowDownUp: ArrowDownUp,
 };
 
 export type IconName = keyof typeof Icons;

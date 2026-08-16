@@ -214,12 +214,20 @@ export function useTTS() {
 
 		const relevantEvents = currentNovelId ? getEvents(currentNovelId).filter(evt => {
 			if (!evt.chapter || !chapterTitle) return false;
-			const eventChapter = evt.chapter;
-			const dotIndex = eventChapter.indexOf("·");
-			const eventChapterName = dotIndex > 0 ? eventChapter.slice(dotIndex + 1).trim() : eventChapter;
+			const eventChapterName = evt.chapter.replace(/^第[\d一二三四五六七八九十百千万]+卷[·\s]?/, "").trim();
 			const chapterDotIndex = chapterTitle.indexOf("·");
 			const currentChapterName = chapterDotIndex > 0 ? chapterTitle.slice(chapterDotIndex + 1).trim() : chapterTitle;
-			return eventChapterName.includes(currentChapterName) || currentChapterName.includes(eventChapterName);
+			// 章节名匹配
+			const chapterMatched = eventChapterName.includes(currentChapterName) || currentChapterName.includes(eventChapterName);
+			if (!chapterMatched) return false;
+			// 若事件记录了所属卷，且当前章节属于某卷，则卷也必须匹配（避免跨卷同名章节误匹配）
+			if (evt.volume) {
+				const currentVolume = chapterDotIndex > 0 ? chapterTitle.slice(0, chapterDotIndex).trim() : "";
+				if (currentVolume && !evt.volume.includes(currentVolume) && !currentVolume.includes(evt.volume)) {
+					return false;
+				}
+			}
+			return true;
 		}).slice(0, 10) : [];
 
 		try {

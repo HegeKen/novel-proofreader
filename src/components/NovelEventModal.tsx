@@ -2,13 +2,16 @@ import React, { useState, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useCharacterStore } from "../stores/characterStore";
 import { useNovelStore } from "../stores/novelStore";
-import type { NovelEvent, Chapter } from "../types";
+import type { NovelEvent } from "../types";
 import { Icons } from "./Icons";
+import { Select } from "./Select";
 import { useAppMetaStore } from "../stores/appMetaStore";
 import { generateNovelEvents, sendChatCompletion, extractJSON } from "../utils/aiClient";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { logger } from "../utils/logger";
 import { generateId } from "../utils/id";
+import { useElapsedTime, formatElapsedTime } from "../hooks/useElapsedTime";
+import { normalizeChapterTitle, parseChapterInfo, findMatchedChapter, normalizeEventChapter } from "../utils/chapterMatch";
 
 interface NovelEventModalProps {
 	novelId: string | null;
@@ -23,6 +26,8 @@ interface EventFormData {
 	chapterOrder: number;
 	timeInfo: string;
 	chapter: string;
+	/** 所属分卷标题（无分卷时为空） */
+	volume: string;
 	involvedCharacterIds: string[];
 }
 
@@ -33,6 +38,7 @@ const emptyForm: EventFormData = {
 	chapterOrder: 1,
 	timeInfo: "",
 	chapter: "",
+	volume: "",
 	involvedCharacterIds: [],
 };
 
@@ -77,6 +83,8 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 	const [generationPhase, setGenerationPhase] = useState<string>("");
 	const [generationStatus, setGenerationStatus] = useState<"success" | "error" | "info" | null>(null);
 	const [generationMessage, setGenerationMessage] = useState("");
+	// 大事记生成已耗时（生成中动态更新）
+	const generationElapsed = useElapsedTime(isGenerating);
 
 	const [isCompletingMode, setIsCompletingMode] = useState(false);
 	const [selectedChapterIds, setSelectedChapterIds] = useState<Set<number>>(new Set());
@@ -84,182 +92,10 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 	type SortMode = 'chapter' | 'time';
 	const [sortMode, setSortMode] = useState<SortMode>('chapter');
 
-	const chineseNumMap: Record<string, number> = {
-		'零': 0, '〇': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
-		'五': 5, '六': 6, '七': 7, '八': 8, '九': 9,
-	};
-	const unitMap: Record<string, number> = {
-		'十': 10, '百': 100, '千': 1000, '万': 10000, '亿': 100000000
-	};
-
-	const chineseToArabic = (str: string): string => {
-		if (!str) return str;
-
-		let total = 0;
-		let section = 0;
-		let current = 0;
-		let hasDigit = false;
-
-		for (let i = 0; i < str.length; i++) {
-			const char = str[i];
-
-			if (chineseNumMap[char] !== undefined) {
-				current = chineseNumMap[char];
-				hasDigit = true;
-			} else if (unitMap[char] !== undefined) {
-				const unitVal = unitMap[char];
-				if (unitVal >= 10000) {
-					if (current === 0 && !hasDigit) current = 1;
-					section = (section + current) * unitVal;
-					total += section;
-					section = 0;
-					current = 0;
-					hasDigit = false;
-				} else {
-					if (current === 0 && !hasDigit && char === '十') current = 1;
-					section += current * unitVal;
-					current = 0;
-				}
-			} else {
-				return str;
-			}
-		}
-
-		total += section + current;
-		return total.toString();
-	};
-
-	const normalizeChapterTitle = useCallback((title: string): string => {
-		if (!title) return title;
-		
-		let normalized = title;
-		
-		if (/第[零一二三四五六七八九十百千万\d]+[章节回卷]/.test(title)) {
-			normalized = title.replace(/第([零一二三四五六七八九十百千万\d]+)([章节回卷])/g, (_, num, suffix) => {
-				const arabicNum = chineseToArabic(num);
-				const unifiedNum = parseInt(arabicNum, 10).toString();
-				return `第${unifiedNum}${suffix}`;
-			});
-		}
-		
-		return normalized;
-	}, []);
-
-	const parseChapterInfo = useCallback((chapterStr: string): { volumeNum: number; chapterNum: number; volumeName: string; chapterName: string } => {
-		if (!chapterStr) return { volumeNum: 0, chapterNum: 0, volumeName: "", chapterName: "" };
-		
-		let volumeNum = 0;
-		let chapterNum = 0;
-		let volumeName = "";
-		let chapterName = "";
-		
-		const numPattern = '[零一二三四五六七八九十百千万\\d]+';
-		
-		const dotIndex = chapterStr.indexOf("·");
-		if (dotIndex > 0) {
-			const part1 = chapterStr.slice(0, dotIndex).trim();
-			const part2 = chapterStr.slice(dotIndex + 1).trim();
-			
-			const volumeMatch = part1.match(new RegExp(`第(${numPattern})卷`));
-			if (volumeMatch) {
-				volumeNum = parseInt(chineseToArabic(volumeMatch[1]), 10) || 0;
-				volumeName = part1;
-			} else {
-				const chapterMatch = part1.match(new RegExp(`第(${numPattern})[章节回]`));
-				if (chapterMatch) {
-					chapterNum = parseInt(chineseToArabic(chapterMatch[1]), 10) || 0;
-					chapterName = part1;
-				}
-			}
-			
-			const chapterMatch2 = part2.match(new RegExp(`第(${numPattern})[章节回]`));
-			if (chapterMatch2) {
-				chapterNum = parseInt(chineseToArabic(chapterMatch2[1]), 10) || 0;
-				chapterName = part2;
-			} else if (!chapterName) {
-				chapterName = part2;
-			}
-			
-			if (!volumeName) {
-				volumeName = part1;
-			}
-		} else {
-			const volumeMatch = chapterStr.match(new RegExp(`第(${numPattern})卷`));
-			const chapterMatch = chapterStr.match(new RegExp(`第(${numPattern})[章节回]`));
-			
-			if (volumeMatch) {
-				volumeNum = parseInt(chineseToArabic(volumeMatch[1]), 10) || 0;
-				volumeName = chapterStr;
-			}
-			if (chapterMatch) {
-				chapterNum = parseInt(chineseToArabic(chapterMatch[1]), 10) || 0;
-				chapterName = chapterStr;
-			}
-		}
-		
-		return { volumeNum, chapterNum, volumeName, chapterName };
-	}, []);
-
-	// 公共章节匹配函数：根据章节字符串在小说章节列表中查找匹配章节
-	// 复用于排序、覆盖检测和同步，保证匹配逻辑一致性
-	const findMatchedChapter = useCallback((chapterStr: string): Chapter | undefined => {
-		if (!chapterStr) return undefined;
-
-		const chapterInfo = parseChapterInfo(chapterStr);
-		const normalizedSearch = normalizeChapterTitle(chapterStr);
-
-		const nonVolumeChapters = chapters.filter(ch => !ch.isVolume);
-
-		let matchedChapter = nonVolumeChapters.find(ch => {
-			const normalizedChapter = normalizeChapterTitle(ch.title);
-
-			if (ch.title === chapterStr) return true;
-			if (normalizedChapter === normalizedSearch) return true;
-
-			const chInfo = parseChapterInfo(ch.title);
-
-			if (chapterInfo.volumeNum > 0 && chapterInfo.chapterNum > 0) {
-				if (chInfo.volumeNum > 0 && chInfo.chapterNum > 0) {
-					if (chapterInfo.volumeNum === chInfo.volumeNum && chapterInfo.chapterNum === chInfo.chapterNum) {
-						return true;
-					}
-				}
-			}
-
-			if (chapterStr.length >= 3 && ch.title.includes(chapterStr)) return true;
-			if (chapterStr.length >= 3 && normalizedChapter.includes(normalizedSearch)) return true;
-			if (chapterStr.length >= 3 && chapterStr.includes(ch.title)) return true;
-
-			if (chapterInfo.chapterName && ch.title.includes(chapterInfo.chapterName)) return true;
-			if (chapterInfo.chapterNum > 0) {
-				const chapterPattern = new RegExp(`第${chapterInfo.chapterNum}[章节回]`);
-				if (chapterPattern.test(ch.title)) return true;
-			}
-
-			return false;
-		});
-
-		// 兜底匹配：按章节序号匹配（忽略分卷）
-		if (!matchedChapter && chapterInfo.chapterNum > 0) {
-			matchedChapter = nonVolumeChapters.find(ch => {
-				const chInfo = parseChapterInfo(ch.title);
-				if (chInfo.chapterNum === chapterInfo.chapterNum) {
-					if (chapterInfo.volumeNum > 0 && chInfo.volumeNum > 0) {
-						return chapterInfo.volumeNum === chInfo.volumeNum;
-					}
-					return true;
-				}
-				return false;
-			});
-		}
-
-		return matchedChapter;
-	}, [chapters, normalizeChapterTitle, parseChapterInfo]);
-
 	const getChapterOrder = useCallback((event: NovelEvent): number => {
-		const matched = findMatchedChapter(event.chapter);
+		const matched = findMatchedChapter(chapters, event.chapter, event.volume);
 		return matched ? matched.startIndex : Infinity;
-	}, [findMatchedChapter]);
+	}, [chapters]);
 
 	const sortedEvents = useMemo(() => {
 		const events = [...storeEvents];
@@ -304,7 +140,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		if (!chapter?.parentId) return null;
 		const volume = chapters.find(ch => ch.id === chapter.parentId && ch.isVolume);
 		return volume?.title || null;
-	}, [chapters, normalizeChapterTitle]);
+	}, [chapters]);
 
 	const getUncoveredChapters = useMemo(() => {
 		const nonBodyKeywords = [
@@ -324,20 +160,20 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		const coveredChapterIds = new Set<number>();
 
 		for (const event of storeEvents) {
-			const matched = findMatchedChapter(event.chapter);
+			const matched = findMatchedChapter(chapters, event.chapter, event.volume);
 			if (matched) {
 				coveredChapterIds.add(matched.id);
 			}
 		}
 
 		return nonVolumeChapters.filter(ch => !coveredChapterIds.has(ch.id));
-	}, [chapters, storeEvents, findMatchedChapter]);
+	}, [chapters, storeEvents]);
 
 	const handleAdd = useCallback(() => {
 		setEditingId("__new__");
 		const nextTimeOrder = sortedEvents.length > 0 ? Math.max(...sortedEvents.map((e) => e.timeOrder)) + 1 : 1;
 		const nextChapterOrder = sortedEvents.length > 0 ? Math.max(...sortedEvents.map((e) => e.chapterOrder)) + 1 : 1;
-		setFormData({ title: "", description: "", timeOrder: nextTimeOrder, chapterOrder: nextChapterOrder, timeInfo: "", chapter: "", involvedCharacterIds: [] });
+		setFormData({ title: "", description: "", timeOrder: nextTimeOrder, chapterOrder: nextChapterOrder, timeInfo: "", chapter: "", volume: "", involvedCharacterIds: [] });
 	}, [sortedEvents]);
 
 	const handleEdit = useCallback((evt: NovelEvent) => {
@@ -349,6 +185,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 			chapterOrder: evt.chapterOrder,
 			timeInfo: evt.timeInfo,
 			chapter: evt.chapter,
+			volume: evt.volume ?? "",
 			involvedCharacterIds: [...evt.involvedCharacterIds],
 		});
 	}, []);
@@ -425,6 +262,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 				chapterOrder: evt.chapterOrder,
 				chapter: evt.chapter,
 				timeInfo: evt.timeInfo,
+				volume: evt.volume,
 			}));
 
 			const result = await generateNovelEvents(
@@ -473,6 +311,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 					chapterOrder: evt.chapterOrder || i + 1,
 					timeInfo: evt.timeInfo || "",
 					chapter: evt.chapter || "",
+					volume: evt.volume ?? getVolumeForChapter(evt.chapter || "") ?? "",
 					involvedCharacterIds,
 					id: generateId("evt"),
 				});
@@ -514,7 +353,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		} finally {
 			setIsGenerating(false);
 		}
-	}, [novelId, selectedChapterIds, chapters, characters, aiConfig, storeEvents, isGenerating]);
+	}, [novelId, selectedChapterIds, chapters, characters, aiConfig, storeEvents, isGenerating, getChapterOrder, getVolumeForChapter]);
 
 	const handleGenerateWithAI = useCallback(async () => {
 		if (!novelId || !chapters.length || isGenerating) return;
@@ -583,11 +422,13 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 
 				const chapterInfo = parseChapterInfo(evt.chapter || "");
 				
+				// 拆分卷与章节：chapter 存纯章节名，volume 用 AI 返回的卷标题（优先）或匹配到的卷标题
 				let cleanChapter = evt.chapter || "";
+				let cleanVolume = evt.volume ?? "";
 				if (chapterInfo.volumeNum > 0 && chapterInfo.chapterNum > 0) {
-					cleanChapter = `第${chapterInfo.volumeNum}卷·第${chapterInfo.chapterNum}章`;
-				} else if (chapterInfo.volumeNum > 0 && chapterInfo.chapterName) {
-					cleanChapter = `第${chapterInfo.volumeNum}卷·${chapterInfo.chapterName}`;
+					cleanChapter = `第${chapterInfo.chapterNum}章`;
+				} else if (chapterInfo.chapterName) {
+					cleanChapter = chapterInfo.chapterName;
 				}
 
 				const matchedChapter = nonVolumeChapters.find(ch => {
@@ -615,6 +456,14 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 					return false;
 				});
 
+				// 由匹配到的章节推导所属卷（AI 返回的卷标题优先；无匹配时保留 AI 返回的卷信息）
+				if (matchedChapter?.parentId && !cleanVolume) {
+					const vol = chapters.find(v => v.id === matchedChapter.parentId && v.isVolume);
+					if (vol) cleanVolume = vol.title;
+				} else if (chapterInfo.volumeName && !cleanVolume) {
+					cleanVolume = chapterInfo.volumeName;
+				}
+
 				return {
 					title: evt.title,
 					description: evt.description || "",
@@ -622,6 +471,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 					chapterOrder: evt.chapterOrder || 1,
 					timeInfo: evt.timeInfo || "",
 					chapter: cleanChapter,
+					volume: cleanVolume,
 					involvedCharacterIds,
 					matchedStartIndex: matchedChapter?.startIndex ?? Infinity,
 					volumeNum: chapterInfo.volumeNum,
@@ -659,6 +509,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 					chapterOrder: i + 1,
 					timeInfo: evt.timeInfo,
 					chapter: evt.chapter,
+					volume: evt.volume ?? "",
 					involvedCharacterIds: evt.involvedCharacterIds,
 				});
 				addedCount++;
@@ -675,7 +526,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		} finally {
 			setIsGenerating(false);
 		}
-	}, [novelId, chapters, characters, aiConfig, addEvent, sortedEvents, isGenerating]);
+	}, [novelId, chapters, characters, aiConfig, addEvent, storeEvents.length, isGenerating]);
 
 	const handleReorderWithAI = useCallback(async () => {
 		if (!novelId || storeEvents.length === 0 || isGenerating) return;
@@ -696,19 +547,20 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 				chapterOrder: evt.chapterOrder,
 				timeInfo: evt.timeInfo,
 				chapter: evt.chapter,
+				volume: evt.volume ?? "",
 			})));
 
 			const systemPrompt = `你是小说编辑专家，请根据以下小说大事记的内容，重新分析它们在故事时间线上的先后顺序以及在行文阅读顺序中的位置，然后按正确的顺序排列。
 
 要求：
-1. 分析每个事件的时间信息（timeInfo）和发生章节（chapter）
+1. 分析每个事件的时间信息（timeInfo）和发生章节（chapter、volume）
 2. 根据故事逻辑重新确定每个事件的 timeOrder（故事时间线顺序）和 chapterOrder（阅读/行文顺序）
 3. 确保时间顺序和行文顺序的数值连续，从1开始递增
-4. 保持原有的标题、描述、时间信息和章节不变，只调整 timeOrder 和 chapterOrder
+4. 保持原有的标题、描述、时间信息、章节和所属卷不变，只调整 timeOrder 和 chapterOrder
 5. 直接返回JSON数组，不要包含任何其他文字说明
 
 输出格式：
-[{"title": "事件标题", "description": "事件描述", "timeOrder": 1, "chapterOrder": 1, "timeInfo": "时间信息", "chapter": "章节"}]`;
+[{"title": "事件标题", "description": "事件描述", "timeOrder": 1, "chapterOrder": 1, "timeInfo": "时间信息", "chapter": "章节名", "volume": "所属卷标题"}]`;
 
 			const userPrompt = `请重新排序以下小说大事记：
 
@@ -721,7 +573,7 @@ ${eventsJson}`;
 
 			const response = await sendChatCompletion(messages, aiConfig);
 
-			const reorderedEvents = extractJSON(response) as Array<{ title: string; description: string; timeOrder: number; chapterOrder: number; timeInfo: string; chapter: string }>;
+			const reorderedEvents = extractJSON(response) as Array<{ title: string; description: string; timeOrder: number; chapterOrder: number; timeInfo: string; chapter: string; volume?: string }>;
 			if (!Array.isArray(reorderedEvents) || reorderedEvents.length === 0) {
 				setGenerationStatus("error");
 				setGenerationMessage("未返回任何事件");
@@ -738,6 +590,7 @@ ${eventsJson}`;
 						chapterOrder: reordered.chapterOrder || 1,
 						timeInfo: reordered.timeInfo || originalEvent.timeInfo,
 						chapter: reordered.chapter || originalEvent.chapter,
+						volume: reordered.volume || originalEvent.volume,
 					});
 				}
 			}
@@ -772,20 +625,13 @@ ${eventsJson}`;
 		const updatedEvents = storeEvents.map(evt => {
 			if (!evt.chapter) return evt;
 
-			const matched = findMatchedChapter(evt.chapter);
-			if (!matched) return evt;
+			// 归一化为新格式：chapter 存纯章节名，volume 存所属卷标题
+			// 兼容老数据"第2卷·第1章"（含卷前缀、无 volume）的拆分
+			const normalized = normalizeEventChapter(chapters, evt.chapter, evt.volume);
 
-			const volume = matched.parentId
-				? chapters.find(v => v.id === matched.parentId && v.isVolume)
-				: null;
-
-			const standardChapter = volume
-				? `${volume.title}·${matched.title}`
-				: matched.title;
-
-			if (standardChapter !== evt.chapter) {
+			if (normalized.chapter !== evt.chapter || normalized.volume !== (evt.volume ?? "")) {
 				updatedCount++;
-				return { ...evt, chapter: standardChapter };
+				return { ...evt, chapter: normalized.chapter, volume: normalized.volume };
 			}
 
 			return evt;
@@ -795,11 +641,11 @@ ${eventsJson}`;
 			const setEvents = useCharacterStore.getState().setEvents;
 			setEvents(novelId, updatedEvents);
 			useAppMetaStore.getState().showToast(`同步完成，更新了 ${updatedCount} 个事件的章节信息`, "success");
-			logger.info(`[NovelEventModal] 同步完成，更新了 ${updatedCount} 个事件的章节字段`);
+			logger.info(`[NovelEventModal] 同步完成，更新了 ${updatedCount} 个事件的章节/卷字段`);
 		} else {
 			useAppMetaStore.getState().showToast("所有事件的章节信息已是最新", "info");
 		}
-	}, [novelId, storeEvents, chapters, findMatchedChapter]);
+	}, [novelId, storeEvents, chapters]);
 
 	if (!show || !novelId) return null;
 
@@ -846,6 +692,11 @@ ${eventsJson}`;
 							</div>
 							<div className="generation-progress-footer">
 								<span className="generation-progress-message">{generationMessage}</span>
+								{isGenerating && (
+									<span className="generation-progress-counter">
+										已耗时 {formatElapsedTime(generationElapsed)}
+									</span>
+								)}
 								{generationProgress.total > 1 && (
 									<span className="generation-progress-counter">{generationProgress.current}/{generationProgress.total}</span>
 								)}
@@ -896,13 +747,26 @@ ${eventsJson}`;
 								/>
 							</div>
 							<div className="form-field">
+								<label>所属分卷</label>
+								<Select
+									value={formData.volume}
+									onChange={(value) => setFormData({ ...formData, volume: value })}
+									options={[
+										{ value: "", label: "无分卷" },
+										...chapters
+											.filter((ch) => ch.isVolume)
+											.map((vol) => ({ value: vol.title, label: vol.title })),
+									]}
+								/>
+							</div>
+							<div className="form-field">
 								<label>发生章节</label>
 								<input
 									type="text"
 									className="config-input"
 									value={formData.chapter}
 									onChange={(e) => setFormData({ ...formData, chapter: e.target.value })}
-									placeholder="如：第1章、第一章"
+									placeholder={formData.volume ? `如：${formData.volume} 中的章节名` : "如：第1章、第一章"}
 								/>
 								{formData.chapter && (() => {
 									const volume = getVolumeForChapter(formData.chapter);
@@ -1081,12 +945,16 @@ ${eventsJson}`;
 										{evt.chapter && (
 											<span className="event-item-chapter">
 												{(() => {
+													// 优先使用拆分的 volume 字段（卷·章），否则回退旧格式
+													if (evt.volume) {
+														return `${evt.volume}·${evt.chapter}`;
+													}
 													if (evt.chapter.includes("·")) {
 														return evt.chapter;
 													}
 													const volume = getVolumeForChapter(evt.chapter);
 													return volume 
-														? `${evt.chapter}·${volume}`
+														? `${volume}·${evt.chapter}`
 														: evt.chapter;
 												})()}
 											</span>
@@ -1184,7 +1052,7 @@ ${eventsJson}`;
 						disabled={editingId !== null || isGenerating || storeEvents.length === 0}
 						title="AI 根据故事逻辑重新排序现有大事记"
 					>
-						<Icons.refreshCw size={16} />
+						<Icons.arrowDownUp size={16} />
 						<span>{isGenerating ? "排序中..." : "AI 排序"}</span>
 					</button>
 					<button

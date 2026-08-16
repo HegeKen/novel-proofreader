@@ -4955,6 +4955,16 @@ color: var(--text-primary)}
 	color: var(--text-tertiary);
 	margin-top: 8px}
 
+.analyze-elapsed {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--accent);
+	margin-top: 6px}
+
 .detected-characters-list {
 	max-height: 400px;
 	overflow-y: auto;

@@ -15,6 +15,7 @@ import type { DetectedCharacter } from "../utils/fileExport";
 import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign, analyzeWorldbuilding, sendChatCompletion, extractJSON, buildRequestConfig } from "../utils/aiClient";
 import type { ChatMessage } from "../utils/aiClient";
 import { generateId } from "../utils/id";
+import { normalizeEventChapter } from "../utils/chapterMatch";
 import { NovelEventModal } from "./NovelEventModal";
 import { formatDateTime } from "../utils/formatters";
 import { getRoleName, RELATION_TYPE_OPTIONS, GENDER_OPTIONS, ROLE_OPTIONS, makeRelationPairKey } from "../utils/characterRoles";
@@ -22,6 +23,7 @@ import { RelationshipGraph } from "./RelationshipGraph";
 import { CharacterCard } from "./character-settings/CharacterCard";
 import { CharacterEditForm } from "./character-settings/CharacterEditForm";
 import { synthesizeSpeechWithVoice } from "../utils/ttsService";
+import { useElapsedTime, formatElapsedTime } from "../hooks/useElapsedTime";
 
 // ============================================================
 // 角色排序组件 - 使用 Pointer Events 实现跨平台拖拽
@@ -723,6 +725,7 @@ interface WorldbuildingSectionProps {
 	editMode: boolean;
 	wbIsAnalyzing: boolean;
 	analyzeError: string | null;
+	elapsed: number;
 	form: NovelWorldbuilding;
 	// 外部处理函数
 	onEditModeChange: (editMode: boolean) => void;
@@ -735,6 +738,7 @@ function WorldbuildingSection({
 	editMode,
 	wbIsAnalyzing,
 	analyzeError,
+	elapsed,
 	form,
 	onEditModeChange,
 	onFormChange,
@@ -767,7 +771,7 @@ function WorldbuildingSection({
 				<div className="flex flex-col items-center gap-3">
 					<button className="btn" onClick={onAnalyze} disabled={wbIsAnalyzing}>
 						{wbIsAnalyzing ? <Icons.loader2 size={14} className="animate-spin" /> : <Icons.sparkle size={14} />}
-						{wbIsAnalyzing ? "AI 分析中..." : "AI 分析世界观"}
+						{wbIsAnalyzing ? `AI 分析中... ${formatElapsedTime(elapsed)}` : "AI 分析世界观"}
 					</button>
 					<button className="btn" onClick={() => onEditModeChange(true)}>
 						<Icons.plus size={14} />
@@ -890,6 +894,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const [wbEditMode, setWbEditMode] = useState(false);
 	const [wbIsAnalyzing, setWbIsAnalyzing] = useState(false);
 	const [wbAnalyzeError, setWbAnalyzeError] = useState<string | null>(null);
+	// 世界观分析已耗时（进行中动态更新）
+	const wbAnalyzeElapsed = useElapsedTime(wbIsAnalyzing);
 	const [wbForm, setWbForm] = useState<NovelWorldbuilding>(() => ({
 		worldType: wb?.worldType || "",
 		eraDescription: wb?.eraDescription || "",
@@ -982,6 +988,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const novelCategory = useMemo(() => novelCategories[novelId], [novelCategories, novelId]);
 	const novels = useNovelStore((s) => s.novels);
 	const currentNovel = useMemo(() => novels.find(n => n.id === novelId), [novels, novelId]);
+	const chapters = useNovelStore((s) => s.chapters);
 
 	// 检测新角色弹窗状态
 	const [showDetectModal, setShowDetectModal] = useState(false);
@@ -993,6 +1000,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const [isAnalyzing, setIsAnalyzing] = useState(false);
 	const [analyzeProgress, setAnalyzeProgress] = useState({ current: 0, total: 0, phase: "analyze" as "analyze" | "summarize" });
 	const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+	// 全角色分析已耗时（进行中动态更新）
+	const analyzeElapsed = useElapsedTime(isAnalyzing);
 
 	// 导入操作状态
 	const [isImporting, setIsImporting] = useState(false);
@@ -1177,6 +1186,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const [oldBiography, setOldBiography] = useState<string>("");
 	const [newBiography, setNewBiography] = useState<string>("");
 	const [isReanalyzing, setIsReanalyzing] = useState(false);
+	// 角色小传重分析已耗时（进行中动态更新）
+	const reanalyzeElapsed = useElapsedTime(isReanalyzing);
 	const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
 
 	// 检测是否为移动端
@@ -1770,21 +1781,33 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						setWorldbuilding(novelId, importedWorldbuilding!);
 					}
 
-					// --- 导入大事记（使用ID映射修正涉及角色ID） ---
+					// --- 导入大事记（使用ID映射修正涉及角色ID，并按新格式拆分卷与章节） ---
 					if (importedEvents.length > 0) {
 						const resolvedEvents: NovelEvent[] = [];
+						let normalizedEventCount = 0;
 						for (const evt of importedEvents) {
 							const resolvedCharacterIds: string[] = [];
 							for (const charId of evt.involvedCharacterIds || []) {
 								resolvedCharacterIds.push(idMapping.get(charId) || charId);
 							}
+							// 老数据 chapter 可能为"第2卷·第1章"且无 volume 字段，
+							// 导入时自动拆分为 chapter 纯章节名 + volume 卷标题（适配新格式）
+							const normalized = normalizeEventChapter(chapters, evt.chapter || "", evt.volume);
+							if (normalized.chapter !== (evt.chapter || "") || normalized.volume !== (evt.volume || "")) {
+								normalizedEventCount++;
+							}
 							resolvedEvents.push({
 								...evt,
 								id: evt.id || generateId("evt"),
+								chapter: normalized.chapter,
+								volume: normalized.volume,
 								involvedCharacterIds: resolvedCharacterIds,
 							});
 						}
 						setEvents(novelId, resolvedEvents);
+						if (normalizedEventCount > 0) {
+							logger.info(`[CharacterSettings] 导入大事记时自动拆分 ${normalizedEventCount} 条章节/卷字段`);
+						}
 					}
 
 					const msg = `导入完成！新增 ${addedCount} 个角色，更新 ${updatedCount} 个角色` +
@@ -1805,7 +1828,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			reader.readAsText(file);
 		};
 		input.click();
-	}, [novelId, novelCharacters, setCharactersForNovel, setRelationshipsForNovel, setNodePositions, setIgnoredWords, setNovelCategory, setIgnoredCharacterNames, setWorldbuilding, setEvents]);
+	}, [novelId, novelCharacters, setCharactersForNovel, setRelationshipsForNovel, setNodePositions, setIgnoredWords, setNovelCategory, setIgnoredCharacterNames, setWorldbuilding, setEvents, chapters]);
 
 	// 使用AI分析整本小说提取角色和关系
 	const handleAnalyzeCharacters = useCallback(async () => {
@@ -2718,6 +2741,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 						editMode={wbEditMode}
 						wbIsAnalyzing={wbIsAnalyzing}
 						analyzeError={wbAnalyzeError}
+						elapsed={wbAnalyzeElapsed}
 						form={wbForm}
 						onEditModeChange={setWbEditMode}
 						onFormChange={setWbForm}
@@ -2879,7 +2903,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 									disabled={wbIsAnalyzing}
 								>
 									{wbIsAnalyzing ? <Icons.loader2 size={18} className="animate-spin" /> : <Icons.sparkle size={18} />}
-									<span>{wbIsAnalyzing ? "分析中..." : "AI 分析"}</span>
+									<span>{wbIsAnalyzing ? `分析中... ${formatElapsedTime(wbAnalyzeElapsed)}` : "AI 分析"}</span>
 								</button>
 								<button
 									className="btn"
@@ -3191,6 +3215,9 @@ ${JSON.stringify(existingInfo, null, 2)}
 								<p className="analyze-hint">
 									<Icons.clock size={12} />
 									预计需要几分钟，请勿关闭应用
+								</p>
+								<p className="analyze-percent">
+									已耗时 {formatElapsedTime(analyzeElapsed)}
 								</p>
 							</div>
 						) : (
@@ -3991,6 +4018,9 @@ ${JSON.stringify(existingInfo, null, 2)}
 							<div className="flex flex-col items-center justify-center py-8">
 								<span className="spinner large"></span>
 								<p className="mt-4 text-neutral-300">正在重新分析角色小传...</p>
+								<p className="mt-2 text-sm text-neutral-500">
+									已耗时 {formatElapsedTime(reanalyzeElapsed)}
+								</p>
 							</div>
 						) : reanalyzeError ? (
 							<div className="text-center py-8">

@@ -71,6 +71,9 @@
 
 ### ♻️ 优化
 
+- 新增 `useElapsedTime` Hook 实现任务计时，多处添加执行耗时显示
+- 重构大事记匹配逻辑，支持分卷精确匹配，避免跨卷章节误判
+- 优化 AI 提示词与数据格式，统一章节存储为纯章节名 + 卷字段
 - 优化移动端布局适配，修复底部导航栏样式问题
 - 更新高峰时段定价说明，修正价格倍率描述
 - 优化校对单行检测时的 UI 状态同步，检测结果反馈更及时
@@ -80,6 +83,8 @@
 
 ### 🛠️ 工程与工具链
 
+- 拆分章节与卷字段，新增 `chapterMatch` 工具类统一处理章节匹配，移除组件内重复的章节处理逻辑
+- 新增大量单元测试覆盖章节匹配场景（`chapterMatch.test.ts`）
 - 新增多项工具函数与测试用例，完善类型定义与状态管理
 - 修复 `pnpm lint` 完全无法运行的问题：TypeScript 从 7.0 降至 6.0.3（typescript-eslint 尚不支持 TS7 原生版），typescript-eslint 升级至 8.67
 - 清理从未生效的自动更新死代码：移除 `useAppUpdate.ts` 及 `@tauri-apps/plugin-updater` / `tauri-plugin-updater` 依赖（主页版本检测走 GitHub API 不受影响）

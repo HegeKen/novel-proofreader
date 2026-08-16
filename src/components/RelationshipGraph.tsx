@@ -10,6 +10,7 @@ import { sendChatCompletion, extractJSON, buildRequestConfig } from "../utils/ai
 import type { ChatMessage } from "../utils/aiClient";
 import { generateId } from "../utils/id";
 import { RELATION_TYPE_OPTIONS, makeRelationPairKey } from "../utils/characterRoles";
+import { useElapsedTime, formatElapsedTime } from "../hooks/useElapsedTime";
 
 interface RelationshipGraphProps {
 	novelId: string;
@@ -68,6 +69,9 @@ export function RelationshipGraph({
 	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 	const [isGeneratingRelationships, setIsGeneratingRelationships] = useState(false);
 	const [isMergingRelationships, setIsMergingRelationships] = useState(false);
+	// 关系生成/梳理已耗时（进行中动态更新）
+	const generateElapsed = useElapsedTime(isGeneratingRelationships);
+	const mergeElapsed = useElapsedTime(isMergingRelationships);
 
 	const [relationForm, setRelationForm] = useState<{
 		sourceId: string;
@@ -1117,7 +1121,7 @@ ${JSON.stringify(currentRels, null, 2)}
 					disabled={isGeneratingRelationships || characters.length < 2}
 				>
 					<Icons.sparkle size={12} />
-					<span>{isGeneratingRelationships ? "生成中..." : "AI生成关系"}</span>
+					<span>{isGeneratingRelationships ? `生成中... ${formatElapsedTime(generateElapsed)}` : "AI生成关系"}</span>
 				</button>
 				<button
 					className="btn"
@@ -1126,7 +1130,7 @@ ${JSON.stringify(currentRels, null, 2)}
 					title="将现有关系发给AI梳理合并，替换现有关系"
 				>
 					<Icons.combine size={12} />
-					<span>{isMergingRelationships ? "梳理中..." : "AI梳理关系"}</span>
+					<span>{isMergingRelationships ? `梳理中... ${formatElapsedTime(mergeElapsed)}` : "AI梳理关系"}</span>
 				</button>
 			</div>
 			</div>

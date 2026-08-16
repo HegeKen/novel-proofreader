@@ -435,7 +435,7 @@ export function ReaderPanel({
 
 	// 章节内容变更时清理段落 refs（如合并段落等操作）
 	useEffect(() => {
-		if (!chapter) return;
+		if (!chapter?.content) return;
 		paragraphRefs.current = [];
 	}, [chapter?.content]);
 
