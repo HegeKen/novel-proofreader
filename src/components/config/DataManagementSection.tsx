@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNovelStore } from "../../stores/novelStore";
 import { useCharacterStore } from "../../stores/characterStore";
+import { useRoleplayStore } from "../../stores/roleplayStore";
 import { Icons } from "../Icons";
 import { ConfirmModal } from "./ConfirmModal";
 
@@ -11,6 +12,8 @@ export function DataManagementSection() {
 	const novelCharacters = useCharacterStore((s) => s.novelCharacters);
 	const clearNovelData = useCharacterStore((s) => s.clearNovelData);
 	const rebuildStatistics = useCharacterStore((s) => s.rebuildStatistics);
+	const clearRoleplayNovelData = useRoleplayStore((s) => s.clearNovelData);
+	const rebuildRoleplayStatistics = useRoleplayStore((s) => s.rebuildStatistics);
 	const totalNovels = novels.length;
 	const totalCharacters = Object.values(novelCharacters).reduce((acc, chars) => acc + chars.length, 0);
 	const novelListTotalCharacters = novels.reduce((acc, novel) => acc + (novelCharacters[novel.id]?.length ?? 0), 0);
@@ -32,6 +35,7 @@ export function DataManagementSection() {
 			danger: true,
 			onConfirm: () => {
 				clearNovelData(novelId);
+				clearRoleplayNovelData(novelId);
 				window.location.reload();
 			},
 		});
@@ -46,6 +50,7 @@ export function DataManagementSection() {
 			onConfirm: () => {
 				removeNovel(novelId);
 				clearNovelData(novelId);
+				clearRoleplayNovelData(novelId);
 				window.location.reload();
 			},
 		});
@@ -59,9 +64,10 @@ export function DataManagementSection() {
 			danger: true,
 			onConfirm: () => {
 				clearAllCache();
-				// 只清除小说和角色数据的持久化缓存（保留 AI 配置等其他设置）
+				// 只清除小说、角色和角色扮演数据的持久化缓存（保留 AI 配置等其他设置）
 				localStorage.removeItem("novel-proofreader-novels");
 				localStorage.removeItem("novel-proofreader-characters");
+				localStorage.removeItem("novel-proofreader-roleplay");
 				window.location.reload();
 			},
 		});
@@ -75,6 +81,7 @@ export function DataManagementSection() {
 			danger: true,
 			onConfirm: () => {
 				rebuildStatistics(novels.map(n => n.id));
+				rebuildRoleplayStatistics(novels.map(n => n.id));
 			},
 		});
 	};

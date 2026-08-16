@@ -45,40 +45,37 @@ export function useSearch(paragraphs: string[], paragraphIndexMap: number[]) {
 		logger.search(`搜索完成, 找到 ${results.length} 个匹配`);
 	}, [paragraphs, paragraphIndexMap]);
 
-	const prevMatch = useCallback(() => {
-		if (searchResults.length === 0) return null;
-		setCurrentMatchIndex((prev) => {
-			const newIndex = prev > 0 ? prev - 1 : searchResults.length - 1;
-			return newIndex;
-		});
-		return searchResults[(currentMatchIndex > 0 ? currentMatchIndex - 1 : searchResults.length - 1)]?.paraIndex ?? null;
-	}, [searchResults, currentMatchIndex]);
-
-	const nextMatch = useCallback(() => {
-		if (searchResults.length === 0) return null;
-		setCurrentMatchIndex((prev) => {
-			const newIndex = prev < searchResults.length - 1 ? prev + 1 : 0;
-			return newIndex;
-		});
-		return searchResults[(currentMatchIndex < searchResults.length - 1 ? currentMatchIndex + 1 : 0)]?.paraIndex ?? null;
-	}, [searchResults, currentMatchIndex]);
-
-	const handleSearchResultClick = useCallback((index: number) => {
-		setCurrentMatchIndex(index);
-		const match = searchResults[index];
-		setShowSearch(false);
-		setSearchResults([]);
-		setCurrentMatchIndex(0);
-		setSearchQuery("");
-		return match?.paraIndex ?? null;
-	}, [searchResults]);
-
-	const closeSearch = useCallback(() => {
+	const resetSearch = useCallback(() => {
 		setShowSearch(false);
 		setSearchResults([]);
 		setCurrentMatchIndex(0);
 		setSearchQuery("");
 	}, []);
+
+	const prevMatch = useCallback(() => {
+		if (searchResults.length === 0) return null;
+		const newIndex = currentMatchIndex > 0 ? currentMatchIndex - 1 : searchResults.length - 1;
+		setCurrentMatchIndex(newIndex);
+		return searchResults[newIndex]?.paraIndex ?? null;
+	}, [searchResults, currentMatchIndex]);
+
+	const nextMatch = useCallback(() => {
+		if (searchResults.length === 0) return null;
+		const newIndex = currentMatchIndex < searchResults.length - 1 ? currentMatchIndex + 1 : 0;
+		setCurrentMatchIndex(newIndex);
+		return searchResults[newIndex]?.paraIndex ?? null;
+	}, [searchResults, currentMatchIndex]);
+
+	const handleSearchResultClick = useCallback((index: number) => {
+		setCurrentMatchIndex(index);
+		const match = searchResults[index];
+		resetSearch();
+		return match?.paraIndex ?? null;
+	}, [searchResults, resetSearch]);
+
+	const closeSearch = useCallback(() => {
+		resetSearch();
+	}, [resetSearch]);
 
 	return {
 		showSearch,

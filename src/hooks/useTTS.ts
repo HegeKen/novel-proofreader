@@ -3,10 +3,12 @@ import { useNovelStore } from "../stores/novelStore";
 import { useConfigStore } from "../stores/configStore";
 import { useCharacterStore } from "../stores/characterStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
-import { splitParagraphs } from "../utils/chapterSplit";
+import { useAppMetaStore } from "../stores/appMetaStore";
+import { getNonEmptyParagraphs } from "../utils/chapterSplit";
 import { TTSPlayer, ScriptTTSPlayer, type TTSSentence } from "../utils/ttsService";
 import {
 	sendChatCompletion,
+	detectProvider,
 	READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT,
 	buildReadingModeTTSEnhanceUserPrompt,
 	type ParagraphEmotionResult,
@@ -25,6 +27,14 @@ export function useTTS() {
 	const promptConfig = useConfigStore((s) => s.promptConfig);
 	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 
+	// 获取当前生效的 AI API Key：优先用 aiConfig.apiKey，
+	// 兜底从 apiKeyMap/secureStorage 按 provider 取（重启后 aiConfig.apiKey 会被 persist 清空）
+	const getEffectiveAiApiKey = useCallback((): string => {
+		if (aiConfig.apiKey) return aiConfig.apiKey;
+		const provider = detectProvider(aiConfig.baseURL);
+		return useAIConfigStore.getState().getApiKeyForProvider(provider);
+	}, [aiConfig.apiKey, aiConfig.baseURL]);
+
 	const [ttsPlaying, setTtsPlaying] = useState(false);
 	const [ttsHighlightedPara, setTtsHighlightedPara] = useState(-1);
 	const [ttsSentences, setTtsSentences] = useState<TTSSentence[]>([]);
@@ -32,7 +42,7 @@ export function useTTS() {
 	const [enhancedTTSPreparing, setEnhancedTTSPreparing] = useState(false);
 	const [isStreamTTSWaitingForStart, setIsStreamTTSWaitingForStart] = useState(false);
 	const [currentPlayingCharacter, setCurrentPlayingCharacter] = useState<string | undefined>(undefined);
-	const [paragraphEmotionCache, setParagraphEmotionCache] = useState<Map<number, ParagraphEmotionResult>>(new Map());
+	const [paragraphEmotionCache, setParagraphEmotionCache] = useState<Map<string, ParagraphEmotionResult>>(new Map());
 	const [remainingSeconds, setRemainingSeconds] = useState(0);
 
 	const ttsPlayerRef = useRef<TTSPlayer | null>(null);
@@ -123,7 +133,7 @@ export function useTTS() {
 	const chapter = chapters[currentChapterIndex];
 	const paragraphs = useMemo(() => {
 		return chapter
-			? splitParagraphs(chapter.content).filter((p) => p.trim() !== "")
+			? getNonEmptyParagraphs(chapter.content)
 			: [];
 	}, [chapter]);
 
@@ -186,7 +196,8 @@ export function useTTS() {
 		paraText: string,
 		allParagraphs: string[]
 	): Promise<ParagraphEmotionResult | null> => {
-		if (!aiConfig.apiKey) return null;
+		const effectiveKey = getEffectiveAiApiKey();
+		if (!effectiveKey) return null;
 		const contextBefore = paraIndex > 0 ? allParagraphs[paraIndex - 1] : '';
 		const contextAfter = paraIndex < allParagraphs.length - 1 ? allParagraphs[paraIndex + 1] : '';
 		const configuredCharacters = currentNovelId ? getCharacters(currentNovelId).map(c => ({
@@ -216,14 +227,14 @@ export function useTTS() {
 				{ role: 'system', content: promptConfig.readingModeTts || READING_MODE_TTS_ENHANCE_SYSTEM_PROMPT },
 				{ role: 'user', content: buildReadingModeTTSEnhanceUserPrompt(paraText, contextBefore, contextAfter, configuredCharacters, relevantEvents) }
 			];
-			const response = await sendChatCompletion(messages, aiConfig);
+			const response = await sendChatCompletion(messages, { ...aiConfig, apiKey: effectiveKey });
 			const jsonMatch = response.match(/\{[\s\S]*\}/);
 			if (jsonMatch) return JSON.parse(jsonMatch[0]) as ParagraphEmotionResult;
 			return null;
 		} catch {
 			return null;
 		}
-	}, [aiConfig, currentNovelId, getCharacters, promptConfig.readingModeTts, getEvents, chapters, currentChapterIndex]);
+	}, [aiConfig, getEffectiveAiApiKey, currentNovelId, getCharacters, promptConfig.readingModeTts, getEvents, chapters, currentChapterIndex]);
 
 	const handleTTSToggle = useCallback(() => {
 		if (ttsPlaying) {
@@ -318,15 +329,21 @@ export function useTTS() {
 
 	const handleEnterStreamTTSSelectionMode = useCallback(() => {
 		if (isStreamTTSWaitingForStart) { setIsStreamTTSWaitingForStart(false); return; }
-		if (!ttsConfig.apiKey || !aiConfig.apiKey || !chapter) return;
+		if (!ttsConfig.apiKey || !getEffectiveAiApiKey() || !chapter) {
+			useAppMetaStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用情感朗读", "warning");
+			return;
+		}
 		if (ttsPlayerRef.current) { ttsPlayerRef.current.stop(); ttsPlayerRef.current = null; setTtsPlaying(false); setTtsHighlightedPara(-1); }
 		if (scriptTTSRef.current) { scriptTTSRef.current.stop(); scriptTTSRef.current = null; setIsStreamTTSPlaying(false); setEnhancedTTSPreparing(false); }
 		isStreamActiveRef.current = false;
 		setIsStreamTTSWaitingForStart(true);
-	}, [isStreamTTSWaitingForStart, ttsConfig.apiKey, aiConfig.apiKey, chapter]);
+	}, [isStreamTTSWaitingForStart, ttsConfig.apiKey, getEffectiveAiApiKey, chapter]);
 
 	const handleEnhancedChapterTTS = useCallback(async (startFromParagraph?: number) => {
-		if (!ttsConfig.apiKey || !aiConfig.apiKey || !chapter) return;
+		if (!ttsConfig.apiKey || !getEffectiveAiApiKey() || !chapter) {
+			useAppMetaStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用情感朗读", "warning");
+			return;
+		}
 		if (ttsPlayerRef.current && ttsPlaying) { ttsPlayerRef.current.pause(); setTtsPlaying(false); setTtsHighlightedPara(-1); }
 		if (scriptTTSRef.current) { scriptTTSRef.current.stop(); scriptTTSRef.current = null; }
 
@@ -337,9 +354,11 @@ export function useTTS() {
 
 		try {
 			const startPara = startFromParagraph ?? 0;
-			const allParagraphs = splitParagraphs(chapter.content).filter((p) => p.trim() !== "");
+			const allParagraphs = getNonEmptyParagraphs(chapter.content);
 			const allCharacters = new Set<string>();
-			const newCache = new Map<number, ParagraphEmotionResult>();
+			const newCache = new Map<string, ParagraphEmotionResult>();
+			// 缓存 key 携带章节 ID，避免跨章节复用同一段落索引导致情感/角色标签串章
+			const emotionCacheKey = (paraIdx: number) => `${chapter.id}:${paraIdx}`;
 
 			const allNovelCharacters = currentNovelId ? getCharacters(currentNovelId) : [];
 			const narratorCharacter = allNovelCharacters.find(c =>
@@ -374,7 +393,7 @@ export function useTTS() {
 				// 用户已关闭 → 立即退出循环，不再发起任何请求
 				if (!isStreamActiveRef.current) break;
 
-				const cachedResult = paragraphEmotionCache.get(i);
+				const cachedResult = paragraphEmotionCache.get(emotionCacheKey(i));
 				if (cachedResult?.segments?.length) {
 					for (const segment of cachedResult.segments) {
 						if (!isStreamActiveRef.current) break;
@@ -384,7 +403,7 @@ export function useTTS() {
 						await scriptTTS.addDialogueStream(actualSpeaker, dialectText, i, getVoiceDesignPromptForCharacter(actualSpeaker), segment.speed);
 					}
 					cachedResult.characters.forEach(c => allCharacters.add(c));
-					newCache.set(i, cachedResult);
+					newCache.set(emotionCacheKey(i), cachedResult);
 					continue;
 				}
 
@@ -406,7 +425,7 @@ export function useTTS() {
 					if (result.characters.length === 0 && result.segments.length > 0) {
 						result.segments.map(s => s.speaker).filter(s => s !== "旁白").forEach(s => allCharacters.add(s));
 					}
-					newCache.set(i, result);
+					newCache.set(emotionCacheKey(i), result);
 				} else {
 					if (!characterVoices[narratorName]) characterVoices[narratorName] = getVoiceForCharacter(narratorName);
 					const dialectText = applyDialectLabel(narratorName, allParagraphs[i]);
@@ -442,7 +461,7 @@ export function useTTS() {
 			setEnhancedTTSPreparing(false);
 			scriptTTSRef.current = null;
 		}
-	}, [chapter, ttsConfig, aiConfig, ttsPlaying, getVoiceForCharacter, paragraphEmotionCache, analyzeParagraphEmotion, getCharacters, currentNovelId, getVoiceDesignPromptForCharacter, applyDialectLabel]);
+	}, [chapter, ttsConfig, getEffectiveAiApiKey, ttsPlaying, getVoiceForCharacter, paragraphEmotionCache, analyzeParagraphEmotion, getCharacters, currentNovelId, getVoiceDesignPromptForCharacter, applyDialectLabel]);
 
 	// 更新通知栏标题（章节变化时）
 	useEffect(() => {

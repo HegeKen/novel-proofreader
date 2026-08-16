@@ -1,18 +1,17 @@
 // ============================================================
 // 章节导航侧栏（支持分卷小说）
 // ============================================================
-import { useEffect, useRef, forwardRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, forwardRef, useState, useCallback } from "react";
 import { useNovelStore } from "../stores/novelStore";
 import { useUIStore } from "../stores/uiStore";
-import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { useSwipeGesture } from "../hooks/useSwipeGesture";
+import { useChapterTitleSuggestion } from "../hooks/useChapterTitleSuggestion";
 import type { Chapter } from "../types";
 import { logger } from "../utils/logger";
-import { generateChapterTitle } from "../utils/aiClient";
-import { splitChapters } from "../utils/chapterSplit";
+import { splitChapters, isDefaultChapterTitle } from "../utils/chapterSplit";
 
 const ChapterItem = forwardRef<HTMLButtonElement, {
 	chapter: Chapter;
@@ -145,8 +144,6 @@ const VolumeItem = ({
 
 	const volumeChapters = directChapters ?? chapters.filter(ch => ch.parentId === volume.id && !ch.isVolume);
 	const allProofread = volumeChapters.length > 0 && volumeChapters.every(ch => proofreadStatus[ch.id]);
-	logger.ui(`[VolumeItem] volume.id=${volume.id}, volume.title=${volume.title}, isVolume=${volume.isVolume}, chapters.length=${chapters.length}, directChapters?.length=${directChapters?.length}, volumeChapters.length=${volumeChapters.length}, isExpanded=${isExpanded}`);
-	logger.ui(`[VolumeItem] volumeChapters:`, volumeChapters.map(ch => ({id: ch.id, title: ch.title, parentId: ch.parentId, isVolume: ch.isVolume})));
 
 	return (
 		<div className="volume-group">
@@ -168,7 +165,7 @@ const VolumeItem = ({
 				<div className="volume-chapters">
 					{volumeChapters.map((ch, volIdx) => {
 						const isActive = ch.id === currentChapterIndex;
-						const hasNoTitle = !ch.title || /^第[\d一二三四五六七八九十]+[章回]$/.test(ch.title);
+						const hasNoTitle = isDefaultChapterTitle(ch.title);
 						const isSuggesting = suggestingChapterId === ch.id;
 						const showSuggestions = suggestingChapterId === ch.id && (chapterTitleSuggestions?.[ch.id]?.length ?? 0) > 0;
 						return (
@@ -216,25 +213,14 @@ export function ChapterNav({
 
 	const proofreadCount = Object.values(proofreadStatus).filter(Boolean).length;
 
-	// 计算当前章节所属的卷
-	const currentVolumeId = useMemo(() => {
-		const currentChapter = chapters.find(ch => ch.id === currentChapterIndex);
-		const volId = currentChapter?.parentId;
-		logger.proofread(`[ChapterNav] currentVolumeId useMemo: currentChapterIndex=${currentChapterIndex}, currentChapter id=${currentChapter?.id}, parentId=${volId}`);
-		return volId;
-	}, [chapters, currentChapterIndex]);
-
-	// 计算每个卷是否应该展开（用户未折叠 且 当前章节所属的卷）
+	// 计算每个卷是否应该展开（用户未折叠的卷默认展开）
 	const getVolumeExpandedState = useCallback((volumeId: number): boolean => {
 		// 如果用户手动折叠过，保持折叠状态
 		if (userCollapsedVolumes.has(volumeId)) {
-			logger.proofread(`[ChapterNav] getVolumeExpandedState: volumeId=${volumeId}, 用户已手动折叠, 返回 false`);
 			return false;
 		}
-		// 默认展开，或者当前章节属于这个卷
-		logger.proofread(`[ChapterNav] getVolumeExpandedState: volumeId=${volumeId}, userCollapsedVolumes=${Array.from(userCollapsedVolumes)}, currentVolumeId=${currentVolumeId}, 返回 true`);
 		return true;
-	}, [userCollapsedVolumes, currentVolumeId]);
+	}, [userCollapsedVolumes]);
 
 	// 切换卷展开状态
 	const toggleVolumeExpand = useCallback((volumeId: number) => {
@@ -253,78 +239,19 @@ export function ChapterNav({
 		});
 	}, [userCollapsedVolumes]);
 
-	// AI 章节名推荐相关状态
-	const [suggestingChapterId, setSuggestingChapterId] = useState<number | null>(null);
-	const [chapterTitleSuggestions, setChapterTitleSuggestions] = useState<Record<number, string[]>>({});
-	const aiConfig = useAIConfigStore((s) => s.aiConfig);
+	// AI 章节名推荐（复用共享 hook）
+	const {
+		suggestingChapterId,
+		chapterTitleSuggestions,
+		handleSuggestChapterTitle,
+		handleApplyChapterTitle,
+		handleCloseSuggestions,
+	} = useChapterTitleSuggestion();
 
-	// AI 推荐章节名处理函数
-	const handleSuggestChapterTitle = useCallback(async (chapterId: number, chapterIndex: number) => {
-		if (suggestingChapterId === chapterId) return;
-
-		const chapter = chapters.find(ch => ch.id === chapterId);
-		if (!chapter) return;
-
-		setSuggestingChapterId(chapterId);
-		setChapterTitleSuggestions(prev => ({ ...prev, [chapterId]: [] }));
-
-		try {
-			// 收集前几章的章节名和内容
-			const previousChapters: Record<string, string> = {};
-			for (let i = Math.max(0, chapterIndex - 5); i < chapterIndex; i++) {
-				const prevChapter = chapters[i];
-				if (prevChapter && prevChapter.title) {
-					previousChapters[prevChapter.title] = prevChapter.content.slice(0, 200);
-				}
-			}
-
-			const suggestions = await generateChapterTitle(
-				chapter.content,
-				previousChapters,
-				chapterIndex + 1,
-				aiConfig
-			);
-			setChapterTitleSuggestions(prev => ({ ...prev, [chapterId]: suggestions }));
-		} catch (error) {
-			logger.errorGeneric('ChapterNav - Failed to generate chapter title:', error);
-			useAppMetaStore.getState().showToast("生成章节名失败，请检查AI配置", "error");
-		} finally {
-			setSuggestingChapterId(null);
-		}
-	}, [chapters, aiConfig, suggestingChapterId]);
-
-	// 应用推荐的章节名
-	const handleApplyChapterTitle = useCallback((chapterId: number, _chapterIndex: number, title: string) => {
-		const chapterIndexInChapters = chapters.findIndex(ch => ch.id === chapterId);
-		if (chapterIndexInChapters < 0) return;
-
-		const chapter = chapters[chapterIndexInChapters];
-		const newTitle = chapter.title ? `${chapter.title} ${title}` : title;
-		const newContent = chapter.title
-			? chapter.content.replace(chapter.title, newTitle)
-			: chapter.content;
-
-		const updatedChapters = [...chapters];
-		updatedChapters[chapterIndexInChapters] = { ...chapter, title: newTitle, content: newContent };
-		useNovelStore.getState().setChapters(updatedChapters);
-
-		setChapterTitleSuggestions(prev => {
-			const newSuggestions = { ...prev };
-			delete newSuggestions[chapterId];
-			return newSuggestions;
-		});
-		setSuggestingChapterId(null);
-	}, [chapters]);
-
-	// 关闭推荐列表
-	const handleCloseSuggestions = useCallback((chapterId: number) => {
-		setChapterTitleSuggestions(prev => {
-			const newSuggestions = { ...prev };
-			delete newSuggestions[chapterId];
-			return newSuggestions;
-		});
-		setSuggestingChapterId(null);
-	}, []);
+	// 兼容 VolumeItem 的三参数签名（chapterIndex 仅用于定位，hook 内部按 chapterId 查找）
+	const applyChapterTitle = useCallback((chapterId: number, _chapterIndex: number, title: string) => {
+		handleApplyChapterTitle(chapterId, title);
+	}, [handleApplyChapterTitle]);
 
 	// 重新断章相关状态
 	const [isResplitting, setIsResplitting] = useState(false);
@@ -478,15 +405,13 @@ export function ChapterNav({
 								suggestingChapterId={suggestingChapterId}
 								chapterTitleSuggestions={chapterTitleSuggestions}
 								onSuggestChapterTitle={handleSuggestChapterTitle}
-								onApplyChapterTitle={handleApplyChapterTitle}
+								onApplyChapterTitle={applyChapterTitle}
 								onCloseSuggestions={handleCloseSuggestions}
 							/>
 						)}
 						{/* 分卷章节 */}
 						{filteredVolumes.map((vol) => {
 							const chaptersToPass = hideProofread ? chapters.filter(ch => !proofreadStatus[ch.id]) : chapters;
-							logger.ui(`[VolumeItem] 渲染 volume ${vol.id} "${vol.title}", chaptersToPass.length=${chaptersToPass.length}, hideProofread=${hideProofread}`);
-							logger.ui(`[VolumeItem] chaptersToPass 中的章节:`, chaptersToPass.map(ch => ({id: ch.id, title: ch.title, parentId: ch.parentId, isVolume: ch.isVolume})));
 							return (
 							<VolumeItem
 								key={vol.id}
@@ -499,7 +424,7 @@ export function ChapterNav({
 								suggestingChapterId={suggestingChapterId}
 								chapterTitleSuggestions={chapterTitleSuggestions}
 								onSuggestChapterTitle={handleSuggestChapterTitle}
-								onApplyChapterTitle={handleApplyChapterTitle}
+								onApplyChapterTitle={applyChapterTitle}
 								onCloseSuggestions={handleCloseSuggestions}
 							/>
 							);
@@ -509,7 +434,7 @@ export function ChapterNav({
 					/* 无分卷时直接显示章节列表 */
 					filteredAllChapters.map((ch, index) => {
 						const isActive = ch.id === currentChapterIndex;
-						const hasNoTitle = !ch.title || /^第[\d一二三四五六七八九十]+[章回]$/.test(ch.title);
+						const hasNoTitle = isDefaultChapterTitle(ch.title);
 						const isSuggesting = suggestingChapterId === ch.id;
 						const showSuggestions = suggestingChapterId === ch.id && (chapterTitleSuggestions?.[ch.id]?.length ?? 0) > 0;
 						return (
@@ -530,7 +455,7 @@ export function ChapterNav({
 									}
 								}}
 								onSuggestTitle={() => handleSuggestChapterTitle(ch.id, index)}
-								onApplyTitle={(title) => handleApplyChapterTitle(ch.id, index, title)}
+								onApplyTitle={(title) => handleApplyChapterTitle(ch.id, title)}
 								onCloseSuggestions={() => handleCloseSuggestions(ch.id)}
 							/>
 						);

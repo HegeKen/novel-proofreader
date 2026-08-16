@@ -36,7 +36,7 @@ export function TTSConfigSection({ onOpenWordReplacement }: Props) {
 					<label>Base URL</label>
 					<input type="text" value={ttsConfig.baseUrl}
 						onChange={(e) => updateTTSConfig({ baseUrl: e.target.value })}
-						placeholder="https://api.mimo-v2.com/v1" className="config-input" />
+						placeholder="https://api.xiaomimimo.com/v1" className="config-input" />
 				</div>
 				<div className="form-field">
 					<label>音色</label>

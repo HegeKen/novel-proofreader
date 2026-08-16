@@ -1,7 +1,7 @@
 // ============================================================
 // AI 校对检测 Hook
 // ============================================================
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useNovelStore } from "../stores/novelStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useCharacterStore } from "../stores/characterStore";
@@ -9,6 +9,7 @@ import { useProofreadMetaStore } from "../stores/proofreadMetaStore";
 import { useProofreadStore } from "../stores/proofreadStore";
 import { useConfigStore } from "../stores/configStore";
 import { splitParagraphs } from "../utils/chapterSplit";
+import { buildParagraphIndexMap } from "../utils/formatters";
 import {
 	sendChatCompletion,
 	PROOFREAD_SYSTEM_PROMPT,
@@ -24,6 +25,7 @@ import { processAnomalyError } from "../utils/punctuationCheck";
 import { logger } from "../utils/logger";
 import { startProofreadService, stopProofreadService } from "../utils/androidService";
 import { Semaphore } from "../utils/concurrent";
+import { findWhitespaceInsensitive } from "../utils/textSearch";
 import type {
 	ParagraphResult,
 	ProofreadError,
@@ -36,6 +38,13 @@ const getMaxConcurrentBatches = (enableParallel: boolean, configuredMax: number)
 	if (!enableParallel) return 1;
 	return configuredMax > 0 ? configuredMax : 4;
 };
+
+/**
+ * 模块级共享 AbortController。
+ * 所有 useAICheck 实例（主校对面板 + 队列面板）共用同一个进行中的请求，
+ * 新请求开始时取消旧请求，避免跨实例并发向同一章节写入结果互相覆盖。
+ */
+let sharedAbortRef: AbortController | null = null;
 
 /** 在段落文本中定位 AI 返回的错误位置 */
 export function locateTextInParagraph(
@@ -63,27 +72,8 @@ export function locateTextInParagraph(
 	if (exactIdx >= 0) return { start: exactIdx, end: exactIdx + matchText.length };
 
 	// 3. 空白不敏感精确匹配
-	const normalizedPara = normalizeWhitespace(para);
-	const normalizedMatch = normalizeWhitespace(matchText);
-	if (normalizedPara.includes(normalizedMatch)) {
-		let charCount = 0;
-		let realStart = -1;
-		for (let j = 0; j < para.length && charCount <= normalizedPara.indexOf(normalizedMatch); j++) {
-			if (!/\s/.test(para[j])) {
-				if (charCount === normalizedPara.indexOf(normalizedMatch)) realStart = j;
-				charCount++;
-			}
-		}
-		if (realStart >= 0) {
-			let realEnd = realStart;
-			let remaining = normalizedMatch.length;
-			while (realEnd < para.length && remaining > 0) {
-				if (!/\s/.test(para[realEnd])) remaining--;
-				realEnd++;
-			}
-			return { start: realStart, end: realEnd };
-		}
-	}
+	const wsInsensitive = findWhitespaceInsensitive(para, matchText);
+	if (wsInsensitive) return wsInsensitive;
 
 	// 4. 模糊匹配：若 AI 补充的上下文与原文略有出入，渐进缩短 find 再试
 	if (matchText.length > 4) {
@@ -92,27 +82,9 @@ export function locateTextInParagraph(
 			shortened = shortened.slice(1, -1);
 			const idx = para.indexOf(shortened);
 			if (idx >= 0) return { start: idx, end: idx + shortened.length };
-			
-			const normalizedShortened = normalizeWhitespace(shortened);
-			if (normalizedPara.includes(normalizedShortened)) {
-				let charCount = 0;
-				let realStart = -1;
-				for (let j = 0; j < para.length && charCount <= normalizedPara.indexOf(normalizedShortened); j++) {
-					if (!/\s/.test(para[j])) {
-						if (charCount === normalizedPara.indexOf(normalizedShortened)) realStart = j;
-						charCount++;
-					}
-				}
-				if (realStart >= 0) {
-					let realEnd = realStart;
-					let remaining = normalizedShortened.length;
-					while (realEnd < para.length && remaining > 0) {
-						if (!/\s/.test(para[realEnd])) remaining--;
-						realEnd++;
-					}
-					return { start: realStart, end: realEnd };
-				}
-			}
+
+			const wsShortened = findWhitespaceInsensitive(para, shortened);
+			if (wsShortened) return wsShortened;
 		}
 	}
 
@@ -157,6 +129,109 @@ export function locateTextWithFallback(
 	return null;
 }
 
+// ============================================================
+// AI 错误项解析共享工具 — 三处解析器（段落/双段落/章节批次）复用
+// ============================================================
+
+/** AI 返回错误项的提取字段 */
+interface ExtractedErrorFields {
+	lineNumber?: number;
+	find: string;
+	replace: string;
+	orig: string;
+	corr: string;
+	errType: string;
+	suggest: string;
+	aiColumn?: number;
+	anomalyNo?: number;
+	matchText: string;
+	correctText: string;
+}
+
+/** 从 AI 返回的错误项中提取统一字段 */
+function extractErrorFields(item: unknown): ExtractedErrorFields | null {
+	if (typeof item !== "object" || item === null) return null;
+	const o = item as Record<string, unknown>;
+
+	let lineNumber: number | undefined;
+	if (o.lineNumber !== undefined) {
+		lineNumber = typeof o.lineNumber === 'string' ? parseInt(o.lineNumber, 10) : Number(o.lineNumber);
+	} else if (o.line !== undefined) {
+		lineNumber = typeof o.line === 'string' ? parseInt(o.line, 10) : Number(o.line);
+	}
+
+	const find = String(o.find ?? "");
+	const replace = String(o.replace ?? "");
+	const orig = String(o.original ?? o.original_text ?? "");
+	const corr = String(o.corrected ?? o.corrected_text ?? "");
+	const errType = String(o.type ?? o.error_type ?? "");
+	const suggest = String(o.reason ?? o.suggestion ?? "");
+	const aiColumn = o.column !== undefined ? Number(o.column) : undefined;
+	const anomalyNo = o.anomaly_no !== undefined && o.anomaly_no !== null ? Number(o.anomaly_no) : undefined;
+
+	return {
+		lineNumber,
+		find,
+		replace,
+		orig,
+		corr,
+		errType,
+		suggest,
+		aiColumn,
+		anomalyNo,
+		matchText: find || orig,
+		correctText: replace || corr,
+	};
+}
+
+/** "无错误"标记类型集合 */
+const NO_ERROR_TYPES = ['无错误', 'none', 'no_error', 'no-error', 'noerror', 'nil', 'null', ''];
+
+/** 是否为"无错误"标记 */
+function isNoErrorType(errType: string): boolean {
+	return NO_ERROR_TYPES.includes(errType.toLowerCase());
+}
+
+/** 统一错误 ID 生成 */
+function makeErrorId(chapterId: number, paraIdx: number, seq: number): string {
+	return `err-${chapterId}-${paraIdx}-${seq}`;
+}
+
+/** 统一网络错误对象 */
+function makeNetworkError(chapterId: number, paraIdx: number, msg: string, text: string): ProofreadError {
+	return {
+		id: `err-${chapterId}-${paraIdx}-network-${Date.now()}`,
+		startIndex: 0,
+		endIndex: 0,
+		errorType: "network",
+		suggestion: msg.includes("Failed to fetch") ? "网络请求失败，请检查网络连接或API配置" : msg,
+		originalText: text.slice(0, 50),
+		correctedText: "",
+		applied: false,
+		skipped: false,
+	};
+}
+
+/** 按 err.id 中解析出的段落索引分组错误（无法解析时归入 fallbackIndex） */
+function groupErrorsByParagraph(errors: ProofreadError[], fallbackIndex: number): Map<number, ProofreadError[]> {
+	const groupedErrors = new Map<number, ProofreadError[]>();
+	for (const err of errors) {
+		// 从 id 中解析段落索引: err-{chapterId}-{paragraphIndex}-...
+		const parts = err.id.split('-');
+		if (parts.length >= 3) {
+			const paraIdx = parseInt(parts[2], 10);
+			if (!isNaN(paraIdx)) {
+				if (!groupedErrors.has(paraIdx)) groupedErrors.set(paraIdx, []);
+				groupedErrors.get(paraIdx)!.push(err);
+				continue;
+			}
+		}
+		if (!groupedErrors.has(fallbackIndex)) groupedErrors.set(fallbackIndex, []);
+		groupedErrors.get(fallbackIndex)!.push(err);
+	}
+	return groupedErrors;
+}
+
 /** 解析 AI 校对响应，返回标准化的 ProofreadError 数组 */
 function parseAIProofreadResponse(
 	raw: unknown[],
@@ -170,27 +245,16 @@ function parseAIProofreadResponse(
 	let filteredCount = 0;
 	
 	for (const item of raw) {
-		if (typeof item !== "object" || item === null) continue;
-		const o = item as Record<string, unknown>;
-
-		const find = String(o.find ?? "");
-		const replace = String(o.replace ?? "");
-		const orig = String(o.original ?? o.original_text ?? "");
-		const corr = String(o.corrected ?? o.corrected_text ?? "");
-		const errType = String(o.type ?? o.error_type ?? "");
-		const suggest = String(o.reason ?? o.suggestion ?? "");
-		const aiColumn = o.column !== undefined ? Number(o.column) : undefined;
-		const anomalyNo = o.anomaly_no !== undefined && o.anomaly_no !== null ? Number(o.anomaly_no) : undefined;
+		const fields = extractErrorFields(item);
+		if (!fields) continue;
+		const { errType, matchText, correctText, aiColumn, anomalyNo, suggest } = fields;
 
 		// 过滤条件1：无错误标记
-		if (['无错误', 'none', 'no_error', 'no-error', 'noerror', 'nil', 'null', ''].includes(errType.toLowerCase())) {
+		if (isNoErrorType(errType)) {
 			logger.proofread(`[过滤] 错误类型为无错误: type="${errType}"`);
 			filteredCount++;
 			continue;
 		}
-
-		const matchText = find || orig;
-		const correctText = replace || corr;
 		
 		// 过滤条件2：matchText 为空
 		if (!matchText) {
@@ -258,7 +322,7 @@ function parseAIProofreadResponse(
 
 		logger.proofread(`[成功] 添加错误: matchText="${matchText.slice(0, 30)}", correctText="${finalCorrectText.slice(0, 30)}", type="${errType}", 段落索引=${actualParagraphIndex}${anomalyNo ? `, anomaly_no=${anomalyNo}` : ''}`);
 		errors.push({
-			id: `err-${chapterId}-${actualParagraphIndex}-${errors.length}`,
+			id: makeErrorId(chapterId, actualParagraphIndex, errors.length),
 			startIndex: located.start,
 			endIndex: located.end,
 			errorType: (errType as ProofreadError["errorType"]) || "typo",
@@ -300,24 +364,14 @@ function parseDualParagraphResponse(
 	const errorList = raw.errors;
 	if (Array.isArray(errorList)) {
 		for (const item of errorList) {
-			if (typeof item !== "object" || item === null) continue;
-			const o = item as Record<string, unknown>;
+			const fields = extractErrorFields(item);
+			if (!fields) continue;
+			const { errType, matchText, correctText, aiColumn, anomalyNo, suggest } = fields;
 
-			const line = Number(o.line) || 1;
-			const find = String(o.find ?? "");
-			const replace = String(o.replace ?? "");
-			const orig = String(o.original ?? o.original_text ?? "");
-			const corr = String(o.corrected ?? o.corrected_text ?? "");
-			const errType = String(o.type ?? o.error_type ?? "");
-			const suggest = String(o.reason ?? o.suggestion ?? "");
-			const aiColumn = o.column !== undefined ? Number(o.column) : undefined;
-			const anomalyNo = o.anomaly_no !== undefined && o.anomaly_no !== null ? Number(o.anomaly_no) : undefined;
-
-			const matchText = find || orig;
-			const correctText = replace || corr;
+			const line = fields.lineNumber ?? 1;
 
 			// 过滤1：无错误标记
-			if (['无错误', 'none', 'no_error', 'no-error', 'noerror', 'nil', 'null', ''].includes(errType.toLowerCase())) {
+			if (isNoErrorType(errType)) {
 				filteredCount++;
 				continue;
 			}
@@ -425,9 +479,8 @@ function parseDualParagraphResponse(
 
 export function useAICheck() {
 	const aiConfig = useAIConfigStore((s) => s.aiConfig);
-	const chapters = useNovelStore((s) => s.chapters);
-	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
 	const currentNovelId = useNovelStore((s) => s.currentNovelId);
+	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
 	const getIgnoredWords = useProofreadMetaStore((s) => s.getIgnoredWords);
 	const getCharacters = useCharacterStore((s) => s.getCharacters);
 	const promptConfig = useConfigStore((s) => s.promptConfig);
@@ -437,11 +490,30 @@ export function useAICheck() {
 	const updateParagraphResult = useProofreadStore(
 		(s) => s.updateParagraphResult,
 	);
-	const abortRef = useRef<AbortController | null>(null);
+	// 模块级共享 AbortController：主面板与队列面板并发校对时，新请求会取消旧请求，
+	// 避免两个 hook 实例同时向同一章节写入结果互相覆盖
+	const abortRef = useRef<AbortController | null>(sharedAbortRef);
+
+	// 切换章节时自动取消进行中的检查，避免旧章节残留永久 checking 状态
+	useEffect(() => {
+		abortRef.current?.abort();
+		sharedAbortRef = null;
+		abortRef.current = null;
+	}, [currentChapterIndex]);
+
+	// 组件卸载时取消进行中的请求，避免卸载后继续写 store
+	useEffect(() => {
+		return () => {
+			abortRef.current?.abort();
+		};
+	}, []);
 
 	const checkChapter = useCallback(
 		async (granularity: CheckGranularity, startFrom: number = 0) => {
-			const chapter = chapters[currentChapterIndex];
+			// 从 store 实时读取最新章节，避免闭包捕获过期快照（批量队列场景下
+			// processQueue 持有的 checkChapter 引用可能早于 setCurrentChapterIndex）
+			const { chapters: latestChapters, currentChapterIndex: latestChapterIndex } = useNovelStore.getState();
+			const chapter = latestChapters[latestChapterIndex];
 			if (!chapter) return;
 
 			startProofreadService().catch(() => {});
@@ -452,13 +524,13 @@ export function useAICheck() {
 				proofreadConfig.maxConcurrentBatches
 			);
 
-			logger.proofread(`checkChapter 开始: chapterIndex=${currentChapterIndex + 1}, granularity=${granularity}, startFrom=${startFrom} (第 ${startFrom + 1} 段)`);
-			logger.proofread(`开始校对第 ${currentChapterIndex + 1} 章, 粒度: ${granularity}, 从第 ${startFrom + 1} 段开始`);
+			logger.proofread(`checkChapter 开始: chapterIndex=${latestChapterIndex + 1}, granularity=${granularity}, startFrom=${startFrom} (第 ${startFrom + 1} 段)`);
 			logger.proofread(`并发模式: ${proofreadConfig.enableParallelProcessing ? '启用' : '禁用'}, 最大并发数: ${maxConcurrent}`);
 
-			// 取消之前的请求
-			abortRef.current?.abort();
+			// 取消之前的请求（共享 controller：队列与主面板互斥）
+			sharedAbortRef?.abort();
 			const controller = new AbortController();
+			sharedAbortRef = controller;
 			abortRef.current = controller;
 
 			const text = chapter.content;
@@ -562,35 +634,20 @@ export function useAICheck() {
 						
 						// 只处理该批次内的错误
 						for (const item of raw) {
-							if (typeof item !== "object" || item === null) continue;
-							const obj = item as Record<string, unknown>;
+							const fields = extractErrorFields(item);
+							if (!fields) continue;
+							const { errType, matchText, correctText, aiColumn, suggest } = fields;
 
 							// 提取行号（支持 string 和 number 类型）
-							let lineNumber = -1;
-							if (obj.lineNumber !== undefined) {
-								lineNumber = typeof obj.lineNumber === 'string' ? parseInt(obj.lineNumber, 10) : Number(obj.lineNumber);
-							} else if (obj.line !== undefined) {
-								lineNumber = typeof obj.line === 'string' ? parseInt(obj.line, 10) : Number(obj.line);
-							}
-
-							const find = String(obj.find ?? "");
-							const replace = String(obj.replace ?? "");
-							const orig = String(obj.original ?? obj.original_text ?? "");
-							const corr = String(obj.corrected ?? obj.corrected_text ?? "");
-							const errType = String(obj.type ?? obj.error_type ?? "");
-							const suggest = String(obj.reason ?? obj.suggestion ?? "");
-							const aiColumn = obj.column !== undefined ? Number(obj.column) : undefined;
+							let lineNumber = fields.lineNumber ?? -1;
 
 							// 过滤条件1：无错误标记
-							if (['无错误', 'none', 'no_error', 'no-error', 'noerror', 'nil', 'null', ''].includes(errType.toLowerCase())) {
+							if (isNoErrorType(errType)) {
 								logger.proofread(`[章节模式-过滤] 错误类型为无错误: type="${errType}"`);
 								filteredCount++;
 								continue;
 							}
 
-							const matchText = find || orig;
-							const correctText = replace || corr;
-							
 							// 过滤条件2：matchText 为空
 							if (!matchText) {
 								logger.proofread(`[章节模式-过滤] matchText 为空`);
@@ -655,7 +712,7 @@ export function useAICheck() {
 							// 成功添加错误
 							logger.proofread(`[章节模式-成功] 添加错误: lineNumber=${lineNumber}, matchText="${matchText.slice(0, 30)}", correctText="${correctText.slice(0, 30)}", type="${errType}"`);
 							errorsByLine[lineNumber].push({
-								id: `err-${chapter.id}-${lineNumber}-${errorsByLine[lineNumber].length}`,
+								id: makeErrorId(chapter.id, lineNumber, errorsByLine[lineNumber].length),
 								startIndex: located.start,
 								endIndex: located.end,
 								errorType: (errType as ProofreadError["errorType"]) || "typo",
@@ -684,17 +741,7 @@ export function useAICheck() {
 						for (let lineIdx = batch.start; lineIdx < batch.end; lineIdx++) {
 							if (paragraphs[lineIdx].trim() === "") continue; // 跳过空段落
 							// 将网络错误添加到错误清单
-							const networkError: ProofreadError = {
-								id: `err-${chapter.id}-${lineIdx}-network-${Date.now()}`,
-								startIndex: 0,
-								endIndex: 0,
-								errorType: "network",
-								suggestion: msg.includes("Failed to fetch") ? "网络请求失败，请检查网络连接或API配置" : msg,
-								originalText: paragraphs[lineIdx].slice(0, 50),
-								correctedText: "",
-								applied: false,
-								skipped: false,
-							};
+							const networkError = makeNetworkError(chapter.id, lineIdx, msg, paragraphs[lineIdx]);
 							updateParagraphResult(chapter.id, lineIdx, {
 								errors: [networkError],
 								status: "error",
@@ -723,12 +770,7 @@ export function useAICheck() {
 				const filteredItems = allLines.filter((p) => p.trim() !== "");
 				logger.proofread(`非chapter粒度: 总行数=${allLines.length}, 过滤后行数=${filteredItems.length}, startFrom=${startFrom}`);
 				// 建立过滤后索引到原始索引的映射
-				const indexMap: number[] = [];
-				allLines.forEach((line, i) => {
-					if (line.trim() !== "") {
-						indexMap.push(i);
-					}
-				});
+				const indexMap = buildParagraphIndexMap(text);
 				logger.proofread(`索引映射: indexMap前20项=[${indexMap.slice(0, 20).join(', ')}]...`);
 				// 关键修复：初始化所有段落（包括空段落），确保数组索引与原始段落索引一致
 				const initial: ParagraphResult[] = allLines.map((p, originalIndex) => {
@@ -804,22 +846,7 @@ export function useAICheck() {
 						const errors = parseAIProofreadResponse(raw, chapter.id, originalIndex, item, relevantIgnoredWords, allLines);
 
 						// 将 errors 按实际段落索引分组，分配到正确的段落
-						const groupedErrors = new Map<number, ProofreadError[]>();
-						for (const err of errors) {
-							// 从 id 中解析段落索引: err-{chapterId}-{paragraphIndex}-...
-							const parts = err.id.split('-');
-							if (parts.length >= 3) {
-								const paraIdx = parseInt(parts[2], 10);
-								if (!isNaN(paraIdx)) {
-									if (!groupedErrors.has(paraIdx)) groupedErrors.set(paraIdx, []);
-									groupedErrors.get(paraIdx)!.push(err);
-									continue;
-								}
-							}
-							// fallback: 放入原段落
-							if (!groupedErrors.has(originalIndex)) groupedErrors.set(originalIndex, []);
-							groupedErrors.get(originalIndex)!.push(err);
-						}
+						const groupedErrors = groupErrorsByParagraph(errors, originalIndex);
 
 						// 更新当前段落（标记为完成），合并已有错误
 						const state = useProofreadStore.getState();
@@ -860,17 +887,7 @@ export function useAICheck() {
 						// 获取当前段落文本
 						const currentItem = filteredItems[filteredIdx] || "";
 						// 将网络错误添加到错误清单
-						const networkError: ProofreadError = {
-							id: `err-${chapter.id}-${originalIndex}-network-${Date.now()}`,
-							startIndex: 0,
-							endIndex: 0,
-							errorType: "network",
-							suggestion: msg.includes("Failed to fetch") ? "网络请求失败，请检查网络连接或API配置" : msg,
-							originalText: currentItem.slice(0, 50),
-							correctedText: "",
-							applied: false,
-							skipped: false,
-						};
+						const networkError = makeNetworkError(chapter.id, originalIndex, msg, currentItem);
 						updateParagraphResult(chapter.id, originalIndex, {
 							errors: [networkError],
 							status: "error",
@@ -1083,8 +1100,6 @@ export function useAICheck() {
 			stopProofreadService().catch(() => {});
 		},
 		[
-			chapters,
-			currentChapterIndex,
 			currentNovelId,
 			aiConfig,
 			setResults,
@@ -1100,10 +1115,13 @@ export function useAICheck() {
 
 	const cancelCheck = useCallback(() => {
 		logger.proofread(`cancelCheck 被调用，立即中断所有请求`);
-		abortRef.current?.abort();
+		sharedAbortRef?.abort();
+		sharedAbortRef = null;
+		abortRef.current = null;
 		
 		// 立即更新所有正在检查的段落状态为 pending
-		const chapter = chapters[currentChapterIndex];
+		const { chapters: latestChapters, currentChapterIndex: latestChapterIndex } = useNovelStore.getState();
+		const chapter = latestChapters[latestChapterIndex];
 		if (chapter) {
 			const paragraphs = splitParagraphs(chapter.content);
 			paragraphs.forEach((para, index) => {
@@ -1115,7 +1133,7 @@ export function useAICheck() {
 		}
 
 		stopProofreadService().catch(() => {});
-	}, [chapters, currentChapterIndex, updateParagraphResult]);
+	}, [updateParagraphResult]);
 
 	const checkSingleLine = useCallback(
 		async (
@@ -1199,26 +1217,14 @@ export function useAICheck() {
 					},
 				];
 
-				const reply = await sendChatCompletion(messages, aiConfig);
+				// 传入共享 signal，使其可被切章/取消/卸载中断
+				const reply = await sendChatCompletion(messages, aiConfig, sharedAbortRef?.signal);
 				const raw = normalizeErrors(extractJSON(reply));
 
 				const errors = parseAIProofreadResponse(raw, chapter.id, originalIndex, lineText, ignoredWords, allParagraphs);
 
 				// 将 errors 按实际段落索引分组，分配到正确的段落
-				const groupedErrors = new Map<number, ProofreadError[]>();
-				for (const err of errors) {
-					const parts = err.id.split('-');
-					if (parts.length >= 3) {
-						const paraIdx = parseInt(parts[2], 10);
-						if (!isNaN(paraIdx)) {
-							if (!groupedErrors.has(paraIdx)) groupedErrors.set(paraIdx, []);
-							groupedErrors.get(paraIdx)!.push(err);
-							continue;
-						}
-					}
-					if (!groupedErrors.has(originalIndex)) groupedErrors.set(originalIndex, []);
-					groupedErrors.get(originalIndex)!.push(err);
-				}
+				const groupedErrors = groupErrorsByParagraph(errors, originalIndex);
 
 				// 更新当前段落（合并已有错误）
 				const state = useProofreadStore.getState();
@@ -1248,11 +1254,16 @@ export function useAICheck() {
 					});
 				}
 		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			updateParagraphResult(chapter.id, originalIndex, {
-				status: "error",
-				errorMessage: msg,
-			});
+			// 取消时不写错误状态
+			if (err instanceof DOMException && err.name === "AbortError") {
+				updateParagraphResult(chapter.id, originalIndex, { status: "pending" });
+			} else {
+				const msg = err instanceof Error ? err.message : String(err);
+				updateParagraphResult(chapter.id, originalIndex, {
+					status: "error",
+					errorMessage: msg,
+				});
+			}
 		} finally {
 			setSingleCheckingLine(null);
 			onComplete?.();

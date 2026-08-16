@@ -2,12 +2,13 @@ import React, { useState, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useCharacterStore } from "../stores/characterStore";
 import { useNovelStore } from "../stores/novelStore";
-import type { NovelEvent } from "../types";
+import type { NovelEvent, Chapter } from "../types";
 import { Icons } from "./Icons";
 import { useAppMetaStore } from "../stores/appMetaStore";
-import { generateNovelEvents, sendChatCompletion } from "../utils/aiClient";
+import { generateNovelEvents, sendChatCompletion, extractJSON } from "../utils/aiClient";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { logger } from "../utils/logger";
+import { generateId } from "../utils/id";
 
 interface NovelEventModalProps {
 	novelId: string | null;
@@ -34,6 +35,27 @@ const emptyForm: EventFormData = {
 	chapter: "",
 	involvedCharacterIds: [],
 };
+
+/** 将 AI 请求异常映射为用户友好提示（操作名前缀可定制） */
+function buildAIErrorMessage(action: string, error: unknown): string {
+	const errorMessage = error instanceof Error ? error.message : `${action}失败`;
+	if (errorMessage.includes("网络") || errorMessage.includes("network") || errorMessage.includes("fetch")) {
+		return `${action}失败，请检查网络连接`;
+	}
+	if (errorMessage.includes("配置")) {
+		return `${action}失败，请检查 AI 配置`;
+	}
+	if (errorMessage.includes("401")) {
+		return `${action}失败，API Key 无效`;
+	}
+	if (errorMessage.includes("402")) {
+		return `${action}失败，账户余额不足`;
+	}
+	if (errorMessage.includes("429")) {
+		return `${action}失败，请求频率超限，请稍后重试`;
+	}
+	return `${action}失败：${errorMessage.slice(0, 50)}`;
+}
 
 export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show, onClose }) => {
 	const novelEventsMap = useCharacterStore((s) => s.novelEvents);
@@ -178,22 +200,24 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		return { volumeNum, chapterNum, volumeName, chapterName };
 	}, []);
 
-	const getChapterOrder = useCallback((event: NovelEvent): number => {
-		if (!event.chapter) return Infinity;
-		
-		const chapterInfo = parseChapterInfo(event.chapter);
-		const normalizedSearch = normalizeChapterTitle(event.chapter);
-		
+	// 公共章节匹配函数：根据章节字符串在小说章节列表中查找匹配章节
+	// 复用于排序、覆盖检测和同步，保证匹配逻辑一致性
+	const findMatchedChapter = useCallback((chapterStr: string): Chapter | undefined => {
+		if (!chapterStr) return undefined;
+
+		const chapterInfo = parseChapterInfo(chapterStr);
+		const normalizedSearch = normalizeChapterTitle(chapterStr);
+
 		const nonVolumeChapters = chapters.filter(ch => !ch.isVolume);
-		
+
 		let matchedChapter = nonVolumeChapters.find(ch => {
 			const normalizedChapter = normalizeChapterTitle(ch.title);
-			
-			if (ch.title === event.chapter) return true;
+
+			if (ch.title === chapterStr) return true;
 			if (normalizedChapter === normalizedSearch) return true;
-			
+
 			const chInfo = parseChapterInfo(ch.title);
-			
+
 			if (chapterInfo.volumeNum > 0 && chapterInfo.chapterNum > 0) {
 				if (chInfo.volumeNum > 0 && chInfo.chapterNum > 0) {
 					if (chapterInfo.volumeNum === chInfo.volumeNum && chapterInfo.chapterNum === chInfo.chapterNum) {
@@ -201,21 +225,21 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 					}
 				}
 			}
-			
-			const searchTitle = event.chapter;
-			if (searchTitle.length >= 3 && ch.title.includes(searchTitle)) return true;
-			if (searchTitle.length >= 3 && normalizedChapter.includes(normalizedSearch)) return true;
-			if (searchTitle.length >= 3 && searchTitle.includes(ch.title)) return true;
-			
+
+			if (chapterStr.length >= 3 && ch.title.includes(chapterStr)) return true;
+			if (chapterStr.length >= 3 && normalizedChapter.includes(normalizedSearch)) return true;
+			if (chapterStr.length >= 3 && chapterStr.includes(ch.title)) return true;
+
 			if (chapterInfo.chapterName && ch.title.includes(chapterInfo.chapterName)) return true;
 			if (chapterInfo.chapterNum > 0) {
 				const chapterPattern = new RegExp(`第${chapterInfo.chapterNum}[章节回]`);
 				if (chapterPattern.test(ch.title)) return true;
 			}
-			
+
 			return false;
 		});
-		
+
+		// 兜底匹配：按章节序号匹配（忽略分卷）
 		if (!matchedChapter && chapterInfo.chapterNum > 0) {
 			matchedChapter = nonVolumeChapters.find(ch => {
 				const chInfo = parseChapterInfo(ch.title);
@@ -228,11 +252,14 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 				return false;
 			});
 		}
-		
-		if (!matchedChapter) return Infinity;
-		
-		return matchedChapter.startIndex;
+
+		return matchedChapter;
 	}, [chapters, normalizeChapterTitle, parseChapterInfo]);
+
+	const getChapterOrder = useCallback((event: NovelEvent): number => {
+		const matched = findMatchedChapter(event.chapter);
+		return matched ? matched.startIndex : Infinity;
+	}, [findMatchedChapter]);
 
 	const sortedEvents = useMemo(() => {
 		const events = [...storeEvents];
@@ -295,35 +322,16 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		if (nonVolumeChapters.length === 0) return [];
 
 		const coveredChapterIds = new Set<number>();
-		
+
 		for (const event of storeEvents) {
-			if (!event.chapter) continue;
-			
-			let searchTitle = event.chapter;
-			const dotIndex = event.chapter.indexOf("·");
-			if (dotIndex > 0) {
-				searchTitle = event.chapter.slice(dotIndex + 1).trim();
-			}
-			
-			const normalizedSearch = normalizeChapterTitle(searchTitle);
-			
-			const matchedChapter = nonVolumeChapters.find(ch => {
-				const normalizedChapter = normalizeChapterTitle(ch.title);
-				return ch.title === searchTitle || 
-					   normalizedChapter === normalizedSearch ||
-					   (searchTitle.length >= 4 && ch.title.includes(searchTitle)) ||
-					   (searchTitle.length >= 4 && normalizedChapter.includes(normalizedSearch)) ||
-					   (searchTitle.length >= 4 && searchTitle.includes(ch.title)) ||
-					   (searchTitle.length >= 4 && normalizedSearch.includes(normalizedChapter));
-			});
-			
-			if (matchedChapter) {
-				coveredChapterIds.add(matchedChapter.id);
+			const matched = findMatchedChapter(event.chapter);
+			if (matched) {
+				coveredChapterIds.add(matched.id);
 			}
 		}
-		
+
 		return nonVolumeChapters.filter(ch => !coveredChapterIds.has(ch.id));
-	}, [chapters, storeEvents, normalizeChapterTitle]);
+	}, [chapters, storeEvents, findMatchedChapter]);
 
 	const handleAdd = useCallback(() => {
 		setEditingId("__new__");
@@ -466,7 +474,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 					timeInfo: evt.timeInfo || "",
 					chapter: evt.chapter || "",
 					involvedCharacterIds,
-					id: `evt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+					id: generateId("evt"),
 				});
 			}
 
@@ -501,22 +509,8 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		} catch (err) {
 			logger.errorGeneric("[NovelEventModal] 补全失败:", err);
 			const errorMessage = err instanceof Error ? err.message : "补全失败";
-			let message: string;
-			if (errorMessage.includes("网络") || errorMessage.includes("network") || errorMessage.includes("fetch")) {
-				message = "补全失败，请检查网络连接";
-			} else if (errorMessage.includes("配置")) {
-				message = "补全失败，请检查 AI 配置";
-			} else if (errorMessage.includes("401")) {
-				message = "补全失败，API Key 无效";
-			} else if (errorMessage.includes("402")) {
-				message = "补全失败，账户余额不足";
-			} else if (errorMessage.includes("429")) {
-				message = "补全失败，请求频率超限，请稍后重试";
-			} else {
-				message = `补全失败：${errorMessage.slice(0, 50)}`;
-			}
 			setGenerationStatus("error");
-			setGenerationMessage(message);
+			setGenerationMessage(buildAIErrorMessage("补全", errorMessage));
 		} finally {
 			setIsGenerating(false);
 		}
@@ -676,22 +670,8 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		} catch (err) {
 			logger.errorGeneric("[NovelEventModal] AI 生成失败:", err);
 			const errorMessage = err instanceof Error ? err.message : "生成失败";
-			let message: string;
-			if (errorMessage.includes("网络") || errorMessage.includes("network") || errorMessage.includes("fetch")) {
-				message = "生成失败，请检查网络连接";
-			} else if (errorMessage.includes("配置")) {
-				message = "生成失败，请检查 AI 配置";
-			} else if (errorMessage.includes("401")) {
-				message = "生成失败，API Key 无效";
-			} else if (errorMessage.includes("402")) {
-				message = "生成失败，账户余额不足";
-			} else if (errorMessage.includes("429")) {
-				message = "生成失败，请求频率超限，请稍后重试";
-			} else {
-				message = `生成失败：${errorMessage.slice(0, 50)}`;
-			}
 			setGenerationStatus("error");
-			setGenerationMessage(message);
+			setGenerationMessage(buildAIErrorMessage("生成", errorMessage));
 		} finally {
 			setIsGenerating(false);
 		}
@@ -741,22 +721,7 @@ ${eventsJson}`;
 
 			const response = await sendChatCompletion(messages, aiConfig);
 
-			const jsonMatch = response.match(/\[([\s\S]*)\]/);
-			if (!jsonMatch) {
-				setGenerationStatus("error");
-				setGenerationMessage("AI 返回格式不正确");
-				return;
-			}
-
-			let reorderedEvents: Array<{ title: string; description: string; timeOrder: number; chapterOrder: number; timeInfo: string; chapter: string }>;
-			try {
-				reorderedEvents = JSON.parse(`[${jsonMatch[1]}]`);
-			} catch {
-				setGenerationStatus("error");
-				setGenerationMessage("JSON 解析失败");
-				return;
-			}
-
+			const reorderedEvents = extractJSON(response) as Array<{ title: string; description: string; timeOrder: number; chapterOrder: number; timeInfo: string; chapter: string }>;
 			if (!Array.isArray(reorderedEvents) || reorderedEvents.length === 0) {
 				setGenerationStatus("error");
 				setGenerationMessage("未返回任何事件");
@@ -786,26 +751,55 @@ ${eventsJson}`;
 		} catch (err) {
 			logger.errorGeneric("[NovelEventModal] AI 重新排序失败:", err);
 			const errorMessage = err instanceof Error ? err.message : "排序失败";
-			let message: string;
-			if (errorMessage.includes("网络") || errorMessage.includes("network") || errorMessage.includes("fetch")) {
-				message = "排序失败，请检查网络连接";
-			} else if (errorMessage.includes("配置")) {
-				message = "排序失败，请检查 AI 配置";
-			} else if (errorMessage.includes("401")) {
-				message = "排序失败，API Key 无效";
-			} else if (errorMessage.includes("402")) {
-				message = "排序失败，账户余额不足";
-			} else if (errorMessage.includes("429")) {
-				message = "排序失败，请求频率超限，请稍后重试";
-			} else {
-				message = `排序失败：${errorMessage.slice(0, 50)}`;
-			}
 			setGenerationStatus("error");
-			setGenerationMessage(message);
+			setGenerationMessage(buildAIErrorMessage("排序", errorMessage));
 		} finally {
 			setIsGenerating(false);
 		}
 	}, [novelId, storeEvents, aiConfig, isGenerating]);
+
+	// 同步功能：本地遍历现有事件，重新匹配章节并标准化 chapter 字段
+	// 解决事件 chapter 与小说章节标题不一致导致误报缺失的问题
+	const handleSyncChapters = useCallback(() => {
+		if (!novelId) return;
+		if (storeEvents.length === 0) {
+			useAppMetaStore.getState().showToast("暂无大事记可同步", "info");
+			return;
+		}
+
+		let updatedCount = 0;
+
+		const updatedEvents = storeEvents.map(evt => {
+			if (!evt.chapter) return evt;
+
+			const matched = findMatchedChapter(evt.chapter);
+			if (!matched) return evt;
+
+			const volume = matched.parentId
+				? chapters.find(v => v.id === matched.parentId && v.isVolume)
+				: null;
+
+			const standardChapter = volume
+				? `${volume.title}·${matched.title}`
+				: matched.title;
+
+			if (standardChapter !== evt.chapter) {
+				updatedCount++;
+				return { ...evt, chapter: standardChapter };
+			}
+
+			return evt;
+		});
+
+		if (updatedCount > 0) {
+			const setEvents = useCharacterStore.getState().setEvents;
+			setEvents(novelId, updatedEvents);
+			useAppMetaStore.getState().showToast(`同步完成，更新了 ${updatedCount} 个事件的章节信息`, "success");
+			logger.info(`[NovelEventModal] 同步完成，更新了 ${updatedCount} 个事件的章节字段`);
+		} else {
+			useAppMetaStore.getState().showToast("所有事件的章节信息已是最新", "info");
+		}
+	}, [novelId, storeEvents, chapters, findMatchedChapter]);
 
 	if (!show || !novelId) return null;
 
@@ -1023,23 +1017,30 @@ ${eventsJson}`;
 								)}
 							</div>
 							<div className="chapter-completion-actions">
-								<button 
+								<button
 									className="btn"
-									onClick={() => setSelectedChapterIds(new Set(getUncoveredChapters.map(ch => ch.id)))}
+									onClick={() => {
+										if (selectedChapterIds.size === getUncoveredChapters.length) {
+											setSelectedChapterIds(new Set());
+										} else {
+											setSelectedChapterIds(new Set(getUncoveredChapters.map(ch => ch.id)));
+										}
+									}}
 									disabled={getUncoveredChapters.length === 0}
 								>
-									<Icons.checkAll size={14} />
-									<span>全选</span>
+									{selectedChapterIds.size === getUncoveredChapters.length ? (
+										<>
+											<Icons.check size={14} />
+											<span>取消全选</span>
+										</>
+									) : (
+										<>
+											<Icons.checkAll size={14} />
+											<span>全选</span>
+										</>
+									)}
 								</button>
-								<button 
-									className="btn"
-									onClick={() => setSelectedChapterIds(new Set())}
-									disabled={selectedChapterIds.size === 0}
-								>
-									<Icons.check size={14} />
-									<span>取消全选</span>
-								</button>
-								<button 
+								<button
 									className="btn btn-primary"
 									onClick={handleCompleteChapters}
 									disabled={selectedChapterIds.size === 0 || isGenerating}
@@ -1167,6 +1168,15 @@ ${eventsJson}`;
 					>
 						<Icons.listOrdered size={16} />
 						<span>{sortMode === 'chapter' ? "按章节" : "按时间"}</span>
+					</button>
+					<button
+						className="btn"
+						onClick={handleSyncChapters}
+						disabled={editingId !== null || isGenerating || storeEvents.length === 0}
+						title="重新匹配事件与章节，标准化章节字段"
+					>
+						<Icons.refreshCw size={16} />
+						<span>同步</span>
 					</button>
 					<button
 						className="btn"

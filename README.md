@@ -7,6 +7,7 @@
 - 🔍 **AI 智能校对** — 基于大模型检测错别字、排版问题和病句，支持段落/章节两种校对模式
 - 📖 **纯阅读模式** — 沉浸式阅读体验，支持调节字体、背景、行间距、首行缩进、自定义背景图
 - 👥 **角色分析 & 关系图谱** — AI 自动分析整本小说，提取角色人物小传和关系图谱，支持可视化拖拽展示
+- 🎭 **AI 角色扮演** — 与小说角色沉浸式对话，自动注入角色设定、人际关系、世界观与剧情位置，支持多会话管理
 - 🎬 **剧本转换** — 一键将小说段落转换为剧本格式，支持自定义改编指令
 - 🎙️ **TTS 情感朗读** — AI 自动为对话添加情感/音色标注，支持流式边生成边播放，含角色音色设计
 - 📚 **分卷支持** — 自动识别「第X卷」等分卷结构，支持折叠/展开导航
@@ -89,6 +90,14 @@
 
 **导入/导出**
 - 支持角色数据完整导入/导出，包含角色信息、关系数据、排序顺序、忽略名单等
+
+### 🎭 AI 角色扮演
+- **沉浸式对话**：与小说中的任意角色进行对话，角色言行严格贴合原著设定
+- **智能上下文**：自动注入角色人物小传、人际关系、世界观设定与当前剧情位置，让扮演更加真实
+- **双重视角**：支持以局外人（旁观者）身份对话，或扮演小说中另一个角色与其互动
+- **多会话管理**：支持创建多个会话、切换/删除会话，会话与消息按小说持久化保存
+- **流式生成**：AI 回复流式输出，可随时停止生成、重新生成
+- **入口便捷**：桌面端顶部工具栏与移动端底部 Tab 均可一键进入角色扮演
 
 ### 🎬 剧本转换
 - 循环任务模式：逐段将小说内容转换为剧本格式
@@ -188,6 +197,11 @@ novel-proofreader/
 │   │   ├── Toast.tsx                 # Toast 消息提示组件
 │   │   ├── Select.tsx                # 自定义下拉选择组件
 │   │   ├── WordReplacementModal.tsx  # 敏感词替换弹窗
+│   │   ├── DiffModal.tsx             # 双文本对比弹窗
+│   │   ├── RoleplayModal.tsx         # AI 角色扮演弹窗
+│   │   ├── RoleplayProfileModal.tsx  # 角色小传预览弹窗
+│   │   ├── CJKVariantsModal.tsx      # 变体字/半角全角检查弹窗
+│   │   ├── PeakHourBanner.tsx        # AI 高峰时段提示横幅
 │   │   └── Icons.tsx                 # Lucide 图标封装
 │   │   └── config/                   # 配置弹窗子面板
 │   │       ├── AITestSection.tsx     # AI 连接测试
@@ -201,7 +215,6 @@ novel-proofreader/
 │   │   ├── useAICheck.ts             # AI 校对逻辑
 │   │   ├── useScriptTask.ts          # 剧本转换逻辑
 │   │   ├── useTTS.ts                 # TTS 情感朗读
-│   │   ├── useAppUpdate.ts           # 应用更新检测
 │   │   ├── useChapterTitleSuggestion.ts  # AI 章节名推荐
 │   │   ├── useReadingProgress.ts     # 阅读进度管理
 │   │   ├── useSearch.ts              # 全局搜索逻辑
@@ -211,6 +224,7 @@ novel-proofreader/
 │   │   ├── appStore.ts               # 全局状态聚合入口
 │   │   ├── novelStore.ts             # 小说/章节状态
 │   │   ├── characterStore.ts         # 角色状态
+│   │   ├── roleplayStore.ts          # 角色扮演会话状态
 │   │   ├── configStore.ts            # AI / TTS / Prompt 配置状态
 │   │   ├── aiConfigStore.ts          # AI 连接配置
 │   │   ├── uiStore.ts                # UI 状态（弹窗等）
@@ -233,6 +247,10 @@ novel-proofreader/
 │   │   ├── scrollUtils.ts            # 滚动工具
 │   │   ├── mobile.ts                 # 移动端判断函数
 │   │   ├── typeGuards.ts             # 类型守卫
+│   │   ├── characterRoles.ts         # 角色类型中文映射
+│   │   ├── normalizeCJK.ts           # 变体字/半角全角处理
+│   │   ├── concurrent.ts             # 并发工具（信号量/队列）
+│   │   ├── novelStorage.ts           # IndexedDB 大文本存储
 │   │   ├── decodeText.ts             # 文本编码检测
 │   │   └── urlParams.ts              # URL 参数解析
 │   ├── App.css                       # 全局样式（CSS Variables + 组件样式）
@@ -296,8 +314,9 @@ pnpm tauri android build      # Android 端
 4. **校对** → 选择段落/章节模式，点击「开始校对」，问题段落自动高亮
 5. **修改** → 在右侧查看错误列表，点击「采纳修改」应用到原文
 6. **角色分析** → 进入角色设置，使用 AI 自动分析整本小说的人物和关系
-7. **剧本转换** → 切换到「剧本转换」标签，输入改编指令，点击「开始转换」
-8. **TTS 朗读** → 在剧本或阅读模式中，开启 TTS 情感朗读，享受 AI 配音
+7. **角色扮演** → 点击顶部「角色扮演」按钮，选择角色与小说中的角色沉浸式对话
+8. **剧本转换** → 切换到「剧本转换」标签，输入改编指令，点击「开始转换」
+9. **TTS 朗读** → 在剧本或阅读模式中，开启 TTS 情感朗读，享受 AI 配音
 
 ## AI 接口兼容性
 

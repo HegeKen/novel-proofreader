@@ -12,16 +12,6 @@ export function isMobileDevice(): boolean {
 }
 
 /**
- * 获取当前视口宽度是否小于等于指定阈值
- * @param threshold 阈值（默认 768）
- * @returns 是否小于等于阈值
- */
-export function isViewportLessThan(threshold: number = 768): boolean {
-	if (typeof window === "undefined") return false;
-	return window.innerWidth <= threshold;
-}
-
-/**
  * 获取设备类型
  * @returns "mobile" | "tablet" | "desktop"
  */

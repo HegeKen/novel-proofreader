@@ -21,6 +21,7 @@ import { exportToFile, loadNovelsFromStorage, loadNovelContent, saveNovelToStora
 import { loadNovelText, getNovelStorageKey } from "./utils/novelStorage";
 import { formatDateTime } from "./utils/formatters";
 import { parseURLParams, updateURLParams } from "./utils/urlParams";
+import { generateId } from "./utils/id";
 import { Icons } from "./components/Icons";
 import { logger } from "./utils/logger";
 import { audioCache } from "./utils/ttsService";
@@ -31,6 +32,7 @@ import { getCurrentVersion } from "./utils/githubApi";
 
 const ConfigModal = lazy(() => import("./components/ConfigModal").then(m => ({ default: m.ConfigModal })));
 const CharacterSettings = lazy(() => import("./components/CharacterSettings").then(m => ({ default: m.CharacterSettings })));
+const RoleplayModal = lazy(() => import("./components/RoleplayModal").then(m => ({ default: m.RoleplayModal })));
 const HomePage = lazy(() => import("./components/HomePage").then(m => ({ default: m.HomePage })));
 
 type RightTab = "proofread" | "task";
@@ -77,6 +79,7 @@ export default function App() {
 	const hideToast = useAppMetaStore((s) => s.hideToast);
 	const [configOpen, setConfigOpen] = useState(false);
 	const [showCJKVariantModal, setShowCJKVariantModal] = useState(false);
+	const [showRoleplay, setShowRoleplay] = useState(false);
 	const [rightTab, setRightTab] = useState<RightTab>("proofread");
 	const [mobileTab, setMobileTab] = useState<MobileTab>("novels");
 	const { isMobile } = useMobile();
@@ -156,7 +159,7 @@ export default function App() {
 				if (storedFileNames.length > 0) {
 					const loadedNovels: typeof novels = [];
 					for (const fileName of storedFileNames) {
-						const novelId = `novel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+						const novelId = generateId("novel");
 						loadedNovels.push({
 							id: novelId,
 							name: fileName.replace(/\.txt$/i, ''),
@@ -476,6 +479,16 @@ export default function App() {
 									<Icons.downloadCloud size={16} />
 									导出全部数据
 								</button>
+								{!isMobile && (
+									<button
+										className="btn"
+										onClick={() => setShowRoleplay(true)}
+										title="角色扮演"
+									>
+										<Icons.messageSquare size={16} />
+										角色扮演
+									</button>
+								)}
 							</>
 						)}
 				</div>
@@ -640,6 +653,16 @@ export default function App() {
 							<Icons.script size={18} />
 							<span>剧本</span>
 						</button>
+						{currentNovelId && (
+							<button
+								className="mobile-tab-btn"
+								onClick={() => setShowRoleplay(true)}
+								aria-label="角色扮演"
+							>
+								<Icons.messageSquare size={18} />
+								<span>角色</span>
+							</button>
+						)}
 					</div>
 					
 				</>
@@ -658,6 +681,17 @@ export default function App() {
 						novelId={showCharacterSettings}
 						novelName={novels.find(n => n.id === showCharacterSettings)?.name || ""}
 						onClose={() => setShowCharacterSettings(null)}
+					/>
+				</Suspense>
+			)}
+			{currentNovelId && showRoleplay && (
+				<Suspense fallback={null}>
+					<RoleplayModal
+						novelId={currentNovelId}
+						novelName={novels.find((n) => n.id === currentNovelId)?.name ?? ""}
+						show={showRoleplay}
+						isMobile={isMobile}
+						onClose={() => setShowRoleplay(false)}
 					/>
 				</Suspense>
 			)}

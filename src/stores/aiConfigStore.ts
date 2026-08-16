@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AIConfig, AIProvider } from "../types";
 import { setLoggerEnabled } from "../utils/logger";
+import { detectProvider } from "../utils/aiClient";
 import { secureStorageSet, secureStorageGet, preloadSecureStorage } from "../utils/secureStorage";
 
 export interface AIConfigState {
@@ -16,7 +17,7 @@ export interface AIConfigState {
 const DEFAULT_AI_CONFIG: AIConfig = {
 	baseURL: "https://api.deepseek.com/v1",
 	apiKey: "",
-	model: "deepseek-chat",
+	model: "deepseek-v4-flash",
 	customHeaders: {},
 	maxCharsPerRequest: 2000,
 	enableLogging: true,
@@ -67,12 +68,22 @@ export const useAIConfigStore = create<AIConfigState>()(
 					setLoggerEnabled(state.aiConfig.enableLogging);
 					await preloadSecureStorage();
 					const providers: AIProvider[] = ['openai', 'deepseek', 'siliconflow', 'mimo', 'lmstudio', 'ollama', 'vllm', 'custom'];
+					const currentProvider = detectProvider(state.aiConfig.baseURL);
+					const nextApiKeyMap = { ...state.apiKeyMap };
+					let restoredKey = "";
 					for (const provider of providers) {
 						const savedKey = secureStorageGet(`apiKey-${provider}`);
 						if (savedKey) {
-							state.apiKeyMap[provider] = savedKey;
+							nextApiKeyMap[provider] = savedKey;
+							if (provider === currentProvider) restoredKey = savedKey;
 						}
 					}
+					// 通过 setState 恢复 apiKeyMap 与当前 provider 的 apiKey，
+					// 触发组件重新渲染，避免启动后 AI 功能提示"请设置 AI Key"
+					useAIConfigStore.setState({
+						apiKeyMap: nextApiKeyMap,
+						aiConfig: { ...state.aiConfig, apiKey: restoredKey || state.aiConfig.apiKey },
+					});
 				}
 			},
 		},

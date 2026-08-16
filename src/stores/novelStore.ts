@@ -4,6 +4,8 @@ import type { Novel, Chapter } from "../types";
 import { saveNovelToStorage, loadNovelsFromStorage } from "../utils/fileExport";
 import { saveNovelText, getNovelStorageKey } from "../utils/novelStorage";
 import { normalizeCJKVariants } from "../utils/normalizeCJK";
+import { generateId } from "../utils/id";
+import { normalizeWhitespace, findWhitespaceInsensitive } from "../utils/textSearch";
 import { logger } from "../utils/logger";
 
 interface ScriptResult {
@@ -25,7 +27,6 @@ export interface NovelState {
 	removeNovel: (id: string) => void;
 	selectNovel: (id: string | null) => void;
 	setChapters: (chapters: Chapter[]) => void;
-	setCurrentChapter: (index: number) => void;
 	setCurrentChapterIndex: (index: number) => void;
 	clearFile: () => void;
 	toggleProofreadStatus: (chapterId: number) => void;
@@ -57,7 +58,6 @@ export interface NovelState {
 
 	setScriptResult: (chapterId: number, segments: ScriptResult["segments"]) => void;
 	getScriptResult: (chapterId: number) => ScriptResult | undefined;
-	clearScriptResults: () => void;
 
 	saveCache: () => void;
 	saveCurrentNovel: () => void;
@@ -80,10 +80,6 @@ function saveCurrentNovel(state: { currentNovelId: string | null; novels: Novel[
 		// 同步到 IndexedDB（防止 localStorage 溢出后数据丢失）
 		void saveNovelText(getNovelStorageKey(novel.name), novel.fullText);
 	}
-}
-
-function normalizeWhitespace(s: string): string {
-	return s.replace(/\s+/g, '');
 }
 
 function findExactMatch(para: string, oldText: string, startIndex?: number, endIndex?: number): { found: boolean; start: number; end: number } {
@@ -114,27 +110,9 @@ function findLocalMatch(para: string, oldText: string, startIndex?: number): { f
 		return { found: true, start: foundIdx, end: foundIdx + oldText.length };
 	}
 
-	const normalizedSearchRange = normalizeWhitespace(searchRange);
-	const normalizedOldText = normalizeWhitespace(oldText);
-	const relativeIdxNormalized = normalizedSearchRange.indexOf(normalizedOldText);
-	if (relativeIdxNormalized >= 0) {
-		let charCount = 0;
-		let realStart = -1;
-		for (let j = searchStart; j < searchEnd && charCount <= relativeIdxNormalized; j++) {
-			if (!/\s/.test(para[j])) {
-				if (charCount === relativeIdxNormalized) realStart = j;
-				charCount++;
-			}
-		}
-		if (realStart >= 0) {
-			let realEnd = realStart;
-			let remaining = oldText.length;
-			while (realEnd < para.length && remaining > 0) {
-				if (!/\s/.test(para[realEnd])) remaining--;
-				realEnd++;
-			}
-			return { found: true, start: realStart, end: realEnd };
-		}
+	const wsMatch = findWhitespaceInsensitive(searchRange, oldText);
+	if (wsMatch) {
+		return { found: true, start: searchStart + wsMatch.start, end: searchStart + wsMatch.end };
 	}
 
 	return { found: false, start: 0, end: 0 };
@@ -146,27 +124,9 @@ function findGlobalMatch(para: string, oldText: string): { found: boolean; start
 		return { found: true, start: globalIdx, end: globalIdx + oldText.length };
 	}
 
-	const normalizedPara = normalizeWhitespace(para);
-	const normalizedOldText = normalizeWhitespace(oldText);
-	const fuzzyIdx = normalizedPara.indexOf(normalizedOldText);
-	if (fuzzyIdx >= 0) {
-		let charCount = 0;
-		let realStart = -1;
-		for (let j = 0; j < para.length && charCount <= fuzzyIdx; j++) {
-			if (!/\s/.test(para[j])) {
-				if (charCount === fuzzyIdx) realStart = j;
-				charCount++;
-			}
-		}
-		if (realStart >= 0) {
-			let realEnd = realStart;
-			let remaining = normalizedOldText.length;
-			while (realEnd < para.length && remaining > 0) {
-				if (!/\s/.test(para[realEnd])) remaining--;
-				realEnd++;
-			}
-			return { found: true, start: realStart, end: realEnd };
-		}
+	const wsMatch = findWhitespaceInsensitive(para, oldText);
+	if (wsMatch) {
+		return { found: true, start: wsMatch.start, end: wsMatch.end };
 	}
 
 	return { found: false, start: 0, end: 0 };
@@ -245,11 +205,6 @@ export const useNovelStore = create<NovelState>()(
 					}));
 					return { chapters: normalized, currentChapterIndex: state.currentChapterIndex };
 				});
-			},
-
-			setCurrentChapter: (index) => {
-				logger.info('[novelStore]', `设置当前章节: ${index}`);
-				set({ currentChapterIndex: index });
 			},
 
 			setCurrentChapterIndex: (index) => {
@@ -432,8 +387,6 @@ export const useNovelStore = create<NovelState>()(
 
 			getScriptResult: (chapterId) => get().scriptResults[chapterId],
 
-			clearScriptResults: () => set({ scriptResults: {} }),
-
 			saveCache: () => {
 				const now = Date.now();
 				set((state) => ({
@@ -473,7 +426,7 @@ export const useNovelStore = create<NovelState>()(
 					const name = fileName.replace(/\.txt$/i, '');
 					const existingNovel = existingNovels.find((n) => n.name === name);
 					loadedNovels.push({
-						id: existingNovel?.id ?? `novel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+						id: existingNovel?.id ?? generateId("novel"),
 						name,
 						fullText: existingNovel?.fullText ?? '',
 						importedAt: existingNovel?.importedAt ?? Date.now(),

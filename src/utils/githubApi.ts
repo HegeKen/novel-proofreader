@@ -172,20 +172,6 @@ export async function tryDownloadWithMirrors(url: string, fileName: string): Pro
 	throw lastError || new Error("All download attempts failed");
 }
 
-export async function fetchLatestRelease(
-	repo: string = "HegeKen/novel-proofreader",
-	proxy?: MirrorSource,
-): Promise<GitHubRelease | null> {
-	try {
-		const url = `https://api.github.com/repos/${repo}/releases/latest`;
-		const response = await fetchApiWithFallback(url, proxy);
-		return await response.json();
-	} catch (error) {
-		logger.errorGeneric('githubApi - Error fetching GitHub release:', error);
-		return null;
-	}
-}
-
 export async function fetchLatestReleaseWithAssets(
 	repo: string = "HegeKen/novel-proofreader",
 	proxy?: MirrorSource,
@@ -221,12 +207,6 @@ export function formatFileSize(bytes: number): string {
 	if (bytes < 1024) return `${bytes} B`;
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
 	return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-export function getAssetByPlatform(assets: GitHubRelease["assets"], platform: "macos" | "windows" | "linux" | "android"): typeof assets[0] | undefined {
-	const allAssets = getAllAssetsByPlatform(assets, platform);
-	if (allAssets.length === 0) return undefined;
-	return allAssets[0];
 }
 
 export function getAllAssetsByPlatform(assets: GitHubRelease["assets"], platform: "macos" | "windows" | "linux" | "android"): typeof assets {

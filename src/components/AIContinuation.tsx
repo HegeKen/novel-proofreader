@@ -4,7 +4,7 @@ import { useNovelStore } from "../stores/novelStore";
 import { useCharacterStore } from "../stores/characterStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
-import { generateContinuation } from "../utils/aiClient";
+import { generateContinuation, buildRequestConfig } from "../utils/aiClient";
 import type { ContinuationParams } from "../utils/aiClient";
 import { Icons } from "./Icons";
 
@@ -101,14 +101,7 @@ export function AIContinuation() {
 				worldbuilding: worldbuildingText,
 			};
 
-			const config = {
-				baseURL: aiConfig.baseURL,
-				apiKey: aiConfig.apiKey,
-				model: aiConfig.model,
-				customHeaders: {} as Record<string, string>,
-				maxCharsPerRequest: 0,
-				enableLogging: false,
-			};
+			const config = buildRequestConfig(aiConfig);
 
 			const result = await generateContinuation(params, config);
 

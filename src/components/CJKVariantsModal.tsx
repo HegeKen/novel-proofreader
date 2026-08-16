@@ -5,6 +5,7 @@ import { useState, useCallback, useMemo } from "react";
 import { useNovelStore } from "../stores/novelStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
 import { Icons } from "./Icons";
+import { Modal } from "./Modal";
 import { scanCJKVariants, normalizeCJKVariants, type CJKVariantEntry } from "../utils/normalizeCJK";
 import { splitChapters } from "../utils/chapterSplit";
 import { logger } from "../utils/logger";
@@ -78,23 +79,14 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 	if (!open) return null;
 
 	return (
-		<div className="modal-overlay" onClick={onClose}>
-			<div className="cjk-variants-modal" onClick={(e) => e.stopPropagation()}>
-				<div className="config-header">
-					<div className="config-title">
-						<span className="title-icon">
-							<Icons.search size={16} />
-						</span>
-						<span>变体字 & 半角全角字符检查</span>
-					</div>
-					<button className="close-btn" onClick={onClose}>
-						<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-							<path d="M3 3L13 13M13 3L3 13" />
-						</svg>
-					</button>
-				</div>
-
-				<div className="cjk-variants-body">
+		<Modal
+			open={open}
+			onClose={onClose}
+			title="变体字 & 半角全角字符检查"
+			icon={<Icons.search size={16} />}
+			className="cjk-variants-modal"
+		>
+			<div className="cjk-variants-body">
 					{entries.length === 0 && !scanning && (
 						<div className="cjk-variants-empty">
 							<Icons.search size={48} className="empty-icon" />
@@ -165,7 +157,6 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 						</button>
 					</div>
 				)}
-			</div>
-		</div>
+		</Modal>
 	);
 }

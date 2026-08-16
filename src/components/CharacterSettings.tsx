@@ -12,10 +12,12 @@ import { logger } from "../utils/logger";
 import { ConfirmModal } from "./config/ConfirmModal";
 import { loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
 import type { DetectedCharacter } from "../utils/fileExport";
-import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign, analyzeWorldbuilding, sendChatCompletion } from "../utils/aiClient";
+import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign, analyzeWorldbuilding, sendChatCompletion, extractJSON, buildRequestConfig } from "../utils/aiClient";
 import type { ChatMessage } from "../utils/aiClient";
+import { generateId } from "../utils/id";
 import { NovelEventModal } from "./NovelEventModal";
 import { formatDateTime } from "../utils/formatters";
+import { getRoleName, RELATION_TYPE_OPTIONS, GENDER_OPTIONS, ROLE_OPTIONS, makeRelationPairKey } from "../utils/characterRoles";
 import { RelationshipGraph } from "./RelationshipGraph";
 import { CharacterCard } from "./character-settings/CharacterCard";
 import { CharacterEditForm } from "./character-settings/CharacterEditForm";
@@ -48,7 +50,6 @@ export function CharacterSortingSection({ novelId, characters, updateCharacter }
 	const containerRef = useRef<HTMLDivElement>(null);
 	const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 	const dragThresholdRef = useRef(10); // 拖拽触发阈值
-	const isDraggingRef = useRef(false);
 	
 	// 排序后的角色列表
 	const sortedCharacters = useMemo(() => {
@@ -144,7 +145,6 @@ export function CharacterSortingSection({ novelId, characters, updateCharacter }
 				isDragging: true,
 				currentY: e.clientY,
 			}));
-			isDraggingRef.current = true;
 		} else if (dragState.isDragging) {
 			// 计算新的目标位置
 			const newIndex = calculateDropIndex(dragState.draggedIndex, deltaY);
@@ -173,7 +173,6 @@ export function CharacterSortingSection({ novelId, characters, updateCharacter }
 			startY: 0,
 			currentY: 0,
 		});
-		isDraggingRef.current = false;
 	}, [dragState, reorderCharacters]);
 	
 	const handlePointerCancel = useCallback((e: React.PointerEvent) => {
@@ -192,7 +191,6 @@ export function CharacterSortingSection({ novelId, characters, updateCharacter }
 			startY: 0,
 			currentY: 0,
 		});
-		isDraggingRef.current = false;
 	}, []);
 	
 	// 注册 item ref
@@ -202,26 +200,6 @@ export function CharacterSortingSection({ novelId, characters, updateCharacter }
 		} else {
 			itemRefs.current.delete(charId);
 		}
-	}, []);
-	
-	// 获取角色类型显示名称
-	const getRoleName = useCallback((role?: CharacterRole) => {
-		if (!role) return "NPC";
-		const roleMap: Record<CharacterRole, string> = {
-			protagonist: "男主",
-			heroine: "女主",
-			antagonist: "反派",
-			supportingMale: "男配",
-			supportingFemale: "女配",
-			mentor: "导师",
-			rival: "对手",
-			loveInterest: "爱慕对象",
-			family: "家人",
-			friend: "朋友",
-			narrator: "旁白",
-			npc: "NPC",
-		};
-		return roleMap[role] || "NPC";
 	}, []);
 	
 	// 计算拖拽偏移样式
@@ -303,7 +281,6 @@ interface CharacterSettingsProps {
 
 // 手动整理关系项组件
 interface OrganizeRelationItemProps {
-	relIndex: number;
 	rel: {
 		sourceName?: string;
 		targetName?: string;
@@ -318,39 +295,51 @@ interface OrganizeRelationItemProps {
 	onAdded: () => void;
 }
 
-const RELATION_TYPE_OPTIONS: Array<{ value: RelationType; label: string }> = [
-	{ value: "couple", label: "夫妻" },
-	{ value: "lover", label: "恋人" },
-	{ value: "ex-lover", label: "前任" },
-	{ value: "father-son", label: "父子" },
-	{ value: "father-daughter", label: "父女" },
-	{ value: "mother-son", label: "母子" },
-	{ value: "mother-daughter", label: "母女" },
-	{ value: "brother", label: "兄弟" },
-	{ value: "sister", label: "姐妹" },
-	{ value: "brother-sister", label: "兄妹" },
-	{ value: "sister-brother", label: "姐弟" },
-	{ value: "mother-daughter-in-law", label: "婆媳" },
-	{ value: "father-daughter-in-law", label: "公媳" },
-	{ value: "mother-son-in-law", label: "岳母女婿" },
-	{ value: "father-son-in-law", label: "翁婿" },
-	{ value: "co-parents-male", label: "亲家公" },
-	{ value: "co-parents-female", label: "亲家母" },
-	{ value: "relative", label: "亲戚" },
-	{ value: "classmate", label: "同学" },
-	{ value: "friend", label: "朋友" },
-	{ value: "bestie", label: "闺蜜" },
-	{ value: "rival", label: "竞争对手" },
-	{ value: "arch-enemy", label: "宿敌" },
-	{ value: "enemy", label: "仇人" },
-	{ value: "master-disciple", label: "师徒" },
-	{ value: "teacher-student", label: "师生" },
-	{ value: "employer-employee", label: "上下级" },
-	{ value: "colleague", label: "同事" },
-	{ value: "neighbor", label: "邻居" },
-	{ value: "stranger", label: "陌生人" },
-	{ value: "other", label: "其他" },
-];
+/** 合并角色时迁移/去重关系：将被删除角色 ID 替换为保留 ID，双向关系合并去重 */
+function mergeRelationsForCharacter(
+	rels: CharacterRelationship[],
+	idMap: Map<string, string>,
+): CharacterRelationship[] {
+	const mergedRels: CharacterRelationship[] = [];
+	const pairMap: Record<string, CharacterRelationship> = {};
+
+	for (const rel of rels) {
+		const newSourceId = idMap.get(rel.sourceId) ?? rel.sourceId;
+		const newTargetId = idMap.get(rel.targetId) ?? rel.targetId;
+
+		// 跳过自引用关系（合并后 source === target）
+		if (newSourceId === newTargetId) continue;
+
+		const key = makeRelationPairKey(newSourceId, newTargetId);
+		if (pairMap[key]) {
+			// 合并到已有关系：去重类型与称呼
+			const existing = pairMap[key];
+			const existingTypes = new Set(existing.relationType || []);
+			existing.relationType = [...(existing.relationType || []), ...(rel.relationType || []).filter(t => !existingTypes.has(t))] as RelationType[];
+
+			const existingSourceNicks = new Set(existing.sourceNickname);
+			existing.sourceNickname = [...existing.sourceNickname, ...(rel.sourceNickname || []).filter(n => !existingSourceNicks.has(n))];
+
+			const existingTargetNicks = new Set(existing.targetNickname);
+			existing.targetNickname = [...existing.targetNickname, ...(rel.targetNickname || []).filter(n => !existingTargetNicks.has(n))];
+
+			if (rel.customRelationType && !existing.customRelationType) {
+				existing.customRelationType = rel.customRelationType;
+			}
+		} else {
+			pairMap[key] = {
+				...rel,
+				sourceId: newSourceId,
+				targetId: newTargetId,
+				relationType: [...(rel.relationType || [])] as RelationType[],
+				sourceNickname: [...(rel.sourceNickname || [])],
+				targetNickname: [...(rel.targetNickname || [])],
+			};
+			mergedRels.push(pairMap[key]);
+		}
+	}
+	return mergedRels;
+}
 
 function OrganizeRelationItem({ rel, characters, novelId, onAdded }: OrganizeRelationItemProps) {
 	const addRelationship = useCharacterStore((s) => s.addRelationship);
@@ -570,7 +559,7 @@ function MergeConfigPanel({ sourceChars, onExecute, onBack }: MergeConfigPanelPr
 			.join("\n\n");
 
 		const mergedChar: CharacterInfo = {
-			id: `char-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+			id: generateId("char", 6),
 			name: mergedName.trim(),
 			gender: mergedGender,
 			role: mergedRole,
@@ -609,11 +598,7 @@ function MergeConfigPanel({ sourceChars, onExecute, onBack }: MergeConfigPanelPr
 						<Select
 							value={mergedGender}
 							onChange={(v) => setMergedGender(v as "male" | "female" | "other")}
-							options={[
-								{ value: "male", label: "男" },
-								{ value: "female", label: "女" },
-								{ value: "other", label: "其他" },
-							]}
+							options={GENDER_OPTIONS}
 						/>
 					</div>
 					<div className="form-field">
@@ -621,20 +606,7 @@ function MergeConfigPanel({ sourceChars, onExecute, onBack }: MergeConfigPanelPr
 						<Select
 							value={mergedRole || ""}
 							onChange={(v) => setMergedRole(v ? (v as CharacterRole) : undefined)}
-							options={[
-								{ value: "", label: "未设置" },
-								{ value: "protagonist", label: "男主" },
-								{ value: "heroine", label: "女主" },
-								{ value: "antagonist", label: "反派" },
-								{ value: "supportingMale", label: "男配" },
-								{ value: "supportingFemale", label: "女配" },
-								{ value: "mentor", label: "导师" },
-								{ value: "rival", label: "对手" },
-								{ value: "loveInterest", label: "爱慕对象" },
-								{ value: "family", label: "家人" },
-								{ value: "friend", label: "朋友" },
-								{ value: "npc", label: "NPC" },
-							]}
+							options={ROLE_OPTIONS}
 						/>
 					</div>
 				</div>
@@ -967,14 +939,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		setWbAnalyzeError(null);
 
 		try {
-			const config = {
-				baseURL: aiConfig.baseURL,
-				apiKey: aiConfig.apiKey,
-				model: aiConfig.model,
-				customHeaders: {},
-				maxCharsPerRequest: 0,
-				enableLogging: false,
-			};
+			const config = buildRequestConfig(aiConfig);
 
 			const result = await analyzeWorldbuilding(
 				currentNovel.fullText,
@@ -1182,53 +1147,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			return;
 		}
 
-		// 构建合并后的关系列表
-		const mergedRels: CharacterRelationship[] = [];
-		const pairMap: Record<string, CharacterRelationship> = {};
-
-		const getPairKey = (id1: string, id2: string): string => {
-			const ids = [id1, id2].sort();
-			return `${ids[0]}|${ids[1]}`;
-		};
-
-		for (const rel of allRels) {
-			// 替换 fromId 为 toId
-			let newSourceId = rel.sourceId === fromId ? toId : rel.sourceId;
-			let newTargetId = rel.targetId === fromId ? toId : rel.targetId;
-
-			// 跳过自引用关系（合并后 source === target）
-			if (newSourceId === newTargetId) continue;
-
-			const key = getPairKey(newSourceId, newTargetId);
-			if (pairMap[key]) {
-				// 合并到已有关系
-				const existing = pairMap[key];
-				const existingTypes = new Set(existing.relationType || []);
-				const newTypes = (rel.relationType || []).filter(t => !existingTypes.has(t));
-				existing.relationType = [...(existing.relationType || []), ...newTypes] as RelationType[];
-
-				const existingSourceNicks = new Set(existing.sourceNickname);
-				existing.sourceNickname = [...existing.sourceNickname, ...(rel.sourceNickname || []).filter(n => !existingSourceNicks.has(n))];
-
-				const existingTargetNicks = new Set(existing.targetNickname);
-				existing.targetNickname = [...existing.targetNickname, ...(rel.targetNickname || []).filter(n => !existingTargetNicks.has(n))];
-
-				if (rel.customRelationType && !existing.customRelationType) {
-					existing.customRelationType = rel.customRelationType;
-				}
-			} else {
-				// 确定合并后关系的方向：保持原方向，但替换 ID
-				pairMap[key] = {
-					...rel,
-					sourceId: newSourceId,
-					targetId: newTargetId,
-					relationType: [...(rel.relationType || [])] as RelationType[],
-					sourceNickname: [...(rel.sourceNickname || [])],
-					targetNickname: [...(rel.targetNickname || [])],
-				};
-				mergedRels.push(pairMap[key]);
-			}
-		}
+		// 构建合并后的关系列表（fromId → toId）
+		const mergedRels = mergeRelationsForCharacter(allRels, new Map([[fromId, toId]]));
 
 		// 更新关系列表
 		setRelationshipsForNovel(novelId, mergedRels);
@@ -1495,14 +1415,12 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 显示导出结果弹窗
 	const [exportModal, setExportModal] = useState<{
 		show: boolean;
-		success: boolean;
 		fileName: string;
 		dataStr: string;
 		characterCount: number;
 		relationshipCount?: number;
 	}>({
 		show: false,
-		success: false,
 		fileName: "",
 		dataStr: "",
 		characterCount: 0,
@@ -1617,7 +1535,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				await copyToClipboard(dataStr);
 				setExportModal({
 					show: true,
-					success: true,
 					fileName,
 					dataStr,
 					characterCount: sortedCharacters.length,
@@ -1631,17 +1548,10 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		}
 
 		// Tauri 环境：优先用原生保存；如果动态 import 插件失败（开发服务器/权限问题）也回退到剪贴板
-		let importedSave: any = null;
-		let importedWrite: any = null;
-		try {
-			const dialogModule = await import("@tauri-apps/plugin-dialog");
-			const fsModule = await import("@tauri-apps/plugin-fs");
-			importedSave = dialogModule.save;
-			importedWrite = fsModule.writeTextFile;
-		} catch (_importErr) {
-			importedSave = null;
-			importedWrite = null;
-		}
+		const dialogModule = await import("@tauri-apps/plugin-dialog").catch(() => null);
+		const fsModule = await import("@tauri-apps/plugin-fs").catch(() => null);
+		const importedSave = dialogModule?.save ?? null;
+		const importedWrite = fsModule?.writeTextFile ?? null;
 
 		if (importedSave && importedWrite) {
 			try {
@@ -1654,7 +1564,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					logger.file("小说设置导出成功:", filePath);
 					setExportModal({
 						show: true,
-						success: true,
 						fileName,
 						dataStr,
 						characterCount: sortedCharacters.length,
@@ -1671,7 +1580,6 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				await copyToClipboard(dataStr);
 				setExportModal({
 					show: true,
-					success: true,
 					fileName,
 					dataStr,
 					characterCount: sortedCharacters.length,
@@ -1819,7 +1727,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 							const resolvedTargetId = idMapping.get(rel.targetId) || rel.targetId;
 							resolvedRelationships.push({
 								...rel,
-								id: rel.id || `rel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+								id: rel.id || generateId("rel"),
 								novelId,
 								sourceId: resolvedSourceId,
 								targetId: resolvedTargetId,
@@ -1872,7 +1780,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 							}
 							resolvedEvents.push({
 								...evt,
-								id: evt.id || `evt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+								id: evt.id || generateId("evt"),
 								involvedCharacterIds: resolvedCharacterIds,
 							});
 						}
@@ -1919,14 +1827,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 		try {
 			// 构建AI配置（转换为AIConfig格式）
-			const config = {
-				baseURL: aiConfig.baseURL,
-				apiKey: aiConfig.apiKey,
-				model: aiConfig.model,
-				customHeaders: {},
-				maxCharsPerRequest: 0,
-				enableLogging: false,
-			};
+			const config = buildRequestConfig(aiConfig);
 
 			const result = await analyzeCharactersInBatches(
 				currentNovel.fullText,
@@ -1951,7 +1852,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			// 先为新角色生成ID并建立映射
 			for (const char of result.characters) {
 				if (!existingNames.has(char.name.toLowerCase())) {
-					const charId = `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+					const charId = generateId("char");
 					nameToIdMap.set(char.name.toLowerCase(), charId);
 					newCharactersWithIds.push({
 						id: charId,
@@ -2063,7 +1964,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				if (finalSourceId === finalTargetId) continue;
 
 				newRelationships.push({
-					id: `rel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+					id: generateId("rel", 6),
 					novelId,
 					sourceId: finalSourceId,
 					targetId: finalTargetId,
@@ -2167,12 +2068,24 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 	// 执行角色合并
 	const handleExecuteMerge = (mergedChar: CharacterInfo, deleteIds: string[]) => {
-		// 删除被合并的角色
+		// 先添加合并后的角色，拿到新 id
+		const newId = addCharacter(novelId, mergedChar);
+
+		// 迁移被合并角色的关系：将 sourceId/targetId 指向新角色，避免悬空关系
+		const deleteSet = new Set(deleteIds);
+		if (deleteSet.size > 0) {
+			const allRels = getRelationshipsForNovel(novelId) ?? [];
+			const mergedRels = mergeRelationsForCharacter(
+				allRels,
+				new Map(deleteIds.map(id => [id, newId])),
+			);
+			setRelationshipsForNovel(novelId, mergedRels);
+		}
+
+		// 删除被合并的角色（removeCharacter 会清理残留关系，已迁移部分不受影响）
 		for (const id of deleteIds) {
 			removeCharacter(novelId, id);
 		}
-		// 添加合并后的角色
-		addCharacter(novelId, mergedChar);
 		// 关闭弹窗
 		setShowMergeModal(false);
 		useAppMetaStore.getState().showToast(`成功合并 ${deleteIds.length + 1} 个角色为 "${mergedChar.name}"`, "success");
@@ -2259,14 +2172,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		setShowReanalyzeModal(true);
 
 		try {
-			const config = {
-				baseURL: aiConfig.baseURL,
-				apiKey: aiConfig.apiKey,
-				model: aiConfig.model,
-				customHeaders: {},
-				maxCharsPerRequest: 0,
-				enableLogging: false,
-			};
+			const config = buildRequestConfig(aiConfig);
 
 			const result = await reanalyzeCharacterBiography(
 				currentNovel.fullText,
@@ -2402,36 +2308,14 @@ ${JSON.stringify(existingInfo, null, 2)}
 				{ role: "user", content: userPrompt },
 			];
 
-			const config = {
-				baseURL: aiConfig.baseURL,
-				apiKey: aiConfig.apiKey,
-				model: aiConfig.model,
-				customHeaders: {} as Record<string, string>,
-				maxCharsPerRequest: 0,
-				enableLogging: false,
-			};
+			const config = buildRequestConfig(aiConfig);
 
 			const response = await sendChatCompletion(messages, config);
 
 			// 尝试从回复中提取JSON
-			let parsed: Record<string, unknown>;
-			try {
-				// 尝试直接解析
-				parsed = JSON.parse(response);
-			} catch {
-				// 尝试提取 JSON 代码块
-				const jsonMatch = response.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-				if (jsonMatch) {
-					parsed = JSON.parse(jsonMatch[1]);
-				} else {
-					// 尝试提取 { } 对象
-					const objMatch = response.match(/\{[\s\S]*\}/);
-					if (objMatch) {
-						parsed = JSON.parse(objMatch[0]);
-					} else {
-						throw new Error("无法解析AI返回结果");
-					}
-				}
+			const parsed = extractJSON(response) as Record<string, unknown>;
+			if (Object.keys(parsed).length === 0) {
+				throw new Error("无法解析AI返回结果");
 			}
 
 			// 更新editForm，只更新AI返回的字段，保留name/gender/role不变
@@ -2621,11 +2505,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 								<Select
 									value={editForm.gender || "other"}
 									onChange={(v) => setEditForm({ ...editForm, gender: v as "male" | "female" | "other" })}
-									options={[
-										{ value: "male", label: "男" },
-										{ value: "female", label: "女" },
-										{ value: "other", label: "其他" },
-									]}
+									options={GENDER_OPTIONS}
 								/>
 							</div>
 
@@ -2634,20 +2514,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 								<Select
 									value={editForm.role || ""}
 									onChange={(v) => setEditForm({ ...editForm, role: v ? (v as CharacterRole) : undefined })}
-									options={[
-										{ value: "", label: "未设置" },
-										{ value: "protagonist", label: "男主" },
-										{ value: "heroine", label: "女主" },
-										{ value: "antagonist", label: "反派" },
-										{ value: "supportingMale", label: "男配" },
-										{ value: "supportingFemale", label: "女配" },
-										{ value: "mentor", label: "导师" },
-										{ value: "rival", label: "对手" },
-										{ value: "loveInterest", label: "爱慕对象" },
-										{ value: "family", label: "家人" },
-										{ value: "friend", label: "朋友" },
-										{ value: "npc", label: "NPC" },
-									]}
+									options={ROLE_OPTIONS}
 								/>
 							</div>
 
@@ -2668,7 +2535,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 										type="text"
 										value={newAlias}
 										onChange={(e) => setNewAlias(e.target.value)}
-										onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addAlias())}
+										onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addAlias())}
 										placeholder="输入别称后按回车添加"
 										className="config-input flex-1"
 									/>
@@ -2706,7 +2573,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 										type="text"
 										value={newRelationTerm}
 										onChange={(e) => setNewRelationTerm(e.target.value)}
-										onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addRelationTerm())}
+										onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addRelationTerm())}
 										placeholder="输入关系代称后按回车添加"
 										className="config-input flex-1"
 									/>
@@ -2820,7 +2687,6 @@ ${JSON.stringify(existingInfo, null, 2)}
 
 				{editingId && (
 					<CharacterEditForm
-						novelId={novelId}
 						editForm={editForm}
 						voiceOptions={voiceOptions}
 						dialectOptions={dialectOptions}
@@ -3479,7 +3345,6 @@ ${JSON.stringify(existingInfo, null, 2)}
 								{skippedRelationships.map((rel, index) => (
 									<OrganizeRelationItem
 										key={index}
-										relIndex={index}
 										rel={rel}
 										characters={characters}
 										novelId={novelId}
@@ -3753,7 +3618,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 												newSourceNickname: e.target.value,
 											}))
 										}
-										onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), handleAddSourceNickname(setRelationForm))}
+										onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddSourceNickname(setRelationForm))}
 										placeholder="输入称呼后按回车"
 									/>
 									<button className="nickname-add-btn" onClick={() => handleAddSourceNickname(setRelationForm)}>
@@ -3811,55 +3676,23 @@ ${JSON.stringify(existingInfo, null, 2)}
 								<div className="form-field">
 									<label>双人关系类型（可多选）</label>
 								<div className="relation-type-checkboxes">
-									{[
-										["couple", "夫妻"],
-										["lover", "恋人"],
-										["ex-lover", "前任"],
-										["father-son", "父子"],
-										["father-daughter", "父女"],
-										["mother-son", "母子"],
-										["mother-daughter", "母女"],
-										["brother", "兄弟"],
-										["sister", "姐妹"],
-										["brother-sister", "兄妹"],
-										["sister-brother", "姐弟"],
-										["mother-daughter-in-law", "婆媳"],
-										["father-daughter-in-law", "公媳"],
-										["mother-son-in-law", "岳母女婿"],
-										["father-son-in-law", "翁婿"],
-										["co-parents-male", "亲家公"],
-										["co-parents-female", "亲家母"],
-										["relative", "亲戚"],
-										["classmate", "同学"],
-										["friend", "朋友"],
-										["bestie", "闺蜜"],
-										["rival", "竞争对手"],
-										["arch-enemy", "宿敌"],
-										["enemy", "仇人"],
-										["master-disciple", "师徒"],
-										["teacher-student", "师生"],
-										["employer-employee", "上下级"],
-										["colleague", "同事"],
-										["neighbor", "邻居"],
-										["stranger", "陌生人"],
-										["other", "其他"],
-									].map(([value, label]) => (
-										<label key={value} className="relation-type-checkbox">
+									{RELATION_TYPE_OPTIONS.map((opt) => (
+										<label key={opt.value} className="relation-type-checkbox">
 											<input
 												type="checkbox"
-												checked={relationForm.relationType.includes(value as RelationType)}
+												checked={relationForm.relationType.includes(opt.value)}
 												onChange={() => {
 													setRelationForm((prev) => {
 														const current = prev.relationType;
-														if (current.includes(value as RelationType)) {
-															return { ...prev, relationType: current.filter((t) => t !== value) };
+														if (current.includes(opt.value)) {
+															return { ...prev, relationType: current.filter((t) => t !== opt.value) };
 														} else {
-															return { ...prev, relationType: [...current, value as RelationType] };
+															return { ...prev, relationType: [...current, opt.value] };
 														}
 													});
 												}}
 											/>
-											<span>{label}</span>
+											<span>{opt.label}</span>
 										</label>
 									))}
 								</div>
@@ -3892,7 +3725,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 												newTargetNickname: e.target.value,
 											}))
 										}
-										onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), handleAddTargetNickname(setRelationForm))}
+										onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddTargetNickname(setRelationForm))}
 										placeholder="输入称呼后按回车"
 									/>
 									<button className="nickname-add-btn" onClick={() => handleAddTargetNickname(setRelationForm)}>
@@ -4104,33 +3937,22 @@ ${JSON.stringify(existingInfo, null, 2)}
 				<div className="config-modal export-result-modal" onClick={(e) => e.stopPropagation()}>
 					<div className="config-header">
 						<div className="config-title">
-							<span className={`result-icon ${exportModal.success ? 'success' : 'error'}`}>
-								{exportModal.success ? <Icons.checkCircle size={18} /> : <Icons.alertCircle size={18} />}
+							<span className="result-icon success">
+								<Icons.checkCircle size={18} />
 							</span>
-							<span>{exportModal.success ? '保存成功' : '保存失败'}</span>
+							<span>保存成功</span>
 						</div>
 						<button className="close-btn" onClick={() => setExportModal({ ...exportModal, show: false })}>
 							<Icons.x size={16} />
 						</button>
 					</div>
 					<div className="config-body">
-						{exportModal.success ? (
-							<div className="space-y-2">
-								<p><strong>文件名:</strong> <span className="copyable" onClick={() => copyToClipboard(exportModal.fileName)} title="点击复制文件名">{exportModal.fileName}</span></p>
-								<p><strong>保存位置:</strong> <span style={{ wordWrap: "break-word" }}>Android/data/cn.helilab.proofreader/documents/characters/</span></p>
-								<p><strong>角色数量:</strong> {exportModal.characterCount}个</p>
-								<p><strong>关系数量:</strong> {exportModal.relationshipCount || 0}条</p>
-							</div>
-						) : (
-							<div className="space-y-2">
-								<p>无法自动保存到文件系统</p>
-								<p><strong>文件名:</strong> <span className="copyable" onClick={() => copyToClipboard(exportModal.fileName)} title="点击复制文件名">{exportModal.fileName}</span></p>
-								<p><strong>角色数量:</strong> {exportModal.characterCount}个</p>
-								<p><strong>关系数量:</strong> {exportModal.relationshipCount || 0}条</p>
-								<p><strong>数据大小:</strong> {exportModal.dataStr.length}字节</p>
-								<p className="text-sm text-neutral-400">请尝试复制数据后自行保存</p>
-							</div>
-						)}
+						<div className="space-y-2">
+							<p><strong>文件名:</strong> <span className="copyable" onClick={() => copyToClipboard(exportModal.fileName)} title="点击复制文件名">{exportModal.fileName}</span></p>
+							<p><strong>保存位置:</strong> <span style={{ wordWrap: "break-word" }}>Android/data/cn.helilab.proofreader/documents/characters/</span></p>
+							<p><strong>角色数量:</strong> {exportModal.characterCount}个</p>
+							<p><strong>关系数量:</strong> {exportModal.relationshipCount || 0}条</p>
+						</div>
 					</div>
 					<div className="config-footer">
 						<button

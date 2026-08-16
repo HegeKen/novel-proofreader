@@ -74,7 +74,6 @@ export const useProofreadMetaStore = create<ProofreadMetaState>()(
 					}));
 					return { proofreadQueue: [...state.proofreadQueue, ...newItems] };
 				}),
-
 			removeFromProofreadQueue: (itemId) =>
 				set((state) => ({
 					proofreadQueue: state.proofreadQueue.filter((item) => item.id !== itemId),

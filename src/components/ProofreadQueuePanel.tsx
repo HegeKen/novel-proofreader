@@ -1,12 +1,10 @@
 import { useState } from "react";
 import { useNovelStore } from "../stores/novelStore";
-import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useProofreadMetaStore } from "../stores/proofreadMetaStore";
-import { useAppMetaStore } from "../stores/appMetaStore";
 import { useAICheck } from "../hooks/useAICheck";
+import { useChapterTitleSuggestion } from "../hooks/useChapterTitleSuggestion";
 import { Icons } from "./Icons";
-import { generateChapterTitle } from "../utils/aiClient";
-import { logger } from "../utils/logger";
+import { isDefaultChapterTitle } from "../utils/chapterSplit";
 
 export function ProofreadQueuePanel() {
 	const queue = useProofreadMetaStore((s) => s.proofreadQueue);
@@ -19,16 +17,18 @@ export function ProofreadQueuePanel() {
 	const updateQueueItemStatus = useProofreadMetaStore((s) => s.updateQueueItemStatus);
 	const clearQueue = useProofreadMetaStore((s) => s.clearProofreadQueue);
 	const setCurrentProofreadingTaskId = useProofreadMetaStore((s) => s.setCurrentProofreadingTaskId);
-	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
 
 	const [selectedChapters, setSelectedChapters] = useState<number[]>([]);
 	const [isRunning, setIsRunning] = useState(false);
-	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 
-	// 章节名推荐状态
-	const [suggestingChapterIndex, setSuggestingChapterIndex] = useState<number | null>(null);
-	const [chapterTitleSuggestions, setChapterTitleSuggestions] = useState<string[]>([]);
-	const [suggestingChapterId, setSuggestingChapterId] = useState<number | null>(null);
+	// 章节名推荐（复用共享 hook）
+	const {
+		suggestingChapterId,
+		chapterTitleSuggestions,
+		handleSuggestChapterTitle,
+		handleApplyChapterTitle,
+		handleCloseSuggestions,
+	} = useChapterTitleSuggestion();
 
 	const { checkChapter } = useAICheck();
 
@@ -69,61 +69,6 @@ export function ProofreadQueuePanel() {
 		setSelectedChapters([]);
 	};
 
-	// 章节名推荐处理函数
-	const handleSuggestChapterTitle = async (chapterIndex: number) => {
-		if (suggestingChapterIndex === chapterIndex) return;
-
-		const chapter = chapters[chapterIndex];
-		if (!chapter) return;
-
-		setSuggestingChapterIndex(chapterIndex);
-		setSuggestingChapterId(chapter.id);
-		setChapterTitleSuggestions([]);
-
-		try {
-			// 收集前几章的章节名和内容
-			const previousChapters: Record<string, string> = {};
-			for (let i = Math.max(0, chapterIndex - 5); i < chapterIndex; i++) {
-				const prevChapter = chapters[i];
-				if (prevChapter && prevChapter.title) {
-					previousChapters[prevChapter.title] = prevChapter.content.slice(0, 200);
-				}
-			}
-
-			const suggestions = await generateChapterTitle(
-				chapter.content,
-				previousChapters,
-				chapterIndex + 1,
-				aiConfig
-			);
-			setChapterTitleSuggestions(suggestions);
-		} catch (error) {
-			logger.errorGeneric('ProofreadQueuePanel - Failed to generate chapter title:', error);
-			useAppMetaStore.getState().showToast("生成章节名失败，请检查AI配置", "error");
-		} finally {
-			setSuggestingChapterIndex(null);
-		}
-	};
-
-	// 应用推荐的章节名
-	const handleApplyChapterTitle = (chapterIndex: number, title: string) => {
-		const chapter = chapters[chapterIndex];
-		if (!chapter) return;
-
-		const newTitle = chapter.title ? `${chapter.title} ${title}` : title;
-		const newContent = chapter.title
-			? chapter.content.replace(chapter.title, newTitle)
-			: chapter.content;
-
-		const updatedChapters = [...chapters];
-		updatedChapters[chapterIndex] = { ...chapter, title: newTitle, content: newContent };
-		useNovelStore.getState().setChapters(updatedChapters);
-
-		// 清除推荐状态
-		setChapterTitleSuggestions([]);
-		setSuggestingChapterId(null);
-	};
-
 	// 处理队列中的任务
 	const processQueue = async () => {
 		if (isRunning || queue.length === 0) return;
@@ -136,10 +81,12 @@ export function ProofreadQueuePanel() {
 			updateQueueItemStatus(item.id, "running");
 
 			try {
+				// 从 store 实时读取章节列表，避免闭包捕获过期快照
+				const latestChapters = useNovelStore.getState().chapters;
 				// 切换到对应章节
-				const chapterIndex = chapters.findIndex((ch) => ch.id === item.chapterId);
+				const chapterIndex = latestChapters.findIndex((ch) => ch.id === item.chapterId);
 				if (chapterIndex >= 0) {
-					setCurrentChapterIndex(chapterIndex);
+					useNovelStore.getState().setCurrentChapterIndex(chapterIndex);
 					await new Promise((resolve) => setTimeout(resolve, 500));
 				}
 
@@ -219,9 +166,10 @@ export function ProofreadQueuePanel() {
 
 				<div className="chapter-list">
 					{chapters.map((chapter, index) => {
-						const hasNoTitle = !chapter.title || /^第[\d一二三四五六七八九十]+[章回]$/.test(chapter.title);
-						const isSuggesting = suggestingChapterIndex === index;
-						const showSuggestions = suggestingChapterId === chapter.id && chapterTitleSuggestions.length > 0;
+						const hasNoTitle = isDefaultChapterTitle(chapter.title);
+						const isSuggesting = suggestingChapterId === chapter.id;
+						const suggestions = chapterTitleSuggestions[chapter.id] ?? [];
+						const showSuggestions = suggestingChapterId === chapter.id && suggestions.length > 0;
 
 						return (
 							<div key={chapter.id}>
@@ -241,7 +189,7 @@ export function ProofreadQueuePanel() {
 									{hasNoTitle && (
 										<button
 											className="suggest-title-btn"
-											onClick={() => handleSuggestChapterTitle(index)}
+											onClick={() => handleSuggestChapterTitle(chapter.id, index)}
 											disabled={isSuggesting}
 										>
 											<Icons.sparkle size={14} />
@@ -254,19 +202,16 @@ export function ProofreadQueuePanel() {
 											<span>AI推荐章节名</span>
 											<button
 												className="close-suggestions"
-												onClick={() => {
-													setChapterTitleSuggestions([]);
-													setSuggestingChapterId(null);
-												}}
+												onClick={() => handleCloseSuggestions(chapter.id)}
 											>
 												<Icons.x size={14} />
 											</button>
 										</div>
-										{chapterTitleSuggestions.map((title, idx) => (
+										{suggestions.map((title, idx) => (
 											<button
 												key={idx}
 												className="suggestion-item"
-												onClick={() => handleApplyChapterTitle(index, title)}
+												onClick={() => handleApplyChapterTitle(chapter.id, title)}
 											>
 												{title}
 											</button>

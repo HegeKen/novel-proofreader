@@ -26,6 +26,7 @@ import {
 	ChevronDown,
 	ChevronUp,
 	ChevronRight,
+	ArrowLeft,
 	Download,
 	Upload,
 	RotateCcw,
@@ -75,6 +76,8 @@ import {
 	MapPin,
 	GitCompareArrows,
 	ZoomIn,
+	MessageSquare,
+	Send,
 } from "lucide-react";
 
 export const Icons = {
@@ -114,6 +117,7 @@ export const Icons = {
 	chevronDown: ChevronDown,
 	chevronUp: ChevronUp,
 	chevronRight: ChevronRight,
+	arrowLeft: ArrowLeft,
 	download: Download,
 	downloadCloud: DownloadCloud,
 	upload: Upload,
@@ -161,6 +165,8 @@ export const Icons = {
 	info: Info,
 	compare: GitCompareArrows,
 	zoomIn: ZoomIn,
+	messageSquare: MessageSquare,
+	send: Send,
 };
 
 export type IconName = keyof typeof Icons;

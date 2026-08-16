@@ -200,22 +200,3 @@ export function secureStorageGet(key: string): string | null {
 		return null;
 	}
 }
-
-/**
- * 删除安全存储的数据
- */
-export function secureStorageRemove(key: string): void {
-	try {
-		memoryCache.delete(key);
-		localStorage.removeItem(`${STORAGE_PREFIX}${key}`);
-	} catch (e) {
-		logger.errorGeneric('secureStorage - Failed to remove:', e);
-	}
-}
-
-/**
- * 检查是否有安全存储的数据
- */
-export function secureStorageHas(key: string): boolean {
-	return memoryCache.has(key) || localStorage.getItem(`${STORAGE_PREFIX}${key}`) !== null;
-}

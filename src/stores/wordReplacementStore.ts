@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { generateId } from "../utils/id";
 
 export interface WordReplacement {
 	id: string;
@@ -13,16 +14,15 @@ interface WordReplacementState {
 	removeReplacement: (id: string) => void;
 	updateReplacement: (id: string, original: string, replacement: string) => void;
 	clearAllReplacements: () => void;
-	getReplacements: () => WordReplacement[];
 }
 
 export const useWordReplacementStore = create<WordReplacementState>()(
 	persist(
-		(set, get) => ({
+		(set) => ({
 			replacements: [],
 
 			addReplacement: (original, replacement) => {
-				const id = `replacement-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+				const id = generateId("replacement", 6);
 				set((state) => ({
 					replacements: [...state.replacements, { id, original, replacement }],
 				}));
@@ -45,8 +45,6 @@ export const useWordReplacementStore = create<WordReplacementState>()(
 			clearAllReplacements: () => {
 				set({ replacements: [] });
 			},
-
-			getReplacements: () => get().replacements,
 		}),
 		{
 			name: "novel-proofreader-word-replacement",

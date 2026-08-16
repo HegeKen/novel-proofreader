@@ -1,9 +1,9 @@
 import type { CharacterInfo, CharacterRole } from "../../types";
 import { Icons } from "../Icons";
 import { Select } from "../Select";
+import { GENDER_OPTIONS, ROLE_OPTIONS } from "../../utils/characterRoles";
 
 interface CharacterEditFormProps {
-	novelId: string;
 	editForm: Partial<CharacterInfo>;
 	voiceOptions: Array<{ value: string; label: string }>;
 	dialectOptions: Array<{ value: string; label: string }>;
@@ -68,11 +68,7 @@ export function CharacterEditForm({
 						<Select
 							value={editForm.gender || "other"}
 							onChange={(v) => onFormChange({ ...editForm, gender: v as "male" | "female" | "other" })}
-							options={[
-								{ value: "male", label: "男" },
-								{ value: "female", label: "女" },
-								{ value: "other", label: "其他" },
-							]}
+							options={GENDER_OPTIONS}
 						/>
 					</div>
 					<div className="form-field">
@@ -80,20 +76,7 @@ export function CharacterEditForm({
 						<Select
 							value={editForm.role || ""}
 							onChange={(v) => onFormChange({ ...editForm, role: v ? (v as CharacterRole) : undefined })}
-							options={[
-								{ value: "", label: "未设置" },
-								{ value: "protagonist", label: "男主" },
-								{ value: "heroine", label: "女主" },
-								{ value: "antagonist", label: "反派" },
-								{ value: "supportingMale", label: "男配" },
-								{ value: "supportingFemale", label: "女配" },
-								{ value: "mentor", label: "导师" },
-								{ value: "rival", label: "对手" },
-								{ value: "loveInterest", label: "爱慕对象" },
-								{ value: "family", label: "家人" },
-								{ value: "friend", label: "朋友" },
-								{ value: "npc", label: "NPC" },
-							]}
+							options={ROLE_OPTIONS}
 						/>
 					</div>
 				</div>
@@ -152,7 +135,7 @@ export function CharacterEditForm({
 							type="text"
 							value={newAlias}
 							onChange={(e) => onNewAliasChange(e.target.value)}
-							onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), onAddAlias())}
+							onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), onAddAlias())}
 							placeholder="输入后按回车"
 							className="config-input flex-1"
 						/>
@@ -200,7 +183,7 @@ export function CharacterEditForm({
 							type="text"
 							value={newRelationTerm}
 							onChange={(e) => onNewRelationTermChange(e.target.value)}
-							onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), onAddRelationTerm())}
+							onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), onAddRelationTerm())}
 							placeholder="输入后按回车"
 							className="config-input flex-1"
 						/>

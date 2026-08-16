@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { ReadingBackground, AppTab } from "../types";
+import type { ReadingBackground } from "../types";
 
 export interface UIState {
 	theme: "light" | "dark";
@@ -13,9 +13,7 @@ export interface UIState {
 	customBgColor: string;
 	bgImageUrl: string;
 	hideProofread: boolean;
-	configModalOpen: boolean;
 	showCharacterSettings: string | null;
-	activeTab: AppTab;
 
 	setTheme: (theme: "light" | "dark") => void;
 	setFontSize: (size: number) => void;
@@ -26,9 +24,7 @@ export interface UIState {
 	setCustomColors: (textColor: string, bgColor: string) => void;
 	setBgImageUrl: (url: string) => void;
 	setHideProofread: (hide: boolean) => void;
-	setConfigModalOpen: (open: boolean) => void;
 	setShowCharacterSettings: (novelId: string | null) => void;
-	setActiveTab: (tab: AppTab) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -44,9 +40,7 @@ export const useUIStore = create<UIState>()(
 			customBgColor: "#FDF6E3",
 			bgImageUrl: "",
 			hideProofread: false,
-			configModalOpen: false,
 			showCharacterSettings: null,
-			activeTab: "proofread",
 
 			setTheme: (theme) => set({ theme }),
 			setFontSize: (size) => set({ fontSize: size }),
@@ -57,9 +51,7 @@ export const useUIStore = create<UIState>()(
 			setCustomColors: (textColor, bgColor) => set({ customTextColor: textColor, customBgColor: bgColor }),
 			setBgImageUrl: (url) => set({ bgImageUrl: url }),
 			setHideProofread: (hide) => set({ hideProofread: hide }),
-			setConfigModalOpen: (open) => set({ configModalOpen: open }),
 			setShowCharacterSettings: (novelId) => set({ showCharacterSettings: novelId }),
-			setActiveTab: (tab) => set({ activeTab: tab }),
 		}),
 		{
 			name: "novel-proofreader-ui",

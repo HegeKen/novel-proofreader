@@ -2,6 +2,8 @@ import { useState, useRef } from "react";
 import { useNovelStore } from "../stores/novelStore";
 import { useProofreadMetaStore } from "../stores/proofreadMetaStore";
 import { Icons } from "./Icons";
+import { Modal } from "./Modal";
+import { EmptyState } from "./EmptyState";
 import { ConfirmModal } from "./config/ConfirmModal";
 
 interface IgnoredWordsManagerProps {
@@ -56,28 +58,13 @@ export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 	};
 
 	return (
-		<div className="modal-overlay" onClick={onClose}>
-			<div className="config-modal" onClick={(e) => e.stopPropagation()}>
-				<div className="config-header">
-					<div className="config-title">
-						<span className="title-icon"><Icons.settings size={16} /></span>
-						<span>忽略单词管理</span>
-					</div>
-					<button className="close-btn" onClick={onClose}>
-						<svg
-							width="16"
-							height="16"
-							viewBox="0 0 16 16"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="2"
-						>
-							<path d="M3 3L13 13M13 3L3 13" />
-						</svg>
-					</button>
-				</div>
-
-				<div className="config-body">
+		<Modal
+			open
+			onClose={onClose}
+			title="忽略单词管理"
+			icon={<Icons.settings size={16} />}
+		>
+			<div className="config-body">
 					<div className="config-section">
 						<div className="section-label">说明</div>
 						<p className="modal-description">
@@ -130,11 +117,11 @@ export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 						</div>
 					) : (
 						<div className="config-section">
-							<div className="empty-state">
-								<Icons.search size={48} className="empty-icon" />
-								<p>暂无忽略的单词</p>
-								<p className="hint">添加一些单词，让 AI 在校对整本小说时跳过它们</p>
-							</div>
+							<EmptyState
+								icon={<Icons.search size={48} className="empty-icon" />}
+								message="暂无忽略的单词"
+								hint="添加一些单词，让 AI 在校对整本小说时跳过它们"
+							/>
 						</div>
 					)}
 				</div>
@@ -160,7 +147,6 @@ export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 					onConfirm={confirmModal.onConfirm}
 					onCancel={() => setConfirmModal(prev => ({ ...prev, show: false }))}
 				/>
-			</div>
-		</div>
+		</Modal>
 	);
 }

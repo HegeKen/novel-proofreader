@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useNovelStore } from "../stores/novelStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
+import { useAppMetaStore } from "../stores/appMetaStore";
 import { generateChapterTitle } from "../utils/aiClient";
 import { logger } from "../utils/logger";
 
@@ -30,6 +31,7 @@ export function useChapterTitleSuggestion() {
 			setChapterTitleSuggestions(prev => ({ ...prev, [chapterId]: suggestions }));
 		} catch (error) {
 			logger.errorGeneric('Failed to generate chapter title:', error);
+			useAppMetaStore.getState().showToast("生成章节名失败，请检查AI配置", "error");
 		} finally {
 			setSuggestingChapterId(null);
 		}

@@ -13,6 +13,7 @@ import type { PromptConfig } from "./config/promptConfig";
 import { DEFAULTS as PROMPT_DEFAULTS } from "./config/promptConfig";
 import { WordReplacementModal } from "./WordReplacementModal";
 import { getLogHistory, clearLogHistory, type LogEntry } from "../utils/logger";
+import { detectProvider } from "../utils/aiClient";
 
 const PROVIDERS: { value: AIProvider; label: string; logo: string; color: string }[] = [
 	{ value: "openai", label: "OpenAI", logo: "https://avatars.githubusercontent.com/u/14957082?s=200&v=4", color: "#0ea561" },
@@ -27,9 +28,9 @@ const PROVIDERS: { value: AIProvider; label: string; logo: string; color: string
 
 const PRESETS: Record<AIProvider, { baseUrl: string; model: string }> = {
 	openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4o" },
-	deepseek: { baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
-	siliconflow: { baseUrl: "https://api.siliconflow.cn/v1", model: "deepseek-ai/DeepSeek-V3" },
-	mimo: { baseUrl: "https://api.xiaomimimo.com/v1", model: "mimo-v2-flash" },
+	deepseek: { baseUrl: "https://api.deepseek.com/v1", model: "deepseek-v4-flash" },
+	siliconflow: { baseUrl: "https://api.siliconflow.cn/v1", model: "deepseek-ai/DeepSeek-V4-Flash" },
+	mimo: { baseUrl: "https://api.xiaomimimo.com/v1", model: "mimo-v2.5-flash" },
 	lmstudio: { baseUrl: "http://localhost:1234/v1", model: "" },
 	ollama: { baseUrl: "http://localhost:11434/v1", model: "llama3.1" },
 	vllm: { baseUrl: "http://localhost:8000/v1", model: "" },
@@ -43,17 +44,6 @@ interface ConfigState {
 	model: string;
 	enableLogging: boolean;
 }
-
-const detectProvider = (url: string): AIProvider => {
-	if (url.includes("deepseek")) return "deepseek";
-	if (url.includes("openai")) return "openai";
-	if (url.includes("siliconflow")) return "siliconflow";
-	if (url.includes("xiaomimimo")) return "mimo";
-	if (url.includes("localhost:1234") || url.includes("127.0.0.1:1234")) return "lmstudio";
-	if (url.includes("localhost:11434") || url.includes("127.0.0.1:11434")) return "ollama";
-	if (url.includes("localhost:8000") || url.includes("127.0.0.1:8000")) return "vllm";
-	return "custom";
-};
 
 interface Props {
 	open: boolean;
@@ -193,7 +183,7 @@ function ConfigModalContent({
 									<div className="input-wrapper">
 										<input type="text" value={config.model}
 											onChange={(e) => setConfig((prev) => ({ ...prev, model: e.target.value }))}
-											placeholder="deepseek-chat" className="config-input" />
+											placeholder="deepseek-v4-flash" className="config-input" />
 									</div>
 								</div>
 							</div>

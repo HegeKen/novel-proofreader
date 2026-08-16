@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Users, Cloud, MessageSquare, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { Icons } from "./Icons";
+import { EmptyState } from "./EmptyState";
 import { DiffModal } from "./DiffModal";
 import { useMobile } from "../hooks/useMobile";
 import { logger } from "../utils/logger";
@@ -531,10 +532,10 @@ export function HomePage({ onStart }: HomePageProps) {
 								</>
 							) : (
 								<div className="config-section">
-									<div className="empty-state">
-										<Icons.download size={48} className="empty-icon" />
-										<p>暂无可用下载</p>
-									</div>
+									<EmptyState
+										icon={<Icons.download size={48} className="empty-icon" />}
+										message="暂无可用下载"
+									/>
 								</div>
 							)}
 						</div>

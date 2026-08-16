@@ -1,5 +1,7 @@
 import { useState, useCallback } from "react";
 import { Icons } from "./Icons";
+import { Modal } from "./Modal";
+import { EmptyState } from "./EmptyState";
 import { ConfirmModal } from "./config/ConfirmModal";
 import { useWordReplacementStore, type WordReplacement } from "../stores/wordReplacementStore";
 
@@ -64,20 +66,13 @@ export function WordReplacementModal({ open, onClose }: Props) {
 	if (!open) return null;
 
 	return (
-		<div className="modal-overlay" onClick={onClose}>
-			<div className="config-modal" onClick={(e) => e.stopPropagation()}>
-				<div className="config-header">
-					<div className="config-title">
-						<span className="title-icon"><Icons.punctuation size={16} /></span>
-						<span>敏感词替换</span>
-					</div>
-					<button className="close-btn" onClick={onClose}>
-						<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-							<path d="M3 3L13 13M13 3L3 13" />
-						</svg>
-					</button>
-				</div>
-				<div className="config-body">
+		<Modal
+			open
+			onClose={onClose}
+			title="敏感词替换"
+			icon={<Icons.punctuation size={16} />}
+		>
+			<div className="config-body">
 					{/* 新增词组 */}
 					<div className="config-section">
 						<div className="section-label">添加替换规则</div>
@@ -117,11 +112,11 @@ export function WordReplacementModal({ open, onClose }: Props) {
 						</div>
 						<div className="word-replacement-list">
 							{replacements.length === 0 ? (
-								<div className="empty-state">
-									<Icons.punctuation size={48} className="empty-icon" />
-									<p>暂无替换规则</p>
-									<p className="hint">添加敏感词替换规则，避免 TTS 生成被拒绝</p>
-								</div>
+								<EmptyState
+									icon={<Icons.punctuation size={48} className="empty-icon" />}
+									message="暂无替换规则"
+									hint="添加敏感词替换规则，避免 TTS 生成被拒绝"
+								/>
 							) : (
 								<div className="word-replacement-table">
 									<div className="word-replacement-table-header">
@@ -217,7 +212,6 @@ export function WordReplacementModal({ open, onClose }: Props) {
 					onConfirm={confirmModal.onConfirm}
 					onCancel={() => setConfirmModal(prev => ({ ...prev, show: false }))}
 				/>
-			</div>
-		</div>
+		</Modal>
 	);
 }

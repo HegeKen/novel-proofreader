@@ -7,8 +7,9 @@ import { useNovelStore } from "../stores/novelStore";
 import { useUIStore } from "../stores/uiStore";
 import { useProofreadStore } from "../stores/proofreadStore";
 import { useMobile } from "../hooks/useMobile";
-import { splitParagraphs } from "../utils/chapterSplit";
+import { splitParagraphs, splitChapters } from "../utils/chapterSplit";
 import { Icons } from "./Icons";
+import { CloseButton } from "./Modal";
 
 export interface SearchResult {
 	novelId: string;
@@ -49,12 +50,12 @@ export function GlobalSearch() {
 		novels.forEach((novel) => {
 			if (!novel.fullText) return;
 
-			// 分割章节
-			const chapters = novel.fullText.split(/第[零一二三四五六七八九十百千]+章/).filter((c) => c.trim());
-			
-			chapters.forEach((chapterContent, chapterIndex) => {
-				const paragraphs = splitParagraphs(chapterContent);
-				const chapterTitle = `第${chapterIndex + 1}章`;
+			// 分割章节（复用与主界面一致的 splitChapters，保证标题/章节边界一致）
+			const chapters = splitChapters(novel.fullText);
+
+			chapters.forEach((chapter, chapterIndex) => {
+				const paragraphs = splitParagraphs(chapter.content);
+				const chapterTitle = chapter.title;
 
 				let cumulativeLineNumber = 0; // 累计行号（从章节开始计算）
 
@@ -102,32 +103,18 @@ export function GlobalSearch() {
 		// 选择小说
 		selectNovel(result.novelId);
 
-		// 加载章节
+		// 加载章节（复用与主界面一致的 splitChapters，保证章节 ID/标题一致）
 		const novel = novels.find((n) => n.id === result.novelId);
 		if (novel && novel.fullText) {
-			const chapters = novel.fullText.split(/第[零一二三四五六七八九十百千]+章/).filter((c) => c.trim());
-			const chapterTitles = chapters.map((_, i) => `第${i + 1}章`);
-			
-			setChapters(
-				chapters.map((content, i) => ({
-					id: i,
-					title: chapterTitles[i],
-					startIndex: 0,
-					endIndex: content.length,
-					content,
-				}))
-			);
+			const chapters = splitChapters(novel.fullText);
+
+			setChapters(chapters.map((ch, i) => ({ ...ch, id: i })));
 
 			// 设置当前章节
 			setCurrentChapterIndex(result.chapterIndex);
 
 			// 设置高亮段落索引（这会触发 ReaderPanel 的滚动）
 			setHighlightedParagraph(result.paragraphIndex);
-
-			// 确保关闭搜索后页面已渲染完成再滚动
-			setTimeout(() => {
-				setHighlightedParagraph(result.paragraphIndex);
-			}, 100);
 
 			// 切换到校对模式（非阅读模式）以显示高亮效果
 			setReadingMode(false);
@@ -179,21 +166,7 @@ export function GlobalSearch() {
 								<Icons.search size={18} />
 								<span>跨小说全文搜索</span>
 							</div>
-							<button
-								className="close-btn"
-								onClick={() => setShowSearch(false)}
-							>
-								<svg
-									width="16"
-									height="16"
-									viewBox="0 0 16 16"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="2"
-								>
-									<path d="M3 3L13 13M13 3L3 13" />
-								</svg>
-							</button>
+							<CloseButton onClick={() => setShowSearch(false)} />
 						</div>
 
 						<div className="global-search-input-wrapper">

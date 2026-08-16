@@ -9,22 +9,48 @@ const STORE_NAME = "novels";
 /** 每块最大字符数（约 2MB，UTF-16 下约 4MB） */
 const CHUNK_SIZE = 1_000_000;
 
+/** 单例数据库连接（避免每次操作新建连接导致的并发乱序与连接泄漏） */
+let dbPromise: Promise<IDBDatabase> | null = null;
+
 function openDB(): Promise<IDBDatabase> {
-	return new Promise((resolve, reject) => {
-		const request = indexedDB.open(DB_NAME, DB_VERSION);
-		request.onerror = () => reject(request.error);
-		request.onsuccess = () => resolve(request.result);
-		request.onupgradeneeded = () => {
-			const db = request.result;
-			if (!db.objectStoreNames.contains(STORE_NAME)) {
-				db.createObjectStore(STORE_NAME, { keyPath: "key" });
-			}
-		};
-	});
+	if (!dbPromise) {
+		dbPromise = new Promise((resolve, reject) => {
+			const request = indexedDB.open(DB_NAME, DB_VERSION);
+			request.onerror = () => {
+				dbPromise = null;
+				reject(request.error);
+			};
+			request.onsuccess = () => resolve(request.result);
+			request.onupgradeneeded = () => {
+				const db = request.result;
+				if (!db.objectStoreNames.contains(STORE_NAME)) {
+					db.createObjectStore(STORE_NAME, { keyPath: "key" });
+				}
+			};
+		});
+	}
+	return dbPromise;
+}
+
+/**
+ * 串行写队列：保证多个写操作按调用顺序执行，避免
+ * 并发事务完成顺序与发起顺序不一致导致旧数据覆盖新数据。
+ */
+let writeChain: Promise<unknown> = Promise.resolve();
+
+function enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
+	const run = writeChain.then(task);
+	// 链上吞掉错误，避免单个失败中断后续写入
+	writeChain = run.catch(() => undefined);
+	return run;
 }
 
 /** 将大文本分块存储到 IndexedDB */
-export async function saveNovelText(key: string, text: string): Promise<boolean> {
+export function saveNovelText(key: string, text: string): Promise<boolean> {
+	return enqueueWrite(() => doSaveNovelText(key, text));
+}
+
+async function doSaveNovelText(key: string, text: string): Promise<boolean> {
 	try {
 		const db = await openDB();
 		const tx = db.transaction(STORE_NAME, "readwrite");
@@ -49,12 +75,10 @@ export async function saveNovelText(key: string, text: string): Promise<boolean>
 
 		return new Promise((resolve) => {
 			tx.oncomplete = () => {
-				db.close();
 				logger.file(`[novelStorage] 保存成功: key=${key}, 总长度=${text.length}, 分块数=${chunks.length}`);
 				resolve(true);
 			};
 			tx.onerror = () => {
-				db.close();
 				logger.errorGeneric("[novelStorage]", "保存失败:", tx.error);
 				resolve(false);
 			};

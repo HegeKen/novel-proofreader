@@ -6251,9 +6251,6 @@ color: var(--text-primary)}
 	line-height: 1.6;
 	white-space: pre-wrap}
 
-.detail-value {
-	color: var(--text-secondary)}
-
 /* 操作按钮 */
 .character-actions {
 	display: flex;
@@ -12157,3 +12154,1062 @@ color: var(--text-primary)}
 	box-shadow: 0 0 0 2px var(--accent, #007aff) inset}
 
 /* 文本对比弹窗 end */
+
+/* ============================================================
+   角色扮演（AI Roleplay）弹窗
+   ============================================================ */
+.roleplay-modal {
+	width: 860px;
+	max-width: calc(100vw - 32px);
+	height: 82vh;
+	max-height: 82vh;
+	display: flex;
+	flex-direction: column;
+	background: var(--glass-bg-strong);
+	backdrop-filter: blur(var(--glass-blur-strong));
+	-webkit-backdrop-filter: blur(var(--glass-blur-strong));
+	border: 1px solid var(--glass-border);
+	border-radius: 20px;
+	overflow: hidden;
+	box-shadow:
+		var(--shadow-lg),
+		0 0 60px rgba(10, 132, 255, 0.12);
+	animation: modal-in 0.3s var(--ease-bounce)}
+
+.roleplay-body {
+	flex: 1;
+	min-height: 0;
+	display: flex}
+
+/* 左侧会话列表 */
+.roleplay-sidebar {
+	width: 240px;
+	flex-shrink: 0;
+	display: flex;
+	flex-direction: column;
+	border-right: 1px solid var(--glass-border);
+	background: var(--glass-bg);
+	min-height: 0}
+
+.roleplay-new-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	margin: 14px;
+	padding: 10px 14px;
+	border-radius: var(--r-md);
+	background: var(--accent);
+	border: none;
+	color: white;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+	flex-shrink: 0}
+
+.roleplay-new-btn:hover:not(:disabled) {
+	background: var(--accent-hover);
+	transform: translateY(-1px)}
+
+.roleplay-new-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed}
+
+.roleplay-session-list {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 0 10px 10px}
+
+.roleplay-session-empty {
+	padding: 24px 12px;
+	text-align: center;
+	font-size: 12px;
+	color: var(--text-muted)}
+
+.roleplay-session-item {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 10px 12px;
+	margin-bottom: 6px;
+	border-radius: var(--r-md);
+	border: 1px solid transparent;
+	background: var(--bg-surface);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.roleplay-session-item:hover {
+	background: var(--bg-hover);
+	border-color: var(--border-strong)}
+
+.roleplay-session-item.active {
+	background: var(--accent-dim);
+	border-color: var(--accent)}
+
+.roleplay-session-name {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--text-primary);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	padding-right: 24px}
+
+.roleplay-session-time {
+	font-size: 11px;
+	color: var(--text-muted)}
+
+.roleplay-session-del {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	width: 22px;
+	height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	opacity: 0;
+	transition: all var(--duration) var(--ease)}
+
+.roleplay-session-item:hover .roleplay-session-del {
+	opacity: 1}
+
+.roleplay-session-del:hover {
+	background: rgba(239, 68, 68, 0.15);
+	color: #ef4444}
+
+/* 右侧主区域 */
+.roleplay-main {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	min-height: 0}
+
+/* 角色选择视图 */
+.roleplay-picker {
+	flex: 1;
+	overflow-y: auto;
+	padding: 20px 24px}
+
+.roleplay-picker-title {
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--text-primary);
+	margin-bottom: 16px}
+
+.roleplay-picker-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+	gap: 12px}
+
+.roleplay-picker-card {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 14px;
+	border-radius: var(--r-md);
+	border: 1px solid var(--glass-border);
+	background: var(--bg-surface);
+	text-align: left;
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.roleplay-picker-card:hover {
+	background: var(--bg-hover);
+	border-color: var(--accent);
+	transform: translateY(-2px)}
+
+.roleplay-picker-avatar {
+	width: 36px;
+	height: 36px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--r-md);
+	color: white}
+
+.roleplay-picker-avatar .roleplay-avatar-text {
+	font-size: 15px}
+
+.roleplay-picker-name {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text-primary)}
+
+.roleplay-picker-role {
+	font-size: 11px;
+	color: var(--accent);
+	background: var(--accent-dim);
+	padding: 2px 8px;
+	border-radius: var(--r-full)}
+
+.roleplay-picker-desc {
+	font-size: 12px;
+	color: var(--text-secondary);
+	line-height: 1.5;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden}
+
+/* 对话头部 */
+.roleplay-chat-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 16px;
+	border-bottom: 1px solid var(--glass-border);
+	background: var(--glass-bg);
+	flex-shrink: 0}
+
+.roleplay-actor {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-width: 0;
+	cursor: pointer;
+	border-radius: var(--r-sm);
+	padding: 4px 6px;
+	margin-left: -6px;
+	transition: background var(--duration) var(--ease)}
+
+.roleplay-actor:hover {
+	background: var(--bg-hover)}
+
+.roleplay-actor-avatar {
+	width: 34px;
+	height: 34px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--r-md);
+	color: white;
+	flex-shrink: 0}
+
+.roleplay-actor-avatar .roleplay-avatar-text {
+	font-size: 14px}
+
+.roleplay-actor-info {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0}
+
+.roleplay-actor-name {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text-primary)}
+
+.roleplay-actor-desc {
+	font-size: 11px;
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis}
+
+.roleplay-chapter-select {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--text-secondary);
+	font-size: 12px;
+	flex-shrink: 0}
+
+.roleplay-chapter-select .custom-select {
+	min-width: 140px}
+
+/* 会话信息栏右侧操作区 */
+.roleplay-header-actions {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-shrink: 0}
+
+.roleplay-identity-select {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--text-secondary);
+	font-size: 12px}
+
+.roleplay-identity-select .custom-select {
+	min-width: 120px}
+
+/* 角色选择视图：我的身份 */
+.roleplay-picker-identity {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 16px;
+	padding: 10px 12px;
+	border-radius: var(--r-sm);
+	border: 1px solid var(--glass-border);
+	background: var(--bg-surface)}
+
+.roleplay-picker-identity-label {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-primary);
+	flex-shrink: 0}
+
+.roleplay-picker-identity-hint {
+	font-size: 11px;
+	color: var(--text-muted);
+	margin-left: auto;
+	flex-shrink: 0}
+
+/* 消息区 */
+.roleplay-messages {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 14px}
+
+.roleplay-msg {
+	display: flex;
+	gap: 10px;
+	align-items: flex-start}
+
+.roleplay-msg.user {
+	flex-direction: row-reverse}
+
+.roleplay-msg-avatar {
+	width: 26px;
+	height: 26px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--r-sm);
+	color: white;
+	flex-shrink: 0;
+	margin-top: 18px}
+
+.roleplay-msg.user .roleplay-msg-avatar {
+	margin-top: 2px}
+
+.roleplay-msg-avatar .roleplay-avatar-text {
+	font-size: 12px}
+
+/* 角色头像渐变：与角色卡片一致；outer 为局外人/未知占位 */
+.roleplay-msg-avatar.male,
+.roleplay-actor-avatar.male,
+.roleplay-picker-avatar.male,
+.roleplay-mobile-session-avatar.male,
+.roleplay-mobile-picker-avatar.male {
+	background: linear-gradient(135deg, #5eb8ff 0%, #3b82f6 50%, #2563eb 100%)}
+
+.roleplay-msg-avatar.female,
+.roleplay-actor-avatar.female,
+.roleplay-picker-avatar.female,
+.roleplay-mobile-session-avatar.female,
+.roleplay-mobile-picker-avatar.female {
+	background: linear-gradient(135deg, #f472b6 0%, #ec4899 50%, #db2777 100%)}
+
+.roleplay-msg-avatar.other,
+.roleplay-actor-avatar.other,
+.roleplay-picker-avatar.other,
+.roleplay-mobile-session-avatar.other,
+.roleplay-mobile-picker-avatar.other {
+	background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%)}
+
+.roleplay-msg-avatar.outer,
+.roleplay-actor-avatar.outer,
+.roleplay-picker-avatar.outer,
+.roleplay-mobile-session-avatar.outer,
+.roleplay-mobile-picker-avatar.outer {
+	background: linear-gradient(135deg, #9ca3af 0%, #6b7280 50%, #4b5563 100%)}
+
+.roleplay-avatar-text {
+	font-weight: 700;
+	text-shadow: 0 1px 4px rgba(0, 0, 0, 0.25)}
+
+/* 可点击的头像 */
+.roleplay-msg-avatar.clickable,
+.roleplay-actor-avatar.clickable,
+.roleplay-mobile-session-avatar.clickable,
+.roleplay-mobile-picker-avatar.clickable,
+.roleplay-picker-avatar.clickable {
+	cursor: pointer;
+	transition: transform 0.15s var(--ease)}
+
+.roleplay-msg-avatar.clickable:hover,
+.roleplay-actor-avatar.clickable:hover,
+.roleplay-mobile-session-avatar.clickable:hover,
+.roleplay-mobile-picker-avatar.clickable:hover,
+.roleplay-picker-avatar.clickable:hover {
+	transform: scale(1.08)}
+
+.roleplay-msg-body {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	max-width: 76%;
+	min-width: 0}
+
+.roleplay-msg.user .roleplay-msg-body {
+	align-items: flex-end}
+
+.roleplay-msg-meta {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 0 4px}
+
+.roleplay-msg.user .roleplay-msg-meta {
+	justify-content: flex-end}
+
+.roleplay-msg-name {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--text-secondary)}
+
+.roleplay-msg-tts {
+	width: 22px;
+	height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.roleplay-msg-tts:hover {
+	background: var(--bg-hover);
+	color: var(--accent)}
+
+.roleplay-msg-bubble {
+	padding: 10px 14px;
+	border-radius: var(--r-md);
+	background: var(--bg-raised);
+	border: 1px solid var(--glass-border);
+	color: var(--text-primary);
+	font-size: 14px;
+	line-height: 1.7;
+	white-space: pre-wrap;
+	word-break: break-word}
+
+.roleplay-msg-em {
+	font-style: italic;
+	color: var(--text-muted)}
+
+.roleplay-msg.user .roleplay-msg-bubble .roleplay-msg-em {
+	color: rgba(255, 255, 255, 0.75)}
+
+.roleplay-msg.user .roleplay-msg-bubble {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: white;
+	border-top-right-radius: 4px}
+
+.roleplay-msg.assistant .roleplay-msg-bubble {
+	border-top-left-radius: 4px}
+
+.roleplay-msg-bubble.typing {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 14px 16px}
+
+.typing-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--text-muted);
+	animation: typing-bounce 1.2s infinite ease-in-out}
+
+.typing-dot:nth-child(2) {
+	animation-delay: 0.15s}
+
+.typing-dot:nth-child(3) {
+	animation-delay: 0.3s}
+
+@keyframes typing-bounce {
+	0%, 60%, 100% {
+		transform: translateY(0);
+		opacity: 0.4}
+	30% {
+		transform: translateY(-4px);
+		opacity: 1}
+}
+
+.roleplay-msg-time {
+	font-size: 11px;
+	color: var(--text-muted);
+	padding: 0 4px}
+
+/* 空状态 */
+.roleplay-empty {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	color: var(--text-muted);
+	text-align: center;
+	padding: 32px}
+
+.roleplay-empty p {
+	margin: 0;
+	font-size: 14px;
+	color: var(--text-secondary)}
+
+.roleplay-empty-hint {
+	font-size: 12px !important;
+	color: var(--text-muted) !important}
+
+.roleplay-empty .btn {
+	margin-top: 8px}
+
+/* 输入栏 */
+.roleplay-input-bar {
+	padding: 12px 16px;
+	border-top: 1px solid var(--glass-border);
+	background: var(--glass-bg);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	flex-shrink: 0}
+
+.roleplay-input {
+	width: 100%;
+	padding: 10px 12px;
+	border: 2px solid var(--border);
+	border-radius: var(--r-md);
+	background: var(--bg-surface);
+	color: var(--text-primary);
+	font-size: 14px;
+	font-weight: 500;
+	outline: none;
+	transition: all var(--duration) var(--ease);
+	resize: none;
+	font-family: inherit;
+	box-sizing: border-box}
+
+.roleplay-input:focus {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-alpha)}
+
+.roleplay-input::placeholder {
+	color: var(--text-muted);
+	opacity: 0.5}
+
+.roleplay-input-actions {
+	display: flex;
+	justify-content: flex-end}
+
+/* 移动端适配 */
+@media (max-width: 480px) {
+	.roleplay-modal {
+		width: calc(100% - 16px);
+		height: 90vh;
+		max-height: 90vh;
+		border-radius: 18px}
+
+	.roleplay-sidebar {
+		width: 150px}
+
+	.roleplay-msg-body {
+		max-width: 86%}
+}
+
+/* ============================================================
+   移动端角色扮演 - 全屏聊天 APP 风格
+   ============================================================ */
+.roleplay-mobile-overlay {
+	z-index: 1100;
+	display: flex;
+	align-items: stretch;
+	justify-content: stretch;
+	padding: 0;
+	background: var(--bg-surface);
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none}
+
+.roleplay-mobile {
+	width: 100%;
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	background: var(--bg-surface);
+	overflow: hidden}
+
+/* 移动端顶部导航栏 */
+.roleplay-mobile-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 8px 12px;
+	padding-top: calc(8px + env(safe-area-inset-top));
+	background: var(--glass-bg-strong);
+	border-bottom: 1px solid var(--border);
+	flex-shrink: 0}
+
+.roleplay-mobile-title {
+	font-size: 16px;
+	font-weight: 600;
+	color: var(--text-primary)}
+
+.roleplay-mobile-icon-btn {
+	width: 36px;
+	height: 36px;
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--text-primary);
+	cursor: pointer;
+	transition: background var(--duration) var(--ease)}
+
+.roleplay-mobile-icon-btn:active {
+	background: var(--bg-hover)}
+
+.roleplay-mobile-icon-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed}
+
+.roleplay-mobile-header-spacer {
+	width: 36px;
+	flex-shrink: 0}
+
+/* 移动端聊天头部：标题居中 */
+.roleplay-mobile-chat-title {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1px;
+	flex: 1;
+	min-width: 0;
+	pointer-events: auto;
+	cursor: pointer}
+
+.roleplay-mobile-chat-name {
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--text-primary);
+	max-width: 200px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis}
+
+.roleplay-mobile-chat-sub {
+	font-size: 11px;
+	color: var(--text-muted);
+	max-width: 200px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis}
+
+/* 移动端会话列表 */
+.roleplay-mobile-sessions {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	background: var(--bg-surface)}
+
+.roleplay-mobile-session {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 16px;
+	border-bottom: 1px solid var(--border);
+	cursor: pointer;
+	transition: background var(--duration) var(--ease)}
+
+.roleplay-mobile-session:active {
+	background: var(--bg-hover)}
+
+.roleplay-mobile-session-avatar {
+	width: 44px;
+	height: 44px;
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--r-lg);
+	color: white}
+
+.roleplay-mobile-session-avatar .roleplay-avatar-text {
+	font-size: 18px}
+
+.roleplay-mobile-session-info {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4px}
+
+.roleplay-mobile-session-line {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0}
+
+.roleplay-mobile-session-name {
+	flex: 1;
+	min-width: 0;
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--text-primary);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis}
+
+.roleplay-mobile-session-time {
+	flex-shrink: 0;
+	font-size: 11px;
+	color: var(--text-muted)}
+
+.roleplay-mobile-session-preview {
+	flex: 1;
+	min-width: 0;
+	font-size: 13px;
+	color: var(--text-secondary);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis}
+
+.roleplay-mobile-session-del {
+	flex-shrink: 0;
+	width: 28px;
+	height: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer}
+
+.roleplay-mobile-session-del:active {
+	background: rgba(239, 68, 68, 0.15);
+	color: #ef4444}
+
+/* 移动端空状态 */
+.roleplay-mobile-empty {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	padding: 40px 24px;
+	text-align: center;
+	color: var(--text-muted)}
+
+.roleplay-mobile-empty p {
+	margin: 0;
+	font-size: 14px;
+	color: var(--text-secondary)}
+
+/* 移动端角色选择 */
+.roleplay-mobile-picker {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 12px 16px calc(12px + env(safe-area-inset-bottom))}
+
+.roleplay-mobile-picker .roleplay-picker-identity {
+	margin-bottom: 12px;
+	flex-wrap: wrap;
+	gap: 8px}
+
+.roleplay-mobile-picker .roleplay-picker-identity .custom-select {
+	flex: 1;
+	min-width: 120px}
+
+.roleplay-mobile-picker .roleplay-picker-identity-hint {
+	width: 100%;
+	margin-left: 0}
+
+.roleplay-mobile-picker-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px}
+
+.roleplay-mobile-picker-item {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	width: 100%;
+	padding: 12px;
+	border-radius: var(--r-md);
+	border: 1px solid var(--glass-border);
+	background: var(--bg-surface);
+	text-align: left;
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.roleplay-mobile-picker-item:active {
+	background: var(--bg-hover);
+	border-color: var(--accent)}
+
+.roleplay-mobile-picker-avatar {
+	width: 40px;
+	height: 40px;
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--r-lg);
+	color: white}
+
+.roleplay-mobile-picker-avatar .roleplay-avatar-text {
+	font-size: 16px}
+
+.roleplay-mobile-picker-info {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 3px}
+
+.roleplay-mobile-picker-name {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text-primary)}
+
+.roleplay-mobile-picker-desc {
+	font-size: 12px;
+	color: var(--text-secondary);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis}
+
+/* 移动端聊天界面复用样式微调 */
+.roleplay-mobile .roleplay-messages {
+	padding: 14px 12px;
+	background: var(--bg-surface)}
+
+.roleplay-mobile .roleplay-input-bar {
+	flex-direction: row;
+	align-items: flex-end;
+	gap: 8px;
+	padding: 8px 12px;
+	padding-bottom: calc(8px + env(safe-area-inset-bottom))}
+
+.roleplay-mobile .roleplay-input {
+	flex: 1;
+	min-height: 40px;
+	max-height: 120px}
+
+.roleplay-mobile .roleplay-input-actions {
+	flex-shrink: 0}
+
+.roleplay-mobile .roleplay-input-actions .btn {
+	width: 40px;
+	height: 40px;
+	padding: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%}
+
+.roleplay-mobile .roleplay-input-actions .btn span {
+	display: none}
+
+/* ========== 角色个人主页（RoleplayProfileModal，IM 个人名片风格） ========== */
+.roleplay-profile-overlay {
+	z-index: 1200;
+	padding: 24px}
+
+.roleplay-profile-overlay.mobile {
+	padding: 0}
+
+.roleplay-profile {
+	width: min(400px, 100%);
+	max-height: 88vh;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	border-radius: var(--r-xl);
+	background: var(--glass-bg-strong);
+	border: 1px solid var(--glass-border);
+	box-shadow: var(--shadow-lg);
+	animation: profile-in 0.25s var(--ease)}
+
+.roleplay-profile.mobile {
+	width: 100%;
+	height: 100%;
+	max-height: 100%;
+	border-radius: 0;
+	border: none;
+	box-shadow: none}
+
+.roleplay-profile.mobile .profile-grid {
+	grid-template-columns: 1fr}
+
+@keyframes profile-in {
+	from {
+		opacity: 0;
+		transform: translateY(12px) scale(0.98)}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1)}
+}
+
+/* 顶部渐变区：大头像 + 名字 + 徽章 */
+.profile-hero {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	padding: 48px 24px 22px;
+	text-align: center;
+	background: linear-gradient(165deg, var(--accent-dim) 0%, transparent 72%);
+	border-bottom: 1px solid var(--glass-border);
+	flex-shrink: 0}
+
+.profile-close-btn {
+	position: absolute;
+	top: 12px;
+	right: 12px;
+	width: 28px;
+	height: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.3);
+	color: white;
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.profile-close-btn:hover {
+	background: rgba(0, 0, 0, 0.5)}
+
+.profile-hero-avatar {
+	width: 88px;
+	height: 88px;
+	border-radius: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: white;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+	border: 3px solid var(--bg-surface);
+	flex-shrink: 0}
+
+.profile-hero-avatar.male {
+	background: linear-gradient(135deg, #5eb8ff 0%, #3b82f6 50%, #2563eb 100%)}
+
+.profile-hero-avatar.female {
+	background: linear-gradient(135deg, #f472b6 0%, #ec4899 50%, #db2777 100%)}
+
+.profile-hero-avatar.other {
+	background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%)}
+
+.profile-hero-avatar-text {
+	font-size: 36px;
+	font-weight: 700;
+	text-shadow: 0 2px 8px rgba(0, 0, 0, 0.25)}
+
+.profile-hero-name {
+	font-size: 20px;
+	font-weight: 700;
+	color: var(--text-primary)}
+
+.profile-hero-badges {
+	display: flex;
+	align-items: center;
+	gap: 8px}
+
+/* 资料详情区 */
+.profile-body {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 16px 20px 24px;
+	display: flex;
+	flex-direction: column;
+	gap: 18px}
+
+.profile-section {
+	display: flex;
+	flex-direction: column;
+	gap: 10px}
+
+.profile-section-title {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-secondary)}
+
+.profile-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 10px}
+
+.profile-grid-item {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	padding: 10px 12px;
+	background: var(--bg-surface);
+	border: 1px solid var(--glass-border);
+	border-radius: var(--r-sm);
+	min-width: 0}
+
+.profile-grid-label {
+	font-size: 11px;
+	color: var(--text-muted)}
+
+.profile-grid-value {
+	font-size: 13px;
+	color: var(--text-primary);
+	word-break: break-all;
+	line-height: 1.5}
+
+.profile-tag-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px}
+
+.profile-tag-row .tags-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	flex: 1;
+	min-width: 0}
+
+.profile-tag-label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-secondary);
+	flex-shrink: 0;
+	margin-top: 3px;
+	min-width: 32px}
+
+.profile-notes {
+	padding: 12px 14px;
+	background: var(--bg-surface);
+	border: 1px solid var(--glass-border);
+	border-radius: var(--r-sm);
+	font-size: 13px;
+	line-height: 1.7;
+	color: var(--text-primary);
+	white-space: pre-wrap;
+	word-break: break-word}

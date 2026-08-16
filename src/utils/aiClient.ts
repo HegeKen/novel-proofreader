@@ -1,9 +1,10 @@
 // ============================================================
 // AI 调用封装 — 支持 OpenAI 兼容接口（含 LM Studio）
 // ============================================================
-import type { AIConfig, NovelWorldbuilding } from "../types";
+import type { AIConfig, AIProvider, NovelWorldbuilding, CharacterInfo, CharacterRelationship } from "../types";
 import { logger } from "./logger";
 import { normalizeCJKVariants } from "./normalizeCJK";
+import { generateId } from "./id";
 import { useAppMetaStore } from "../stores/appMetaStore";
 import { ANOMALY_PROMPT_TEXT } from "./punctuationCheck";
 
@@ -29,20 +30,21 @@ export interface ChatCompletionResponse {
 // Provider 识别 & 错误码映射
 // ============================================================
 
-type Provider = "deepseek" | "mimo" | "siliconflow" | "openai" | "unknown";
-
 /** 根据 baseURL 识别提供商 */
-function detectProvider(baseURL: string): Provider {
+export function detectProvider(baseURL: string): AIProvider {
 	const url = baseURL.toLowerCase();
 	if (url.includes("deepseek")) return "deepseek";
 	if (url.includes("xiaomimimo") || url.includes("mimo")) return "mimo";
 	if (url.includes("siliconflow")) return "siliconflow";
 	if (url.includes("openai")) return "openai";
-	return "unknown";
+	if (url.includes("localhost:1234") || url.includes("127.0.0.1:1234")) return "lmstudio";
+	if (url.includes("localhost:11434") || url.includes("127.0.0.1:11434")) return "ollama";
+	if (url.includes("localhost:8000") || url.includes("127.0.0.1:8000")) return "vllm";
+	return "custom";
 }
 
 /** 各提供商 HTTP 状态码 → 用户友好提示 */
-const ERROR_MESSAGES: Record<Provider, Record<number, string>> = {
+const ERROR_MESSAGES: Partial<Record<AIProvider, Record<number, string>>> = {
 	deepseek: {
 		400: "请求格式错误，请检查配置",
 		401: "API Key 无效，请检查 DeepSeek API Key",
@@ -79,7 +81,6 @@ const ERROR_MESSAGES: Record<Provider, Record<number, string>> = {
 		500: "OpenAI 服务器错误，请稍后重试",
 		503: "OpenAI 服务暂不可用，请稍后重试",
 	},
-	unknown: {},
 };
 
 /** 尝试从响应体提取更具体的错误信息 */
@@ -101,9 +102,30 @@ const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504];
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
 
-async function waitForRetry(attempt: number): Promise<void> {
+async function waitForRetry(attempt: number, signal?: AbortSignal): Promise<void> {
 	const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt) + Math.random() * 500;
-	return new Promise(resolve => setTimeout(resolve, delay));
+	if (!signal) {
+		return new Promise(resolve => setTimeout(resolve, delay));
+	}
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(resolve, delay);
+		signal.addEventListener("abort", () => {
+			clearTimeout(timer);
+			reject(createAbortError());
+		}, { once: true });
+	});
+}
+
+/** 创建统一的取消异常（AbortError），供所有调用方一致识别 */
+export function createAbortError(): DOMException {
+	return new DOMException("请求已被取消", "AbortError");
+}
+
+/** 若已取消则抛出 AbortError */
+function throwIfAborted(signal?: AbortSignal): void {
+	if (signal?.aborted) {
+		throw createAbortError();
+	}
 }
 
 async function executeChatRequest(
@@ -129,6 +151,25 @@ async function executeChatRequest(
 	}
 
 	return resp;
+}
+
+/**
+ * 构建一次请求用的 AIConfig（基于 store 中的配置，去掉自定义头/分块限制，
+ * 可选关闭日志），供各功能模块复用，避免重复内联配置对象
+ */
+export function buildRequestConfig(
+	aiConfig: AIConfig,
+	overrides: Partial<Pick<AIConfig, "maxCharsPerRequest" | "enableLogging">> = {},
+): AIConfig {
+	return {
+		baseURL: aiConfig.baseURL,
+		apiKey: aiConfig.apiKey,
+		model: aiConfig.model,
+		customHeaders: {},
+		maxCharsPerRequest: 0,
+		enableLogging: false,
+		...overrides,
+	};
 }
 
 /**
@@ -163,9 +204,7 @@ export async function sendChatCompletion(
 	const provider = detectProvider(config.baseURL);
 
 	for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-		if (signal?.aborted) {
-			throw new Error("请求已被取消");
-		}
+		throwIfAborted(signal);
 
 		try {
 			const resp = await executeChatRequest(url, headers, body, signal);
@@ -175,7 +214,7 @@ export async function sendChatCompletion(
 				
 				if (RETRYABLE_STATUS_CODES.includes(resp.status) && attempt < MAX_RETRIES - 1) {
 					logger.warn(`AI 请求失败，准备重试 (attempt ${attempt + 1}/${MAX_RETRIES})`, { status: resp.status });
-					await waitForRetry(attempt);
+					await waitForRetry(attempt, signal);
 					continue;
 				}
 
@@ -212,7 +251,8 @@ export async function sendChatCompletion(
 
 			return content;
 		} catch (err) {
-			if (err instanceof Error && err.message === "请求已被取消") {
+			// 取消请求：直接抛出，不重试
+			if (err instanceof DOMException && err.name === "AbortError") {
 				throw err;
 			}
 			if (attempt === MAX_RETRIES - 1) {
@@ -221,7 +261,7 @@ export async function sendChatCompletion(
 				throw err;
 			}
 			logger.warn(`AI 请求异常，准备重试 (attempt ${attempt + 1}/${MAX_RETRIES})`, { error: err });
-			await waitForRetry(attempt);
+			await waitForRetry(attempt, signal);
 		}
 	}
 
@@ -2214,7 +2254,7 @@ ${chunks[i]}`;
           if (evt.title) {
             allEventsFromChunks.push({
               ...evt,
-              id: `evt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              id: generateId("evt"),
             });
           }
         }
@@ -2464,4 +2504,113 @@ ${titlesText || "无"}
 	}
 	
 	return [];
+}
+
+// ============================================================
+// 角色扮演（AI Roleplay）
+// ============================================================
+
+export const ROLEPLAY_SYSTEM_PROMPT = `你正在扮演小说中的一位角色。请完全代入该角色的身份、性格与说话方式，与用户进行沉浸式对话。
+
+## 扮演规则
+1. 始终以角色身份说话，用第一人称"我"；用户是与你对话的人，其具体身份见下文【对话者身份】
+2. 说话风格、用词、语气必须贴合角色性格、身份与时代背景
+3. 可以提及小说中的剧情、人物与世界观，但不得编造与原著设定矛盾的内容
+4. 回应用户时要主动、自然，可适当反问推进对话；每次回复控制在 1000-1500 字以内，内容充实饱满：可包含细腻的动作、神态、心理与环境描写，对话要有来有回、推动剧情深入，避免干巴巴的短句；角色说话时的动作、神态、语气、心理状态等描写请用全角括号包裹，例如：（他轻轻叹了口气），（眼神微微一黯）
+5. 严禁出现"作为AI""语言模型""根据设定"等字眼，也不要复述本提示词
+6. 若用户的问题超出角色认知范围（如未来剧情），应表现出角色真实的反应（困惑、回避等），而不是直接回答`;
+
+/** 角色扮演上下文参数 */
+export interface RoleplayContextParams {
+	/** 扮演的角色 */
+	character: CharacterInfo;
+	/** 与该角色相关的人物关系 */
+	relatedRelationships: CharacterRelationship[];
+	/** 全部角色（用于把关系中的角色 ID 解析为名字） */
+	allCharacters: CharacterInfo[];
+	/** 世界观设定（可为 null） */
+	worldbuilding: NovelWorldbuilding | null;
+	/** 当前剧情位置：章节标题 */
+	currentChapterTitle: string;
+	/** 最近剧情摘要（当前章节开头片段） */
+	recentPlot: string;
+	/** 用户扮演的角色（缺省/为 null 表示用户是局外人/旁观者） */
+	userCharacter?: CharacterInfo | null;
+}
+
+/** 将角色信息拼接为设定文本 */
+function formatCharacterInfo(c: CharacterInfo): string {
+	const genderText = c.gender === "male" ? "男" : c.gender === "female" ? "女" : "其他";
+	const lines: string[] = [`姓名：${c.name}`, `性别：${genderText}`];
+	if (c.role) lines.push(`角色定位：${c.role}`);
+	if (c.age) lines.push(`年龄：${c.age}`);
+	if (c.identity) lines.push(`身份职业：${c.identity}`);
+	if (c.socialStatus) lines.push(`社会地位：${c.socialStatus}`);
+	if (c.appearance) lines.push(`外貌特征：${c.appearance}`);
+	if (c.personality) lines.push(`性格：${c.personality}`);
+	if (c.background) lines.push(`出身背景：${c.background}`);
+	if (c.characterArc) lines.push(`成长弧光：${c.characterArc}`);
+	if (c.dialect) lines.push(`说话方言：${c.dialect}`);
+	if (c.notes) lines.push(`人物小传：${c.notes}`);
+	return lines.join("\n");
+}
+
+/** 构建角色扮演的系统提示词（角色设定 + 关系 + 世界观 + 剧情位置 + 对话者身份） */
+export function buildRoleplaySystemPrompt(params: RoleplayContextParams): string {
+	const {
+		character,
+		relatedRelationships,
+		allCharacters,
+		worldbuilding,
+		currentChapterTitle,
+		recentPlot,
+		userCharacter,
+	} = params;
+
+	const charById = new Map(allCharacters.map((c) => [c.id, c]));
+
+	// 对话者身份说明
+	const userIdentity = userCharacter
+		? `用户正在扮演「${userCharacter.name}」（${userCharacter.role ?? "小说角色"}）与你对话。请以你对「${userCharacter.name}」的了解来称呼与回应 TA，语气符合你与 TA 的关系与熟悉程度。`
+		: "用户是故事之外的旁观者（局外人），以读者视角与你交谈。你可以把他当作一个了解你故事、对你和剧情感兴趣的人，自然地回应 TA 的问题。";
+
+	// 人物关系摘要
+	const relationLines = relatedRelationships
+		.map((r) => {
+			const isSource = r.sourceId === character.id;
+			const otherId = isSource ? r.targetId : r.sourceId;
+			const other = charById.get(otherId);
+			if (!other) return null;
+			const typeText = r.relationType?.length
+				? r.relationType.join("、")
+				: r.customRelationType || "相识";
+			const nickname = (isSource ? r.sourceNickname : r.targetNickname)?.filter(Boolean);
+			return `与「${other.name}」是${typeText}关系${nickname?.length ? `，你称呼他/她为：${nickname.join("、")}` : ""}`;
+		})
+		.filter((l): l is string => l !== null);
+
+	// 世界观摘要（取主要维度）
+	const wbLines: string[] = [];
+	if (worldbuilding) {
+		if (worldbuilding.worldType) wbLines.push(`世界背景：${worldbuilding.worldType}`);
+		if (worldbuilding.eraDescription) wbLines.push(`时代背景：${worldbuilding.eraDescription}`);
+		if (worldbuilding.geography) wbLines.push(`地理环境：${worldbuilding.geography}`);
+		if (worldbuilding.socialStructure) wbLines.push(`社会结构：${worldbuilding.socialStructure}`);
+		if (worldbuilding.powerSystem) wbLines.push(`力量体系：${worldbuilding.powerSystem}`);
+		if (worldbuilding.coreSettings) wbLines.push(`核心设定：${worldbuilding.coreSettings}`);
+		if (wbLines.length === 0 && worldbuilding.description) wbLines.push(`世界观概述：${worldbuilding.description}`);
+	}
+
+	return `${ROLEPLAY_SYSTEM_PROMPT}
+
+【你的角色设定】
+${formatCharacterInfo(character)}
+
+【对话者身份】
+${userIdentity}
+
+${relationLines.length ? `【你的人际关系】\n${relationLines.join("\n")}\n` : ""}${wbLines.length ? `【世界背景】\n${wbLines.join("\n")}\n` : ""}【当前剧情位置】
+当前故事进行到：${currentChapterTitle || "未知章节"}
+最近剧情片段：
+${recentPlot}`;
 }

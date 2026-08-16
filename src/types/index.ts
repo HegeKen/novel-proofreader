@@ -328,6 +328,34 @@ export type RelationType =
 	| "stranger" // 陌生人
 	| "other"; // 其他
 
+/** 角色扮演消息 */
+export interface RoleplayMessage {
+	id: string;
+	/** user = 用户发言；assistant = 扮演角色的回复 */
+	role: "user" | "assistant";
+	/** assistant 消息对应的扮演角色 ID（user 消息为空） */
+	characterId?: string;
+	content: string;
+	timestamp: number;
+}
+
+/** 角色扮演会话 */
+export interface RoleplaySession {
+	id: string;
+	novelId: string;
+	/** 扮演的角色 ID */
+	characterId: string;
+	/** 用户扮演的角色 ID（缺省表示用户是局外人/旁观者） */
+	userCharacterId?: string;
+	/** 剧情位置：章节索引 */
+	chapterIndex: number;
+	/** 会话标题 */
+	title: string;
+	messages: RoleplayMessage[];
+	createdAt: number;
+	updatedAt: number;
+}
+
 /** 人物关系 */
 export interface CharacterRelationship {
 	id: string;

@@ -234,6 +234,27 @@ export function splitParagraphs(text: string): string[] {
 }
 
 /**
+ * 获取章节中的非空段落（去除空白行）
+ */
+export function getNonEmptyParagraphs(text: string): string[] {
+	return splitParagraphs(text).filter((p) => p.trim() !== "");
+}
+
+/**
+ * 判断章节标题是否为默认生成的"第N章/回"（无自定义标题）
+ */
+export function isDefaultChapterTitle(title: string): boolean {
+	return !title || /^第[\d一二三四五六七八九十]+[章回]$/.test(title);
+}
+
+/**
+ * 获取章节显示标题（无标题时回退为"第N章"）
+ */
+export function getChapterDisplayTitle(chapter: { title?: string } | undefined, index: number): string {
+	return chapter?.title || `第 ${index + 1} 章`;
+}
+
+/**
  * 将文本按最大字符数分块（用于 AI 请求）
  */
 export function splitTextChunks(text: string, maxChars: number): string[] {

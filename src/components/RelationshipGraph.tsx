@@ -6,8 +6,10 @@ import type { CharacterInfo, CharacterRelationship, RelationType } from "../type
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { ConfirmModal } from "./config/ConfirmModal";
-import { sendChatCompletion } from "../utils/aiClient";
+import { sendChatCompletion, extractJSON, buildRequestConfig } from "../utils/aiClient";
 import type { ChatMessage } from "../utils/aiClient";
+import { generateId } from "../utils/id";
+import { RELATION_TYPE_OPTIONS, makeRelationPairKey } from "../utils/characterRoles";
 
 interface RelationshipGraphProps {
 	novelId: string;
@@ -25,7 +27,6 @@ interface GraphNode {
 	character: CharacterInfo;
 	x: number;
 	y: number;
-	angle: number;
 	connectionCount: number;
 	radius: number;
 }
@@ -279,7 +280,6 @@ export function RelationshipGraph({
 				character: char,
 				x: pos.x,
 				y: pos.y,
-				angle: 0,
 				connectionCount: connectionCount[char.id] || 0,
 				radius,
 			};
@@ -796,19 +796,12 @@ ${existingRelationships.length > 0 ? JSON.stringify(existingRelationships, null,
 				{ role: "user", content: userPrompt },
 			];
 
-			const config = {
-				baseURL: aiConfig.baseURL,
-				apiKey: aiConfig.apiKey,
-				model: aiConfig.model,
-				customHeaders: {} as Record<string, string>,
-				maxCharsPerRequest: 0,
-				enableLogging: false,
-			};
+			const config = buildRequestConfig(aiConfig);
 
 			const response = await sendChatCompletion(messages, config);
 
 			// 解析JSON
-			let parsed: Array<{
+			const parsed = extractJSON(response) as Array<{
 				sourceName: string;
 				targetName: string;
 				relationType: string[];
@@ -817,31 +810,10 @@ ${existingRelationships.length > 0 ? JSON.stringify(existingRelationships, null,
 				targetNickname: string[];
 			}>;
 
-			try {
-				parsed = JSON.parse(response);
-			} catch {
-				const jsonMatch = response.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-				if (jsonMatch) {
-					parsed = JSON.parse(jsonMatch[1]);
-				} else {
-					const arrMatch = response.match(/\[[\s\S]*\]/);
-					if (arrMatch) {
-						parsed = JSON.parse(arrMatch[0]);
-					} else {
-						throw new Error("无法解析AI返回结果");
-					}
-				}
-			}
-
 			if (!Array.isArray(parsed)) throw new Error("AI返回结果格式错误");
 
 			const nameToId: Record<string, string> = {};
 			characters.forEach(c => { nameToId[c.name] = c.id; });
-
-			const normalizeKey = (sourceName: string, targetName: string): string => {
-				const names = [sourceName, targetName].sort();
-				return `${names[0]}|${names[1]}`;
-			};
 
 			const mergedRelations: Record<string, {
 				sourceName: string;
@@ -853,7 +825,7 @@ ${existingRelationships.length > 0 ? JSON.stringify(existingRelationships, null,
 			}> = {};
 
 			for (const rel of parsed) {
-				const key = normalizeKey(rel.sourceName, rel.targetName);
+				const key = makeRelationPairKey(rel.sourceName, rel.targetName);
 				if (!mergedRelations[key]) {
 					mergedRelations[key] = {
 						sourceName: rel.sourceName,
@@ -1002,19 +974,12 @@ ${JSON.stringify(currentRels, null, 2)}
 				{ role: "user", content: userPrompt },
 			];
 
-			const config = {
-				baseURL: aiConfig.baseURL,
-				apiKey: aiConfig.apiKey,
-				model: aiConfig.model,
-				customHeaders: {} as Record<string, string>,
-				maxCharsPerRequest: 0,
-				enableLogging: false,
-			};
+			const config = buildRequestConfig(aiConfig);
 
 			const response = await sendChatCompletion(messages, config);
 
 			// 解析JSON
-			let parsed: Array<{
+			const parsed = extractJSON(response) as Array<{
 				sourceName: string;
 				targetName: string;
 				relationType: string[];
@@ -1023,33 +988,12 @@ ${JSON.stringify(currentRels, null, 2)}
 				targetNickname: string[];
 			}>;
 
-			try {
-				parsed = JSON.parse(response);
-			} catch {
-				const jsonMatch = response.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-				if (jsonMatch) {
-					parsed = JSON.parse(jsonMatch[1]);
-				} else {
-					const arrMatch = response.match(/\[[\s\S]*\]/);
-					if (arrMatch) {
-						parsed = JSON.parse(arrMatch[0]);
-					} else {
-						throw new Error("无法解析AI返回结果");
-					}
-				}
-			}
-
 			if (!Array.isArray(parsed)) throw new Error("AI返回结果格式错误");
 
 			// 合并同一对角色的多条关系
-			const normalizeKey = (sourceName: string, targetName: string): string => {
-				const names = [sourceName, targetName].sort();
-				return `${names[0]}|${names[1]}`;
-			};
-
 			const mergedMap: Record<string, typeof parsed[0]> = {};
 			for (const rel of parsed) {
-				const key = normalizeKey(rel.sourceName, rel.targetName);
+				const key = makeRelationPairKey(rel.sourceName, rel.targetName);
 				if (!mergedMap[key]) {
 					mergedMap[key] = {
 						sourceName: rel.sourceName,
@@ -1078,7 +1022,7 @@ ${JSON.stringify(currentRels, null, 2)}
 				if (!sourceId || !targetId || sourceId === targetId) continue;
 
 				newRelationships.push({
-					id: `rel-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${newRelationships.length}`,
+					id: `${generateId("rel")}-${newRelationships.length}`,
 					novelId,
 					sourceId,
 					targetId,
@@ -1438,7 +1382,7 @@ ${JSON.stringify(currentRels, null, 2)}
 													newSourceNickname: e.target.value,
 												}))
 											}
-											onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), handleAddSourceNickname())}
+											onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddSourceNickname())}
 											placeholder="输入称呼后按回车"
 										/>
 										<button className="nickname-add-btn" onClick={handleAddSourceNickname}>
@@ -1497,55 +1441,23 @@ ${JSON.stringify(currentRels, null, 2)}
 								<div className="form-field">
 									<label>双人关系类型（可多选）</label>
 									<div className="relation-type-checkboxes">
-										{[
-											["couple", "夫妻"],
-											["lover", "恋人"],
-											["ex-lover", "前任"],
-											["father-son", "父子"],
-											["father-daughter", "父女"],
-											["mother-son", "母子"],
-											["mother-daughter", "母女"],
-											["brother", "兄弟"],
-											["sister", "姐妹"],
-											["brother-sister", "兄妹"],
-											["sister-brother", "姐弟"],
-											["mother-daughter-in-law", "婆媳"],
-											["father-daughter-in-law", "公媳"],
-											["mother-son-in-law", "岳母女婿"],
-											["father-son-in-law", "翁婿"],
-											["co-parents-male", "亲家公"],
-											["co-parents-female", "亲家母"],
-											["relative", "亲戚"],
-											["classmate", "同学"],
-											["friend", "朋友"],
-											["bestie", "闺蜜"],
-											["rival", "竞争对手"],
-											["arch-enemy", "宿敌"],
-											["enemy", "仇人"],
-											["master-disciple", "师徒"],
-											["teacher-student", "师生"],
-											["employer-employee", "上下级"],
-											["colleague", "同事"],
-											["neighbor", "邻居"],
-											["stranger", "陌生人"],
-											["other", "其他"],
-										].map(([value, label]) => (
-											<label key={value} className="relation-type-checkbox">
+										{RELATION_TYPE_OPTIONS.map((opt) => (
+											<label key={opt.value} className="relation-type-checkbox">
 												<input
 													type="checkbox"
-													checked={relationForm.relationType.includes(value as RelationType)}
+													checked={relationForm.relationType.includes(opt.value)}
 													onChange={() => {
 														setRelationForm((prev) => {
 															const current = prev.relationType;
-															if (current.includes(value as RelationType)) {
-																return { ...prev, relationType: current.filter((t) => t !== value) };
+															if (current.includes(opt.value)) {
+																return { ...prev, relationType: current.filter((t) => t !== opt.value) };
 															} else {
-																return { ...prev, relationType: [...current, value as RelationType] };
+																return { ...prev, relationType: [...current, opt.value] };
 															}
 														});
 													}}
 												/>
-												<span>{label}</span>
+												<span>{opt.label}</span>
 											</label>
 										))}
 									</div>
@@ -1578,7 +1490,7 @@ ${JSON.stringify(currentRels, null, 2)}
 													newTargetNickname: e.target.value,
 												}))
 											}
-											onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), handleAddTargetNickname())}
+											onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAddTargetNickname())}
 											placeholder="输入称呼后按回车"
 										/>
 										<button className="nickname-add-btn" onClick={handleAddTargetNickname}>

@@ -34,7 +34,3 @@ export function updateURLParams(updates: Partial<URLParams>) {
 
 	window.history.replaceState(null, "", newURL);
 }
-
-export function getCurrentURLParams(): URLParams {
-	return parseURLParams();
-}

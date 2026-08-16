@@ -44,8 +44,9 @@ export function DiffModal({ open, onClose }: Props) {
 	const diffRightRef = useRef<HTMLDivElement>(null);
 	const isSyncingScroll = useRef(false);
 
-	// 初始化默认选中当前小说
-	useMemo(() => {
+	// 初始化默认选中当前小说（弹窗首次打开时同步设置初始选择，是合法的初始化场景）
+	useEffect(() => {
+		/* eslint-disable react-hooks/set-state-in-effect */
 		if (open && currentNovelId && !novel1Id && novels.length > 0) {
 			setNovel1Id(currentNovelId);
 			setSource1("novel");
@@ -55,6 +56,7 @@ export function DiffModal({ open, onClose }: Props) {
 				setName1(n.name);
 			}
 		}
+		/* eslint-enable react-hooks/set-state-in-effect */
 	}, [open, currentNovelId, novels, novel1Id]);
 
 	const stats = useMemo(
@@ -62,81 +64,78 @@ export function DiffModal({ open, onClose }: Props) {
 		[diffLines1, diffLines2],
 	);
 
+	/** 按目标侧（1/2）批量更新输入状态，消除四个 handler 中的重复分支 */
+	const setSide = useCallback((target: 1 | 2, patch: {
+		text?: string;
+		name?: string;
+		source?: "file" | "novel" | "";
+		novelId?: string;
+		isPasting?: boolean;
+	}) => {
+		const setters = target === 1
+			? [setText1, setName1, setSource1, setNovel1Id, setIsPasting1]
+			: [setText2, setName2, setSource2, setNovel2Id, setIsPasting2];
+		// 顺序：text / name / source / novelId / isPasting
+		if (patch.text !== undefined) (setters[0] as (v: string) => void)(patch.text);
+		if (patch.name !== undefined) (setters[1] as (v: string) => void)(patch.name);
+		if (patch.source !== undefined) (setters[2] as (v: "file" | "novel" | "") => void)(patch.source);
+		if (patch.novelId !== undefined) (setters[3] as (v: string) => void)(patch.novelId);
+		if (patch.isPasting !== undefined) (setters[4] as (v: boolean) => void)(patch.isPasting);
+	}, []);
+
 	const handleFileLoad = useCallback(
 		async (file: File, target: 1 | 2) => {
 			try {
 				const buffer = await file.arrayBuffer();
 				const text = decodeTextBuffer(buffer);
-				if (target === 1) {
-					setText1(text);
-					setName1(file.name.replace(/\.txt$/i, ""));
-					setSource1("file");
-					setIsPasting1(false);
-				} else {
-					setText2(text);
-					setName2(file.name.replace(/\.txt$/i, ""));
-					setSource2("file");
-					setIsPasting2(false);
-				}
+				setSide(target, {
+					text,
+					name: file.name.replace(/\.txt$/i, ""),
+					source: "file",
+					isPasting: false,
+				});
 			} catch (err) {
 				logger.errorGeneric("[DiffModal]", "文件加载失败:", err);
 				useAppMetaStore.getState().showToast("文件加载失败", "error");
 			}
 		},
-		[],
+		[setSide],
 	);
 
 	const handlePaste = useCallback((e: React.ClipboardEvent, target: 1 | 2) => {
 		e.preventDefault();
 		const text = e.clipboardData.getData("text/plain");
-		if (target === 1) {
-			setText1(text);
-			setName1("文本 1");
-			setSource1("");
-			setNovel1Id("");
-			setIsPasting1(false);
-		} else {
-			setText2(text);
-			setName2("文本 2");
-			setSource2("");
-			setNovel2Id("");
-			setIsPasting2(false);
-		}
-	}, []);
+		setSide(target, {
+			text,
+			name: `文本 ${target}`,
+			source: "",
+			novelId: "",
+			isPasting: false,
+		});
+	}, [setSide]);
 
 	const handleClear = useCallback((target: 1 | 2) => {
-		if (target === 1) {
-			setText1("");
-			setName1("文本 1");
-			setSource1("");
-			setNovel1Id("");
-			setIsPasting1(false);
-		} else {
-			setText2("");
-			setName2("文本 2");
-			setSource2("");
-			setNovel2Id("");
-			setIsPasting2(false);
-		}
-	}, []);
+		setSide(target, {
+			text: "",
+			name: `文本 ${target}`,
+			source: "",
+			novelId: "",
+			isPasting: false,
+		});
+	}, [setSide]);
 
 	const handleNovelSelect = useCallback(
 		(novelId: string, target: 1 | 2) => {
 			const novel = novels.find((n) => n.id === novelId);
 			if (!novel) return;
-			if (target === 1) {
-				setNovel1Id(novelId);
-				setText1(novel.fullText || "");
-				setName1(novel.name);
-				setSource1("novel");
-			} else {
-				setNovel2Id(novelId);
-				setText2(novel.fullText || "");
-				setName2(novel.name);
-				setSource2("novel");
-			}
+			setSide(target, {
+				novelId,
+				text: novel.fullText || "",
+				name: novel.name,
+				source: "novel",
+			});
 		},
-		[novels],
+		[novels, setSide],
 	);
 
 	/** 将 diff 结果拆分为左右两列，保持行对齐 */
@@ -178,36 +177,21 @@ export function DiffModal({ open, onClose }: Props) {
 		return { left, right };
 	}, []);
 
-	const handleCompare = useCallback(() => {
+	const runCompare = useCallback((mode: "normal" | "fine") => {
 		if (!text1 || !text2) {
 			useAppMetaStore.getState().showToast("请先加载两段文本", "error");
 			return;
 		}
 		setComparing(true);
-		setFineMode(false);
+		setFineMode(mode === "fine");
 		setTimeout(() => {
-			const lines = diffLines(text1, text2);
+			const lines = mode === "fine" ? diffLinesFine(text1, text2) : diffLines(text1, text2);
 			const { left, right } = splitDiffColumns(lines);
 			setDiffLines1(left);
 			setDiffLines2(right);
 			setComparing(false);
-		}, 50);
-	}, [text1, text2, splitDiffColumns]);
-
-	/** 精细逐字对比：对所有有变化的段落按相似度配对后做逐字符 diff */
-	const handleFineCompare = useCallback(() => {
-		if (!text1 || !text2) {
-			useAppMetaStore.getState().showToast("请先加载两段文本", "error");
-			return;
-		}
-		setComparing(true);
-		setFineMode(true);
-		setTimeout(() => {
-			const lines = diffLinesFine(text1, text2);
-			const { left, right } = splitDiffColumns(lines);
-			setDiffLines1(left);
-			setDiffLines2(right);
-			setComparing(false);
+			// 有结果时自动折叠输入区
+			setInputCollapsed(true);
 		}, 50);
 	}, [text1, text2, splitDiffColumns]);
 
@@ -225,12 +209,6 @@ export function DiffModal({ open, onClose }: Props) {
 	}, [text1, text2, name1, name2, source1, source2, novel1Id, novel2Id]);
 
 	const hasResult = diffLines1.length > 0 || diffLines2.length > 0;
-
-	// 有结果时自动折叠输入区
-	useEffect(() => {
-		if (hasResult) setInputCollapsed(true);
-		else setInputCollapsed(false);
-	}, [hasResult]);
 
 	// 同步滚动处理
 	const handleSyncScroll = useCallback((side: "left" | "right") => {
@@ -356,7 +334,7 @@ export function DiffModal({ open, onClose }: Props) {
 					<div className="diff-actions">
 						<button
 							className={`btn ${fineMode ? "" : "active"}`}
-							onClick={handleCompare}
+							onClick={() => runCompare("normal")}
 							disabled={comparing || !text1 || !text2}
 						>
 							{comparing ? (
@@ -367,7 +345,7 @@ export function DiffModal({ open, onClose }: Props) {
 						</button>
 						<button
 							className={`btn ${fineMode ? "active" : ""}`}
-							onClick={handleFineCompare}
+							onClick={() => runCompare("fine")}
 							disabled={comparing || !text1 || !text2}
 							title="对所有有变化的段落逐字比对，精确到单字、标点"
 						>

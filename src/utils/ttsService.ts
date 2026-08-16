@@ -48,7 +48,7 @@ class AudioCacheManager {
 
 	generateKey(text: string, config: TTSConfig, voice?: string, voiceDesignPrompt?: string): string {
 		const effectiveVoice = voice || config.voice || "";
-		return `${text}:${effectiveVoice}:${config.speed}:${config.volume}:${voiceDesignPrompt || ""}`;
+		return `${text}:${effectiveVoice}:${config.speed}:${config.volume}:${voiceDesignPrompt || ""}:dialect:${config.dialect || ""}`;
 	}
 
 	get(key: string, config: TTSConfig): ArrayBuffer | undefined {
@@ -159,7 +159,8 @@ async function _synthesizeSpeech(
 	voice: string,
 	voiceDesignPrompt?: string,
 	logTag: string = "发起 TTS 请求",
-	speedOverride?: number
+	speedOverride?: number,
+	signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
 	let processedText = applyWordReplacements(text);
 
@@ -228,6 +229,10 @@ async function _synthesizeSpeech(
 	logger.tts(logTag, { text: text.slice(0, 50) + "...", voice: validatedVoice, speed, volume });
 	const startTime = Date.now();
 
+	// 组合外部取消信号与 60s 超时，防止网络挂起时取消机制失效
+	const timeoutSignal = AbortSignal.timeout(60000);
+	const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+
 	const response = await fetch(url, {
 		method: "POST",
 		headers: {
@@ -235,6 +240,7 @@ async function _synthesizeSpeech(
 			Authorization: `Bearer ${apiKey}`,
 		},
 		body: JSON.stringify(requestBody),
+		signal: combinedSignal,
 	});
 
 	const elapsed = Date.now() - startTime;
@@ -290,9 +296,10 @@ export async function synthesizeSpeech(
 	text: string,
 	config: TTSConfig,
 	voiceDesignPrompt?: string,
-	speedOverride?: number
+	speedOverride?: number,
+	signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
-	return _synthesizeSpeech(text, config, config.voice, voiceDesignPrompt, "发起 TTS 请求", speedOverride);
+	return _synthesizeSpeech(text, config, config.voice, voiceDesignPrompt, "发起 TTS 请求", speedOverride, signal);
 }
 
 export async function synthesizeSpeechWithVoice(
@@ -300,9 +307,10 @@ export async function synthesizeSpeechWithVoice(
 	config: TTSConfig,
 	voice: string,
 	voiceDesignPrompt?: string,
-	speedOverride?: number
+	speedOverride?: number,
+	signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
-	return _synthesizeSpeech(text, config, voice, voiceDesignPrompt, "发起 TTS 请求（角色配音）", speedOverride);
+	return _synthesizeSpeech(text, config, voice, voiceDesignPrompt, "发起 TTS 请求（角色配音）", speedOverride, signal);
 }
 
 export function playAudio(arrayBuffer: ArrayBuffer, signal?: AbortSignal): Promise<void> {
@@ -418,6 +426,8 @@ export class TTSPlayer {
 	private currentIndex: number = 0;
 	private isPlaying: boolean = false;
 	private isPaused: boolean = false;
+	/** 播放循环是否在运行（防止 resume/play 重入启动第二个循环） */
+	private playLoopRunning: boolean = false;
 
 	getPaused(): boolean {
 		return this.isPaused;
@@ -488,6 +498,11 @@ export class TTSPlayer {
 	}
 
 	async play() {
+		// 重入保护：已有循环在运行时直接返回，避免 resume 等路径启动第二个播放循环
+		if (this.playLoopRunning) {
+			logger.tts("play() 重入保护：播放循环已在运行，忽略本次调用");
+			return;
+		}
 		if (this.sentences.length === 0) {
 			logger.warn("TTS 播放失败: 句子列表为空");
 			return;
@@ -496,27 +511,34 @@ export class TTSPlayer {
 		logger.tts("开始播放", { currentIndex: this.currentIndex, totalSentences: this.sentences.length });
 		this.isPlaying = true;
 		this.isPaused = false;
+		this.playLoopRunning = true;
 
-		while (this.currentIndex < this.sentences.length && this.isPlaying) {
-			if (this.isPaused) {
-				await this.waitForResume();
-			}
-
-			if (!this.isPlaying) break;
-
-			try {
-				await this.playSentence(this.currentIndex);
-
-				if (this.isPlaying) {
-					this.currentIndex++;
+		try {
+			while (this.currentIndex < this.sentences.length && this.isPlaying) {
+				if (this.isPaused) {
+					await this.waitForResume();
+					continue;
 				}
-			} catch (error) {
-				logger.errorGeneric("播放句子失败", { index: this.currentIndex, error });
-				// 遇到错误时继续播放下一句，而不是中断整个播放
-				if (this.isPlaying) {
-					this.currentIndex++;
+
+				if (!this.isPlaying) break;
+
+				try {
+					// playSentence 返回 true 表示该句正常完成（可前进），
+					// false 表示被取消/跳过（跳过时 currentIndex 已被外部修改，不能自增）
+					const completed = await this.playSentence(this.currentIndex);
+					if (completed && this.isPlaying) {
+						this.currentIndex++;
+					}
+				} catch (error) {
+					logger.errorGeneric("播放句子失败", { index: this.currentIndex, error });
+					// 遇到错误时继续播放下一句，而不是中断整个播放
+					if (this.isPlaying) {
+						this.currentIndex++;
+					}
 				}
 			}
+		} finally {
+			this.playLoopRunning = false;
 		}
 
 		if (this.currentIndex >= this.sentences.length) {
@@ -530,6 +552,8 @@ export class TTSPlayer {
 
 	pause() {
 		logger.tts("暂停播放", { pausedAtIndex: this.currentIndex });
+		// 保持 isPlaying = true，让播放循环挂起在 waitForResume，由 resume() 唤醒同一循环
+		this.isPaused = true;
 		if (this.abortController) {
 			this.abortController.abort();
 			this.abortController = null;
@@ -538,8 +562,6 @@ export class TTSPlayer {
 			this.cancelCurrentAudio();
 			this.cancelCurrentAudio = null;
 		}
-		this.isPaused = true;
-		this.isPlaying = false;
 		this.notifyUpdate();
 	}
 
@@ -549,7 +571,11 @@ export class TTSPlayer {
 			this.isPaused = false;
 			this.resumeResolve?.();
 			this.resumeResolve = undefined;
-			this.play();
+			// 不再调用 play()：唤醒的是原循环，避免启动第二个循环导致双音频并发
+			if (!this.playLoopRunning) {
+				// 循环已退出（例如在 playSentence 的 await 间隙被暂停），重新启动
+				this.play();
+			}
 		}
 	}
 
@@ -669,11 +695,15 @@ export class TTSPlayer {
 		return -1;
 	}
 
-	private async playSentence(index: number): Promise<void> {
+	/**
+	 * 播放单句。返回 true 表示正常完成（播放循环应前进到下一句），
+	 * 返回 false 表示被取消/跳过（播放循环不应自增 currentIndex）。
+	 */
+	private async playSentence(index: number): Promise<boolean> {
 		const sentence = this.sentences[index];
 		if (!sentence) {
 			logger.warn("播放句子失败: 句子不存在", { index });
-			return;
+			return false;
 		}
 
 		logger.tts("播放句子", { index, paragraphIndex: sentence.paragraphIndex, text: sentence.text.slice(0, 30) + "..." });
@@ -702,13 +732,14 @@ export class TTSPlayer {
 			// 使用 this.abortController.signal 而不是缓存的 signal，确保检查最新的中止状态
 			if (cancelled || !this.isPlaying || this.abortController?.signal.aborted) {
 				logger.tts("句子播放被取消或停止", { index, cancelled, isPlaying: this.isPlaying });
-				return;
+				return false;
 			}
 
 			try {
 				let audioBuffer = sentence.audioBuffer;
 				const { text: cleanText, speed: speedHint } = parseSpeedFromText(sentence.text);
 				const effectiveSpeed = speedHint ?? sentence.speed;
+				const signal = this.abortController?.signal;
 
 				if (!audioBuffer && this.config.audioCacheEnabled) {
 					// 尝试从全局缓存获取
@@ -718,7 +749,7 @@ export class TTSPlayer {
 					if (!audioBuffer) {
 						// 需要生成音频
 						logger.tts("生成句子音频", { index, fromCache: false, speedHint: effectiveSpeed });
-						audioBuffer = await synthesizeSpeech(cleanText, this.config, undefined, effectiveSpeed);
+						audioBuffer = await synthesizeSpeech(cleanText, this.config, undefined, effectiveSpeed, signal);
 						// 缓存到全局和本地
 						audioCache.set(cacheKey, audioBuffer, this.config);
 						this.sentences[index] = { ...this.sentences[index], audioBuffer };
@@ -730,21 +761,21 @@ export class TTSPlayer {
 				} else if (!audioBuffer) {
 					// 缓存未启用，直接生成音频
 					logger.tts("生成句子音频（缓存未启用）", { index, fromCache: false, speedHint: effectiveSpeed });
-					audioBuffer = await synthesizeSpeech(cleanText, this.config, undefined, effectiveSpeed);
+					audioBuffer = await synthesizeSpeech(cleanText, this.config, undefined, effectiveSpeed, signal);
 				} else {
 					logger.tts("使用本地缓存音频", { index, fromCache: true });
 				}
 
 				if (cancelled || !this.isPlaying || this.abortController?.signal.aborted) {
 					logger.tts("句子播放被取消或停止（音频合成后）", { index, cancelled, isPlaying: this.isPlaying });
-					return;
+					return false;
 				}
 
 				await playAudio(audioBuffer, this.abortController?.signal);
 
 				if (cancelled || !this.isPlaying || this.abortController?.signal.aborted) {
 					logger.tts("句子播放被取消或停止（音频播放后）", { index, cancelled, isPlaying: this.isPlaying });
-					return;
+					return false;
 				}
 
 				this.sentences = this.sentences.map((s, i) => ({
@@ -755,15 +786,15 @@ export class TTSPlayer {
 				this.notifyUpdate();
 				this.cancelCurrentAudio = null;
 				this.abortController = null;
-				return;
+				return true;
 			} catch (error) {
 				if (error instanceof DOMException && error.name === "AbortError") {
 					logger.tts("句子播放被中断（AbortError）", { index });
-					return;
+					return false;
 				}
 				if (cancelled || !this.isPlaying) {
 					logger.tts("句子播放被取消或停止（异常捕获）", { index, cancelled, isPlaying: this.isPlaying });
-					return;
+					return false;
 				}
 
 				const errorMsg = error instanceof Error ? error.message : String(error);
@@ -788,6 +819,7 @@ export class TTSPlayer {
 			isPlaying: false,
 		}));
 		this.notifyUpdate();
+		return false;
 	}
 
 	private resumeResolve?: () => void;
@@ -858,6 +890,8 @@ export class ScriptTTSPlayer {
 	private currentIndex: number = 0;
 	private isPlaying: boolean = false;
 	private isPaused: boolean = false;
+	/** 播放循环是否在运行（防止 resume/play 重入启动第二个循环） */
+	private playLoopRunning: boolean = false;
 	private onUpdate?: (dialogues: ScriptDialogue[]) => void;
 	private onComplete?: () => void;
 	private cancelCurrentAudio: (() => void) | null = null;
@@ -903,6 +937,11 @@ export class ScriptTTSPlayer {
 	}
 
 	async play() {
+		// 重入保护：已有循环在运行时直接返回，避免 resume 等路径启动第二个播放循环
+		if (this.playLoopRunning) {
+			logger.tts("play() 重入保护：播放循环已在运行，忽略本次调用");
+			return;
+		}
 		if (this.dialogues.length === 0) {
 			logger.warn("剧本播放失败: 对话列表为空");
 			return;
@@ -911,19 +950,32 @@ export class ScriptTTSPlayer {
 		logger.tts("开始播放剧本", { currentIndex: this.currentIndex, totalDialogues: this.dialogues.length });
 		this.isPlaying = true;
 		this.isPaused = false;
+		this.playLoopRunning = true;
 
-		while (this.currentIndex < this.dialogues.length && this.isPlaying) {
-			if (this.isPaused) {
-				await this.waitForResume();
+		try {
+			while (this.currentIndex < this.dialogues.length && this.isPlaying) {
+				if (this.isPaused) {
+					await this.waitForResume();
+					continue;
+				}
+
+				if (!this.isPlaying) break;
+
+				try {
+					const completed = await this.playDialogue(this.currentIndex);
+					if (this.isPaused) continue; // 暂停：不前进，回到循环顶部挂起等待恢复
+					if (!this.isPlaying) break;
+					if (completed) {
+						this.currentIndex++;
+					}
+				} catch (error) {
+					logger.errorGeneric("播放对话失败", { index: this.currentIndex, error });
+					if (!this.isPlaying) break;
+					this.currentIndex++;
+				}
 			}
-
-			if (!this.isPlaying) break;
-
-			await this.playDialogue(this.currentIndex);
-
-			if (this.isPlaying) {
-				this.currentIndex++;
-			}
+		} finally {
+			this.playLoopRunning = false;
 		}
 
 		if (this.currentIndex >= this.dialogues.length) {
@@ -937,8 +989,8 @@ export class ScriptTTSPlayer {
 
 	pause() {
 		logger.tts("暂停剧本播放", { pausedAtIndex: this.currentIndex });
+		// 保持 isPlaying = true，让播放循环挂起在 waitForResume，由 resume() 唤醒同一循环
 		this.isPaused = true;
-		this.isPlaying = false;
 		if (this.abortController) {
 			this.abortController.abort();
 			this.abortController = null;
@@ -956,7 +1008,10 @@ export class ScriptTTSPlayer {
 			this.isPaused = false;
 			this.resumeResolve?.();
 			this.resumeResolve = undefined;
-			this.play();
+			// 不再无条件调用 play()：优先唤醒原循环；仅当循环已退出时才重启
+			if (!this.playLoopRunning) {
+				this.play();
+			}
 		}
 	}
 
@@ -975,7 +1030,7 @@ export class ScriptTTSPlayer {
 		this.isPlaying = false;
 		this.isPaused = false;
 		this.currentIndex = 0;
-		this.audioQueue = new Queue<{ buffer: ArrayBuffer; dialogueIndex: number }>();
+		this.audioQueue.cancelAll();
 		this.isProcessingQueue = false;
 		this.isStreamComplete = false;
 		this.dialogues = this.dialogues.map((d) => ({
@@ -997,7 +1052,7 @@ export class ScriptTTSPlayer {
 				this.cancelCurrentAudio = null;
 			}
 			// 清空音频队列，避免播放旧的音频
-			this.audioQueue = new Queue<{ buffer: ArrayBuffer; dialogueIndex: number }>();
+			this.audioQueue.cancelAll();
 			this.currentIndex = index;
 			this.dialogues = this.dialogues.map((d, i) => ({
 				...d,
@@ -1108,7 +1163,7 @@ export class ScriptTTSPlayer {
 			logger.tts("开始生成音频", { index: dialogue.index, character: dialogue.character, voiceDesign: !!dialogue.voiceDesignPrompt, speedHint: dialogue.speed });
 			const { text: cleanText, speed: speedHint } = parseSpeedFromText(dialogue.text);
 			const effectiveSpeed = speedHint ?? dialogue.speed;
-			const audioBuffer = await synthesizeSpeechWithVoice(cleanText, this.config, dialogue.voice, dialogue.voiceDesignPrompt, effectiveSpeed);
+			const audioBuffer = await synthesizeSpeechWithVoice(cleanText, this.config, dialogue.voice, dialogue.voiceDesignPrompt, effectiveSpeed, this.abortController?.signal);
 			
 			this.audioQueue.enqueue({ buffer: audioBuffer, dialogueIndex: dialogue.index });
 			logger.tts("音频生成完成并加入队列", { index: dialogue.index, queueLength: this.audioQueue.size() });
@@ -1145,7 +1200,8 @@ export class ScriptTTSPlayer {
 					break;
 				}
 				const queueItem = await this.audioQueue.dequeue();
-				if (!queueItem) continue;
+				// 队列被 cancelAll（stop/skipTo）唤醒时返回 null，直接结束
+				if (!queueItem) break;
 				const { buffer: audioBuffer, dialogueIndex } = queueItem;
 				
 				if (dialogueIndex !== this.currentIndex) {
@@ -1174,7 +1230,8 @@ export class ScriptTTSPlayer {
 			}
 
 			const queueItem = await this.audioQueue.dequeue();
-			if (!queueItem) continue;
+			// 队列被 cancelAll（stop/skipTo）唤醒时返回 null，直接结束
+			if (!queueItem) break;
 
 			const { buffer: audioBuffer, dialogueIndex } = queueItem;
 			
@@ -1233,11 +1290,15 @@ export class ScriptTTSPlayer {
 		}
 	}
 
-	private async playDialogue(index: number): Promise<void> {
+	/**
+	 * 播放单条对话。返回 true 表示正常完成（播放循环应前进），
+	 * 返回 false 表示被取消/跳过（播放循环不应自增 currentIndex）。
+	 */
+	private async playDialogue(index: number): Promise<boolean> {
 		const dialogue = this.dialogues[index];
 		if (!dialogue) {
 			logger.warn("播放对话失败: 对话不存在", { index });
-			return;
+			return false;
 		}
 
 		logger.tts("播放对话", { index, character: dialogue.character, voice: dialogue.voice, text: dialogue.text.slice(0, 30) + "..." });
@@ -1260,7 +1321,7 @@ export class ScriptTTSPlayer {
 		for (let attempt = 0; attempt < 2; attempt++) {
 			if (cancelled || !this.isPlaying || signal.aborted) {
 				logger.tts("对话播放被取消或停止", { index, cancelled, isPlaying: this.isPlaying });
-				return;
+				return false;
 			}
 
 			try {
@@ -1276,7 +1337,7 @@ export class ScriptTTSPlayer {
 					if (!audioBuffer) {
 						// 需要生成音频
 						logger.tts("生成对话音频", { index, character: dialogue.character, fromCache: false, voiceDesign: !!dialogue.voiceDesignPrompt, speedHint: effectiveSpeed });
-						audioBuffer = await synthesizeSpeechWithVoice(cleanText, this.config, dialogue.voice, dialogue.voiceDesignPrompt, effectiveSpeed);
+						audioBuffer = await synthesizeSpeechWithVoice(cleanText, this.config, dialogue.voice, dialogue.voiceDesignPrompt, effectiveSpeed, signal);
 						// 缓存到全局和本地
 						audioCache.set(cacheKey, audioBuffer, this.config);
 						this.dialogues[index] = { ...this.dialogues[index], audioBuffer };
@@ -1288,21 +1349,21 @@ export class ScriptTTSPlayer {
 				} else if (!audioBuffer) {
 					// 缓存未启用，直接生成音频
 					logger.tts("生成对话音频（缓存未启用）", { index, character: dialogue.character, fromCache: false, voiceDesign: !!dialogue.voiceDesignPrompt, speedHint: effectiveSpeed });
-					audioBuffer = await synthesizeSpeechWithVoice(cleanText, this.config, dialogue.voice, dialogue.voiceDesignPrompt, effectiveSpeed);
+					audioBuffer = await synthesizeSpeechWithVoice(cleanText, this.config, dialogue.voice, dialogue.voiceDesignPrompt, effectiveSpeed, signal);
 				} else {
 					logger.tts("使用本地缓存音频", { index, character: dialogue.character, fromCache: true });
 				}
 
 				if (cancelled || !this.isPlaying || signal.aborted) {
 					logger.tts("对话播放被取消或停止（音频合成后）", { index, cancelled, isPlaying: this.isPlaying });
-					return;
+					return false;
 				}
 
 				await playAudio(audioBuffer, signal);
 
 				if (cancelled || !this.isPlaying || signal.aborted) {
 					logger.tts("对话播放被取消或停止（音频播放后）", { index, cancelled, isPlaying: this.isPlaying });
-					return;
+					return false;
 				}
 
 				this.dialogues = this.dialogues.map((d, i) => ({
@@ -1313,15 +1374,15 @@ export class ScriptTTSPlayer {
 				this.notifyUpdate();
 				this.cancelCurrentAudio = null;
 				this.abortController = null;
-				return;
+				return true;
 			} catch (error) {
 				if (error instanceof DOMException && error.name === "AbortError") {
 					logger.tts("对话播放被中断（AbortError）", { index });
-					return;
+					return false;
 				}
 				if (cancelled || !this.isPlaying) {
 					logger.tts("对话播放被取消或停止（异常捕获）", { index, cancelled, isPlaying: this.isPlaying });
-					return;
+					return false;
 				}
 
 				const errorMsg = error instanceof Error ? error.message : String(error);
@@ -1346,6 +1407,7 @@ export class ScriptTTSPlayer {
 			isPlaying: false,
 		}));
 		this.notifyUpdate();
+		return false;
 	}
 
 	private waitForResume(): Promise<void> {

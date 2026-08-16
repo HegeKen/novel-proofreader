@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNovelStore } from "../stores/novelStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
-import { splitParagraphs } from "../utils/chapterSplit";
+import { getNonEmptyParagraphs } from "../utils/chapterSplit";
 
 export function useReadingProgress() {
 	const chapters = useNovelStore((s) => s.chapters);
@@ -13,7 +13,6 @@ export function useReadingProgress() {
 	const [readingTimeElapsed, setReadingTimeElapsed] = useState(0);
 	const [showReadingReminder, setShowReadingReminder] = useState(false);
 
-	const readingStartTimeRef = useRef<number>(0);
 	const readingTimerRef = useRef<number | null>(null);
 
 	const chapter = chapters[currentChapterIndex];
@@ -21,7 +20,7 @@ export function useReadingProgress() {
 	const totalParagraphs = useMemo(() => {
 		return chapters.reduce((acc, ch) => {
 			if (!ch) return acc;
-			return acc + splitParagraphs(ch.content).filter((p) => p.trim() !== "").length;
+			return acc + getNonEmptyParagraphs(ch.content).length;
 		}, 0);
 	}, [chapters]);
 
@@ -29,14 +28,14 @@ export function useReadingProgress() {
 		let pos = currentParagraphIndex;
 		for (let i = 0; i < currentChapterIndex; i++) {
 			const ch = chapters[i];
-			if (ch) pos += splitParagraphs(ch.content).filter((p) => p.trim() !== "").length;
+			if (ch) pos += getNonEmptyParagraphs(ch.content).length;
 		}
 		return pos;
 	}, [currentChapterIndex, currentParagraphIndex, chapters]);
 
 	const currentChapterParagraphs = useMemo(() => {
 		if (!chapter) return 0;
-		return splitParagraphs(chapter.content).filter((p) => p.trim() !== "").length;
+		return getNonEmptyParagraphs(chapter.content).length;
 	}, [chapter]);
 
 	const readingProgressPercent = useMemo(() => {
@@ -52,11 +51,11 @@ export function useReadingProgress() {
 	}, [readingTimeElapsed, currentGlobalPosition, totalParagraphs]);
 
 	useEffect(() => {
+		// 避免在 effect 中同步 setState 触发级联渲染
 		queueMicrotask(() => { setCurrentParagraphIndex(0); });
 	}, [currentChapterIndex]);
 
 	const startReadingTimer = useCallback((reminderEnabled: boolean, reminderMinutes: number) => {
-		readingStartTimeRef.current = Date.now();
 		readingTimerRef.current = window.setInterval(() => {
 			setReadingTimeElapsed((prev) => {
 				const newElapsed = prev + 1000;

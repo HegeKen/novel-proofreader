@@ -7,15 +7,16 @@ import { useProofreadStore } from "../stores/proofreadStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useAICheck } from "../hooks/useAICheck";
 import { locateTextWithFallback } from "../hooks/useAICheck";
+import { findWhitespaceInsensitive } from "../utils/textSearch";
 import { useMobile } from "../hooks/useMobile";
 import { buildParagraphIndexMap } from "../utils/formatters";
 import { EmptyState } from "./EmptyState";
-import { splitParagraphs } from "../utils/chapterSplit";
+import { getNonEmptyParagraphs, splitParagraphs, getChapterDisplayTitle } from "../utils/chapterSplit";
 import { Icons } from "./Icons";
 import { IgnoredWordsManager } from "./IgnoredWordsManager";
-import { ToastContainer } from "./Toast";
 import { ProofreadQueuePanel } from "./ProofreadQueuePanel";
 import { PeakHourBanner } from "./PeakHourBanner";
+import { useAppMetaStore } from "../stores/appMetaStore";
 import { logger } from "../utils/logger";
 
 import type { ToastMessage } from "./Toast";
@@ -79,19 +80,14 @@ export function ProofreadPanel() {
 	);
 	const [showIgnoredWordsModal, setShowIgnoredWordsModal] = useState(false);
 	const [showQueuePanel, setShowQueuePanel] = useState(false);
-	const [toastMessages, setToastMessages] = useState<ToastMessage[]>([]);
 	// 动画互斥：防止快速连续点击"采纳"
 	const animatingRef = useRef(false);
 	// 滚动容器 ref
 	const proofreadContentRef = useRef<HTMLDivElement>(null);
 
+	// 提示消息统一走全局 toast（appMetaStore），避免本地重复实现
 	const addToast = useCallback((type: ToastMessage["type"], message: string) => {
-		const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-		setToastMessages((prev) => [...prev, { id, type, message }]);
-	}, []);
-
-	const removeToast = useCallback((id: string) => {
-		setToastMessages((prev) => prev.filter((msg) => msg.id !== id));
+		useAppMetaStore.getState().showToast(message, type);
 	}, []);
 	const paragraphRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -100,7 +96,7 @@ export function ProofreadPanel() {
 		return chapter ? (results[chapter.id] ?? []) : [];
 	}, [chapter, results]);
 	const totalLines = chapter
-		? splitParagraphs(chapter.content).filter((p) => p.trim() !== "").length
+		? getNonEmptyParagraphs(chapter.content).length
 		: 0;
 	
 	// 计算已检测完成的段落数
@@ -124,9 +120,13 @@ export function ProofreadPanel() {
 		if (!chapter) return [];
 
 		// 获取过滤后的段落列表（与阅读区一致）
-		const paragraphs = splitParagraphs(chapter.content).filter(
-			(p) => p.trim() !== "",
-		);
+		const paragraphs = getNonEmptyParagraphs(chapter.content);
+
+		// 预建原始索引 → 结果的 Map，避免对每个段落线性查找（O(n²)）
+		const resultByIndex = new Map<number, ParagraphResult>();
+		for (const r of chapterResults) {
+			resultByIndex.set(r.paragraphIndex, r);
+		}
 
 		// 关键修复：基于 paragraphIndexMap 构建显示结果
 		// 确保每个段落的 paragraphIndex 都是原始索引
@@ -134,9 +134,7 @@ export function ProofreadPanel() {
 			const originalIndex = paragraphIndexMap[filteredIndex];
 
 			// 从 chapterResults 中查找对应的结果（使用原始索引匹配）
-			const existing = chapterResults.find(
-				(r) => r.paragraphIndex === originalIndex,
-			);
+			const existing = resultByIndex.get(originalIndex);
 
 			if (existing) {
 				// 使用已有的结果，但更新文本为最新内容
@@ -170,9 +168,7 @@ export function ProofreadPanel() {
 		// 如果该章节还没有校对结果，初始化为待校对列表（过滤掉空段落）
 		const existing = useProofreadStore.getState().results[chapter.id];
 		if (!existing || existing.length === 0) {
-			const paragraphs = splitParagraphs(chapter.content).filter(
-				(p) => p.trim() !== "",
-			);
+			const paragraphs = getNonEmptyParagraphs(chapter.content);
 			const initial = paragraphs.map((p, filteredIndex) => ({
 				paragraphIndex: paragraphIndexMap[filteredIndex],
 				originalText: p,
@@ -549,37 +545,16 @@ export function ProofreadPanel() {
 								});
 							} else {
 								// 空白不敏感搜索
-								const normalize = (s: string) => s.replace(/\s+/g, '');
-								const normalizedPara = normalize(para);
-								const normalizedMatch = normalize(err.originalText);
-								if (normalizedPara.includes(normalizedMatch)) {
-									let charCount = 0;
-									let realStart = -1;
-									for (let j = 0; j < para.length; j++) {
-										if (!/\s/.test(para[j])) {
-											if (charCount === normalizedPara.indexOf(normalizedMatch)) {
-												realStart = j;
-												break;
-											}
-											charCount++;
-										}
-									}
-									if (realStart >= 0) {
-										let realEnd = realStart;
-										let remaining = normalizedMatch.length;
-										while (realEnd < para.length && remaining > 0) {
-											if (!/\s/.test(para[realEnd])) remaining--;
-											realEnd++;
-										}
-										mergedErrors.push({
-											...err,
-											startIndex: realStart,
-											endIndex: realEnd,
-											id: `err-${chapterId}-${newIdx}-${mergedErrors.length}`,
-										});
-									}
-									// 找不到就跳过，不添加无法定位的错误
+								const wsMatch = findWhitespaceInsensitive(para, err.originalText);
+								if (wsMatch) {
+									mergedErrors.push({
+										...err,
+										startIndex: wsMatch.start,
+										endIndex: wsMatch.end,
+										id: `err-${chapterId}-${newIdx}-${mergedErrors.length}`,
+									});
 								}
+								// 找不到就跳过，不添加无法定位的错误
 							}
 						}
 						logger.proofread(`合并段落错误重定位: 原始错误数=${allOldErrors.length}, 重定位成功=${mergedErrors.length}`);
@@ -766,7 +741,7 @@ export function ProofreadPanel() {
 											saveCurrentNovel();
 											setCurrentChapterIndex(currentChapterIndex - 1);
 										}}
-										title={currentChapterIndex > 0 ? (chapters[currentChapterIndex - 1]?.title || `第 ${currentChapterIndex} 章`) : "已是第一章"}
+										title={currentChapterIndex > 0 ? getChapterDisplayTitle(chapters[currentChapterIndex - 1], currentChapterIndex - 1) : "已是第一章"}
 									>
 										<Icons.skipBack size={16} />
 									</button>
@@ -777,7 +752,7 @@ export function ProofreadPanel() {
 											saveCurrentNovel();
 											setCurrentChapterIndex(currentChapterIndex + 1);
 										}}
-										title={currentChapterIndex < chapters.length - 1 ? (chapters[currentChapterIndex + 1]?.title || `第 ${currentChapterIndex + 2} 章`) : "已是最后一章"}
+										title={currentChapterIndex < chapters.length - 1 ? getChapterDisplayTitle(chapters[currentChapterIndex + 1], currentChapterIndex + 1) : "已是最后一章"}
 									>
 										<Icons.skipForward size={16} />
 									</button>
@@ -1056,9 +1031,6 @@ export function ProofreadPanel() {
 					))
 				)}
 			</div>
-
-			{/* Toast 消息提示 */}
-			<ToastContainer messages={toastMessages} onClose={removeToast} />
 		</div>
 	);
 }

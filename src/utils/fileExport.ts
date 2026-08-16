@@ -1,4 +1,3 @@
-import type { Novel } from '../types';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile, exists, readTextFile, mkdir, readDir, remove, BaseDirectory } from '@tauri-apps/plugin-fs';
 import { logger } from './logger';
@@ -16,7 +15,29 @@ function getNovelsSubDir(): string {
 }
 
 function getNovelsStoragePath(fileName: string): string {
-  return `${getNovelsSubDir()}/${fileName}`;
+  return `${getNovelsSubDir()}/${sanitizeNovelFilename(fileName)}`;
+}
+
+/**
+ * 消毒小说文件名，防止路径穿越（`../` 写出 baseDir 之外）与非法字符。
+ * 与 getCharacterConfigFileName 的消毒策略一致，同时额外处理路径分隔符。
+ */
+export function sanitizeNovelFilename(fileName: string): string {
+  // 替换路径分隔符与 Windows 非法字符
+  let safe = fileName.replace(/[\\/:*?"<>|]/g, "_");
+  // 剔除不可见控制字符（\x00-\x1f 与 \x7f），按码点过滤避免正则匹配控制字符
+  safe = Array.from(safe)
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code >= 0x20 && code !== 0x7f;
+    })
+    .join("");
+  // 兜底：若仍含 ".." 片段（如 "a..b" 无分隔符场景），将连续点替换为单点，
+  // 避免 Tauri 端对路径的进一步解析产生歧义
+  safe = safe.replace(/\.\./g, ".");
+  safe = safe.trim();
+  if (!safe || safe === "." || safe === "..") safe = "novel";
+  return safe;
 }
 
 function getCharactersSubDir(): string {
@@ -785,37 +806,6 @@ export async function createCharacterTemplate(novelName: string): Promise<boolea
   }
 }
 
-export async function exportToTxt(novel: Novel): Promise<boolean> {
-  try {
-    const content = `《${novel.name}》\n\n${novel.fullText}`;
-    const filePath = await save({
-      defaultPath: `${novel.name}.txt`,
-      filters: [{ name: 'Text Files', extensions: ['txt'] }],
-    });
-    if (filePath) {
-      logger.file('Export path:', filePath);
-      logger.file('Content length:', content.length);
-
-      try {
-        await writeTextFile(filePath, content);
-        logger.file('writeTextFile success');
-      } catch (writeErr) {
-        logger.errorGeneric('[fileExport]', 'writeTextFile failed:', writeErr);
-        const { writeFile } = await import('@tauri-apps/plugin-fs');
-        await writeFile(filePath, new TextEncoder().encode(content));
-        logger.file('writeFile fallback success');
-      }
-
-      logger.file('Exported novel to:', filePath);
-      return true;
-    }
-    return false;
-  } catch (e) {
-    logger.errorGeneric('[fileExport]', 'Failed to export novel:', e);
-    return false;
-  }
-}
-
 export async function exportToFile(content: string, fileName: string): Promise<"success" | "fallback" | false> {
   try {
     const filePath = await save({
@@ -856,26 +846,20 @@ export async function exportToFile(content: string, fileName: string): Promise<"
   }
 }
 
-export async function exportCharactersToJson(_novelId: string, novelName: string, characters: import('../types').CharacterInfo[]): Promise<boolean> {
-  try {
-    const content = JSON.stringify(characters, null, 2);
-    const filePath = await save({
-      defaultPath: `${novelName}-characters.json`,
-      filters: [{ name: 'JSON Files', extensions: ['json'] }],
-    });
-    if (filePath) {
-      await writeTextFile(filePath, content);
-      logger.file('Exported characters to:', filePath);
-      return true;
-    }
-    return false;
-  } catch (e) {
-    logger.errorGeneric('fileExport - Failed to export characters:', e);
-    return false;
-  }
-}
-
 // ==================== 小说存储相关函数 ====================
+
+/**
+ * 串行写队列：保证对同一文件的多次写入按调用顺序落盘，
+ * 避免异步写盘完成顺序与发起顺序不一致导致旧内容覆盖新内容。
+ */
+let fsWriteChain: Promise<unknown> = Promise.resolve();
+
+function enqueueFsWrite<T>(task: () => Promise<T>): Promise<T> {
+  const run = fsWriteChain.then(task);
+  // 链上吞掉错误，避免单个失败中断后续写入
+  fsWriteChain = run.catch(() => undefined);
+  return run;
+}
 
 export async function loadNovelContent(fileName: string): Promise<string | null> {
   try {
@@ -890,7 +874,12 @@ export async function loadNovelContent(fileName: string): Promise<string | null>
   }
 }
 
-export async function saveNovelToStorage(fileName: string, content: string): Promise<boolean> {
+export function saveNovelToStorage(fileName: string, content: string): Promise<boolean> {
+  // 串行化写盘，防止并发保存乱序
+  return enqueueFsWrite(() => doSaveNovelToStorage(fileName, content));
+}
+
+async function doSaveNovelToStorage(fileName: string, content: string): Promise<boolean> {
   try {
     await ensureNovelsDirectory();
     const fullPath = getNovelsStoragePath(fileName);

@@ -6,14 +6,15 @@ import { useCharacterStore } from "../stores/characterStore";
 import { useProofreadStore } from "../stores/proofreadStore";
 import { useConfigStore } from "../stores/configStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
-import { splitParagraphs } from "../utils/chapterSplit";
+import { getNonEmptyParagraphs, isDefaultChapterTitle, getChapterDisplayTitle } from "../utils/chapterSplit";
+import { getGenderName } from "../utils/characterRoles";
 import { buildParagraphIndexMap, buildOriginalToFilteredMap } from "../utils/formatters";
 import { useTTS } from "../hooks/useTTS";
 import { useSearch } from "../hooks/useSearch";
 import { useReadingProgress } from "../hooks/useReadingProgress";
 import { useChapterTitleSuggestion } from "../hooks/useChapterTitleSuggestion";
 import { AIContinuation } from "./AIContinuation";
-import { generateChapterBridge } from "../utils/aiClient";
+import { generateChapterBridge, buildRequestConfig } from "../utils/aiClient";
 import type { BridgeParams } from "../utils/aiClient";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { EmptyState } from "./EmptyState";
@@ -46,7 +47,6 @@ export function ReaderPanel({
 	const setCustomColors = useUIStore((s) => s.setCustomColors);
 	const bgImageUrl = useUIStore((s) => s.bgImageUrl);
 	const setBgImageUrl = useUIStore((s) => s.setBgImageUrl);
-	const addCharacter = useCharacterStore((s) => s.addCharacter);
 	const highlightedParagraph = useProofreadStore((s) => s.highlightedParagraph);
 	const setHighlightedParagraph = useProofreadStore((s) => s.setHighlightedParagraph);
 	const applyAnimation = useProofreadStore((s) => s.applyAnimation);
@@ -83,7 +83,7 @@ export function ReaderPanel({
 
 	const chapter = chapters[currentChapterIndex];
 	const paragraphs = useMemo(() => {
-		return chapter ? splitParagraphs(chapter.content).filter((p) => p.trim() !== "") : [];
+		return chapter ? getNonEmptyParagraphs(chapter.content) : [];
 	}, [chapter]);
 
 	const paragraphIndexMap = useMemo(() => {
@@ -143,8 +143,6 @@ export function ReaderPanel({
 	const [showTTSPanel, setShowTTSPanel] = useState(false);
 	const [pageFlipping, setPageFlipping] = useState<'none' | 'next' | 'prev'>('none');
 	const [showPageShadow, setShowPageShadow] = useState(false);
-	const [detectedNewCharacters, setDetectedNewCharacters] = useState<string[]>([]);
-	const [showNewCharacterModal, setShowNewCharacterModal] = useState(false);
 
 	// 章节桥接状态
 	const [bridgingIndex, setBridgingIndex] = useState<number | null>(null);
@@ -196,15 +194,6 @@ export function ReaderPanel({
 		}
 	}, [showChapterList]);
 
-	const handleAddNewCharacters = useCallback((names: string[]) => {
-		if (!currentNovelId) return;
-		names.forEach(name => {
-			addCharacter(currentNovelId, { name, gender: "other", notes: "自动检测创建", voice: "", aliases: [], relationTerms: [] });
-		});
-		setShowNewCharacterModal(false);
-		setDetectedNewCharacters([]);
-	}, [currentNovelId, addCharacter]);
-
 	// AI生成章节之间的桥接内容
 	const handleGenerateBridge = useCallback(async (prevIndex: number) => {
 		if (!currentNovelId || prevIndex < 0 || prevIndex >= chapters.length - 1) return;
@@ -231,7 +220,7 @@ export function ReaderPanel({
 			// 收集角色信息摘要
 			const allChars = useCharacterStore.getState().novelCharacters[currentNovelId] ?? [];
 			const charsSummary = allChars.map(c => {
-				const parts = [c.name, c.gender === "male" ? "男" : c.gender === "female" ? "女" : "其他"];
+				const parts = [c.name, getGenderName(c.gender)];
 				if (c.role) parts.push(c.role);
 				if (c.personality) parts.push(c.personality);
 				return parts.join("，");
@@ -253,14 +242,7 @@ export function ReaderPanel({
 				worldbuilding: worldbuildingText,
 			};
 
-			const config = {
-				baseURL: aiConfig.baseURL,
-				apiKey: aiConfig.apiKey,
-				model: aiConfig.model,
-				customHeaders: {} as Record<string, string>,
-				maxCharsPerRequest: 0,
-				enableLogging: false,
-			};
+			const config = buildRequestConfig(aiConfig);
 
 			const result = await generateChapterBridge(params, config);
 			setBridgeContent(result);
@@ -715,9 +697,9 @@ export function ReaderPanel({
 						: "";
 					const isEditing = editingIndex === filteredIndex;
 
-					// 如果是动画目标，提取需要高亮的文本片段
-					const getHighlightInfo = () => {
-						if (!isAnimTarget || applyAnimation!.startIndex === undefined) {
+					// 动画目标：提取需要高亮的文本片段（仅在动画目标段落计算，避免每次渲染为所有段落创建闭包）
+					const highlightInfo = isAnimTarget ? (() => {
+						if (applyAnimation!.startIndex === undefined) {
 							return null;
 						}
 
@@ -730,17 +712,6 @@ export function ReaderPanel({
 							const highlight = para.slice(
 								applyAnimation!.startIndex,
 								applyAnimation!.endIndex,
-							);
-							logger.proofread(
-								`anim-highlight-old:`,
-								`\n  phase: ${applyAnimation!.phase}`,
-								`\n  paragraphIndex: ${applyAnimation!.paragraphIndex}`,
-								`\n  startIndex: ${applyAnimation!.startIndex}`,
-								`\n  endIndex: ${applyAnimation!.endIndex}`,
-								`\n  originalText: "${applyAnimation!.originalText}"`,
-								`\n  correctedText: "${applyAnimation!.correctedText}"`,
-								`\n  paragraph snippet: "${para.slice(Math.max(0, applyAnimation!.startIndex - 5), Math.min(para.length, (applyAnimation!.endIndex ?? applyAnimation!.startIndex + (applyAnimation!.originalText?.length ?? 0)) + 5))}"`,
-								`\n  highlight: "${highlight}"`,
 							);
 							return {
 								before: para.slice(0, applyAnimation!.startIndex),
@@ -764,23 +735,9 @@ export function ReaderPanel({
 
 						// 验证位置处的文本是否与新文本匹配
 						const actualText = para.slice(startIdx, endIdx);
-						logger.proofread(
-							`anim-highlight-new:`,
-							`\n  phase: ${applyAnimation!.phase}`,
-							`\n  paragraphIndex: ${applyAnimation!.paragraphIndex}`,
-							`\n  startIndex: ${applyAnimation!.startIndex}`,
-							`\n  endIndex (original): ${applyAnimation!.endIndex}`,
-							`\n  originalText: "${applyAnimation!.originalText}"`,
-							`\n  correctedText: "${newText}"`,
-							`\n  newText.length: ${newText.length}`,
-							`\n  calculated endIdx: ${endIdx}`,
-							`\n  actualText at position: "${actualText}"`,
-							`\n  paragraph snippet: "${para.slice(Math.max(0, startIdx - 5), Math.min(para.length, endIdx + 5))}"`,
-						);
 
 						if (actualText === newText) {
 							// 位置匹配，使用精确位置
-							logger.proofread(`anim-highlight-new: 位置匹配，使用精确位置`);
 							return {
 								before: para.slice(0, startIdx),
 								highlight: newText,
@@ -798,8 +755,7 @@ export function ReaderPanel({
 							if (relativeIdx >= 0) {
 								foundIdx = searchStart + relativeIdx;
 							}
-							
-							logger.proofread(`anim-highlight-new: 位置不匹配，在预期位置附近搜索，foundIdx: ${foundIdx}`);
+
 							if (foundIdx >= 0) {
 								return {
 									before: para.slice(0, foundIdx),
@@ -817,8 +773,7 @@ export function ReaderPanel({
 								};
 							}
 						}
-					};
-					const highlightInfo = getHighlightInfo();
+					})() : null;
 
 					// 检测空段落（连续换行），直接跳过不渲染
 					const isEmptyParagraph = para.trim() === "";
@@ -905,14 +860,14 @@ export function ReaderPanel({
 						onClick={() => setCurrentChapterIndex(currentChapterIndex - 1)}
 					>
 						<Icons.skipBack size={16} />
-						<span>{currentChapterIndex > 0 ? (chapters[currentChapterIndex - 1]?.title || `第 ${currentChapterIndex} 章`) : "已是第一章"}</span>
+						<span>{currentChapterIndex > 0 ? getChapterDisplayTitle(chapters[currentChapterIndex - 1], currentChapterIndex - 1) : "已是第一章"}</span>
 					</button>
 					<button
 						className="btn"
 						disabled={currentChapterIndex >= chapters.length - 1}
 						onClick={() => setCurrentChapterIndex(currentChapterIndex + 1)}
 					>
-						<span>{currentChapterIndex < chapters.length - 1 ? (chapters[currentChapterIndex + 1]?.title || `第 ${currentChapterIndex + 2} 章`) : "已是最后一章"}</span>
+						<span>{currentChapterIndex < chapters.length - 1 ? getChapterDisplayTitle(chapters[currentChapterIndex + 1], currentChapterIndex + 1) : "已是最后一章"}</span>
 						<Icons.skipForward size={16} />
 					</button>
 				</div>
@@ -1425,7 +1380,7 @@ export function ReaderPanel({
 								<div className="chapter-list-content" ref={chapterListContentRef}>
 									{chapters.map((ch, index) => {
 										const isActive = index === currentChapterIndex;
-										const hasNoTitle = !ch.title || /^第[\d一二三四五六七八九十]+[章回]$/.test(ch.title);
+										const hasNoTitle = isDefaultChapterTitle(ch.title);
 										const isSuggestingLocal = suggestingId === ch.id;
 										const showSuggestionsLocal = suggestingId === ch.id && (chapterTitleSuggestions[ch.id]?.length ?? 0) > 0;
 
@@ -1649,59 +1604,6 @@ export function ReaderPanel({
 							<button className="btn" onClick={() => setShowReadingReminder(false)}>
 								<Icons.eye size={18} />
 								<span>继续阅读</span>
-							</button>
-						</div>
-					</div>
-				</div>
-			)}
-
-			{/* 检测到新角色弹窗 */}
-			{showNewCharacterModal && detectedNewCharacters.length > 0 && (
-				<div className="modal-overlay" onClick={() => setShowNewCharacterModal(false)}>
-					<div className="config-modal" onClick={(e) => e.stopPropagation()}>
-						<div className="config-header">
-							<div className="config-title">
-								<span className="title-icon"><Icons.userRoundPlus size={16} /></span>
-								<span>检测到新角色</span>
-							</div>
-							<button className="close-btn" onClick={() => setShowNewCharacterModal(false)}>
-								<svg
-									width="16"
-									height="16"
-									viewBox="0 0 16 16"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="2"
-								>
-									<path d="M3 3L13 13M13 3L3 13" />
-								</svg>
-							</button>
-						</div>
-						<div className="config-body">
-							<div className="config-section">
-								<p className="modal-description">
-									情感朗读时检测到 {detectedNewCharacters.length} 个新角色，是否添加到角色列表？
-								</p>
-							</div>
-							<div className="config-section">
-								<div className="new-character-list">
-									{detectedNewCharacters.map((name) => (
-										<div key={name} className="new-character-item">
-											<Icons.user size={16} />
-											<span>{name}</span>
-										</div>
-									))}
-								</div>
-							</div>
-						</div>
-						<div className="character-actions-fab-wrapper">
-							<button className="btn" onClick={() => setShowNewCharacterModal(false)}>
-								<Icons.x size={18} />
-								<span>稍后再说</span>
-							</button>
-							<button className="btn" onClick={() => handleAddNewCharacters(detectedNewCharacters)}>
-								<Icons.userRoundPlus size={18} />
-								<span>全部添加</span>
 							</button>
 						</div>
 					</div>

@@ -1,6 +1,7 @@
 // ============================================================
 // 调试日志工具 — 支持生产环境日志持久化
 // ============================================================
+import { generateId } from "./id";
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -14,7 +15,7 @@ export interface LogEntry {
 }
 
 let enabled = false;
-let minLevel: LogLevel = 'warn';
+const minLevel: LogLevel = 'warn';
 const logHistory: LogEntry[] = [];
 const MAX_LOG_ENTRIES = 500;
 
@@ -31,17 +32,9 @@ export function setLoggerEnabled(v: boolean) {
 	enabled = v;
 }
 
-export function setMinLogLevel(level: LogLevel) {
-	minLevel = level;
-}
-
-export function isLoggerEnabled() {
-	return enabled;
-}
-
 function addLogEntry(level: LogLevel, category: string, message: string, data?: unknown[]) {
 	const entry: LogEntry = {
-		id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+		id: generateId("log", 7),
 		timestamp: Date.now(),
 		level,
 		category,

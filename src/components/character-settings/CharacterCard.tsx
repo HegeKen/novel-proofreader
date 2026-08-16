@@ -1,5 +1,6 @@
 import type { CharacterInfo, NovelEvent } from "../../types";
 import { Icons } from "../Icons";
+import { getRoleName, getGenderName } from "../../utils/characterRoles";
 
 interface CharacterCardProps {
 	character: CharacterInfo;
@@ -15,25 +16,6 @@ interface CharacterCardProps {
 	onReanalyzeBiography: () => void;
 	onPlayNote: () => void;
 }
-
-const getRoleName = (role?: string) => {
-	if (!role) return "NPC";
-	const roleMap: Record<string, string> = {
-		protagonist: "男主",
-		heroine: "女主",
-		antagonist: "反派",
-		supportingMale: "男配",
-		supportingFemale: "女配",
-		mentor: "导师",
-		rival: "对手",
-		loveInterest: "爱慕对象",
-		family: "家人",
-		friend: "朋友",
-		narrator: "旁白",
-		npc: "NPC",
-	};
-	return roleMap[role] || "NPC";
-};
 
 export function CharacterCard({
 	character,
@@ -67,7 +49,7 @@ export function CharacterCard({
 						<div className="character-header">
 							<h3 className="character-name">{character.name}</h3>
 							<span className={`gender-badge ${character.gender}`}>
-								{character.gender === "male" ? "男" : character.gender === "female" ? "女" : "其他"}
+								{getGenderName(character.gender)}
 							</span>
 							{character.role && (
 								<span className="role-badge">
@@ -108,7 +90,7 @@ export function CharacterCard({
 								<div className="detail-item voice-design-detail">
 									<Icons.sparkle size={14} />
 									<span className="detail-label">音色设计:</span>
-									<span className="detail-value truncate" title={character.voiceDesignPrompt || character.voice}>
+									<span className="profile-value" title={character.voiceDesignPrompt || character.voice}>
 										{character.voiceDesignPrompt || (character.voice ? voiceOptions.find(o => o.value === character.voice)?.label || character.voice : "")}
 									</span>
 								</div>
@@ -117,7 +99,7 @@ export function CharacterCard({
 								<div className="detail-item dialect-detail">
 									<Icons.globe size={14} />
 									<span className="detail-label">方言:</span>
-									<span className="detail-value">{character.dialect}</span>
+									<span className="profile-value">{character.dialect}</span>
 								</div>
 							)}
 						</div>
