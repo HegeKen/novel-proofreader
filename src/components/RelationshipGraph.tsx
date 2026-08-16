@@ -1243,8 +1243,13 @@ ${JSON.stringify(currentRels, null, 2)}
 							});
 							const label = typeLabels.join("、");
 							const labelWidth = Math.max(label.length * 11 + 16, 50);
-							const verticalRectHeight = Math.max(label.length * 18 + 16, 50);
-							const verticalRectWidth = 24;
+							// 垂直边的标签纵向逐字排列：
+							// 矩形宽度按单字宽度计算（字号 10px，中文字符宽约 10px，留内边距），
+							// 高度按字符数 × 行高（行高与 tspan 的 1.2em 行距保持一致，避免文字在矩形内缩紧/溢出）
+							const charWidth = 11; // 与水平 labelWidth 的单字估算一致
+							const verticalRectWidth = Math.max(charWidth + 12, 22);
+							const lineHeight = 14; // 与 tspan dy="1.2em"(≈12px) 匹配，留呼吸
+							const verticalRectHeight = Math.max(label.split("").length * lineHeight + 12, 24);
 							
 							return (
 								<g key={edge.relationship.id} className="graph-edge">
@@ -1272,10 +1277,12 @@ ${JSON.stringify(currentRels, null, 2)}
 												className="edge-label-bg"
 											/>
 											{isVerticalEdge ? (
-												<text className="edge-label-text" textAnchor="middle" dominantBaseline="middle">
-													{label.split('').map((char, i) => (
-														<tspan key={i} x="0" dy={i === 0 ? undefined : "1.2em"}>{char}</tspan>
-													))}
+												<text className="edge-label-text" textAnchor="middle" dominantBaseline="central">
+													{label.split('').map((char, i) => {
+														// 以矩形中心为原点，按行高均匀上下排布，避免链式 dy 与 dominantBaseline 冲突导致字符重叠/缩紧
+														const offset = (i - (label.length - 1) / 2) * lineHeight;
+														return <tspan key={i} x="0" y={offset}>{char}</tspan>;
+													})}
 												</text>
 											) : (
 												<text className="edge-label-text" textAnchor="middle" dominantBaseline="middle">
