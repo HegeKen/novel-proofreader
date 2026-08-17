@@ -4,6 +4,7 @@ import { useNovelStore } from "../stores/novelStore";
 import { useCharacterStore } from "../stores/characterStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
+import { useConfigStore } from "../stores/configStore";
 import { generateContinuation, buildRequestConfig } from "../utils/aiClient";
 import type { ContinuationParams } from "../utils/aiClient";
 import { Icons } from "./Icons";
@@ -103,7 +104,12 @@ export function AIContinuation() {
 
 			const config = buildRequestConfig(aiConfig);
 
-			const result = await generateContinuation(params, config);
+			const result = await generateContinuation(
+				params,
+				config,
+				undefined,
+				useConfigStore.getState().promptConfig.continuation,
+			);
 
 			continuationContentRef.current = result;
 			setContinuationContent(result);

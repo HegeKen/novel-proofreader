@@ -199,7 +199,9 @@ export function CharacterCard({
 												{(evt.chapter || evt.timeInfo) && (
 													<div className="events-timeline-meta">
 														{evt.chapter && (
-															<span className="events-timeline-chapter">{evt.chapter}</span>
+															<span className="events-timeline-chapter">
+																{evt.volume ? `${evt.volume}·${evt.chapter}` : evt.chapter}
+															</span>
 														)}
 														{evt.timeInfo && (
 															<span className="events-timeline-time">{evt.timeInfo}</span>

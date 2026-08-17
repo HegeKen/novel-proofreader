@@ -47,6 +47,7 @@ const DEFAULT_TTS_CONFIG: TTSConfig = {
 const DEFAULT_PROMPT_CONFIG: PromptConfig = {
 	proofread: "",
 	proofreadChapter: "",
+	dualProofread: "",
 	script: "",
 	scriptTts: "",
 	novelTts: "",
@@ -59,6 +60,12 @@ const DEFAULT_PROMPT_CONFIG: PromptConfig = {
 	majorEvents: "",
 	majorEventsMerge: "",
 	novelEvents: "",
+	novelEventsMerge: "",
+	continuation: "",
+	bridge: "",
+	characterFragmentSummarize: "",
+	roleplay: "",
+	roleplayMulti: "",
 };
 
 const DEFAULT_PROOFREAD_CONFIG: ProofreadConfig = {

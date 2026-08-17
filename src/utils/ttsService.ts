@@ -237,7 +237,8 @@ async function _synthesizeSpeech(
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
-			Authorization: `Bearer ${apiKey}`,
+			// MiMo 新版接口使用 api-key 请求头
+			"api-key": apiKey,
 		},
 		body: JSON.stringify(requestBody),
 		signal: combinedSignal,

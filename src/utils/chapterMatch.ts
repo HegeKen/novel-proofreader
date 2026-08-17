@@ -59,8 +59,8 @@ export function normalizeChapterTitle(title: string): string {
 
 	let normalized = title;
 
-	if (/第[零一二三四五六七八九十百千万\d]+[章节回卷]/.test(title)) {
-		normalized = title.replace(/第([零一二三四五六七八九十百千万\d]+)([章节回卷])/g, (_, num, suffix) => {
+	if (/第[零〇一二三四五六七八九十百千万\d]+[章节回卷]/.test(title)) {
+		normalized = title.replace(/第([零〇一二三四五六七八九十百千万\d]+)([章节回卷])/g, (_, num, suffix) => {
 			const arabicNum = chineseToArabic(num);
 			const unifiedNum = parseInt(arabicNum, 10).toString();
 			return `第${unifiedNum}${suffix}`;
@@ -75,18 +75,24 @@ export interface ParsedChapterInfo {
 	chapterNum: number;
 	volumeName: string;
 	chapterName: string;
+	/** 是否解析出了卷号（可为 0 之外的任意值；true 表示确实识别到"第X卷"） */
+	hasVolume: boolean;
+	/** 是否解析出了章节号（可为 0，如"第0章"/"〇章"） */
+	hasChapter: boolean;
 }
 
 /** 解析"第X卷·第Y章"等章节字符串，提取卷号/章号/名称片段 */
 export function parseChapterInfo(chapterStr: string): ParsedChapterInfo {
-	if (!chapterStr) return { volumeNum: 0, chapterNum: 0, volumeName: "", chapterName: "" };
+	if (!chapterStr) return { volumeNum: 0, chapterNum: 0, volumeName: "", chapterName: "", hasVolume: false, hasChapter: false };
 
 	let volumeNum = 0;
 	let chapterNum = 0;
 	let volumeName = "";
 	let chapterName = "";
+	let hasVolume = false;
+	let hasChapter = false;
 
-	const numPattern = '[零一二三四五六七八九十百千万\\d]+';
+	const numPattern = '[零〇一二三四五六七八九十百千万\\d]+';
 
 	const dotIndex = chapterStr.indexOf("·");
 	if (dotIndex > 0) {
@@ -97,11 +103,13 @@ export function parseChapterInfo(chapterStr: string): ParsedChapterInfo {
 		if (volumeMatch) {
 			volumeNum = parseInt(chineseToArabic(volumeMatch[1]), 10) || 0;
 			volumeName = part1;
+			hasVolume = true;
 		} else {
 			const chapterMatch = part1.match(new RegExp(`第(${numPattern})[章节回]`));
 			if (chapterMatch) {
 				chapterNum = parseInt(chineseToArabic(chapterMatch[1]), 10) || 0;
 				chapterName = part1;
+				hasChapter = true;
 			}
 		}
 
@@ -109,8 +117,17 @@ export function parseChapterInfo(chapterStr: string): ParsedChapterInfo {
 		if (chapterMatch2) {
 			chapterNum = parseInt(chineseToArabic(chapterMatch2[1]), 10) || 0;
 			chapterName = part2;
-		} else if (!chapterName) {
-			chapterName = part2;
+			hasChapter = true;
+		} else {
+			// 兼容无"第"前缀的整串章节写法（如"〇章""0章"）
+			const bareMatch = part2.match(new RegExp(`^(${numPattern})[章节回]$`));
+			if (bareMatch) {
+				chapterNum = parseInt(chineseToArabic(bareMatch[1]), 10) || 0;
+				chapterName = part2;
+				hasChapter = true;
+			} else if (!chapterName) {
+				chapterName = part2;
+			}
 		}
 
 		if (!volumeName) {
@@ -123,14 +140,24 @@ export function parseChapterInfo(chapterStr: string): ParsedChapterInfo {
 		if (volumeMatch) {
 			volumeNum = parseInt(chineseToArabic(volumeMatch[1]), 10) || 0;
 			volumeName = chapterStr;
+			hasVolume = true;
 		}
 		if (chapterMatch) {
 			chapterNum = parseInt(chineseToArabic(chapterMatch[1]), 10) || 0;
 			chapterName = chapterStr;
+			hasChapter = true;
+		} else {
+			// 兼容无"第"前缀的整串章节写法（如"〇章""0章""第一章"）
+			const bareMatch = chapterStr.match(new RegExp(`^(${numPattern})[章节回]$`));
+			if (bareMatch) {
+				chapterNum = parseInt(chineseToArabic(bareMatch[1]), 10) || 0;
+				chapterName = chapterStr;
+				hasChapter = true;
+			}
 		}
 	}
 
-	return { volumeNum, chapterNum, volumeName, chapterName };
+	return { volumeNum, chapterNum, volumeName, chapterName, hasVolume, hasChapter };
 }
 
 /**
@@ -149,13 +176,13 @@ export function findMatchedChapter(chapters: Chapter[], chapterStr: string, volu
 	// 若提供了所属卷，先确定卷下章节范围，提升匹配精度
 	// 卷名做宽容匹配：精确 / 包含 / 卷号一致（事件中可能是"第2卷"，卷标题可能是"第2卷 正文2"）
 	let scopedChapters = nonVolumeChapters;
-	const volumeKey = volumeStr || (chapterInfo.volumeNum > 0 ? `第${chapterInfo.volumeNum}卷` : "");
+	const volumeKey = volumeStr || (chapterInfo.hasVolume ? `第${chapterInfo.volumeNum}卷` : "");
 	if (volumeKey) {
 		const volume = chapters.find(v => v.isVolume && (
 			v.title === volumeKey ||
 			v.title.includes(volumeKey) ||
 			volumeKey.includes(v.title) ||
-			(chapterInfo.volumeNum > 0 && parseChapterInfo(v.title).volumeNum === chapterInfo.volumeNum)
+			(chapterInfo.hasVolume && parseChapterInfo(v.title).volumeNum === chapterInfo.volumeNum)
 		));
 		if (volume) {
 			scopedChapters = nonVolumeChapters.filter(ch => ch.parentId === volume.id);
@@ -170,8 +197,8 @@ export function findMatchedChapter(chapters: Chapter[], chapterStr: string, volu
 
 		const chInfo = parseChapterInfo(ch.title);
 
-		if (chapterInfo.volumeNum > 0 && chapterInfo.chapterNum > 0) {
-			if (chInfo.volumeNum > 0 && chInfo.chapterNum > 0) {
+		if (chapterInfo.hasVolume && chapterInfo.hasChapter) {
+			if (chInfo.hasVolume && chInfo.hasChapter) {
 				if (chapterInfo.volumeNum === chInfo.volumeNum && chapterInfo.chapterNum === chInfo.chapterNum) {
 					return true;
 				}
@@ -183,8 +210,8 @@ export function findMatchedChapter(chapters: Chapter[], chapterStr: string, volu
 		if (chapterStr.length >= 3 && chapterStr.includes(ch.title)) return true;
 
 		if (chapterInfo.chapterName && ch.title.includes(chapterInfo.chapterName)) return true;
-		if (chapterInfo.chapterNum > 0) {
-			const chapterPattern = new RegExp(`第${chapterInfo.chapterNum}[章节回]`);
+		if (chapterInfo.hasChapter) {
+			const chapterPattern = new RegExp(`第?${chapterInfo.chapterNum}[章节回]`);
 			if (chapterPattern.test(ch.title)) return true;
 		}
 
@@ -192,11 +219,11 @@ export function findMatchedChapter(chapters: Chapter[], chapterStr: string, volu
 	});
 
 	// 兜底匹配：按章节序号匹配（忽略分卷；若指定了卷，仍需同卷）
-	if (!matchedChapter && chapterInfo.chapterNum > 0) {
+	if (!matchedChapter && chapterInfo.hasChapter) {
 		matchedChapter = scopedChapters.find(ch => {
 			const chInfo = parseChapterInfo(ch.title);
-			if (chInfo.chapterNum === chapterInfo.chapterNum) {
-				if (chapterInfo.volumeNum > 0 && chInfo.volumeNum > 0) {
+			if (chInfo.hasChapter && chInfo.chapterNum === chapterInfo.chapterNum) {
+				if (chapterInfo.hasVolume && chInfo.hasVolume) {
 					return chapterInfo.volumeNum === chInfo.volumeNum;
 				}
 				return true;
@@ -258,7 +285,7 @@ export function normalizeEventChapter(
 
 	// 未匹配到章节结构：若 chapter 含卷前缀（"第2卷·第1章"），拆出纯章节名与卷名
 	const info = parseChapterInfo(chapterStr);
-	if (info.volumeNum > 0 && info.chapterNum > 0) {
+	if (info.hasVolume && info.hasChapter) {
 		return {
 			chapter: `第${info.chapterNum}章`,
 			volume: info.volumeName || volumeStr || "",

@@ -4033,7 +4033,9 @@ color: var(--text-primary)}
 	border-radius: 10px;
 	overflow: hidden;
 	font-size: 13px;
-	min-width: 0}
+	min-width: 0;
+	/* 防止被 .cjk-variants-body 的 flex 布局压缩：超高时应溢出触发滚动，而不是被压扁 */
+	flex-shrink: 0}
 
 .cjk-variants-table-header {
 	display: flex;

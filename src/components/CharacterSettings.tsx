@@ -18,6 +18,7 @@ import { generateId } from "../utils/id";
 import { normalizeEventChapter } from "../utils/chapterMatch";
 import { NovelEventModal } from "./NovelEventModal";
 import { formatDateTime } from "../utils/formatters";
+import { sendTaskNotification } from "../utils/notifications";
 import { getRoleName, RELATION_TYPE_OPTIONS, GENDER_OPTIONS, ROLE_OPTIONS, makeRelationPairKey } from "../utils/characterRoles";
 import { RelationshipGraph } from "./RelationshipGraph";
 import { CharacterCard } from "./character-settings/CharacterCard";
@@ -966,6 +967,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					description: result.description || "",
 				});
 				useAppMetaStore.getState().showToast("世界观分析完成", "success");
+				sendTaskNotification("世界观分析完成", "已提取世界观信息");
 			} else {
 				setWbAnalyzeError("未能从小说内容中提取世界观信息");
 			}
@@ -1002,6 +1004,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 	// 全角色分析已耗时（进行中动态更新）
 	const analyzeElapsed = useElapsedTime(isAnalyzing);
+	// 记录上一分析阶段，用于阶段完成时推送系统通知
+	const prevAnalyzePhaseRef = useRef<"analyze" | "summarize" | null>(null);
 
 	// 导入操作状态
 	const [isImporting, setIsImporting] = useState(false);
@@ -1267,6 +1271,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const audioRef = useRef<HTMLAudioElement | null>(null);
 	const cancelPlayRef = useRef<(() => void) | null>(null);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
+	const promptConfig = useConfigStore((s) => s.promptConfig);
 	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 
 	const voiceOptions = [
@@ -1859,13 +1864,20 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				abortController.signal,
 				(current, total, phase) => {
 					setAnalyzeProgress({ current, total, phase });
-				}
+					// 分析阶段完成 → 进入整合阶段时推送系统通知
+					if (prevAnalyzePhaseRef.current === "analyze" && phase === "summarize") {
+						sendTaskNotification("角色分析", "角色信息提取完成，正在整合角色档案…");
+					}
+					prevAnalyzePhaseRef.current = phase;
+				},
+				promptConfig.characterFragmentSummarize,
 			);
 
 			logger.proofread("[CharacterSettings] AI分析完成:", {
 				charactersCount: result.characters.length,
 				relationshipsCount: result.relationships.length,
 			});
+			sendTaskNotification("角色分析完成", `提取 ${result.characters.length} 个角色、${result.relationships.length} 组关系`);
 
 			// 将分析结果转换为CharacterInfo格式并添加到角色列表
 			const existingNames = new Set(characters.map(c => c.name.toLowerCase()));
@@ -2058,7 +2070,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		} finally {
 			setIsAnalyzing(false);
 		}
-	}, [currentNovel, aiConfig, novelId, characters, addCharacter, getRelationshipsForNovel, setRelationshipsForNovel, setSkippedRelationships, setShowAnalyzeModal, setShowOrganizeRelationsModal, setIsAnalyzing, setAnalyzeError, setAnalyzeProgress]);
+	}, [currentNovel, aiConfig, novelId, characters, addCharacter, getRelationshipsForNovel, setRelationshipsForNovel, setSkippedRelationships, setShowAnalyzeModal, setShowOrganizeRelationsModal, setIsAnalyzing, setAnalyzeError, setAnalyzeProgress, promptConfig]);
 
 	// 打开角色合并弹窗
 	const handleOpenMergeModal = () => {
@@ -2207,6 +2219,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			);
 
 			setNewBiography(result);
+			sendTaskNotification("角色小传重新分析完成", `角色「${character.name}」小传已重新生成`);
 		} catch (error) {
 			setReanalyzeError(error instanceof Error ? error.message : "分析失败");
 			logger.errorGeneric("重新分析角色小传失败", { error });

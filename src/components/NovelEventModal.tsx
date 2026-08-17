@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useCharacterStore } from "../stores/characterStore";
 import { useNovelStore } from "../stores/novelStore";
@@ -6,11 +6,13 @@ import type { NovelEvent } from "../types";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { useAppMetaStore } from "../stores/appMetaStore";
-import { generateNovelEvents, sendChatCompletion, extractJSON } from "../utils/aiClient";
 import { useAIConfigStore } from "../stores/aiConfigStore";
+import { useConfigStore } from "../stores/configStore";
+import { generateNovelEvents, sendChatCompletion, extractJSON } from "../utils/aiClient";
 import { logger } from "../utils/logger";
 import { generateId } from "../utils/id";
 import { useElapsedTime, formatElapsedTime } from "../hooks/useElapsedTime";
+import { sendTaskNotification } from "../utils/notifications";
 import { normalizeChapterTitle, parseChapterInfo, findMatchedChapter, normalizeEventChapter } from "../utils/chapterMatch";
 
 interface NovelEventModalProps {
@@ -74,6 +76,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 
 	const chapters = useNovelStore((s) => s.chapters);
 	const aiConfig = useAIConfigStore((s) => s.aiConfig);
+	const promptConfig = useConfigStore((s) => s.promptConfig);
 
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [formData, setFormData] = useState<EventFormData>(emptyForm);
@@ -85,6 +88,8 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 	const [generationMessage, setGenerationMessage] = useState("");
 	// 大事记生成已耗时（生成中动态更新）
 	const generationElapsed = useElapsedTime(isGenerating);
+	// 记录上一生成阶段，用于阶段完成时推送系统通知
+	const prevGenPhaseRef = useRef<"analyze" | "merge" | null>(null);
 
 	const [isCompletingMode, setIsCompletingMode] = useState(false);
 	const [selectedChapterIds, setSelectedChapterIds] = useState<Set<number>>(new Set());
@@ -94,18 +99,30 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 
 	const getChapterOrder = useCallback((event: NovelEvent): number => {
 		const matched = findMatchedChapter(chapters, event.chapter, event.volume);
-		return matched ? matched.startIndex : Infinity;
+		if (matched) return matched.startIndex;
+		// 兜底：未匹配到结构章节时，按解析出的章节号排序（"第0章/〇章"等排在第一章之前）
+		const info = parseChapterInfo(event.chapter || "");
+		if (info.hasChapter) {
+			return -10000 + (info.hasVolume ? info.volumeNum * 1000 : 0) + info.chapterNum;
+		}
+		return Infinity;
 	}, [chapters]);
 
 	const sortedEvents = useMemo(() => {
 		const events = [...storeEvents];
 		
 		if (sortMode === 'chapter') {
-			return events.sort((a, b) => a.chapterOrder - b.chapterOrder);
+			return events.sort((a, b) => {
+				// 优先按匹配到的结构章节顺序；未匹配的按章节号兜底，保证"第0章/〇章"在第一章之前
+				const orderA = getChapterOrder(a);
+				const orderB = getChapterOrder(b);
+				if (orderA !== orderB) return orderA - orderB;
+				return a.chapterOrder - b.chapterOrder;
+			});
 		}
 		
 		return events.sort((a, b) => a.timeOrder - b.timeOrder);
-	}, [storeEvents, sortMode]);
+	}, [storeEvents, sortMode, getChapterOrder]);
 
 	const getVolumeForChapter = useCallback((chapterTitle: string): string | null => {
 		if (!chapterTitle) return null;
@@ -147,7 +164,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 			"前言", "序章", "序", "自序", "引言", "楔子","外传", "附录", "目录",
 			"版权声明", "作者简介", "题记", "献辞", "致谢","再版序", "重版序",
 			"译序", "前言一", "前言二","序一", "序二", "序三", "写在前面", "编者按",
-			"导读", "说明", "序言", "代序", "跋"
+			"导读", "说明", "序言", "代序", "跋", "引子"
 		];
 
 		const isNonBodyContent = (title: string): boolean => {
@@ -274,9 +291,15 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 					setGenerationProgress({ current, total });
 					setGenerationPhase(phaseText);
 					setGenerationMessage(`${phaseText} ${current}/${total}`);
+					// 分析阶段完成 → 进入合并阶段时推送系统通知
+					if (prevGenPhaseRef.current === "analyze" && phase === "merge") {
+						sendTaskNotification("大事记补全", "章节分析完成，正在合并事件…");
+					}
+					prevGenPhaseRef.current = phase;
 				},
 				true,
-				existingEventsForAI
+				existingEventsForAI,
+				promptConfig.novelEventsMerge
 			);
 
 			if (!result || !Array.isArray(result.events) || result.events.length === 0) {
@@ -342,6 +365,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 			setGenerationStatus("success");
 			setGenerationMessage(`成功补全 ${newEvents.length} 个大事记`);
 			logger.proofread(`[NovelEventModal] 补全成功，添加了 ${newEvents.length} 个事件`);
+			sendTaskNotification("大事记补全完成", `新增 ${newEvents.length} 个大事记`);
 
 			setIsCompletingMode(false);
 			setSelectedChapterIds(new Set());
@@ -353,7 +377,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		} finally {
 			setIsGenerating(false);
 		}
-	}, [novelId, selectedChapterIds, chapters, characters, aiConfig, storeEvents, isGenerating, getChapterOrder, getVolumeForChapter]);
+	}, [novelId, selectedChapterIds, chapters, characters, aiConfig, storeEvents, isGenerating, getChapterOrder, getVolumeForChapter, promptConfig]);
 
 	const handleGenerateWithAI = useCallback(async () => {
 		if (!novelId || !chapters.length || isGenerating) return;
@@ -396,7 +420,15 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 					setGenerationProgress({ current, total });
 					setGenerationPhase(phaseText);
 					setGenerationMessage(`${phaseText} ${current}/${total}`);
-				}
+					// 分析阶段完成 → 进入合并阶段时推送系统通知
+					if (prevGenPhaseRef.current === "analyze" && phase === "merge") {
+						sendTaskNotification("大事记生成", "全文分析完成，正在合并事件…");
+					}
+					prevGenPhaseRef.current = phase;
+				},
+				undefined,
+				undefined,
+				promptConfig.novelEventsMerge
 			);
 
 			if (!result || !Array.isArray(result.events) || result.events.length === 0) {
@@ -425,7 +457,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 				// 拆分卷与章节：chapter 存纯章节名，volume 用 AI 返回的卷标题（优先）或匹配到的卷标题
 				let cleanChapter = evt.chapter || "";
 				let cleanVolume = evt.volume ?? "";
-				if (chapterInfo.volumeNum > 0 && chapterInfo.chapterNum > 0) {
+				if (chapterInfo.hasVolume && chapterInfo.hasChapter) {
 					cleanChapter = `第${chapterInfo.chapterNum}章`;
 				} else if (chapterInfo.chapterName) {
 					cleanChapter = chapterInfo.chapterName;
@@ -436,12 +468,12 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 					
 					if (ch.title === evt.chapter) return true;
 					
-					if (chapterInfo.volumeNum > 0 && chapterInfo.chapterNum > 0) {
-						if (chInfo.volumeNum > 0 && chInfo.chapterNum > 0) {
+					if (chapterInfo.hasVolume && chapterInfo.hasChapter) {
+						if (chInfo.hasVolume && chInfo.hasChapter) {
 							if (chapterInfo.volumeNum === chInfo.volumeNum && chapterInfo.chapterNum === chInfo.chapterNum) {
 								return true;
 							}
-						} else if (chInfo.chapterNum > 0 && chapterInfo.chapterNum === chInfo.chapterNum) {
+						} else if (chInfo.hasChapter && chapterInfo.chapterNum === chInfo.chapterNum) {
 							return true;
 						}
 					}
@@ -476,6 +508,8 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 					matchedStartIndex: matchedChapter?.startIndex ?? Infinity,
 					volumeNum: chapterInfo.volumeNum,
 					chapterNum: chapterInfo.chapterNum,
+					hasVolume: chapterInfo.hasVolume,
+					hasChapter: chapterInfo.hasChapter,
 				};
 			});
 
@@ -485,14 +519,14 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 				}
 
 				if (a.volumeNum !== b.volumeNum) {
-					if (a.volumeNum === 0) return 1;
-					if (b.volumeNum === 0) return -1;
+					if (!a.hasVolume) return 1;
+					if (!b.hasVolume) return -1;
 					return a.volumeNum - b.volumeNum;
 				}
 
 				if (a.chapterNum !== b.chapterNum) {
-					if (a.chapterNum === 0) return 1;
-					if (b.chapterNum === 0) return -1;
+					if (!a.hasChapter) return 1;
+					if (!b.hasChapter) return -1;
 					return a.chapterNum - b.chapterNum;
 				}
 
@@ -518,6 +552,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 			setGenerationStatus("success");
 			setGenerationMessage(`成功生成 ${addedCount} 个大事记`);
 			logger.proofread(`[NovelEventModal] AI 生成成功，添加了 ${addedCount} 个事件`);
+			sendTaskNotification("大事记生成完成", `新增 ${addedCount} 个大事记`);
 		} catch (err) {
 			logger.errorGeneric("[NovelEventModal] AI 生成失败:", err);
 			const errorMessage = err instanceof Error ? err.message : "生成失败";
@@ -526,7 +561,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		} finally {
 			setIsGenerating(false);
 		}
-	}, [novelId, chapters, characters, aiConfig, addEvent, storeEvents.length, isGenerating]);
+	}, [novelId, chapters, characters, aiConfig, addEvent, storeEvents.length, isGenerating, promptConfig]);
 
 	const handleReorderWithAI = useCallback(async () => {
 		if (!novelId || storeEvents.length === 0 || isGenerating) return;
@@ -601,6 +636,7 @@ ${eventsJson}`;
 			setGenerationStatus("success");
 			setGenerationMessage(`成功重新排序 ${updatedEvents.length} 个大事记`);
 			logger.proofread(`[NovelEventModal] AI 重新排序成功，更新了 ${updatedEvents.length} 个事件`);
+			sendTaskNotification("大事记重新排序完成", `已按故事逻辑重排 ${updatedEvents.length} 个大事记`);
 		} catch (err) {
 			logger.errorGeneric("[NovelEventModal] AI 重新排序失败:", err);
 			const errorMessage = err instanceof Error ? err.message : "排序失败";

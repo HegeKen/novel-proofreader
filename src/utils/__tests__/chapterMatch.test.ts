@@ -19,19 +19,42 @@ function buildChapters(): Chapter[] {
 describe('parseChapterInfo', () => {
 	it('解析"第2卷·第1章"', () => {
 		expect(parseChapterInfo('第2卷·第1章')).toEqual({
-			volumeNum: 2, chapterNum: 1, volumeName: '第2卷', chapterName: '第1章',
+			volumeNum: 2, chapterNum: 1, volumeName: '第2卷', chapterName: '第1章', hasVolume: true, hasChapter: true,
 		})
 	})
 
 	it('解析纯章节名', () => {
 		expect(parseChapterInfo('第1章')).toEqual({
-			volumeNum: 0, chapterNum: 1, volumeName: '', chapterName: '第1章',
+			volumeNum: 0, chapterNum: 1, volumeName: '', chapterName: '第1章', hasVolume: false, hasChapter: true,
 		})
 	})
 
 	it('解析中文数字卷号', () => {
 		expect(parseChapterInfo('第二卷·第三章').volumeNum).toBe(2)
 		expect(parseChapterInfo('第二卷·第三章').chapterNum).toBe(3)
+	})
+
+	it('解析"第0章"为章节号 0', () => {
+		expect(parseChapterInfo('第0章')).toEqual({
+			volumeNum: 0, chapterNum: 0, volumeName: '', chapterName: '第0章', hasVolume: false, hasChapter: true,
+		})
+	})
+
+	it('解析"第〇章"为章节号 0', () => {
+		expect(parseChapterInfo('第〇章')).toEqual({
+			volumeNum: 0, chapterNum: 0, volumeName: '', chapterName: '第〇章', hasVolume: false, hasChapter: true,
+		})
+	})
+
+	it('解析无"第"前缀的"〇章"为章节号 0', () => {
+		expect(parseChapterInfo('〇章')).toEqual({
+			volumeNum: 0, chapterNum: 0, volumeName: '', chapterName: '〇章', hasVolume: false, hasChapter: true,
+		})
+	})
+
+	it('无法解析时 hasChapter 为 false', () => {
+		expect(parseChapterInfo('番外篇').hasChapter).toBe(false)
+		expect(parseChapterInfo('番外篇').hasVolume).toBe(false)
 	})
 })
 
@@ -93,6 +116,33 @@ describe('findMatchedChapter', () => {
 
 	it('空章节字符串返回 undefined', () => {
 		expect(findMatchedChapter(chapters, '')).toBeUndefined()
+	})
+
+	it('"第0章"匹配结构中的第0章（排在最前）', () => {
+		const chapters0: Chapter[] = [
+			{ id: 30, title: '第0章 序章', startIndex: 0, endIndex: 10, content: '' },
+			{ id: 31, title: '第1章', startIndex: 11, endIndex: 20, content: '' },
+		]
+		const matched = findMatchedChapter(chapters0, '第0章')
+		expect(matched).toBeDefined()
+		expect(matched!.id).toBe(30)
+	})
+
+	it('"〇章"与"第0章"结构章节互相匹配', () => {
+		const chapters0: Chapter[] = [
+			{ id: 32, title: '第0章', startIndex: 0, endIndex: 10, content: '' },
+			{ id: 33, title: '第1章', startIndex: 11, endIndex: 20, content: '' },
+		]
+		expect(findMatchedChapter(chapters0, '〇章')?.id).toBe(32)
+		expect(findMatchedChapter(chapters0, '第〇章')?.id).toBe(32)
+	})
+
+	it('事件"第0章"能匹配结构"第〇章 引子"', () => {
+		const chapters0: Chapter[] = [
+			{ id: 34, title: '第〇章 引子', startIndex: 0, endIndex: 10, content: '' },
+			{ id: 35, title: '第一章', startIndex: 11, endIndex: 20, content: '' },
+		]
+		expect(findMatchedChapter(chapters0, '第0章')?.id).toBe(34)
 	})
 })
 

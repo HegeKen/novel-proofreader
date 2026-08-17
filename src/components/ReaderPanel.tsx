@@ -58,6 +58,7 @@ export function ReaderPanel({
 	const setReadingReminderMinutes = useAppMetaStore((s) => s.setReadingReminderMinutes);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
 	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
+	const promptConfig = useConfigStore((s) => s.promptConfig);
 	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 
 	const tts = useTTS();
@@ -244,7 +245,7 @@ export function ReaderPanel({
 
 			const config = buildRequestConfig(aiConfig);
 
-			const result = await generateChapterBridge(params, config);
+			const result = await generateChapterBridge(params, config, undefined, promptConfig.bridge);
 			setBridgeContent(result);
 			setShowBridgePreview(true);
 			useAppMetaStore.getState().showToast(`衔接段落生成完成，${result.length} 字符`, "success");
@@ -253,7 +254,7 @@ export function ReaderPanel({
 		} finally {
 			setIsGeneratingBridge(false);
 		}
-	}, [currentNovelId, chapters]);
+	}, [currentNovelId, chapters, promptConfig]);
 
 	// 确认将桥接内容追加到上一章末尾
 	const handleApplyBridge = useCallback(() => {

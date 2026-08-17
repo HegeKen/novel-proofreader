@@ -183,25 +183,35 @@ export async function sendChatCompletion(
 	const startTime = Date.now();
 	const url = `${config.baseURL.replace(/\/+$/, "")}/chat/completions`;
 
+	const provider = detectProvider(config.baseURL);
+
 	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
 		...config.customHeaders,
 	};
 	if (config.apiKey) {
-		headers["Authorization"] = `Bearer ${config.apiKey}`;
+		if (provider === "mimo") {
+			// MiMo 新版接口使用 api-key 请求头
+			headers["api-key"] = config.apiKey;
+		} else {
+			headers["Authorization"] = `Bearer ${config.apiKey}`;
+		}
 	}
 
 	const promptTokens = Math.floor(messages.reduce((acc, m) => acc + (m.content?.length || 0), 0) * 0.5);
 	const minMaxTokens = Math.max(131072, Math.floor(promptTokens * 1.5));
 
-	const body = {
+	const body: Record<string, unknown> = {
 		model: config.model,
 		messages,
 		temperature: 0.1,
-		max_tokens: minMaxTokens,
 	};
-
-	const provider = detectProvider(config.baseURL);
+	if (provider === "mimo") {
+		// MiMo 新版接口使用 max_completion_tokens
+		body.max_completion_tokens = minMaxTokens;
+	} else {
+		body.max_tokens = minMaxTokens;
+	}
 
 	for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
 		throwIfAborted(signal);
@@ -1313,6 +1323,7 @@ export async function generateContinuation(
 	params: ContinuationParams,
 	config: AIConfig,
 	signal?: AbortSignal,
+	continuationPrompt?: string,
 ): Promise<string> {
 	const chapterContext = params.recentChapters.map(ch =>
 		`【${ch.title}】\n${ch.content.slice(-2000)}`
@@ -1360,7 +1371,7 @@ ${params.worldbuilding || "暂无"}
 请根据以上信息，续写接下来的剧情发展，保持风格一致。`;
 
 	// 动态替换目标字数
-	const systemPrompt = CONTINUATION_SYSTEM_PROMPT.replace("{TARGET_WORD_COUNT}", `每次续写输出${params.targetWordCount}字左右的连贯内容`);
+	const systemPrompt = (continuationPrompt || CONTINUATION_SYSTEM_PROMPT).replace("{TARGET_WORD_COUNT}", `每次续写输出${params.targetWordCount}字左右的连贯内容`);
 
 	const messages: ChatMessage[] = [
 		{ role: "system", content: systemPrompt },
@@ -1415,6 +1426,7 @@ export async function generateChapterBridge(
 	params: BridgeParams,
 	config: AIConfig,
 	signal?: AbortSignal,
+	bridgePrompt?: string,
 ): Promise<string> {
 	const userPrompt = `## 上一章：${params.prevTitle}
 末尾内容：
@@ -1433,7 +1445,7 @@ ${params.worldbuilding || "暂无"}
 请根据以上信息，在上一章末尾和下一章开头之间生成自然的过渡衔接段落。`;
 
 	const messages: ChatMessage[] = [
-		{ role: "system", content: BRIDGE_SYSTEM_PROMPT },
+		{ role: "system", content: bridgePrompt || BRIDGE_SYSTEM_PROMPT },
 		{ role: "user", content: userPrompt },
 	];
 
@@ -1683,6 +1695,7 @@ export async function analyzeCharactersInBatches(
 	batchSize: number = 30000,
 	signal?: AbortSignal,
 	onProgress?: (current: number, total: number, phase: "analyze" | "summarize") => void,
+	fragmentSummarizePrompt?: string,
 ): Promise<CharacterAnalysisResult> {
 	// 按段落切片：在段落边界（双换行）处断开，避免截断句子
 	const chunks = splitByParagraphs(fullText, batchSize);
@@ -1801,7 +1814,7 @@ export async function analyzeCharactersInBatches(
 				`- 所有别名（aliases）：${JSON.stringify(mergedAliases)}\n` +
 				`- 所有出场位置（appearances）：${JSON.stringify(mergedAppearances)}`;
 
-			const systemPrompt = CHARACTER_FRAGMENT_SUMMARIZE_PROMPT
+			const systemPrompt = (fragmentSummarizePrompt || CHARACTER_FRAGMENT_SUMMARIZE_PROMPT)
 				.replace("{characterName}", name)
 				.replace("{characterFragments}", fragmentsText + premergedInfo);
 
@@ -2129,10 +2142,10 @@ export const NOVEL_EVENTS_SYSTEM_PROMPT = `你是一位专业的小说编辑助�
 }
 
 要求：
-1. 提取小说中发生的所有重要事件，按照时间顺序排列，越详细越好
+1. 提取小说中发生的所有事件，按照时间顺序排列，越详细越好
 2. 仔细分析全文中的所有时间信息，包括章节标题、正文中提到的时间点、时间段、时间跨度等
 3. 每个事件包含：title（标题）、description（描述）、timeOrder（时间顺序编号）、chapterOrder（行文顺序编号）、timeInfo（具体时间描述，从原文中提取或推断）、chapter（发生章节）、volume（所属卷标题，可选）、involvedCharacterNames（涉及角色名称数组）、id（事件ID，格式为 evt-xxx）
-4. 事件数量不做限制，尽可能详细记录每个重要时间点发生的事件
+4. 事件数量不做限制，越详细越多越好，尽可能详细记录每个发生的事件
 5. timeOrder 从 1 开始递增，表示故事时间线顺序（数字越小越早发生）
 6. chapterOrder 从 1 开始递增，表示阅读顺序/行文顺序（数字越小越早在小说中出现）
 7. 注意：timeOrder 和 chapterOrder 是两个不同的概念！如果小说使用插叙/倒叙，同一事件的 timeOrder 和 chapterOrder 会不同。例如：倒叙中先读到的事件，chapterOrder 小但 timeOrder 大；插叙中回忆的事件，chapterOrder 大但 timeOrder 小
@@ -2183,7 +2196,7 @@ export const NOVEL_EVENTS_MERGE_PROMPT = `你是小说剧情分析专家。以�
 要求：
 1. 合并意思相近或重复的事件
 2. 按故事发展的时间顺序排列
-3. 保留尽可能多的核心事件，越详尽越好
+3. 保留小说中发生的所有事件，越详尽越好
 4. 去除冗余和次要信息
 5. timeOrder 从 1 开始递增，不要重复，表示故事时间线顺序
 6. chapterOrder 从 1 开始递增，不要重复，表示阅读顺序/行文顺序
@@ -2237,6 +2250,7 @@ export async function generateNovelEvents(
   onProgress?: (current: number, total: number, phase: "analyze" | "merge") => void,
   skipMerge?: boolean,
   existingEvents?: Array<{ title: string; description: string; timeOrder: number; chapterOrder: number; chapter: string; timeInfo: string; volume?: string }>,
+  mergePrompt?: string,
 ): Promise<NovelEventsResult> {
   if (!config.apiKey || !config.baseURL) {
     throw new Error("AI配置不完整");
@@ -2336,13 +2350,13 @@ ${chunks[i]}`;
   }
 
   const eventsJson = JSON.stringify(allEventsFromChunks);
-  const mergePrompt = `以下是从小说各文本片段中提取出的事件列表，请合并去重并按时间顺序排列：
+  const mergeUserContent = `以下是从小说各文本片段中提取出的事件列表，请合并去重并按时间顺序排列：
 
 ${eventsJson}`;
 
   const mergeMessages: ChatMessage[] = [
-    { role: "system", content: NOVEL_EVENTS_MERGE_PROMPT },
-    { role: "user", content: mergePrompt },
+    { role: "system", content: mergePrompt || NOVEL_EVENTS_MERGE_PROMPT },
+    { role: "user", content: mergeUserContent },
   ];
 
   try {
@@ -2540,14 +2554,32 @@ ${eventsText}
 
 	const response = await sendChatCompletion(messages, config, signal);
 	
-	try {
-		const jsonMatch = response.match(/\[.*\]/);
-		if (jsonMatch) {
-			const result = JSON.parse(jsonMatch[0]) as Array<{ title: string }>;
-			return result.map(item => item.title).filter(Boolean);
+	// 优先用健壮解析（支持多行 JSON、```json 代码块、对象包装），失败再回退到引号提取
+	const parsed = extractJSON(response);
+	if (Array.isArray(parsed)) {
+		const titles = parsed
+			.map(item => item && typeof item === "object" && "title" in (item as object)
+				? (item as { title?: unknown }).title
+				: undefined)
+			.filter((t): t is string => typeof t === "string" && t.trim().length > 0);
+		if (titles.length > 0) return titles;
+	} else if (parsed && typeof parsed === "object") {
+		// 兼容 { "titles": [...] } 之类的包装对象
+		const obj = parsed as Record<string, unknown>;
+		for (const key of ["titles", "suggestions", "title"]) {
+			const val = obj[key];
+			if (Array.isArray(val)) {
+				const titles = val
+					.map(item => {
+						if (item && typeof item === "object" && "title" in (item as object)) {
+							return (item as { title?: unknown }).title;
+						}
+						return typeof item === "string" ? item : undefined;
+					})
+					.filter((t): t is string => typeof t === "string" && t.trim().length > 0);
+				if (titles.length > 0) return titles;
+			}
 		}
-	} catch {
-		logger.warn("[ChapterTitle] 解析JSON失败");
 	}
 	
 	// 如果解析失败，尝试提取引号或书名号中的标题
@@ -2613,7 +2645,10 @@ function formatCharacterInfo(c: CharacterInfo): string {
 }
 
 /** 构建角色扮演的系统提示词（角色设定 + 关系 + 世界观 + 剧情位置 + 对话者身份） */
-export function buildRoleplaySystemPrompt(params: RoleplayContextParams): string {
+export function buildRoleplaySystemPrompt(
+	params: RoleplayContextParams,
+	customSystemPrompt?: string,
+): string {
 	const {
 		character,
 		relatedRelationships,
@@ -2658,7 +2693,7 @@ export function buildRoleplaySystemPrompt(params: RoleplayContextParams): string
 		if (wbLines.length === 0 && worldbuilding.description) wbLines.push(`世界观概述：${worldbuilding.description}`);
 	}
 
-	return `${ROLEPLAY_SYSTEM_PROMPT}
+	return `${customSystemPrompt || ROLEPLAY_SYSTEM_PROMPT}
 
 【你的角色设定】
 ${formatCharacterInfo(character)}
@@ -2714,7 +2749,10 @@ export interface RoleplayMultiContextParams extends RoleplayContextParams {
 }
 
 /** 构建多角色扮演的系统提示词（主角色 + 全部可引入角色 + 关系 + 世界观 + 剧情 + 对话者身份） */
-export function buildRoleplayMultiSystemPrompt(params: RoleplayMultiContextParams): string {
+export function buildRoleplayMultiSystemPrompt(
+	params: RoleplayMultiContextParams,
+	customSystemPrompt?: string,
+): string {
 	const {
 		character: mainCharacter,
 		playableCharacters,
@@ -2767,7 +2805,7 @@ export function buildRoleplayMultiSystemPrompt(params: RoleplayMultiContextParam
 		if (wbLines.length === 0 && worldbuilding.description) wbLines.push(`世界观概述：${worldbuilding.description}`);
 	}
 
-	return `${ROLEPLAY_MULTI_SYSTEM_PROMPT}
+	return `${customSystemPrompt || ROLEPLAY_MULTI_SYSTEM_PROMPT}
 
 【当前在场角色】（这些角色都在场，本轮输出中每个角色都必须各发言一条，缺一不可）
 ${presentNames}

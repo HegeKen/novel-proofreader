@@ -59,6 +59,21 @@ describe('extractJSON', () => {
 		expect(result).toEqual([{ a: 1 }, { b: 2 }])
 	})
 
+	it('extracts multi-line formatted JSON array (章节标题候选等场景)', () => {
+		const text = `AI返回内容：
+[
+  {
+    "title": "京城寻踪"
+  },
+  {
+    "title": "铁匠传说"
+  }
+]
+以上是建议。`
+		const result = extractJSON(text)
+		expect(result).toEqual([{ title: '京城寻踪' }, { title: '铁匠传说' }])
+	})
+
 	it('extracts JSON object from text with surrounding content', () => {
 		const text = 'Some text {"errors": [{"line": 1}]} more text'
 		const result = extractJSON(text)

@@ -1,0 +1,5 @@
+<resources>
+    <!-- 简体中文（设备语言为中文时自动选用） -->
+    <string name="app_name">AI排版校对助手</string>
+    <string name="main_activity_title">AI排版校对助手</string>
+</resources>

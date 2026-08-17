@@ -956,7 +956,7 @@ export function useAICheck() {
 						);
 
 						const systemPrompt = buildProofreadSystemPrompt(
-							PROOFREAD_SYSTEM_PROMPT_DUAL,
+							promptConfig.dualProofread || PROOFREAD_SYSTEM_PROMPT_DUAL,
 							combinedIgnoredWords,
 						);
 

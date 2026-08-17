@@ -120,6 +120,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 	const worldbuilding = useCharacterStore((s) => s.worldbuilding[novelId] ?? null);
 	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
+	const promptConfig = useConfigStore((s) => s.promptConfig);
 
 	const sessions = useRoleplayStore((s) => s.sessions[novelId] ?? EMPTY_SESSIONS);
 	const activeSessionId = useRoleplayStore((s) => s.activeSessionId[novelId] ?? null);
@@ -299,7 +300,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 					currentChapterTitle: chapter?.title ?? "",
 					recentPlot: chapter ? chapter.content.slice(0, 800) : "",
 					userCharacter,
-				});
+				}, promptConfig.roleplayMulti);
 				// 历史消息 = contextMessages 去掉最后一条（最后一条即本次输入）+ 附加上下文，保留最近 20 条；
 				// 多角色场景下给 AI 标出每条 assistant 消息来自哪个角色，避免串戏
 				const baseHistory: RoleplayMessage[] = [...contextMessages.slice(0, -1), ...(extraHistory ?? [])];
@@ -418,7 +419,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 			setIsSending(false);
 			abortRef.current = null;
 		}
-	}, [aiConfig, characters, relationships, worldbuilding, chapters, novelId, addMessage]);
+	}, [aiConfig, characters, relationships, worldbuilding, chapters, novelId, addMessage, promptConfig]);
 
 	/** 发送消息并请求 AI 回复 */
 	const handleSend = useCallback(async () => {

@@ -109,6 +109,25 @@ export default function App() {
 		audioCache.setPersistent(audioCachePersistent);
 	}, [audioCachePersistent]);
 
+	// 根据系统语言自动切换窗口标题（仅桌面端生效；productName 为编译期常量无法切换）
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const isTauriEnv = "__TAURI_INTERNALS__" in window || "__TAURI__" in window;
+		if (!isTauriEnv) return;
+		const lang = (navigator.language || "zh-CN").toLowerCase();
+		const title = lang.startsWith("zh")
+			? "AI排版校对助手 - 智能小说校对工具"
+			: "AI Proofreader - Novel Proofreading Tool";
+		let cancelled = false;
+		import("@tauri-apps/api/window")
+			.then(({ getCurrentWindow }) => {
+				if (cancelled) return;
+				getCurrentWindow().setTitle(title);
+			})
+			.catch(() => { /* 非 Tauri 环境忽略 */ });
+		return () => { cancelled = true; };
+	}, []);
+
 	// 从文件系统/IndexedDB 恢复小说全文（因为 fullText 未持久化到 localStorage）
 	const restoreFullTextFromStorage = useCallback(async () => {
 		const state = useNovelStore.getState();

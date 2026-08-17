@@ -11,6 +11,7 @@ import type { ChatMessage } from "../utils/aiClient";
 import { generateId } from "../utils/id";
 import { RELATION_TYPE_OPTIONS, makeRelationPairKey } from "../utils/characterRoles";
 import { useElapsedTime, formatElapsedTime } from "../hooks/useElapsedTime";
+import { sendTaskNotification } from "../utils/notifications";
 
 interface RelationshipGraphProps {
 	novelId: string;
@@ -895,6 +896,7 @@ ${existingRelationships.length > 0 ? JSON.stringify(existingRelationships, null,
 			}
 
 			useAppMetaStore.getState().showToast(`关系生成完成，新增/更新 ${addedCount} 条关系`, "success");
+			sendTaskNotification("关系生成完成", `新增/更新 ${addedCount} 条角色关系`);
 		} catch (err) {
 			useAppMetaStore.getState().showToast("关系生成失败: " + (err instanceof Error ? err.message : String(err)), "error");
 		} finally {
@@ -1039,6 +1041,7 @@ ${JSON.stringify(currentRels, null, 2)}
 
 			setRelationshipsForNovel(novelId, newRelationships);
 			useAppMetaStore.getState().showToast(`关系梳理完成，共 ${newRelationships.length} 条关系`, "success");
+			sendTaskNotification("关系梳理完成", `整合为 ${newRelationships.length} 条角色关系`);
 		} catch (err) {
 			useAppMetaStore.getState().showToast("关系梳理失败: " + (err instanceof Error ? err.message : String(err)), "error");
 		} finally {
