@@ -67,7 +67,7 @@ export const useAIConfigStore = create<AIConfigState>()(
 				if (state) {
 					setLoggerEnabled(state.aiConfig.enableLogging);
 					await preloadSecureStorage();
-					const providers: AIProvider[] = ['openai', 'deepseek', 'siliconflow', 'mimo', 'lmstudio', 'ollama', 'vllm', 'custom'];
+					const providers: AIProvider[] = ['openai', 'deepseek', 'siliconflow', 'mimo', 'qwen', 'glm', 'lmstudio', 'ollama', 'vllm', 'custom'];
 					const currentProvider = detectProvider(state.aiConfig.baseURL);
 					const nextApiKeyMap = { ...state.apiKeyMap };
 					let restoredKey = "";

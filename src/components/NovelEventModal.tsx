@@ -1,8 +1,8 @@
-import React, { useState, useCallback, useMemo, useRef } from "react";
+import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useCharacterStore } from "../stores/characterStore";
 import { useNovelStore } from "../stores/novelStore";
-import type { NovelEvent } from "../types";
+import type { NovelEvent, CharacterInfo, Chapter } from "../types";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { useAppMetaStore } from "../stores/appMetaStore";
@@ -44,6 +44,143 @@ const emptyForm: EventFormData = {
 	involvedCharacterIds: [],
 };
 
+interface EventEditFormContentProps {
+	formData: EventFormData;
+	setFormData: React.Dispatch<React.SetStateAction<EventFormData>>;
+	characters: CharacterInfo[];
+	chapters: Chapter[];
+	toggleCharacter: (id: string) => void;
+	getVolumeForChapter: (chapter: string) => string | null;
+	onCancel: () => void;
+	onSave: () => void;
+}
+
+/** 大事记编辑表单内容（新增/编辑共用） */
+function EventEditFormContent({
+	formData, setFormData, characters, chapters, toggleCharacter, getVolumeForChapter, onCancel, onSave,
+}: EventEditFormContentProps) {
+	return (
+		<>
+			<div className="form-field">
+				<label>事件标题</label>
+				<input
+					type="text"
+					className="config-input"
+					value={formData.title}
+					onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+					placeholder="如：青云门拜师"
+				/>
+			</div>
+			<div className="form-field">
+				<label>时间顺序</label>
+				<input
+					type="number"
+					className="config-input"
+					style={{ width: 100 }}
+					value={formData.timeOrder}
+					onChange={(e) =>
+						setFormData({ ...formData, timeOrder: Math.max(1, parseInt(e.target.value) || 1) })
+					}
+					min={1}
+				/>
+			</div>
+			<div className="form-field">
+				<label>章节顺序</label>
+				<input
+					type="number"
+					className="config-input"
+					style={{ width: 100 }}
+					value={formData.chapterOrder}
+					onChange={(e) =>
+						setFormData({ ...formData, chapterOrder: Math.max(1, parseInt(e.target.value) || 1) })
+					}
+					min={1}
+				/>
+			</div>
+			<div className="form-field">
+				<label>所属分卷</label>
+				<Select
+					value={formData.volume}
+					onChange={(value) => setFormData({ ...formData, volume: value })}
+					options={[
+						{ value: "", label: "无分卷" },
+						...chapters
+							.filter((ch) => ch.isVolume)
+							.map((vol) => ({ value: vol.title, label: vol.title })),
+					]}
+				/>
+			</div>
+			<div className="form-field">
+				<label>发生章节</label>
+				<input
+					type="text"
+					className="config-input"
+					value={formData.chapter}
+					onChange={(e) => setFormData({ ...formData, chapter: e.target.value })}
+					placeholder={formData.volume ? `如：${formData.volume} 中的章节名` : "如：第1章、第一章"}
+				/>
+				{formData.chapter && (() => {
+					const volume = getVolumeForChapter(formData.chapter);
+					return volume ? (
+						<span className="chapter-volume-hint">所属分卷：{volume}</span>
+					) : null;
+				})()}
+			</div>
+			<div className="form-field">
+				<label>时间信息</label>
+				<input
+					type="text"
+					className="config-input"
+					value={formData.timeInfo}
+					onChange={(e) => setFormData({ ...formData, timeInfo: e.target.value })}
+					placeholder="如：三年后、清晨、某日傍晚"
+				/>
+			</div>
+			<div className="form-field">
+				<label>事件描述</label>
+				<textarea
+					className="config-input"
+					value={formData.description}
+					onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+					placeholder="描述事件的具体经过..."
+					rows={3}
+				/>
+			</div>
+			<div className="form-field event-characters-field">
+				<label>涉及角色（{formData.involvedCharacterIds.length} 个）</label>
+				<div className="event-characters-list">
+					{characters.length === 0 && (
+						<span className="event-no-characters">暂无可选角色</span>
+					)}
+					{characters.map((ch) => (
+						<label key={ch.id} className="event-character-item">
+							<input
+								type="checkbox"
+								checked={formData.involvedCharacterIds.includes(ch.id)}
+								onChange={() => toggleCharacter(ch.id)}
+							/>
+							<span className="event-character-name">
+								{ch.name}
+								{ch.role && <span className="event-character-role">（{ch.role === "protagonist" ? "男主" : ch.role === "heroine" ? "女主" : ch.role === "antagonist" ? "反派" : ch.role === "supportingMale" ? "男配角" : ch.role === "supportingFemale" ? "女配角" : ch.role === "narrator" ? "旁白" : ch.role}）</span>}
+							</span>
+						</label>
+					))}
+				</div>
+			</div>
+			<div className="event-edit-actions">
+				<button className="btn" onClick={onCancel}>
+					<Icons.x size={14} />
+					<span>取消</span>
+				</button>
+				<button className="btn btn-primary" onClick={onSave}>
+					<Icons.saveIcon size={14} />
+					<span>保存</span>
+				</button>
+			</div>
+		</>
+	);
+}
+
 /** 将 AI 请求异常映射为用户友好提示（操作名前缀可定制） */
 function buildAIErrorMessage(action: string, error: unknown): string {
 	const errorMessage = error instanceof Error ? error.message : `${action}失败`;
@@ -79,6 +216,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 	const promptConfig = useConfigStore((s) => s.promptConfig);
 
 	const [editingId, setEditingId] = useState<string | null>(null);
+	const editFormRef = useRef<HTMLDivElement>(null);
 	const [formData, setFormData] = useState<EventFormData>(emptyForm);
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 	const [isGenerating, setIsGenerating] = useState(false);
@@ -211,6 +349,15 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		setEditingId(null);
 		setFormData(emptyForm);
 	}, []);
+
+	// 编辑表单出现后自动滚动到可视区域
+	useEffect(() => {
+		if (editingId && editFormRef.current) {
+			requestAnimationFrame(() => {
+				editFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+			});
+		}
+	}, [editingId]);
 
 	const handleSave = useCallback(() => {
 		if (!novelId) return;
@@ -740,128 +887,20 @@ ${eventsJson}`;
 						</div>
 					)}
 
-					{/* 编辑/添加表单 */}
-					{editingId !== null && (
-						<div className="event-edit-form">
-							<h4 className="event-edit-title">
-								{editingId === "__new__" ? "添加大事记" : "编辑大事记"}
-							</h4>
-							<div className="form-field">
-								<label>事件标题</label>
-								<input
-									type="text"
-									className="config-input"
-									value={formData.title}
-									onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-									placeholder="如：青云门拜师"
-								/>
-							</div>
-							<div className="form-field">
-								<label>时间顺序</label>
-								<input
-									type="number"
-									className="config-input"
-									style={{ width: 100 }}
-									value={formData.timeOrder}
-									onChange={(e) =>
-										setFormData({ ...formData, timeOrder: Math.max(1, parseInt(e.target.value) || 1) })
-									}
-									min={1}
-								/>
-							</div>
-							<div className="form-field">
-								<label>章节顺序</label>
-								<input
-									type="number"
-									className="config-input"
-									style={{ width: 100 }}
-									value={formData.chapterOrder}
-									onChange={(e) =>
-										setFormData({ ...formData, chapterOrder: Math.max(1, parseInt(e.target.value) || 1) })
-									}
-									min={1}
-								/>
-							</div>
-							<div className="form-field">
-								<label>所属分卷</label>
-								<Select
-									value={formData.volume}
-									onChange={(value) => setFormData({ ...formData, volume: value })}
-									options={[
-										{ value: "", label: "无分卷" },
-										...chapters
-											.filter((ch) => ch.isVolume)
-											.map((vol) => ({ value: vol.title, label: vol.title })),
-									]}
-								/>
-							</div>
-							<div className="form-field">
-								<label>发生章节</label>
-								<input
-									type="text"
-									className="config-input"
-									value={formData.chapter}
-									onChange={(e) => setFormData({ ...formData, chapter: e.target.value })}
-									placeholder={formData.volume ? `如：${formData.volume} 中的章节名` : "如：第1章、第一章"}
-								/>
-								{formData.chapter && (() => {
-									const volume = getVolumeForChapter(formData.chapter);
-									return volume ? (
-										<span className="chapter-volume-hint">所属分卷：{volume}</span>
-									) : null;
-								})()}
-							</div>
-							<div className="form-field">
-								<label>时间信息</label>
-								<input
-									type="text"
-									className="config-input"
-									value={formData.timeInfo}
-									onChange={(e) => setFormData({ ...formData, timeInfo: e.target.value })}
-									placeholder="如：三年后、清晨、某日傍晚"
-								/>
-							</div>
-							<div className="form-field">
-								<label>事件描述</label>
-								<textarea
-									className="config-input"
-									value={formData.description}
-									onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-									placeholder="描述事件的具体经过..."
-									rows={3}
-								/>
-							</div>
-							<div className="form-field event-characters-field">
-								<label>涉及角色（{formData.involvedCharacterIds.length} 个）</label>
-								<div className="event-characters-list">
-									{characters.length === 0 && (
-										<span className="event-no-characters">暂无可选角色</span>
-									)}
-									{characters.map((ch) => (
-										<label key={ch.id} className="event-character-item">
-											<input
-												type="checkbox"
-												checked={formData.involvedCharacterIds.includes(ch.id)}
-												onChange={() => toggleCharacter(ch.id)}
-											/>
-											<span className="event-character-name">
-												{ch.name}
-												{ch.role && <span className="event-character-role">（{ch.role === "protagonist" ? "男主" : ch.role === "heroine" ? "女主" : ch.role === "antagonist" ? "反派" : ch.role === "supportingMale" ? "男配角" : ch.role === "supportingFemale" ? "女配角" : ch.role === "narrator" ? "旁白" : ch.role}）</span>}
-											</span>
-										</label>
-									))}
-								</div>
-							</div>
-							<div className="event-edit-actions">
-								<button className="btn" onClick={handleCancelEdit}>
-									<Icons.x size={14} />
-									<span>取消</span>
-								</button>
-								<button className="btn btn-primary" onClick={handleSave}>
-									<Icons.saveIcon size={14} />
-									<span>保存</span>
-								</button>
-							</div>
+					{/* 新增大事记表单 - 在列表顶部显示 */}
+					{editingId === "__new__" && (
+						<div ref={editFormRef} className="event-edit-form">
+							<h4 className="event-edit-title">添加大事记</h4>
+							<EventEditFormContent
+								formData={formData}
+								setFormData={setFormData}
+								characters={characters}
+								chapters={chapters}
+								toggleCharacter={toggleCharacter}
+								getVolumeForChapter={getVolumeForChapter}
+								onCancel={handleCancelEdit}
+								onSave={handleSave}
+							/>
 						</div>
 					)}
 
@@ -973,79 +1012,97 @@ ${eventsJson}`;
 							</div>
 						)}
 						{sortedEvents.map((evt, idx) => (
-							<div key={evt.id} className="event-item">
-								<div className="event-item-order">{idx + 1}</div>
-								<div className="event-item-body">
-									<div className="event-item-title">{evt.title}</div>
-									<div className="event-item-meta">
-										{evt.chapter && (
-											<span className="event-item-chapter">
-												{(() => {
-													// 优先使用拆分的 volume 字段（卷·章），否则回退旧格式
-													if (evt.volume) {
-														return `${evt.volume}·${evt.chapter}`;
-													}
-													if (evt.chapter.includes("·")) {
-														return evt.chapter;
-													}
-													const volume = getVolumeForChapter(evt.chapter);
-													return volume 
-														? `${volume}·${evt.chapter}`
-														: evt.chapter;
-												})()}
-											</span>
+							<div key={evt.id}>
+								<div className="event-item">
+									<div className="event-item-order">{idx + 1}</div>
+									<div className="event-item-body">
+										<div className="event-item-title">{evt.title}</div>
+										<div className="event-item-meta">
+											{evt.chapter && (
+												<span className="event-item-chapter">
+													{(() => {
+														// 优先使用拆分的 volume 字段（卷·章），否则回退旧格式
+														if (evt.volume) {
+															return `${evt.volume}·${evt.chapter}`;
+														}
+														if (evt.chapter.includes("·")) {
+															return evt.chapter;
+														}
+														const volume = getVolumeForChapter(evt.chapter);
+														return volume 
+															? `${volume}·${evt.chapter}`
+															: evt.chapter;
+													})()}
+												</span>
+											)}
+											{evt.timeInfo && (
+												<span className="event-item-time-info">{evt.timeInfo}</span>
+											)}
+										</div>
+										{evt.description && (
+											<div className="event-item-desc">{evt.description}</div>
 										)}
-										{evt.timeInfo && (
-											<span className="event-item-time-info">{evt.timeInfo}</span>
+										{evt.involvedCharacterIds.length > 0 && (
+											<div className="event-item-characters">
+												{evt.involvedCharacterIds.map((cid) => {
+													const ch = characters.find((c) => c.id === cid);
+													return ch ? (
+														<span key={cid} className="event-item-character-tag">
+															{ch.name}
+														</span>
+													) : null;
+												})}
+											</div>
 										)}
 									</div>
-									{evt.description && (
-										<div className="event-item-desc">{evt.description}</div>
-									)}
-									{evt.involvedCharacterIds.length > 0 && (
-										<div className="event-item-characters">
-											{evt.involvedCharacterIds.map((cid) => {
-												const ch = characters.find((c) => c.id === cid);
-												return ch ? (
-													<span key={cid} className="event-item-character-tag">
-														{ch.name}
-													</span>
-												) : null;
-											})}
-										</div>
-									)}
-								</div>
-								<div className="event-item-actions">
-									<button
-										className="event-item-btn"
-										title="编辑"
-										onClick={() => handleEdit(evt)}
-										disabled={editingId !== null}
-									>
-										<Icons.edit size={14} />
-									</button>
-									<button
-										className="event-item-btn event-item-btn-danger"
-										title="删除"
-										onClick={() => setShowDeleteConfirm(evt.id)}
-										disabled={editingId !== null}
-									>
-										<Icons.trash2 size={14} />
-									</button>
-								</div>
+									<div className="event-item-actions">
+										<button
+											className="event-item-btn"
+											title="编辑"
+											onClick={() => handleEdit(evt)}
+											disabled={editingId !== null}
+										>
+											<Icons.edit size={14} />
+										</button>
+										<button
+											className="event-item-btn event-item-btn-danger"
+											title="删除"
+											onClick={() => setShowDeleteConfirm(evt.id)}
+											disabled={editingId !== null}
+										>
+											<Icons.trash2 size={14} />
+										</button>
+									</div>
 
-								{/* 删除确认 */}
-								{showDeleteConfirm === evt.id && (
-									<div className="event-delete-confirm">
-										<span>确定删除「{evt.title}」？</span>
-										<div className="event-delete-confirm-actions">
-											<button className="btn btn-sm" onClick={() => setShowDeleteConfirm(null)}>
-												取消
-											</button>
-											<button className="btn btn-sm btn-danger" onClick={() => handleDelete(evt.id)}>
-												删除
-											</button>
+									{/* 删除确认 */}
+									{showDeleteConfirm === evt.id && (
+										<div className="event-delete-confirm">
+											<span>确定删除「{evt.title}」？</span>
+											<div className="event-delete-confirm-actions">
+												<button className="btn btn-sm" onClick={() => setShowDeleteConfirm(null)}>
+													取消
+												</button>
+												<button className="btn btn-sm btn-danger" onClick={() => handleDelete(evt.id)}>
+													删除
+												</button>
+											</div>
 										</div>
+									)}
+								</div>
+								{/* 编辑表单 - 在对应事件下方内联显示 */}
+								{editingId === evt.id && (
+									<div ref={editFormRef} className="event-edit-form">
+										<h4 className="event-edit-title">编辑大事记</h4>
+										<EventEditFormContent
+											formData={formData}
+											setFormData={setFormData}
+											characters={characters}
+											chapters={chapters}
+											toggleCharacter={toggleCharacter}
+											getVolumeForChapter={getVolumeForChapter}
+											onCancel={handleCancelEdit}
+											onSave={handleSave}
+										/>
 									</div>
 								)}
 							</div>

@@ -35,6 +35,8 @@ export function detectProvider(baseURL: string): AIProvider {
 	const url = baseURL.toLowerCase();
 	if (url.includes("deepseek")) return "deepseek";
 	if (url.includes("xiaomimimo") || url.includes("mimo")) return "mimo";
+	if (url.includes("dashscope") || url.includes("maas.aliyuncs")) return "qwen";
+	if (url.includes("bigmodel")) return "glm";
 	if (url.includes("siliconflow")) return "siliconflow";
 	if (url.includes("openai")) return "openai";
 	if (url.includes("localhost:1234") || url.includes("127.0.0.1:1234")) return "lmstudio";
@@ -72,6 +74,25 @@ const ERROR_MESSAGES: Partial<Record<AIProvider, Record<number, string>>> = {
 		503: "SiliconFlow 服务繁忙，请稍后重试",
 		504: "SiliconFlow 服务超时，建议开启流式输出或稍后重试",
 	},
+	qwen: {
+		400: "请求参数错误：可能是模型未在百炼控制台开通、输入超出模型长度上限，或账户欠费",
+		401: "API Key 无效，或 Key 与接入地域不匹配（北京/新加坡/弗吉尼亚地域 Key 不通用）",
+		403: "无权访问：模型未开通、免费额度已耗尽，或账户欠费，请前往百炼控制台检查",
+		404: "模型不存在或未开通，请核对模型名称并前往百炼模型市场开通",
+		408: "请求超时，输出内容过长时建议稍后重试",
+		413: "请求内容过大，超出模型上下文长度限制，请缩短输入文本",
+		429: "触发限流（RPM/TPM），通常一分钟内自动恢复，请降低调用频率后重试",
+		500: "百炼服务内部错误，请稍后重试",
+		503: "百炼服务繁忙，请稍后重试",
+	},
+	glm: {
+		400: "请求错误：可能是模型名称不存在、参数格式有误、Prompt 超长，或内容未通过安全审核",
+		401: "API Key 缺失、无效或已过期，请重新获取智谱 API Key",
+		403: "无权访问该模型，请确认已在智谱开放平台开通对应服务",
+		429: "请求受限：可能是触发速率限制、用量达上限、账户欠费或 Coding Plan 套餐到期，详情见错误信息",
+		500: "智谱服务内部错误，请稍后重试",
+		503: "智谱服务繁忙，请稍后重试",
+	},
 	openai: {
 		400: "请求格式错误，请检查配置",
 		401: "API Key 无效，请检查 OpenAI API Key",
@@ -101,6 +122,30 @@ function extractDetailError(body: string): string | null {
 const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504];
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
+
+/**
+ * 智谱 429 中属于账户/套餐问题的业务错误码（重试无意义）：
+ * 1113 账户欠费、1308/1310 周期额度上限、1309 套餐到期、1311 套餐无模型权限、
+ * 1313 公平使用策略限制、1314 企业套餐失效、1315 Key 类型错误、1316-1321 周期上限叠加欠费
+ */
+const GLM_PERMANENT_429_CODES = new Set([
+	"1113", "1308", "1309", "1310", "1311", "1313", "1314", "1315",
+	"1316", "1317", "1318", "1319", "1320", "1321",
+]);
+
+/** 判断失败响应是否为不可重试的永久性错误（如欠费、套餐到期、额度耗尽） */
+function isPermanentFailure(provider: AIProvider, status: number, body: string): boolean {
+	try {
+		const obj = JSON.parse(body);
+		const code = String(obj.error?.code ?? obj.code ?? "");
+		if (provider === "glm" && status === 429 && GLM_PERMANENT_429_CODES.has(code)) {
+			return true;
+		}
+	} catch {
+		// 响应体非 JSON，按默认可重试处理
+	}
+	return false;
+}
 
 async function waitForRetry(attempt: number, signal?: AbortSignal): Promise<void> {
 	const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt) + Math.random() * 500;
@@ -221,8 +266,13 @@ export async function sendChatCompletion(
 
 			if (!resp.ok) {
 				const text = await resp.text().catch(() => "");
-				
-				if (RETRYABLE_STATUS_CODES.includes(resp.status) && attempt < MAX_RETRIES - 1) {
+
+				// 永久性错误（欠费、套餐到期、额度耗尽）直接抛出，不重试
+				if (
+					RETRYABLE_STATUS_CODES.includes(resp.status) &&
+					!isPermanentFailure(provider, resp.status, text) &&
+					attempt < MAX_RETRIES - 1
+				) {
 					logger.warn(`AI 请求失败，准备重试 (attempt ${attempt + 1}/${MAX_RETRIES})`, { status: resp.status });
 					await waitForRetry(attempt, signal);
 					continue;
@@ -1197,6 +1247,186 @@ export interface ParagraphEmotionResult {
 	segments: TextSegment[];
 }
 
+// ============================================================
+// 阅读模式批量TTS情感增强Prompt（一次分析从所选段落至章节结束）
+// ============================================================
+
+/** 阅读模式批量TTS情感增强系统提示词：一次性分析连续段落，逐段输出角色/情绪标注 */
+export const READING_MODE_BATCH_TTS_ENHANCE_SYSTEM_PROMPT = `你是小说有声书演播导演。一次性分析从指定段落起至章节结束的连续段落：识别每段出现的人物、判断情绪、输出TTS标注JSON。
+
+## 核心原则：贴近生活、自然真实
+- 情感表达要像真人在日常生活里说话，克制内敛，不要舞台腔、播音腔
+- 避免过度戏剧化：日常对话不用"动情""凌厉"等强标签，优先用"平静""无奈""温柔"
+- 情绪强度与原文语境匹配：小事不放大，大事不缩水
+- 优先选择克制、含蓄的情绪（如"平静""无奈""温柔""慵懒"），慎用激烈情绪
+- 旁白/叙述段：默认"平静"，仅在大起大落、明显情绪描写时才换标签
+
+## 核心约束：绝对禁止篡改原文
+- 每个段落的 text 字段必须包含「该编号段落」的完整原文，只允许在开头添加 (标签) 或句中插入 [音频标签]
+- 禁止修改、增删、替换、润色原文中的任何词语、标点或字符
+- 禁止将原文中角色说的话改写为旁白，或旁白改写为对话
+- 禁止把某编号段落中不含的人名、名词写入该段落的 text
+- 段落之间禁止互相串用内容
+
+## 输出格式
+情绪/语调(选其一)：开心/悲伤/愤怒/恐惧/惊讶/兴奋/委屈/平静/冷漠/怅然/欣慰/无奈/愧疚/释然/嫉妒/厌倦/忐忑/动情/温柔/高冷/活泼/严肃/慵懒/俏皮/深沉/干练/凌厉。
+方言(如需)：东北话/四川话/河南话/粤语/台湾腔/陕西话/吴语/湘语/赣语/客家话/闽语
+特殊标记：(唱歌)放在歌词前；[音频标签]如[叹气][笑][颤抖]插在句中。
+
+## 语速建议（speed 字段，1-10 整数）
+- 5=日常对话自然语速（默认值）
+- 3-4=舒缓叙述、抒情、回忆、沉思
+- 6-7=激动、急切、兴奋、惊讶
+- 8-10=极度激动、紧急、恐惧（慎用）
+- 1-2=极慢（仅用于特殊场景，如濒死、深情告白）
+- 语速必须与情绪匹配：平静=5，激动=7-8，抒情=3-4
+- 避免极端值（1/10），保持自然流畅
+
+## 情绪与语速选择指南（贴近生活）
+- 日常寒暄、闲聊：平静/温柔/活泼 + speed=5（不要用动情/凌厉）
+- 轻微情绪波动：无奈/慵懒/欣慰 + speed=4-5（不要用愤怒/恐惧）
+- 真正激动时才用：愤怒/恐惧/兴奋/动情 + speed=7-8
+- 抒情/回忆/沉思：怅然/释然 + speed=3-4
+- 旁白叙述：默认"平静" + speed=5，仅在大起大落处换标签
+- 避免：连续多段都用强情绪标签或极端语速，生活里人不会一直激动
+
+输出JSON（只输出JSON对象，无markdown、无任何解释文字）：
+{"paragraphs":[{"index":0,"characters":["人物名"],"segments":[{"type":"narration/dialogue","speaker":"旁白或角色名","emotion":"情绪","tone":"语调","speed":5,"text":"(方言,情绪,语调)标签化文本"}]}]}
+
+## 方言规则（严格遵守）
+- 当角色在"已配置角色"中标注了 <方言：XXX> 时，该角色的对话 text 必须以 (XXX,情绪,语调) 开头
+- 例：角色有 <方言：粤语>，对话应写为 (粤语,开心,活泼)正文内容
+- 普通话角色（无方言标注）直接用 (情绪,语调)，不加方言标签
+- 旁白始终用普通话，不加方言标签
+
+## 其他规则
+- 旁白speaker="旁白"，对话用角色名
+- 保持每段原文顺序，只加标签；对话和叙述分开但必须按照原文顺序输出
+- 默认情绪="平静"，语调="温柔"，speed=5
+- 【关键】必须覆盖从起始段落到章节结束的所有段落，index 与输入的段落编号一一对应，按顺序输出，一个都不能漏
+- 必须输出合法JSON`;
+
+/** 构建阅读模式批量TTS情感增强的user prompt */
+export function buildReadingModeBatchTTSEnhanceUserPrompt(
+	paragraphs: string[],
+	startIndex: number,
+	configuredCharacters: Array<{ name: string; aliases: string[]; voice?: string; role?: string; relationTerms?: string[]; dialect?: string }>,
+	novelEvents?: Array<{ title: string; description: string; chapter: string; timeInfo: string; volume?: string }>
+): string {
+	const chars = configuredCharacters.length ? configuredCharacters.map(c => {
+		const alias = c.aliases?.length ? `（别称：${c.aliases.join('、')}）` : '';
+		const voice = c.voice ? ` [音色：${c.voice}]` : '';
+		const roleLabel = c.role ? `【${c.role === 'narrator' ? '旁白' : c.role}】` : '';
+		const dialect = c.dialect ? ` <方言：${c.dialect}>` : '';
+		return `- ${c.name}${roleLabel}${alias}${voice}${dialect}`;
+	}).join('\n') : '无已配置角色';
+
+	// 构建方言强制指令
+	const dialectChars = configuredCharacters.filter(c => c.dialect);
+	const dialectInstruction = dialectChars.length > 0
+		? `\n\n## 方言强制指令（必须遵守）\n以下角色有方言设定，他们说的每句对话 text 必须以 (方言,情绪,语调) 开头：\n${dialectChars.map(c => `- ${c.name} → 必须使用 (${c.dialect},情绪,语调) 开头`).join('\n')}\n其他角色（无方言标注）一律不加方言标签，直接用 (情绪,语调)。旁白也不加方言标签。`
+		: '';
+
+	// 检查是否有旁白角色（检查 role、aliases、relationTerms）
+	const narratorChar = configuredCharacters.find(c =>
+		c.role === 'narrator' ||
+		c.aliases?.some(a => a.includes('旁白')) ||
+		c.relationTerms?.some(r => r.includes('旁白'))
+	);
+	const narratorInstruction = narratorChar
+		? `\n重要：如果配置了旁白角色"${narratorChar.name}"，所有旁白(narration)必须使用该角色朗读，speaker设为"${narratorChar.name}"。`
+		: '\n重要：如果没有配置旁白角色，旁白speaker设为"旁白"。';
+
+	// 构建小说大事记上下文
+	const eventsContext = novelEvents && novelEvents.length > 0
+		? `\n\n【小说大事记-当前章节涉及的关键事件】\n以下事件发生在当前章节或与之紧密相关，是理解段落情感基调的重要背景：\n${novelEvents.map((evt, idx) => `${idx + 1}. [${evt.volume ? evt.volume + "·" : ""}${evt.chapter}] ${evt.title}：${evt.description}`).join('\n')}\n\n请根据这些事件背景来判断段落的情感基调，例如：如果之前发生了悲剧事件，当前段落可能带有悲伤或压抑的情绪；如果之前发生了喜事，当前段落可能带有开心或轻松的情绪。`
+		: '';
+
+	const numberedParagraphs = paragraphs.map((p, i) => `【段落 ${startIndex + i}】\n${p}`).join('\n\n');
+
+	return `分析从「段落 ${startIndex}」起至章节结束的连续段落，识别每段的人物并判断情绪，为每个 segment 给出语速建议(speed 1-10)。情感要贴近生活、自然真实，克制内敛，避免舞台腔/过度戏剧化；日常对话优先用"平静/温柔/无奈"等克制标签+speed=5，真正激动时才用"愤怒/恐惧/动情"+speed=7-8；旁白默认"平静"+speed=5，仅在大起大落处换标签。
+
+已配置角色：
+${chars}${narratorInstruction}${dialectInstruction}${eventsContext}
+
+【需要分析的连续段落（从所选段落至章节结束）】
+${numberedParagraphs}
+
+要求：
+1. 逐段分析，每段的 text 必须与该编号段落原文逐字一致，不能增删改任何字符，段落之间不得串用内容
+2. 利用整段上下文判断对话归属与情绪，匹配已配置角色
+3. 返回JSON格式：{"paragraphs":[{"index":段落编号,"characters":[...],"segments":[...]}]}，不要包含任何解释性文字
+4. 【关键】必须覆盖所有给出的段落，index 与段落编号一一对应，按顺序输出，一个都不能漏
+5. 【关键】有方言设定的角色，对话 text 必须以 (方言,情绪,语调) 开头，例如 (粤语,开心,活泼)今天天气真好！
+6. 【关键】如果某段落原文不含对话（没有引号/冒号引出的说话内容），全部归为 narration 类型，speaker 为旁白
+7. 【贴近生活】情绪强度与原文语境匹配：小事不放大，大事不缩水；避免连续多段都用强情绪标签
+8. 【语速建议】每个 segment 必须包含 speed 字段(1-10整数)：平静=5，激动=7-8，抒情=3-4，避免极端值1/10`;
+}
+
+/** 批量段落情感分析结果类型（一次请求分析多段） */
+export interface BatchParagraphEmotionResult {
+	paragraphs: Array<{
+		index: number;
+		characters: string[];
+		segments: TextSegment[];
+	}>;
+}
+
+/**
+ * 解析批量TTS情感增强的AI响应，返回 段落索引 → 情感分析结果 的映射。
+ * 依次尝试：完整JSON解析 → 修复截断JSON → 从截断响应中逐个提取完整的段落对象。
+ */
+export function parseBatchParagraphEmotionResult(response: string): Map<number, ParagraphEmotionResult> | null {
+	const result = new Map<number, ParagraphEmotionResult>();
+
+	const tryParse = (text: string): BatchParagraphEmotionResult | null => {
+		try {
+			const parsed = JSON.parse(text) as BatchParagraphEmotionResult;
+			if (parsed && Array.isArray(parsed.paragraphs)) return parsed;
+		} catch {
+			// 忽略，尝试其他策略
+		}
+		return null;
+	};
+
+	let batch: BatchParagraphEmotionResult | null = null;
+	const jsonMatch = response.match(/\{[\s\S]*\}/);
+	if (jsonMatch) {
+		batch = tryParse(jsonMatch[0]);
+		if (!batch) {
+			const repaired = repairTruncatedJson(jsonMatch[0]);
+			if (repaired) batch = tryParse(repaired);
+		}
+	}
+
+	// 兜底：从截断的响应中逐个提取已完成的段落对象
+	if (!batch) {
+		const objs = extractArrayObjects(response, "paragraphs") as Array<Record<string, unknown>>;
+		if (objs.length > 0) {
+			batch = {
+				paragraphs: objs.map(o => ({
+					index: typeof o.index === "number" ? o.index : -1,
+					characters: Array.isArray(o.characters) ? o.characters.filter((c): c is string => typeof c === "string") : [],
+					segments: Array.isArray(o.segments) ? o.segments.filter((s): s is TextSegment => !!s && typeof s === "object" && typeof (s as TextSegment).text === "string") : [],
+				})).filter(p => p.index >= 0),
+			};
+		}
+	}
+
+	if (!batch) return null;
+
+	for (const p of batch.paragraphs) {
+		if (typeof p.index === "number" && Array.isArray(p.segments)) {
+			result.set(p.index, {
+				characters: Array.isArray(p.characters) ? p.characters.filter((c): c is string => typeof c === "string") : [],
+				segments: p.segments.filter((s): s is TextSegment => !!s && typeof s === "object" && typeof (s as TextSegment).text === "string"),
+			});
+		}
+	}
+
+	return result.size > 0 ? result : null;
+}
+
 /**
  * 从 AI 响应中提取 JSON 数组（容错处理）
  */
@@ -1637,6 +1867,28 @@ export const CHARACTER_ANALYSIS_SYSTEM_PROMPT = `你是小说角色分析专家�
 - 不要臆造信息，只基于文本内容
 - 遇到不确定的信息，对应字段留空字符串或空数组
 - 遇到不确定的关系，可以标记为other但提供描述`;
+
+/** 关系图谱布局系统提示词 - 用于 AI 绘制角色节点位置（以主角与反派为两大中心，向四周散开） */
+export const RELATIONSHIP_GRAPH_LAYOUT_SYSTEM_PROMPT = `你是一位小说角色关系图谱布局专家。请以【主角】和【反派】为两大中心，让其余角色围绕这两大中心向四周散开，为每个角色设计最佳的节点位置坐标，使关系图谱清晰、美观、便于观看。
+
+## 布局原则
+- 以主角(protagonist)和反派(antagonist)为两大中心：主角放在中心左侧（约 -180, 0），反派放在中心右侧（约 180, 0），形成左右对峙、向四周散开的格局
+- 若没有反派，则以主角为唯一中心，其余角色围绕主角向四周散开
+- 若没有主角，则选取身份最重要/关系最多的角色作为中心
+- 与主角关系亲密（恋人、家人、好友、师徒等）的角色聚集在主角一侧，向外散开
+- 与反派关系密切（同伙、下属、帮凶等）的角色聚集在反派一侧，向外散开
+- 与双方都有关系或相对独立的角色分布在两大中心之间或外围
+- 关系亲密的角色放在相邻位置；敌对、竞争关系的角色适当分开
+- 同类型（好友、同事、同学等）角色聚集在一起
+- 避免节点重叠，各节点之间保持足够间距（至少 80 个单位）
+- 所有坐标尽量分布在 -600 到 600 的范围内，中心为 (0,0)，坐标可以是小数（最终会做归一化处理）
+
+## 输出格式
+严格输出一个JSON数组，每个元素包含角色的 id、name 以及推荐的 x、y 坐标：
+[
+  {"id": "角色id", "name": "角色名", "x": 数值, "y": 数值}
+]
+必须为【每一个】角色都输出一个坐标，不要遗漏，也不要输出不存在的角色。`;
 
 /** 角色分析结果类型 */
 export interface CharacterAnalysisResult {

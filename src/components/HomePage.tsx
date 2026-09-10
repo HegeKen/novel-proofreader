@@ -253,7 +253,7 @@ export function HomePage({ onStart }: HomePageProps) {
 		{
 			icon: Icons.grammar,
 			title: "变体字检查",
-			description: "检测康熙变体字、半角全角字符等排版问题，一键标准化",
+			description: "检测康熙变体字、半角全角字符、繁体字等，一键标准化",
 		},
 		{
 			icon: Cloud,

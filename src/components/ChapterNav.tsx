@@ -373,7 +373,7 @@ export function ChapterNav({
 				<button
 					className="btn"
 					onClick={onOpenCJKVariantScan}
-					title="检查变体字及半角全角字符"
+					title="检查变体字、半角全角字符及繁体字"
 				>
 					<Icons.search size={14} />
 					变体字

@@ -12,7 +12,7 @@
 :where(
 	.btn, .btn-primary, .btn-danger, .btn-small, .btn-large, .btn-mobile,
 	.btn-import-novel, .novel-item-btn, .btn-hide-proofread,
-	.reader-search-btn, .desktop-reader-bar-btn,
+	.reader-search-btn, .reader-bar-btn ,
 	.tts-playback-btn, .tts-toggle-btn, .image-upload-btn, .image-remove-btn,
 	.btn-check, .btn-cancel, .btn-ignored-words,
 	.btn-apply, .btn-skip, .btn-single-check,
@@ -64,6 +64,44 @@
 
 .btn:active {
 	transform: scale(0.98)}
+
+/* 非 .btn 体系按钮的点击动画 */
+.close-btn:active,
+.modal-close:active,
+.profile-close-btn:active,
+.toast-close:active,
+.chapter-completion-close:active,
+.log-copy-btn:active,
+.action-btn:active,
+.relation-action-btn:active,
+.nickname-add-btn:active,
+.remove-btn:active,
+.nav-btn:active:not(:disabled),
+.tab-btn:active,
+.mobile-tab-btn:active,
+.event-item-btn:active:not(:disabled),
+.event-list-complete-btn:active,
+.prompt-btn:active,
+.graph-zoom-btn:active,
+.diff-swap-btn button:active,
+.diff-clear-btn:active,
+.chapter-bridge-btn:active:not(:disabled),
+.chapter-list-continuation-btn:active:not(:disabled),
+.roleplay-new-btn:active:not(:disabled),
+.search-clear-btn:active,
+.download-asset-btn:active,
+.mirror-picker-btn:active,
+.image-upload-btn:active,
+.image-remove-btn:active,
+.btn-apply:active:not(:disabled),
+.btn-skip:active:not(:disabled),
+.btn-merge-reject:active,
+.btn-hide-proofread:active,
+.btn-resplit:active:not(:disabled),
+.btn-script-tts:active,
+.btn-voice-settings:active,
+.reader-search-btn:active {
+	transform: scale(0.95)}
 
 .btn-danger {
 	background: var(--red);
@@ -1131,7 +1169,7 @@ min-width: 200px}
 	box-shadow: var(--shadow-md)}
 
 /* Desktop Reader Bar */
-.desktop-reader-bar {
+.reader-bar {
 	position: fixed;
 	bottom: 24px;
 	right: 24px;
@@ -1149,7 +1187,7 @@ min-width: 200px}
 	z-index: 100;
 	min-width: 320px}
 
-.desktop-reader-bar .reading-progress {
+.reader-bar .reading-progress {
 	display: flex;
 	flex-direction: row;
 	align-items: center;
@@ -1163,22 +1201,22 @@ min-width: 200px}
 	width: 100%;
 	box-shadow: none}
 
-.desktop-reader-bar .progress-info {
+.reader-bar .progress-info {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
 	min-width: 70px}
 
-.desktop-reader-bar .progress-label {
+.reader-bar .progress-label {
 	font-size: 11px;
 	color: var(--text-muted)}
 
-.desktop-reader-bar .progress-value {
+.reader-bar .progress-value {
 	font-size: 13px;
 	font-weight: 600;
 	color: var(--accent)}
 
-.desktop-reader-bar .progress-bar {
+.reader-bar .progress-bar {
 	flex: 1;
 	height: 4px;
 	background: var(--bg-secondary);
@@ -1187,40 +1225,41 @@ min-width: 200px}
 	min-width: 80px;
 	max-width: 120px}
 
-.desktop-reader-bar .progress-fill {
+.reader-bar .progress-fill {
 	height: 100%;
 	background: linear-gradient(90deg, var(--accent), var(--accent-light));
 	border-radius: var(--r-sm);
 	transition: width 0.3s ease}
 
-.desktop-reader-bar .time-info {
+.reader-bar .time-info {
 	display: flex;
 	flex-direction: column;
 	align-items: flex-end;
 	gap: 2px;
 	min-width: 70px}
 
-.desktop-reader-bar .time-label {
+.reader-bar .time-label {
 	font-size: 10px;
 	color: var(--text-muted)}
 
-.desktop-reader-bar .time-value {
+.reader-bar .time-value {
 	font-size: 12px;
 	font-weight: 500}
 
-.desktop-reader-bar-actions {
+.reader-bar-actions {
 	display: flex;
 	flex-direction: row;
 	gap: 8px}
 
-.desktop-reader-bar-btn {
+.reader-bar-btn  {
 	display: flex;
+	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	gap: 6px;
-	padding: 8px 14px;
+	gap: 4px;
+	padding: 8px 12px;
 	border-radius: var(--r-md);
-	font-size: 13px;
+	font-size: 12px;
 	font-weight: 500;
 	background: transparent;
 	color: var(--text-primary);
@@ -1228,30 +1267,30 @@ min-width: 200px}
 	transition: all var(--duration) var(--ease);
 	cursor: pointer}
 
-.desktop-reader-bar-btn:hover {
+.reader-bar-btn :hover {
 	background: var(--bg-hover);
 	border-color: var(--border)}
 
-.desktop-reader-bar-btn.active,
-.desktop-reader-bar-btn.playing {
+.reader-bar-btn .active,
+.reader-bar-btn .playing {
 	background: var(--accent);
 	color: white;
 	border-color: var(--accent)}
 
-.desktop-reader-bar-btn:active {
+.reader-bar-btn :active {
 	transform: scale(0.98)}
 
-.desktop-reader-bar-btn:disabled {
+.reader-bar-btn :disabled {
 	opacity: 0.5;
 	cursor: not-allowed}
 
-.desktop-reader-bar-btn.preparing,
+.reader-bar-btn .preparing,
 .mobile-reader-bar-btn.preparing {
 	background: var(--accent-dim);
 	border-color: var(--accent);
 	color: var(--accent)}
 
-.desktop-reader-bar-btn.waiting-selection,
+.reader-bar-btn .waiting-selection,
 .mobile-reader-bar-btn.waiting-selection {
 	background: var(--accent);
 	color: white;
@@ -1316,7 +1355,7 @@ min-width: 200px}
 }
 
 /* TTS Playback Controls - Floating above reader bars */
-.desktop-tts-playback-controls {
+.tts-playback-controls {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -1330,7 +1369,7 @@ min-width: 200px}
 	box-shadow: none;
 	animation: slide-up 0.3s var(--ease)}
 
-.desktop-tts-playback-controls .current-speaker {
+.tts-playback-controls .current-speaker {
 	display: flex;
 	align-items: center;
 	gap: 6px;
@@ -1347,7 +1386,8 @@ min-width: 200px}
 	text-overflow: ellipsis;
 	max-width: 140px}
 
-.desktop-tts-playback-controls .tts-remaining-time {
+.tts-playback-controls .tts-remaining-time,
+.tts-playback-controls .tts-elapsed-time {
 	display: flex;
 	align-items: center;
 	gap: 4px;
@@ -3990,6 +4030,35 @@ color: var(--text-primary)}
 	box-shadow: var(--shadow-lg), 0 0 60px rgba(10, 132, 255, 0.12);
 	animation: modal-in 0.3s var(--ease-bounce)}
 
+.cjk-variants-tabs {
+	display: flex;
+	gap: 4px;
+	padding: 12px 20px 0;
+	border-bottom: 1px solid var(--glass-border)}
+
+.cjk-variants-tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 14px;
+	border: none;
+	background: transparent;
+	color: var(--text-secondary);
+	font-size: 13px;
+	font-weight: 500;
+	border-radius: 8px 8px 0 0;
+	cursor: pointer;
+	transition: color 0.2s, background 0.2s}
+
+.cjk-variants-tab:hover {
+	color: var(--text-primary);
+	background: var(--glass-bg)}
+
+.cjk-variants-tab.active {
+	color: var(--accent);
+	background: var(--glass-bg);
+	box-shadow: inset 0 -2px 0 var(--accent)}
+
 .cjk-variants-body {
 	flex: 1;
 	min-height: 0;
@@ -4494,7 +4563,7 @@ color: var(--text-primary)}
 	font-size: 18px}
 
 .title-novel-name {
-	font-size: 14px;
+	font-size: 10px;
 	font-weight: 500;
 	background: var(--bg-surface);
 	-webkit-background-clip: text;
@@ -4502,7 +4571,13 @@ color: var(--text-primary)}
 	background-clip: text;
 	padding: 2px 8px;
 	border-radius: var(--r-sm);
-	border: 1px solid var(--glass-border)}
+	border: 1px solid var(--glass-border);
+	max-width: 160px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	flex-shrink: 1;
+	min-width: 0}
 
 .merge-characters-modal .close-btn {
 	width: 32px;
@@ -6374,13 +6449,14 @@ color: var(--text-primary)}
 	transform: translateY(-1px);
 	box-shadow: 0 6px 16px rgba(10, 132, 255, 0.4)}
 
-/* character-actions-fab-wrapper 中的 custom-select 样式 */
-.character-actions-fab-wrapper .custom-select {
+/* relationship-graph-toolbar 中的 custom-select 样式 */
+.relationship-graph-toolbar .custom-select {
 	position: relative;
 	z-index: 1;
+	flex-shrink: 0;
 }
 
-.character-actions-fab-wrapper .custom-select-trigger {
+.relationship-graph-toolbar .custom-select-trigger {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -6400,17 +6476,17 @@ color: var(--text-primary)}
 	-webkit-backdrop-filter: blur(20px);
 }
 
-.character-actions-fab-wrapper .custom-select-trigger:hover:not(:disabled) {
+.relationship-graph-toolbar .custom-select-trigger:hover:not(:disabled) {
 	background: var(--bg-hover);
 	border-color: var(--border-strong);
 }
 
-.character-actions-fab-wrapper .custom-select-trigger:focus-visible {
+.relationship-graph-toolbar .custom-select-trigger:focus-visible {
 	border-color: var(--accent);
 	box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
-.character-actions-fab-wrapper .custom-select-trigger:disabled {
+.relationship-graph-toolbar .custom-select-trigger:disabled {
 	opacity: 0.5;
 	cursor: not-allowed;
 	color: var(--text-secondary);
@@ -6606,6 +6682,32 @@ color: var(--text-primary)}
 	.character-actions-fab-wrapper .btn svg {
 		width: 20px;
 		height: 20px}
+
+	/* AI 请求中时显示按钮文字和耗时，不隐藏 span */
+	.character-actions-fab-wrapper .btn:has(.animate-spin),
+	.character-actions-fab-wrapper .btn.btn-loading {
+		font-size: 14px;
+		width: auto;
+		padding: 10px 18px;
+		border-radius: var(--r-lg);
+		justify-content: center;
+		gap: 6px}
+
+	.character-actions-fab-wrapper .btn:has(.animate-spin) svg,
+	.character-actions-fab-wrapper .btn.btn-loading svg {
+		width: 16px;
+		height: 16px}
+
+	.character-actions-fab-wrapper .btn:has(.animate-spin) span,
+	.character-actions-fab-wrapper .btn.btn-loading span {
+		display: flex;
+		font-size: 13px;
+		white-space: nowrap}
+
+	/* 关系图谱 FAB 按钮区域允许换行 */
+	.character-actions-fab-wrapper .graph-toolbar-actions {
+		flex-wrap: wrap;
+		justify-content: center}
 
 	.app-header {
 		padding: 0 12px;
@@ -6844,12 +6946,12 @@ color: var(--text-primary)}
 		min-height: 0;
 		overflow: hidden}
 	
-	/* Reading mode: extra space for desktop-reader-bar */
+	/* Reading mode: extra space for reader-bar */
 	.app-body.app-body-reading-mode {
 		padding-bottom: calc(32px + env(safe-area-inset-bottom, 0))}
 
 	/* Desktop Reader Bar - Mobile Adaptation */
-	.desktop-reader-bar {
+	.reader-bar {
 		position: fixed;
 		bottom: 0;
 		left: 0;
@@ -6861,47 +6963,47 @@ color: var(--text-primary)}
 		flex-direction: column;
 		gap: 10px}
 
-	.desktop-reader-bar .reading-progress {
+	.reader-bar .reading-progress {
 		flex: 1;
 		min-width: 0;
 		max-width: none;
 		width: 100%}
 
-	.desktop-reader-bar .progress-bar {
+	.reader-bar .progress-bar {
 		min-width: 60px;
 		max-width: none;
 		flex: 1}
 
-	.desktop-reader-bar-actions {
+	.reader-bar-actions {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 8px;
 		justify-content: center}
 
-	.desktop-reader-bar-btn {
+	.reader-bar-btn  {
 		flex: 1;
 		min-width: 70px;
 		padding: 10px 12px;
 		font-size: 12px}
 
-	.desktop-reader-bar-btn span {
+	.reader-bar-btn  span {
 		font-size: 11px}
 
-	.desktop-reader-bar-btn svg {
+	.reader-bar-btn  svg {
 		width: 16px;
 		height: 16px}
 
 	/* TTS Playback Controls - Mobile Adaptation */
-	.desktop-tts-playback-controls {
+	.tts-playback-controls {
 		padding: 10px}
 
-	.desktop-tts-playback-controls .current-speaker {
+	.tts-playback-controls .current-speaker {
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		max-width: 120px}
 
-	.desktop-tts-playback-controls .current-speaker span {
+	.tts-playback-controls .current-speaker span {
 		white-space: nowrap}
 
 	/* Hide desktop sidebars by default on mobile */
@@ -7533,12 +7635,22 @@ color: var(--text-primary)}
 		min-height: 300px}
 
 	.relationship-graph-toolbar {
-		flex-wrap: wrap}
+		flex-wrap: wrap;
+		gap: 8px}
 
 	.graph-toolbar-info {
 		order: 3;
 		width: 100%;
 		margin-top: 8px}
+
+	.graph-toolbar-controls {
+		padding-right: 0;
+		flex-wrap: wrap;
+		gap: 8px}
+
+	.graph-toolbar-controls .custom-select {
+		min-width: 100px !important;
+		max-width: 160px !important}
 
 	.reanalyze-modal {
 		width: 95%;
@@ -8764,7 +8876,6 @@ color: var(--text-primary)}
 /* Custom Select (dropdown) */
 .custom-select {
 	position: relative;
-	width: 100%;
 	z-index: 1}
 
 .custom-select-trigger {
@@ -9614,7 +9725,13 @@ color: var(--text-primary)}
 		padding: 12px 14px}
 
 	.config-title {
-		font-size: 15px}
+		font-size: 15px;
+		min-width: 0;
+		overflow: hidden}
+
+	.config-title span:not(.title-icon):not(.title-novel-name) {
+		white-space: nowrap;
+		flex-shrink: 0}
 
 	.config-body {
 		padding: 14px}
@@ -9738,11 +9855,11 @@ color: var(--text-primary)}
 		height: 14px}
 
 	/* Desktop Reader Bar - Small Mobile Adaptation */
-	.desktop-reader-bar {
+	.reader-bar {
 		padding: 10px;
 		padding-bottom: calc(10px + env(safe-area-inset-bottom, 0))}
 
-	.desktop-reader-bar-btn {
+	.reader-bar-btn  {
 		min-width: 60px;
 		padding: 8px 10px}
 
@@ -10977,6 +11094,13 @@ color: var(--text-primary)}
 	display: flex;
 	align-items: center;
 	gap: 8px}
+
+.graph-toolbar-controls {
+	display: flex;
+	align-items: center;
+	padding-right: 80px;
+	gap: 8px;
+	flex-shrink: 0}
 
 
 .graph-focus-controls .config-select {
@@ -12434,7 +12558,6 @@ color: var(--text-primary)}
 	color: var(--text-secondary);
 	line-height: 1.5;
 	display: -webkit-box;
-	-webkit-line-clamp: 2;
 	-webkit-box-orient: vertical;
 	overflow: hidden}
 
@@ -13089,7 +13212,7 @@ color: var(--text-primary)}
 	flex: 1;
 	min-height: 0;
 	overflow-y: auto;
-	padding: 12px 16px calc(12px + env(safe-area-inset-bottom))}
+	padding: 6px 12px calc(12px + env(safe-area-inset-bottom))}
 
 .roleplay-mobile-picker .roleplay-picker-identity {
 	margin-bottom: 12px;

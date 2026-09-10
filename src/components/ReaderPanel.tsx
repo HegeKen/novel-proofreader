@@ -153,10 +153,12 @@ export function ReaderPanel({
 
 	const {
 		ttsPlaying, ttsHighlightedPara, isStreamTTSPlaying, enhancedTTSPreparing,
-		isStreamTTSWaitingForStart, currentPlayingCharacter, remainingSeconds,
+		isStreamTTSWaitingForStart, isBatchTTSWaitingForStart, batchTTSPreparing,
+		currentPlayingCharacter, remainingSeconds, streamElapsedSeconds,
 		handleTTSToggle, handleTTSPrev, handleTTSNext, handleTTSStop,
 		startTTSFromParagraph, handleEnterStreamTTSSelectionMode, handleEnhancedChapterTTS,
-		setIsStreamTTSWaitingForStart, setParagraphEmotionCache,
+		handleEnterBatchTTSSelectionMode, handleBatchEnhancedChapterTTS,
+		setIsStreamTTSWaitingForStart, setIsBatchTTSWaitingForStart, setParagraphEmotionCache,
 	} = tts;
 
 	const {
@@ -431,8 +433,11 @@ export function ReaderPanel({
 		paragraphRefs.current = [];
 		// 清除段落情感缓存，避免不同章节之间的缓存混淆
 		setParagraphEmotionCache(new Map());
+		// 退出段落选择模式，避免跨章节残留
+		setIsStreamTTSWaitingForStart(false);
+		setIsBatchTTSWaitingForStart(false);
 		logger.tts("切换章节，清除段落情感缓存");
-	}, [currentChapterIndex, setParagraphEmotionCache]);
+	}, [currentChapterIndex, setParagraphEmotionCache, setIsStreamTTSWaitingForStart, setIsBatchTTSWaitingForStart]);
 
 	// 章节内容变更时清理段落 refs（如合并段落等操作）
 	useEffect(() => {
@@ -685,6 +690,21 @@ export function ReaderPanel({
 						</button>
 					</div>
 				)}
+				{/* 整段朗读 - 等待选择起始段落提示 */}
+				{isBatchTTSWaitingForStart && (
+					<div className="tts-selection-hint">
+						<div className="tts-selection-hint-content">
+							<Icons.sparkles size={20} />
+							<span>整段朗读模式：请点击起始段落，将从该段至章节结束一次性分析后逐段朗读</span>
+						</div>
+						<button
+							className="tts-selection-hint-cancel"
+							onClick={() => setIsBatchTTSWaitingForStart(false)}
+						>
+							<Icons.close size={16} />
+						</button>
+					</div>
+				)}
 				{paragraphs.map((para, filteredIndex) => {
 					// 获取原始段落索引（与校对区一致）
 					const originalIndex = paragraphIndexMap[filteredIndex];
@@ -791,7 +811,7 @@ export function ReaderPanel({
 							ref={(el) => {
 								paragraphRefs.current[originalIndex] = el;
 							}}
-							className={`reader-paragraph${readingMode ? " reading-mode" : ""}${highlightedParagraph === originalIndex && !readingMode ? " highlighted" : ""}${isTTSHighlighted ? " tts-highlighted" : ""}${animClass}${isEditing ? " editing" : ""}${isStreamTTSWaitingForStart && readingMode ? " clickable-para" : ""}`}
+							className={`reader-paragraph${readingMode ? " reading-mode" : ""}${highlightedParagraph === originalIndex && !readingMode ? " highlighted" : ""}${isTTSHighlighted ? " tts-highlighted" : ""}${animClass}${isEditing ? " editing" : ""}${(isStreamTTSWaitingForStart || isBatchTTSWaitingForStart) && readingMode ? " clickable-para" : ""}`}
 							onClick={() => {
 								if (isScrolling.current) return;
 								if (!isEditing) {
@@ -799,6 +819,9 @@ export function ReaderPanel({
 										if (isStreamTTSWaitingForStart) {
 											const filteredParaIndex = originalToFilteredMap[originalIndex] ?? 0;
 											handleEnhancedChapterTTS(filteredParaIndex);
+										} else if (isBatchTTSWaitingForStart) {
+											const filteredParaIndex = originalToFilteredMap[originalIndex] ?? 0;
+											handleBatchEnhancedChapterTTS(filteredParaIndex);
 										} else {
 											startTTSFromParagraph(originalToFilteredMap[originalIndex] ?? 0);
 										}
@@ -1223,11 +1246,11 @@ export function ReaderPanel({
 
 			{/* 阅读模式底部工具栏 */}
 			{readingMode && (
-				<div className="desktop-reader-bar">
+				<div className="reader-bar">
 					<PeakHourBanner baseURL={aiConfig.baseURL} model={aiConfig.model} />
 					{/* 播放控制条 - 放在 actions 上方 */}
-					{(ttsPlaying || isStreamTTSPlaying || enhancedTTSPreparing) && (
-						<div className="desktop-tts-playback-controls">
+					{(ttsPlaying || isStreamTTSPlaying || enhancedTTSPreparing || batchTTSPreparing) && (
+						<div className="tts-playback-controls">
 							{currentPlayingCharacter && (
 								<div className="current-speaker">
 									<Icons.user size={14} />
@@ -1238,6 +1261,13 @@ export function ReaderPanel({
 								<div className="tts-remaining-time">
 									<Icons.clock size={14} />
 									<span>{Math.floor(remainingSeconds / 60).toString().padStart(2, '0')}:{(remainingSeconds % 60).toString().padStart(2, '0')}</span>
+								</div>
+							)}
+							{/* 流式/整段朗读为长时间任务，显示已播放时长 */}
+							{isStreamTTSPlaying && (
+								<div className="tts-elapsed-time" title="已播放时长">
+									<Icons.clock size={14} />
+									<span>{Math.floor(streamElapsedSeconds / 60).toString().padStart(2, '0')}:{(streamElapsedSeconds % 60).toString().padStart(2, '0')}</span>
 								</div>
 							)}
 							<button
@@ -1270,9 +1300,9 @@ export function ReaderPanel({
 							</button>
 						</div>
 					)}
-					<div className="desktop-reader-bar-actions">
+					<div className="reader-bar-actions">
 						<button
-							className={`desktop-reader-bar-btn ${ttsPlaying ? "playing" : ""}`}
+							className={`reader-bar-btn  ${ttsPlaying ? "playing" : ""}`}
 							onClick={handleTTSToggle}
 							title="朗读"
 						>
@@ -1280,7 +1310,7 @@ export function ReaderPanel({
 							<span>朗读</span>
 						</button>
 						<button
-							className={`desktop-reader-bar-btn ${enhancedTTSPreparing ? "preparing" : ""} ${isStreamTTSWaitingForStart ? "waiting-selection" : ""}`}
+							className={`reader-bar-btn  ${enhancedTTSPreparing ? "preparing" : ""} ${isStreamTTSWaitingForStart ? "waiting-selection" : ""}`}
 							onClick={handleEnterStreamTTSSelectionMode}
 							disabled={enhancedTTSPreparing}
 							title={isStreamTTSWaitingForStart ? "取消选择段落" : "情感朗读"}
@@ -1303,7 +1333,30 @@ export function ReaderPanel({
 							)}
 						</button>
 						<button
-							className={`desktop-reader-bar-btn ${showTTSPanel ? "active" : ""}`}
+							className={`reader-bar-btn  ${batchTTSPreparing ? "preparing" : ""} ${isBatchTTSWaitingForStart ? "waiting-selection" : ""}`}
+							onClick={handleEnterBatchTTSSelectionMode}
+							disabled={batchTTSPreparing}
+							title={isBatchTTSWaitingForStart ? "取消选择段落" : "整段朗读：从所选段落至章节结束，一次性AI分析角色与情感后逐段朗读"}
+						>
+							{batchTTSPreparing ? (
+								<>
+									<span className="spinner"></span>
+									<span>分析中...</span>
+								</>
+							) : isBatchTTSWaitingForStart ? (
+								<>
+									<Icons.close size={16} />
+									<span>取消选择</span>
+								</>
+							) : (
+								<>
+									<Icons.sparkles size={16} />
+									<span>整段朗读</span>
+								</>
+							)}
+						</button>
+						<button
+							className={`reader-bar-btn  ${showTTSPanel ? "active" : ""}`}
 							onClick={() => {
 								if (showTTSPanel) {
 									setShowTTSPanel(false);
@@ -1317,7 +1370,7 @@ export function ReaderPanel({
 							<span>语音设置</span>
 						</button>
 						<button
-							className={`desktop-reader-bar-btn ${showReadingSettings ? "active" : ""}`}
+							className={`reader-bar-btn  ${showReadingSettings ? "active" : ""}`}
 							onClick={() => {
 								if (showReadingSettings) {
 									setShowReadingSettings(false);

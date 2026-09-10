@@ -36,7 +36,7 @@ const RoleplayModal = lazy(() => import("./components/RoleplayModal").then(m => 
 const HomePage = lazy(() => import("./components/HomePage").then(m => ({ default: m.HomePage })));
 
 type RightTab = "proofread" | "task";
-type MobileTab = "novels" | "chapters" | "reader" | "task" | "settings";
+type MobileTab = "novels" | "chapters" | "reader" | "task" | "settings" | "roleplay";
 
 const VISITED_KEY = "proofreader_has_visited";
 
@@ -692,7 +692,7 @@ export default function App() {
 						{currentNovelId && (
 							<button
 								className={`mobile-tab-btn ${showRoleplay ? "active" : ""}`}
-								onClick={() => setShowRoleplay(true)}
+								onClick={() => { setMobileTab("roleplay"); setShowRoleplay(true); }}
 								role="tab"
 								aria-selected={showRoleplay}
 								aria-label="角色扮演"

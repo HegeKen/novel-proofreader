@@ -21,6 +21,7 @@ import { formatDateTime } from "../utils/formatters";
 import { sendTaskNotification } from "../utils/notifications";
 import { getRoleName, RELATION_TYPE_OPTIONS, GENDER_OPTIONS, ROLE_OPTIONS, makeRelationPairKey } from "../utils/characterRoles";
 import { RelationshipGraph } from "./RelationshipGraph";
+import type { RelationshipGraphHandle, RelationshipGraphAIState } from "./RelationshipGraph";
 import { CharacterCard } from "./character-settings/CharacterCard";
 import { CharacterEditForm } from "./character-settings/CharacterEditForm";
 import { synthesizeSpeechWithVoice } from "../utils/ttsService";
@@ -873,6 +874,17 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 关系图谱状态 - 在父组件中管理
 	const [graphFocusedId, setGraphFocusedId] = useState<string | null>(null);
 	const [graphScale, setGraphScale] = useState(1);
+	// 关系图谱 AI 操作句柄（按钮在底部渲染，通过 ref 调用图谱内部逻辑）
+	const graphRef = useRef<RelationshipGraphHandle>(null);
+	// AI 操作实时状态（由 RelationshipGraph 上报）
+	const [graphAIState, setGraphAIState] = useState<RelationshipGraphAIState>({
+		isGeneratingRelationships: false,
+		isMergingRelationships: false,
+		isDrawingNodePositions: false,
+		generateElapsed: 0,
+		mergeElapsed: 0,
+		drawElapsed: 0,
+	});
 	const allRelationships = useCharacterStore((s) => s.characterRelationships);
 	const relationships = useMemo(() => allRelationships[novelId] ?? [], [allRelationships, novelId]);
 	const storeNodePositions = useCharacterStore((s) => s.nodePositions);
@@ -1236,6 +1248,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 	// 编辑状态
 	const [editingId, setEditingId] = useState<string | null>(null);
+	const editFormRef = useRef<HTMLDivElement>(null);
 	const [editForm, setEditForm] = useState<Partial<CharacterInfo>>({
 		name: "",
 		gender: "other",
@@ -1315,6 +1328,16 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		setEditingId(char.id);
 		setEditForm({ ...char });
 	}, []);
+
+	// 编辑表单出现后自动滚动到可视区域
+	useEffect(() => {
+		if (editingId && editFormRef.current) {
+			// 等待 DOM 更新后再滚动
+			requestAnimationFrame(() => {
+				editFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+			});
+		}
+	}, [editingId]);
 
 	const saveEdit = useCallback(() => {
 		if (editingId) {
@@ -2514,12 +2537,14 @@ ${JSON.stringify(existingInfo, null, 2)}
 				<div className="config-body">
 					{activeTab === "graph" && !showAddForm && (
 						<RelationshipGraph
+							ref={graphRef}
 							novelId={novelId}
 							characters={characters}
 							externalFocusedId={graphFocusedId}
 							onFocusedChange={setGraphFocusedId}
 							externalScale={graphScale}
 							onScaleChange={setGraphScale}
+							onAIStateChange={setGraphAIState}
 						/>
 					)}
 					{showAddForm && (
@@ -2658,25 +2683,25 @@ ${JSON.stringify(existingInfo, null, 2)}
 								/>
 							</div>
 							<div className="flex gap-2 pt-2">
-							<button
-								className="reader-search-btn flex-1 justify-center"
-								onClick={handleAdd}
-							>
-								<Icons.plus size={14} />
-								添加
-							</button>
-							<button
-								className="reader-search-btn"
-								onClick={() => {
-									setShowAddForm(false);
-									setEditForm({ name: "", gender: "other", role: undefined, notes: "", voice: "", aliases: [], relationTerms: [] });
-									setNewAlias("");
-									setNewRelationTerm("");
-								}}
-							>
-								取消
-							</button>
-						</div>
+						<button
+							className="btn flex-1 justify-center"
+							onClick={handleAdd}
+						>
+							<Icons.plus size={14} />
+							添加
+						</button>
+						<button
+							className="btn"
+							onClick={() => {
+								setShowAddForm(false);
+								setEditForm({ name: "", gender: "other", role: undefined, notes: "", voice: "", aliases: [], relationTerms: [] });
+								setNewAlias("");
+								setNewRelationTerm("");
+							}}
+						>
+							取消
+						</button>
+					</div>
 						</div>
 					)}
 
@@ -2699,52 +2724,54 @@ ${JSON.stringify(existingInfo, null, 2)}
 									{sortedCharacters.map((char) => {
 										const isExpanded = expandedCards.has(char.id);
 										return (
-											<CharacterCard
-												key={char.id}
-												character={char}
-												isExpanded={isExpanded}
-												isEditing={editingId === char.id}
-												isReanalyzing={isReanalyzing && reanalyzingCharacterId === char.id}
-												playingNoteId={playingNoteCharacterId}
-												voiceOptions={voiceOptions}
-												allEvents={allEvents}
-												onToggleExpand={() => toggleCardExpand(char.id)}
-												onEdit={() => startEdit(char)}
-												onDelete={() => handleDelete(char.id)}
-												onReanalyzeBiography={() => handleReanalyzeBiography(char)}
-												onPlayNote={() => handlePlayNote(char)}
-											/>
+											<div key={char.id}>
+												<CharacterCard
+													character={char}
+													isExpanded={isExpanded}
+													isEditing={editingId === char.id}
+													isReanalyzing={isReanalyzing && reanalyzingCharacterId === char.id}
+													playingNoteId={playingNoteCharacterId}
+													voiceOptions={voiceOptions}
+													allEvents={allEvents}
+													onToggleExpand={() => toggleCardExpand(char.id)}
+													onEdit={() => startEdit(char)}
+													onDelete={() => handleDelete(char.id)}
+													onReanalyzeBiography={() => handleReanalyzeBiography(char)}
+													onPlayNote={() => handlePlayNote(char)}
+												/>
+												{editingId === char.id && (
+													<div ref={editFormRef}>
+														<CharacterEditForm
+															editForm={editForm}
+															voiceOptions={voiceOptions}
+															dialectOptions={dialectOptions}
+															newAlias={newAlias}
+															newRelationTerm={newRelationTerm}
+															isGeneratingVoiceDesign={isGeneratingVoiceDesign}
+															isEnhancingCharacter={isEnhancingCharacter}
+															onFormChange={setEditForm}
+															onNewAliasChange={setNewAlias}
+															onNewRelationTermChange={setNewRelationTerm}
+															onAddAlias={addAlias}
+															onRemoveAlias={removeAlias}
+															onClearAllAliases={clearAllAliases}
+															onAddRelationTerm={addRelationTerm}
+															onRemoveRelationTerm={removeRelationTerm}
+															onClearAllRelationTerms={clearAllRelationTerms}
+															onSave={saveEdit}
+															onCancel={cancelEdit}
+															onGenerateVoiceDesign={handleGenerateVoiceDesign}
+															onEnhanceCharacter={handleEnhanceCharacter}
+															onShowEventModal={() => setShowEventModal(true)}
+														/>
+													</div>
+												)}
+											</div>
 										);
 									})}
 								</div>
 							)}
 						</div>
-				)}
-
-				{editingId && (
-					<CharacterEditForm
-						editForm={editForm}
-						voiceOptions={voiceOptions}
-						dialectOptions={dialectOptions}
-						newAlias={newAlias}
-						newRelationTerm={newRelationTerm}
-						isGeneratingVoiceDesign={isGeneratingVoiceDesign}
-						isEnhancingCharacter={isEnhancingCharacter}
-						onFormChange={setEditForm}
-						onNewAliasChange={setNewAlias}
-						onNewRelationTermChange={setNewRelationTerm}
-						onAddAlias={addAlias}
-						onRemoveAlias={removeAlias}
-						onClearAllAliases={clearAllAliases}
-						onAddRelationTerm={addRelationTerm}
-						onRemoveRelationTerm={removeRelationTerm}
-						onClearAllRelationTerms={clearAllRelationTerms}
-						onSave={saveEdit}
-						onCancel={cancelEdit}
-						onGenerateVoiceDesign={handleGenerateVoiceDesign}
-						onEnhanceCharacter={handleEnhanceCharacter}
-						onShowEventModal={() => setShowEventModal(true)}
-					/>
 				)}
 
 				{/* 世界观 */}
@@ -2849,45 +2876,38 @@ ${JSON.stringify(existingInfo, null, 2)}
 				{/* 关系图谱按钮区域 */}
 				{activeTab === "graph" && !showAddForm && (
 					<div className="character-actions-fab-wrapper">
-						{graphFocusedId ? (
-							<>
-								<button
-									className="btn"
-									onClick={() => setGraphFocusedId(null)}
-									title="取消聚焦"
-								>
-									<Icons.close size={18} />
-									<span>取消聚焦</span>
-								</button>
-							</>
-						) : (
-							<>
-								<Select
-									value={graphFocusedId || ""}
-									onChange={(value) => setGraphFocusedId(value || null)}
-									options={[
-										{ value: "", label: "全部角色" },
-										...characters.map((c) => ({ value: c.id, label: c.name }))
-									]}
-									style={{ minWidth: "120px", maxWidth: "200px" }}
-								/>
-							</>
-						)}
-						<button
-							className="btn"
-							onClick={() => setGraphScale((s) => Math.min(s + 0.2, 5))}
-							title="放大"
-						>
-							<Icons.plus size={18} />
-						</button>
-						<span className="graph-scale-display">{Math.round(graphScale * 100)}%</span>
-						<button
-							className="btn"
-							onClick={() => setGraphScale((s) => Math.max(s - 0.2, 0.3))}
-							title="缩小"
-						>
-							<Icons.minus size={18} />
-						</button>
+						<div className="graph-toolbar-actions">
+							<button
+								className={`btn ${graphAIState.isGeneratingRelationships ? "btn-loading" : ""}`}
+								onClick={() => graphRef.current?.generateRelationships()}
+								disabled={graphAIState.isGeneratingRelationships || characters.length < 2}
+							>
+								<Icons.sparkle size={12} />
+								<span>{graphAIState.isGeneratingRelationships ? `生成中... ${formatElapsedTime(graphAIState.generateElapsed)}` : "AI生成关系"}</span>
+							</button>
+							<button
+								className={`btn ${graphAIState.isMergingRelationships ? "btn-loading" : ""}`}
+								onClick={() => graphRef.current?.mergeRelationships()}
+								disabled={graphAIState.isMergingRelationships || relationships.length === 0}
+								title="将现有关系发给AI梳理合并，替换现有关系"
+							>
+								<Icons.combine size={12} />
+								<span>{graphAIState.isMergingRelationships ? `梳理中... ${formatElapsedTime(graphAIState.mergeElapsed)}` : "AI梳理关系"}</span>
+							</button>
+							<button
+								className={`btn ${graphAIState.isDrawingNodePositions ? "btn-loading" : ""}`}
+								onClick={() => graphRef.current?.aiDrawNodePositions()}
+								disabled={graphAIState.isDrawingNodePositions || characters.length === 0}
+								title="以主角与反派为两大中心，让AI自动绘制节点布局，实现最佳观看效果"
+							>
+								{graphAIState.isDrawingNodePositions ? (
+									<Icons.loader2 size={12} className="animate-spin" />
+								) : (
+									<Icons.network size={12} />
+								)}
+								<span>{graphAIState.isDrawingNodePositions ? `绘制中... ${formatElapsedTime(graphAIState.drawElapsed)}` : "AI 绘制关系布局"}</span>
+							</button>
+						</div>
 					</div>
 				)}
 
@@ -3450,7 +3470,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 							<div className="flex items-center gap-2">
 								<label className="text-sm text-neutral-400">只显示未知角色关系</label>
 								<button
-									className={`w-11 h-6 rounded-full transition-colors ${showOnlyUnknown ? 'bg-[var(--accent)]' : 'bg-neutral-600'}`}
+									className={`w-11 h-6 rounded-full transition-colors ${showOnlyUnknown ? 'bg-(--accent)' : 'bg-neutral-600'}`}
 									onClick={() => setShowOnlyUnknown(!showOnlyUnknown)}
 								>
 									<div className={`w-4 h-4 rounded-full bg-white m-1 transition-transform ${showOnlyUnknown ? 'translate-x-5' : ''}`} />

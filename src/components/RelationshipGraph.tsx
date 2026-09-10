@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import { useCharacterStore } from "../stores/characterStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
@@ -6,11 +6,11 @@ import type { CharacterInfo, CharacterRelationship, RelationType } from "../type
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { ConfirmModal } from "./config/ConfirmModal";
-import { sendChatCompletion, extractJSON, buildRequestConfig } from "../utils/aiClient";
+import { sendChatCompletion, extractJSON, buildRequestConfig, RELATIONSHIP_GRAPH_LAYOUT_SYSTEM_PROMPT } from "../utils/aiClient";
 import type { ChatMessage } from "../utils/aiClient";
 import { generateId } from "../utils/id";
 import { RELATION_TYPE_OPTIONS, makeRelationPairKey } from "../utils/characterRoles";
-import { useElapsedTime, formatElapsedTime } from "../hooks/useElapsedTime";
+import { useElapsedTime } from "../hooks/useElapsedTime";
 import { sendTaskNotification } from "../utils/notifications";
 
 interface RelationshipGraphProps {
@@ -23,6 +23,25 @@ interface RelationshipGraphProps {
 	// 外部缩放控制（可选）
 	externalScale?: number;
 	onScaleChange?: (scale: number) => void;
+	// AI 操作状态上报（供外部渲染按钮区域时使用）
+	onAIStateChange?: (state: RelationshipGraphAIState) => void;
+}
+
+// AI 操作的实时状态（生成关系 / 梳理关系 / 绘制节点位置）
+export interface RelationshipGraphAIState {
+	isGeneratingRelationships: boolean;
+	isMergingRelationships: boolean;
+	isDrawingNodePositions: boolean;
+	generateElapsed: number;
+	mergeElapsed: number;
+	drawElapsed: number;
+}
+
+// 外部可调用的 AI 操作句柄（按钮渲染在父组件时通过 ref 调用）
+export interface RelationshipGraphHandle {
+	generateRelationships: () => void;
+	mergeRelationships: () => void;
+	aiDrawNodePositions: () => void;
 }
 
 interface GraphNode {
@@ -39,14 +58,18 @@ interface GraphEdge {
 	targetNode: GraphNode;
 }
 
-export function RelationshipGraph({
-	novelId,
-	characters,
-	externalFocusedId,
-	onFocusedChange,
-	externalScale,
-	onScaleChange,
-}: RelationshipGraphProps) {
+export const RelationshipGraph = forwardRef<RelationshipGraphHandle, RelationshipGraphProps>(function RelationshipGraph(
+	{
+		novelId,
+		characters,
+		externalFocusedId,
+		onFocusedChange,
+		externalScale,
+		onScaleChange,
+		onAIStateChange,
+	}: RelationshipGraphProps,
+	ref
+) {
 	const allRelationships = useCharacterStore((s) => s.characterRelationships);
 	const relationships = useMemo(() => allRelationships[novelId] ?? [], [allRelationships, novelId]);
 	const addRelationship = useCharacterStore((s) => s.addRelationship);
@@ -70,9 +93,12 @@ export function RelationshipGraph({
 	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 	const [isGeneratingRelationships, setIsGeneratingRelationships] = useState(false);
 	const [isMergingRelationships, setIsMergingRelationships] = useState(false);
+	const [isDrawingNodePositions, setIsDrawingNodePositions] = useState(false);
 	// 关系生成/梳理已耗时（进行中动态更新）
 	const generateElapsed = useElapsedTime(isGeneratingRelationships);
 	const mergeElapsed = useElapsedTime(isMergingRelationships);
+	// AI 绘制节点位置已耗时（进行中动态更新）
+	const drawElapsed = useElapsedTime(isDrawingNodePositions);
 
 	const [relationForm, setRelationForm] = useState<{
 		sourceId: string;
@@ -765,29 +791,6 @@ export function RelationshipGraph({
 				};
 			});
 
-			const systemPrompt = `你是一位小说角色关系分析专家。根据角色信息列表，分析他们之间可能存在的人际关系。
-
-## 要求
-- 只基于角色信息中提到的关联进行分析，不要凭空编造关系
-- 每对角色之间只输出一条关系（从最相关的角度）
-- 称呼要符合角色身份和关系（如夫妻互称"老公/老婆"，师徒称"师父/徒弟"）
-- 注意关系方向：sourceNickname 是源角色对目标角色的称呼，targetNickname 是目标角色对源角色的称呼
-- 关系类型从以下中选择：couple(夫妻)、father-son(父子)、father-daughter(父女)、mother-son(母子)、mother-daughter(母女)、brother(兄弟)、sister(姐妹)、brother-sister(兄妹)、sister-brother(姐弟)、mother-daughter-in-law(婆媳)、father-daughter-in-law(公媳)、mother-son-in-law(岳母女婿)、father-son-in-law(翁婿)、co-parents-male(亲家公)、co-parents-female(亲家母)、lover(恋人)、ex-lover(前任)、classmate(同学)、friend(朋友)、bestie(闺蜜)、rival(竞争对手)、arch-enemy(宿敌)、enemy(仇人)、master-disciple(师徒)、teacher-student(师生)、employer-employee(上下级)、colleague(同事)、neighbor(邻居)、relative(亲戚)、stranger(陌生人)、other(其他)
-- 如果判断关系类型不属于以上具体类型，请使用 "other"，同时在 customRelationType 字段中用中文描述具体关系（如"青梅竹马"、"结拜兄弟"、"救命恩人"等）
-- 如果已有关系存在但称呼不完整，可以补充称呼
-- 严格按照JSON格式输出
-
-## 输出格式
-输出一个JSON数组，每个元素包含：
-{
-  "sourceName": "源角色名称（必须匹配输入中的name）",
-  "targetName": "目标角色名称（必须匹配输入中的name）",
-  "relationType": ["关系类型数组"],
-  "customRelationType": "当relationType包含other时，填写中文关系描述；否则无需填写",
-  "sourceNickname": ["源角色对目标角色的称呼"],
-  "targetNickname": ["目标角色对源角色的称呼"]
-}`;
-
 			const userPrompt = `## 角色列表
 ${JSON.stringify(charsInfo, null, 2)}
 
@@ -797,7 +800,7 @@ ${existingRelationships.length > 0 ? JSON.stringify(existingRelationships, null,
 请根据以上角色信息，分析他们之间应该存在的关系，输出JSON数组。如果角色之间没有明确的关联，不要强行建立关系。`;
 
 			const messages: ChatMessage[] = [
-				{ role: "system", content: systemPrompt },
+				{ role: "system", content: RELATIONSHIP_GRAPH_LAYOUT_SYSTEM_PROMPT },
 				{ role: "user", content: userPrompt },
 			];
 
@@ -945,28 +948,6 @@ ${existingRelationships.length > 0 ? JSON.stringify(existingRelationships, null,
 				relationTerms: c.relationTerms || [],
 			}));
 
-			const systemPrompt = `你是一位小说角色关系梳理专家。请根据角色信息和现有关系数据，梳理并合并重复、矛盾的关系，输出整理后的完整关系列表。
-
-## 要求
-- 合并同一对角色之间的多条关系为一条（合并 relationType、sourceNickname、targetNickname）
-- 去除自相矛盾或明显错误的关系
-- 补充缺失的称呼（基于角色信息和关系类型推断）
-- 每对角色只保留一条关系
-- 关系类型从以下中选择，可以多选：couple(夫妻)、lover(恋人)、ex-lover(前任)、father-son(父子)、father-daughter(父女)、mother-son(母子)、mother-daughter(母女)、brother(兄弟)、sister(姐妹)、brother-sister(兄妹)、sister-brother(姐弟)、mother-daughter-in-law(婆媳)、father-daughter-in-law(公媳)、mother-son-in-law(岳母女婿)、father-son-in-law(翁婿)、co-parents-male(亲家公)、co-parents-female(亲家母)、relative(亲戚)、classmate(同学)、friend(朋友)、bestie(闺蜜)、rival(竞争对手)、arch-enemy(宿敌)、enemy(仇人)、master-disciple(师徒)、teacher-student(师生)、employer-employee(上下级)、colleague(同事)、neighbor(邻居)、stranger(陌生人)、other(其他)
-- 如果关系类型不属于以上具体类型，使用 "other" 并在 customRelationType 中用中文描述
-- 严格按照JSON格式输出
-
-## 输出格式
-输出一个JSON数组，每个元素包含：
-{
-  "sourceName": "源角色名称（必须匹配输入中的name）",
-  "targetName": "目标角色名称（必须匹配输入中的name）",
-  "relationType": ["关系类型数组"],
-  "customRelationType": "当relationType包含other时填写中文描述，否则为空字符串",
-  "sourceNickname": ["源角色对目标角色的称呼"],
-  "targetNickname": ["目标角色对源角色的称呼"]
-}`;
-
 			const userPrompt = `## 角色列表
 ${JSON.stringify(charsInfo, null, 2)}
 
@@ -976,7 +957,7 @@ ${JSON.stringify(currentRels, null, 2)}
 请梳理以上关系，合并重复项，输出整理后的JSON数组。`;
 
 			const messages: ChatMessage[] = [
-				{ role: "system", content: systemPrompt },
+				{ role: "system", content: RELATIONSHIP_GRAPH_LAYOUT_SYSTEM_PROMPT },
 				{ role: "user", content: userPrompt },
 			];
 
@@ -1049,6 +1030,163 @@ ${JSON.stringify(currentRels, null, 2)}
 		}
 	}, [characters, relationships, aiConfig, novelId, setRelationshipsForNovel]);
 
+	// AI 绘制节点位置：让 AI 根据角色重要程度与关系亲密度设计最佳观看布局
+	const handleAIDrawNodePositions = useCallback(async () => {
+		if (characters.length === 0) {
+			useAppMetaStore.getState().showToast("暂无可绘制的角色节点", "warning");
+			return;
+		}
+		if (!aiConfig.apiKey || !aiConfig.baseURL) {
+			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			return;
+		}
+
+		setIsDrawingNodePositions(true);
+		try {
+			const charsInfo = characters.map((c) => ({
+				id: c.id,
+				name: c.name,
+				gender: c.gender,
+				role: c.role || "npc",
+				age: c.age || "",
+				identity: c.identity || "",
+				personality: c.personality || "",
+				notes: c.notes || "",
+				aliases: c.aliases || [],
+				relationTerms: c.relationTerms || [],
+			}));
+
+			const relInfo = relationships.map((r) => {
+				const srcChar = characters.find((c) => c.id === r.sourceId);
+				const tgtChar = characters.find((c) => c.id === r.targetId);
+				return {
+					sourceName: srcChar?.name || "未知",
+					targetName: tgtChar?.name || "未知",
+					relationType: r.relationType || [],
+					customRelationType: r.customRelationType || "",
+				};
+			});
+
+			const userPrompt = `## 角色列表
+${JSON.stringify(charsInfo, null, 2)}
+
+## 角色关系
+${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
+
+请以主角与反派为两大中心、其余角色向四周散开的方式，为每个角色输出最佳观看效果的节点位置坐标（JSON数组）。`;
+
+			const messages: ChatMessage[] = [
+				{ role: "system", content: RELATIONSHIP_GRAPH_LAYOUT_SYSTEM_PROMPT },
+				{ role: "user", content: userPrompt },
+			];
+
+			const config = buildRequestConfig(aiConfig);
+
+			const response = await sendChatCompletion(messages, config);
+
+			// 解析JSON
+			const parsed = extractJSON(response) as Array<{
+				id?: string;
+				name?: string;
+				x?: unknown;
+				y?: unknown;
+			}>;
+
+			if (!Array.isArray(parsed)) throw new Error("AI返回结果格式错误");
+
+			// 按 id 或 name 匹配角色并校验坐标
+			const rawPositions: Record<string, { x: number; y: number }> = {};
+			for (const item of parsed) {
+				const char = characters.find((c) => c.id === item.id || c.name === item.name);
+				if (!char) continue;
+				const x = Number(item.x);
+				const y = Number(item.y);
+				if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+				rawPositions[char.id] = { x, y };
+			}
+
+			if (Object.keys(rawPositions).length === 0) throw new Error("AI返回的位置数据无效");
+
+			// 归一化：平移至中心并缩放到统一跨度，保证最佳观看效果
+			const coords = Object.values(rawPositions);
+			const xs = coords.map((p) => p.x);
+			const ys = coords.map((p) => p.y);
+			const minX = Math.min(...xs);
+			const maxX = Math.max(...xs);
+			const minY = Math.min(...ys);
+			const maxY = Math.max(...ys);
+			const centerX = (minX + maxX) / 2;
+			const centerY = (minY + maxY) / 2;
+			const spanX = maxX - minX || 1;
+			const spanY = maxY - minY || 1;
+			const targetSpan = 900;
+			const scaleFactor = Math.min(targetSpan / spanX, targetSpan / spanY);
+			const normalizedPositions: Record<string, { x: number; y: number }> = {};
+			for (const id of Object.keys(rawPositions)) {
+				normalizedPositions[id] = {
+					x: Math.round((rawPositions[id].x - centerX) * scaleFactor),
+					y: Math.round((rawPositions[id].y - centerY) * scaleFactor),
+				};
+			}
+
+			// 与已有手动位置合并（AI 未返回的角色保留原位置），并写入 store
+			const currentPositions = useCharacterStore.getState().nodePositions[novelId] ?? {};
+			useCharacterStore.getState().setNodePositions(novelId, {
+				...currentPositions,
+				...normalizedPositions,
+			});
+
+			useAppMetaStore.getState().showToast(`AI绘制关系布局完成，已更新 ${Object.keys(normalizedPositions).length} 个节点位置`, "success");
+			sendTaskNotification("AI绘制关系布局完成", `已以主角、反派为中心绘制 ${Object.keys(normalizedPositions).length} 个角色节点位置`);
+
+			// 延迟后自适应视口，确保布局完整可见
+			setTimeout(() => {
+				handleResetLayout();
+			}, 150);
+		} catch (err) {
+			useAppMetaStore.getState().showToast("AI绘制布局失败: " + (err instanceof Error ? err.message : String(err)), "error");
+		} finally {
+			setIsDrawingNodePositions(false);
+		}
+	}, [characters, relationships, aiConfig,  novelId, handleResetLayout]);
+
+	// 暴露 AI 操作给父组件（按钮渲染在 character-actions-fab-wrapper 中）
+	useImperativeHandle(
+		ref,
+		() => ({
+			generateRelationships: () => {
+				handleGenerateRelationships();
+			},
+			mergeRelationships: () => {
+				handleMergeRelationships();
+			},
+			aiDrawNodePositions: () => {
+				handleAIDrawNodePositions();
+			},
+		}),
+		[handleGenerateRelationships, handleMergeRelationships, handleAIDrawNodePositions]
+	);
+
+	// 上报 AI 操作状态，供父组件渲染按钮文案/禁用态
+	useEffect(() => {
+		onAIStateChange?.({
+			isGeneratingRelationships,
+			isMergingRelationships,
+			isDrawingNodePositions,
+			generateElapsed,
+			mergeElapsed,
+			drawElapsed,
+		});
+	}, [
+		onAIStateChange,
+		isGeneratingRelationships,
+		isMergingRelationships,
+		isDrawingNodePositions,
+		generateElapsed,
+		mergeElapsed,
+		drawElapsed,
+	]);
+
 	const getSourceSuggestions = useCallback(
 		(input: string) => {
 			if (!input.trim()) return [];
@@ -1117,25 +1255,45 @@ ${JSON.stringify(currentRels, null, 2)}
 					<span>{filteredGraphNodes.length} 个角色</span>
 					<span>{filteredGraphEdges.length} 条关系</span>
 				</div>
-				<div className="graph-toolbar-actions">
-				<button
-					className="btn"
-					onClick={handleGenerateRelationships}
-					disabled={isGeneratingRelationships || characters.length < 2}
-				>
-					<Icons.sparkle size={12} />
-					<span>{isGeneratingRelationships ? `生成中... ${formatElapsedTime(generateElapsed)}` : "AI生成关系"}</span>
-				</button>
-				<button
-					className="btn"
-					onClick={handleMergeRelationships}
-					disabled={isMergingRelationships || relationships.length === 0}
-					title="将现有关系发给AI梳理合并，替换现有关系"
-				>
-					<Icons.combine size={12} />
-					<span>{isMergingRelationships ? `梳理中... ${formatElapsedTime(mergeElapsed)}` : "AI梳理关系"}</span>
-				</button>
-			</div>
+				<div className="graph-toolbar-controls">
+										<button
+						className="btn"
+						onClick={() => setScaleWithCallback(scale + 0.2)}
+						title="放大"
+					>
+						<Icons.plus size={18} />
+					</button>
+					<span className="graph-scale-display">{Math.round(scale * 100)}%</span>
+					<button
+						className="btn"
+						onClick={() => setScaleWithCallback(scale - 0.2)}
+						title="缩小"
+					>
+						<Icons.minus size={18} />
+					</button>
+					{externalFocusedId ? (
+						<button
+							className="btn graph-filter"
+							onClick={() => onFocusedChange(null)}
+							title="取消聚焦"
+						>
+							<Icons.close size={18} />
+							<span>取消聚焦</span>
+						</button>
+					) : (
+						<Select
+							className="graph-filter"
+							value={externalFocusedId || ""}
+							onChange={(value) => onFocusedChange(value || null)}
+							options={[
+								{ value: "", label: "全部角色" },
+								...characters.map((c) => ({ value: c.id, label: c.name })),
+							]}
+							style={{ minWidth: "120px", maxWidth: "200px" }}
+						/>
+					)}
+
+				</div>
 			</div>
 
 			<div
@@ -1678,4 +1836,4 @@ ${JSON.stringify(currentRels, null, 2)}
 			/>
 		</div>
 	);
-}
+});

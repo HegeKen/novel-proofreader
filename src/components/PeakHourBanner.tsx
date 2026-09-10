@@ -3,22 +3,26 @@ import { Icons } from "./Icons";
 
 // 高峰时段定义（北京时间 UTC+8）
 // 参考官方定价文档：https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
-// DeepSeek 峰谷定价：空闲时段价格为高峰时段价格的一半（高峰时段价格 = 空闲时段 × 2），
+// DeepSeek 峰谷定价：高峰时段价格 = 空闲时段价格 × 3 倍
 // 高峰时段为北京时间 9:00-12:00、14:00-18:00（其余为空闲时段），新价格于 2026-08-17 生效
+// 2026-08-23 起：周末（周六、周日）全天不再区分峰谷，统一按低谷时段价格计费
 const PEAK_PERIODS = [
 	{ start: 9, end: 12 },
 	{ start: 14, end: 18 },
 ];
 
-/** 获取当前北京时间的小时数 */
-function getBeijingHour(): number {
-	const now = new Date();
-	return (now.getUTCHours() + 8) % 24;
+/** 获取当前北京时间对应的日期（用于读取 UTC 字段得到北京时间） */
+function getBeijingNow(): Date {
+	return new Date(Date.now() + 8 * 3600 * 1000);
 }
 
-/** 判断当前是否处于高峰时段 */
+/** 判断当前是否处于高峰时段（周末全天按低谷价计费，不区分峰谷） */
 function isInPeakPeriod(): boolean {
-	const hour = getBeijingHour();
+	const beijingNow = getBeijingNow();
+	// 周末（0=周日，6=周六）全天统一按低谷时段价格，无高峰时段
+	const day = beijingNow.getUTCDay();
+	if (day === 0 || day === 6) return false;
+	const hour = beijingNow.getUTCHours();
 	return PEAK_PERIODS.some((p) => hour >= p.start && hour < p.end);
 }
 
@@ -64,9 +68,9 @@ export function PeakHourBanner({ baseURL, model }: PeakHourBannerProps) {
 			</div>
 			<div className="peak-hour-banner-marquee">
 				<span className="peak-hour-banner-text">
-					当前处于 DeepSeek 高峰时段（北京时间 9:00-12:00 / 14:00-18:00），高峰时段价格为空闲时段的 3 倍，空闲时段价格仅为高峰时段的一半，请注意用量控制
+					当前处于 DeepSeek 高峰时段（北京时间 9:00-12:00 / 14:00-18:00），高峰时段价格为空闲时段的 3 倍，、请注意用量控制
 					&emsp;&emsp;&emsp;&emsp;
-					当前处于 DeepSeek 高峰时段（北京时间 9:00-12:00 / 14:00-18:00），高峰时段价格为空闲时段的 3 倍，空闲时段价格仅为高峰时段的一半，请注意用量控制
+					当前处于 DeepSeek 高峰时段（北京时间 9:00-12:00 / 14:00-18:00），高峰时段价格为空闲时段的 3 倍，、请注意用量控制
 					&emsp;&emsp;&emsp;&emsp;
 				</span>
 			</div>

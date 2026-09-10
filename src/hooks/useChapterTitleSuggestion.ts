@@ -81,8 +81,13 @@ export function useChapterTitleSuggestion() {
 		} catch (error) {
 			logger.errorGeneric('Failed to generate chapter title:', error);
 			useAppMetaStore.getState().showToast("生成章节名失败，请检查AI配置", "error");
-		} finally {
+			// 失败时清除加载状态；成功时保留 suggestingChapterId，供面板显示候选标题弹窗
 			setSuggestingChapterId(null);
+			setChapterTitleSuggestions(prev => {
+				const next = { ...prev };
+				delete next[chapterId];
+				return next;
+			});
 		}
 	}, [chapters, currentNovelId, getEvents, aiConfig, suggestingChapterId]);
 

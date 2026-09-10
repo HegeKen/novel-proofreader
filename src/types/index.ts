@@ -98,6 +98,8 @@ export type AIProvider =
 	| "deepseek"
 	| "siliconflow"
 	| "mimo"
+	| "qwen"
+	| "glm"
 	| "lmstudio"
 	| "ollama"
 	| "vllm"

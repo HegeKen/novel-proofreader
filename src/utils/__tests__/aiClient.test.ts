@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { repairTruncatedJson, extractJSON, normalizeErrors, parseMultiRoleplayResponse, hasSubstantiveContent, isBracketOnlyContent } from '../aiClient'
+import { repairTruncatedJson, extractJSON, normalizeErrors, parseMultiRoleplayResponse, hasSubstantiveContent, isBracketOnlyContent, parseBatchParagraphEmotionResult } from '../aiClient'
 
 describe('repairTruncatedJson', () => {
 	it('returns valid JSON unchanged', () => {
@@ -248,5 +248,37 @@ describe('isBracketOnlyContent - 整段仅为一对括号包裹的描写', () =>
 		expect(isBracketOnlyContent('（沉默）（又沉默）')).toBe(false)
 		expect(isBracketOnlyContent('普通的一句话')).toBe(false)
 		expect(isBracketOnlyContent('')).toBe(false)
+	})
+})
+
+describe('parseBatchParagraphEmotionResult - 整段朗读批量情感分析', () => {
+	it('parses valid JSON with multiple paragraphs', () => {
+		const reply = '{"paragraphs":[{"index":0,"characters":["李明"],"segments":[{"type":"narration","speaker":"旁白","emotion":"怅然","tone":"深沉","speed":4,"text":"(怅然,深沉)李明叹了口气。"},{"type":"dialogue","speaker":"李明","emotion":"无奈","tone":"温柔","speed":5,"text":"(无奈,温柔)\'你好吗\'"}]},{"index":1,"characters":[],"segments":[{"type":"narration","speaker":"旁白","emotion":"平静","tone":"温柔","speed":5,"text":"(平静,温柔)夜风轻轻吹过。"}]}]}'
+		const result = parseBatchParagraphEmotionResult(reply)
+		expect(result).not.toBeNull()
+		expect(result!.size).toBe(2)
+		expect(result!.get(0)?.characters).toEqual(['李明'])
+		expect(result!.get(0)?.segments).toHaveLength(2)
+		expect(result!.get(1)?.segments[0].text).toBe('(平静,温柔)夜风轻轻吹过。')
+	})
+
+	it('parses JSON wrapped in markdown code block', () => {
+		const reply = '```json\n{"paragraphs":[{"index":3,"characters":["王芳"],"segments":[{"type":"dialogue","speaker":"王芳","emotion":"开心","tone":"活泼","speed":5,"text":"(开心,活泼)今天天气真好！"}]}]}\n```'
+		const result = parseBatchParagraphEmotionResult(reply)
+		expect(result).not.toBeNull()
+		expect(result!.get(3)?.segments[0].speaker).toBe('王芳')
+	})
+
+	it('parses truncated JSON by extracting complete paragraph objects', () => {
+		const reply = '{"paragraphs":[{"index":0,"characters":["李明"],"segments":[{"type":"narration","speaker":"旁白","emotion":"平静","tone":"温柔","speed":5,"text":"(平静,温柔)第一段。"}]},{"index":1,"characters":[],"segments":[{"type":"narration","speaker":"旁白","emotion":"平静","tone":"温柔","speed":5,"text":"(平静,温柔)第二段。"}]}]}'
+		const result = parseBatchParagraphEmotionResult(reply)
+		expect(result).not.toBeNull()
+		expect(result!.get(1)?.segments[0].text).toBe('(平静,温柔)第二段。')
+	})
+
+	it('returns null for invalid input', () => {
+		expect(parseBatchParagraphEmotionResult('完全不是JSON')).toBeNull()
+		expect(parseBatchParagraphEmotionResult('')).toBeNull()
+		expect(parseBatchParagraphEmotionResult('{"foo":"bar"}')).toBeNull()
 	})
 })
