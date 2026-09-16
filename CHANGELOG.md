@@ -1,6 +1,6 @@
 # Proof Reader Changelog
 
-## v0.15.0 (2026-09-10)
+## v0.15.0 (2026-09-16)
 
 ### ✨ 功能更新
 
@@ -10,6 +10,21 @@
 - 两家服务商均使用标准 `Authorization: Bearer` 鉴权，无需特殊适配
 - 按官方错误码文档完善了通义千问（9 个状态码）和智谱 GLM（6 个状态码）的错误提示映射
 - 智谱 GLM 429 错误新增永久性错误识别：账户欠费（1113）、套餐到期（1309）、额度上限（1308/1310）等 14 个业务码直接抛出不重试，避免无意义等待
+
+**新增 OpenRouter 大模型服务商**
+- AI 设置新增「OpenRouter」（聚合 400+ 模型），默认模型 `deepseek/deepseek-flash`
+- 按官方错误码文档完善错误提示映射（400/401/402/403/413/429/502/503）
+
+**大模型服务商支持 OpenAI / Anthropic 双 API 格式**
+- 支持双格式的服务商（DeepSeek、OpenRouter、自定义）在「API 配置」中新增「API 格式」切换，可在 OpenAI 与 Anthropic 之间选择，请求按所选模板发送
+- Anthropic 格式下自动使用 `/messages` 端点、`x-api-key` 鉴权与顶层 `system` 字段（OpenRouter 使用 `Authorization: Bearer`）
+- DeepSeek 的 Anthropic 端点自动切换为 `https://api.deepseek.com/anthropic/v1`，无需手动改 Base URL
+- 「测试 AI 连接」与全部 AI 调用链路（校对、TTS 情感分析、关系图谱布局等）均按所选格式发起请求
+- 响应结构与所选格式不匹配时直接报错并提示切换格式，不再静默返回空内容
+
+**Android 熄屏模式**
+- 校对设置新增「熄屏模式」开关（仅 Android 显示，持久化保存），启用后校对期间启动前台服务并持有 WakeLock，锁屏后仍可持续检测
+- 前台服务常驻低优先级通知「AI 校对进行中...」，校对结束或取消时自动停止并释放唤醒锁
 
 **繁体字扫描与转换**
 - 变体字检查弹窗新增「繁体字」Tab，支持扫描小说中的繁体字并一键转换为简体

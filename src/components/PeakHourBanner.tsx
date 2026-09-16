@@ -3,9 +3,8 @@ import { Icons } from "./Icons";
 
 // 高峰时段定义（北京时间 UTC+8）
 // 参考官方定价文档：https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
-// DeepSeek 峰谷定价：高峰时段价格 = 空闲时段价格 × 3 倍
-// 高峰时段为北京时间 9:00-12:00、14:00-18:00（其余为空闲时段），新价格于 2026-08-17 生效
-// 2026-08-23 起：周末（周六、周日）全天不再区分峰谷，统一按低谷时段价格计费
+// DeepSeek 峰谷定价：空闲时段价格为高峰时段价格的一半（高峰 = 空闲 × 2）
+// 高峰时段为北京时间周一至周五 9:00-12:00、14:00-18:00（其余为空闲时段），周末全天按空闲时段价格计费
 const PEAK_PERIODS = [
 	{ start: 9, end: 12 },
 	{ start: 14, end: 18 },
@@ -68,9 +67,9 @@ export function PeakHourBanner({ baseURL, model }: PeakHourBannerProps) {
 			</div>
 			<div className="peak-hour-banner-marquee">
 				<span className="peak-hour-banner-text">
-					当前处于 DeepSeek 高峰时段（北京时间 9:00-12:00 / 14:00-18:00），高峰时段价格为空闲时段的 3 倍，、请注意用量控制
+					当前处于 DeepSeek 高峰时段（北京时间周一至周五 9:00-12:00 / 14:00-18:00），高峰时段价格为空闲时段的 2 倍，请注意用量控制
 					&emsp;&emsp;&emsp;&emsp;
-					当前处于 DeepSeek 高峰时段（北京时间 9:00-12:00 / 14:00-18:00），高峰时段价格为空闲时段的 3 倍，、请注意用量控制
+					当前处于 DeepSeek 高峰时段（北京时间周一至周五 9:00-12:00 / 14:00-18:00），高峰时段价格为空闲时段的 2 倍，请注意用量控制
 					&emsp;&emsp;&emsp;&emsp;
 				</span>
 			</div>

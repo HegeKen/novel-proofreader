@@ -343,6 +343,7 @@ function TaskPanelContent({
 				customHeaders: {},
 				maxCharsPerRequest: 4000,
 				enableLogging: aiConfig.enableLogging,
+				apiFormat: aiConfig.apiFormat,
 			};
 
 			const enhanceMessages: ChatMessage[] = [
@@ -440,6 +441,7 @@ function TaskPanelContent({
 				customHeaders: {},
 				maxCharsPerRequest: 4000,
 				enableLogging: aiConfig.enableLogging,
+				apiFormat: aiConfig.apiFormat,
 			};
 
 			const characters = currentNovelId ? getCharacters(currentNovelId) : [];

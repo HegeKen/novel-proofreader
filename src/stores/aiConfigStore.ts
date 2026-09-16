@@ -17,10 +17,11 @@ export interface AIConfigState {
 const DEFAULT_AI_CONFIG: AIConfig = {
 	baseURL: "https://api.deepseek.com/v1",
 	apiKey: "",
-	model: "deepseek-v4-flash",
+	model: "deepseek-flash",
 	customHeaders: {},
 	maxCharsPerRequest: 2000,
 	enableLogging: true,
+	apiFormat: "openai",
 };
 
 export const useAIConfigStore = create<AIConfigState>()(
@@ -67,7 +68,7 @@ export const useAIConfigStore = create<AIConfigState>()(
 				if (state) {
 					setLoggerEnabled(state.aiConfig.enableLogging);
 					await preloadSecureStorage();
-					const providers: AIProvider[] = ['openai', 'deepseek', 'siliconflow', 'mimo', 'qwen', 'glm', 'lmstudio', 'ollama', 'vllm', 'custom'];
+					const providers: AIProvider[] = ['openai', 'deepseek', 'siliconflow', 'mimo', 'qwen', 'glm', 'openrouter', 'lmstudio', 'ollama', 'vllm', 'custom'];
 					const currentProvider = detectProvider(state.aiConfig.baseURL);
 					const nextApiKeyMap = { ...state.apiKeyMap };
 					let restoredKey = "";

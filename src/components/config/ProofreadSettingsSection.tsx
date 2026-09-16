@@ -1,4 +1,5 @@
 import { useConfigStore } from "../../stores/configStore";
+import { isAndroidPlatform } from "../../utils/mobile";
 import { Icons } from "../Icons";
 
 export function ProofreadSettingsSection() {
@@ -28,6 +29,19 @@ export function ProofreadSettingsSection() {
 							className="config-input" />
 					</div>
 					<p className="field-hint">建议根据您的 API 限制和网络状况调整（默认：4）</p>
+				</div>
+			)}
+			{isAndroidPlatform() && (
+				<div className="toggle-item">
+					<label className="toggle-label">
+						<div className="toggle-switch">
+							<input type="checkbox" checked={proofreadConfig.keepAwakeOnScreenOff}
+								onChange={(e) => updateProofreadConfig({ keepAwakeOnScreenOff: e.target.checked })} />
+							<span className="toggle-slider"></span>
+						</div>
+						<span className="toggle-text">熄屏模式</span>
+					</label>
+					<span className="toggle-hint">启用后，校对期间会常驻通知栏并保持唤醒，锁屏后仍可继续检测（会略微增加耗电）</span>
 				</div>
 			)}
 		</div>

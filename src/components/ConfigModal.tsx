@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useConfigStore } from "../stores/configStore";
-import type { AIProvider } from "../types";
+import type { AIProvider, ApiFormat } from "../types";
 import { Icons } from "./Icons";
 import { AITestSection } from "./config/AITestSection";
 import { BalanceSection } from "./config/BalanceSection";
@@ -14,7 +14,7 @@ import type { PromptConfig } from "./config/promptConfig";
 import { DEFAULTS as PROMPT_DEFAULTS } from "./config/promptConfig";
 import { WordReplacementModal } from "./WordReplacementModal";
 import { getLogHistory, clearLogHistory, type LogEntry } from "../utils/logger";
-import { detectProvider } from "../utils/aiClient";
+import { detectProvider, DUAL_FORMAT_PROVIDERS, ANTHROPIC_BASE_URLS } from "../utils/aiClient";
 
 const PROVIDERS: { value: AIProvider; label: string; logo: string; color: string }[] = [
 	{ value: "openai", label: "OpenAI", logo: "https://avatars.githubusercontent.com/u/14957082?s=200&v=4", color: "#0ea561" },
@@ -23,6 +23,7 @@ const PROVIDERS: { value: AIProvider; label: string; logo: string; color: string
 	{ value: "mimo", label: "Xiaomi MiMo", logo: "https://aistudio.xiaomimimo.com/favicon.0619b0d2.png", color: "#0ea561" },
 	{ value: "qwen", label: "通义千问", logo: "https://img.alicdn.com/imgextra/i3/O1CN01JLF4IJ1yAv1ZE7bfQ_!!6000000006539-2-tps-180-48.png", color: "#615ced" },
 	{ value: "glm", label: "智谱GLM", logo: "https://cdn.bigmodel.cn/static/logo/dark.svg", color: "#3b5998" },
+	{ value: "openrouter", label: "OpenRouter", logo: "https://mintcdn.com/openrouter-d02e98a0/ksNSeB_K7gD-BUDh/assets/logo-v2-dark.svg?fit=max&auto=format&n=ksNSeB_K7gD-BUDh&q=85&s=8ba2f49b11cd9839c37dd03c62537ebd", color: "#615ced" },
 	{ value: "lmstudio", label: "LM Studio", logo: "https://lm-studio.cn/_next/static/media/lmstudio-app-logo.11b4d746.webp", color: "#0ea561" },
 	{ value: "ollama", label: "Ollama", logo: "https://ollama.com/public/ollama.png", color: "#0ea561" },
 	{ value: "vllm", label: "VLLM", logo: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%236b7280" stroke-width="2"%3E%3Cpath d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/%3E%3C/svg%3E', color: "#0ea561" },
@@ -31,11 +32,12 @@ const PROVIDERS: { value: AIProvider; label: string; logo: string; color: string
 
 const PRESETS: Record<AIProvider, { baseUrl: string; model: string }> = {
 	openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4o" },
-	deepseek: { baseUrl: "https://api.deepseek.com/v1", model: "deepseek-v4-flash" },
+	deepseek: { baseUrl: "https://api.deepseek.com/v1", model: "deepseek-flash" },
 	siliconflow: { baseUrl: "https://api.siliconflow.cn/v1", model: "deepseek-ai/DeepSeek-V4-Flash" },
 	mimo: { baseUrl: "https://api.xiaomimimo.com/v1", model: "mimo-v2.5" },
 	qwen: { baseUrl: "https://trial.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", model: "qwen3.8-flash" },
 	glm: { baseUrl: "https://open.bigmodel.cn/api/paas/v4/", model: "glm-5.3" },
+	openrouter: { baseUrl: "https://openrouter.ai/api/v1", model: "deepseek/deepseek-flash" },
 	lmstudio: { baseUrl: "http://localhost:1234/v1", model: "" },
 	ollama: { baseUrl: "http://localhost:11434/v1", model: "llama3.1" },
 	vllm: { baseUrl: "http://localhost:8000/v1", model: "" },
@@ -48,6 +50,7 @@ interface ConfigState {
 	apiKey: string;
 	model: string;
 	enableLogging: boolean;
+	apiFormat: ApiFormat;
 }
 
 interface Props {
@@ -112,9 +115,22 @@ function ConfigModalContent({
 	const handleProviderChange = useCallback((p: AIProvider) => {
 		setConfig((prev) => {
 			if (prev.provider === p) return prev;
-			return { ...prev, provider: p, baseUrl: PRESETS[p].baseUrl, model: PRESETS[p].model, apiKey: apiKeyMap[p] ?? "" };
+			return {
+				...prev,
+				provider: p,
+				baseUrl: PRESETS[p].baseUrl,
+				model: PRESETS[p].model,
+				apiKey: apiKeyMap[p] ?? "",
+				// 切换后的提供商若不支持 Anthropic 格式，则回退到 OpenAI 格式
+				apiFormat: DUAL_FORMAT_PROVIDERS.has(p) ? prev.apiFormat : "openai",
+			};
 		});
 	}, [apiKeyMap]);
+
+	/** 切换 API 格式（Anthropic 格式的实际端点由请求层按提供商解析） */
+	const handleApiFormatChange = useCallback((format: ApiFormat) => {
+		setConfig((prev) => (prev.apiFormat === format ? prev : { ...prev, apiFormat: format }));
+	}, []);
 
 	return (
 		<div className="modal-overlay" onClick={onClose}>
@@ -188,9 +204,28 @@ function ConfigModalContent({
 									<div className="input-wrapper">
 										<input type="text" value={config.model}
 											onChange={(e) => setConfig((prev) => ({ ...prev, model: e.target.value }))}
-											placeholder="deepseek-v4-flash" className="config-input" />
+											placeholder="deepseek-flash" className="config-input" />
 									</div>
 								</div>
+								{DUAL_FORMAT_PROVIDERS.has(config.provider) && (
+									<div className="form-field">
+										<label>API 格式</label>
+										<div className="format-switch">
+											{([["openai", "OpenAI 格式"], ["anthropic", "Anthropic 格式"]] as const).map(([value, label]) => (
+												<button key={value} type="button"
+													className={`format-switch-btn ${config.apiFormat === value ? "active" : ""}`}
+													onClick={() => handleApiFormatChange(value)}>
+													{label}
+												</button>
+											))}
+										</div>
+										<div className="format-switch-hint">
+											实际请求：{config.apiFormat === "anthropic"
+												? `${ANTHROPIC_BASE_URLS[config.provider] ?? config.baseUrl.replace(/\/+$/, "")}/messages`
+												: `${config.baseUrl.replace(/\/+$/, "")}/chat/completions`}
+										</div>
+									</div>
+								)}
 							</div>
 							<BalanceSection baseUrl={config.baseUrl} apiKey={config.apiKey} />
 							<AITestSection config={config} />
@@ -349,11 +384,18 @@ export function ConfigModal({ open, onClose }: Props) {
 		apiKey: apiKeyMap[provider] ?? aiConfig.apiKey,
 		model: aiConfig.model,
 		enableLogging: aiConfig.enableLogging,
+		apiFormat: aiConfig.apiFormat ?? "openai",
 	};
 
 	const handleSave = useCallback((config: ConfigState) => {
 		setApiKeyForProvider(config.provider, config.apiKey);
-		setAIConfig({ baseURL: config.baseUrl.replace(/\/+$/, ""), apiKey: config.apiKey, model: config.model, enableLogging: config.enableLogging });
+		setAIConfig({
+			baseURL: config.baseUrl.replace(/\/+$/, ""),
+			apiKey: config.apiKey,
+			model: config.model,
+			enableLogging: config.enableLogging,
+			apiFormat: config.apiFormat,
+		});
 		onClose();
 	}, [setApiKeyForProvider, setAIConfig, onClose]);
 

@@ -28,6 +28,9 @@ export interface Chapter {
 	parentId?: number;
 }
 
+/** API 请求格式 */
+export type ApiFormat = "openai" | "anthropic";
+
 /** AI 模型配置 */
 export interface AIConfig {
 	baseURL: string;
@@ -36,6 +39,8 @@ export interface AIConfig {
 	customHeaders: Record<string, string>;
 	maxCharsPerRequest: number;
 	enableLogging: boolean;
+	/** API 请求格式（默认 openai） */
+	apiFormat?: ApiFormat;
 }
 
 /** 错误类型 */
@@ -100,6 +105,7 @@ export type AIProvider =
 	| "mimo"
 	| "qwen"
 	| "glm"
+	| "openrouter"
 	| "lmstudio"
 	| "ollama"
 	| "vllm"

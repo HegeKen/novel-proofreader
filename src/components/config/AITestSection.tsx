@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { testConnection } from "../../utils/aiClient";
 import { Icons } from "../Icons";
+import type { ApiFormat } from "../../types";
 
-export function AITestSection({ config }: { config: { baseUrl: string; apiKey: string; model: string } }) {
+export function AITestSection({ config }: { config: { baseUrl: string; apiKey: string; model: string; apiFormat?: ApiFormat } }) {
 	const [testText, setTestText] = useState("请回复\"测试成功\"这四个字。");
 	const [isTesting, setIsTesting] = useState(false);
 	const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -18,6 +19,7 @@ export function AITestSection({ config }: { config: { baseUrl: string; apiKey: s
 				maxCharsPerRequest: 5000,
 				enableLogging: true,
 				customHeaders: {},
+				apiFormat: config.apiFormat,
 			}, testText);
 			setTestResult(result);
 		} catch (err) {

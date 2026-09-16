@@ -22,3 +22,12 @@ export function getDeviceType(): "mobile" | "tablet" | "desktop" {
 	if (width <= 1024) return "tablet";
 	return "desktop";
 }
+
+/**
+ * 判断当前是否为 Android 平台（仅 Tauri Android 包内的 WebView 会命中）
+ * @returns true 表示 Android
+ */
+export function isAndroidPlatform(): boolean {
+	if (typeof navigator === "undefined") return false;
+	return /Android/i.test(navigator.userAgent);
+}

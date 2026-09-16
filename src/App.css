@@ -8808,6 +8808,45 @@ color: var(--text-primary)}
 .provider-card.active .provider-name {
 	color: #fff}
 
+/* API 格式切换（OpenAI / Anthropic） */
+.format-switch {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: 4px;
+	padding: 3px;
+	background: var(--bg-surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm)}
+
+.format-switch-btn {
+	padding: 7px 10px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-secondary);
+	background: transparent;
+	border: none;
+	border-radius: var(--r-xs);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.format-switch-btn:hover {
+	color: var(--text-primary);
+	background: var(--bg-hover)}
+
+.format-switch-btn:active {
+	transform: scale(0.97)}
+
+.format-switch-btn.active {
+	color: #fff;
+	background: var(--accent);
+	box-shadow: var(--shadow-sm)}
+
+.format-switch-hint {
+	margin-top: 5px;
+	font-size: 11px;
+	color: var(--text-muted);
+	word-break: break-all}
+
 /* Form Layout */
 .form-field {
 	margin-bottom: 12px}

@@ -100,7 +100,8 @@ class ProofreadSyncService : Service() {
     private fun acquireWakeLock() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "proofreader:proofread").apply {
-            acquire(60 * 60 * 1000L) // 1 小时超时
+            // 不设超时，保证熄屏后持续检测；由 stop / onDestroy 显式释放
+            acquire()
         }
     }
 

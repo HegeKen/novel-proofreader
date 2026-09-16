@@ -1,7 +1,7 @@
 // ============================================================
-// AI 调用封装 — 支持 OpenAI 兼容接口（含 LM Studio）
+// AI 调用封装 — 支持 OpenAI 兼容接口 & Anthropic 接口
 // ============================================================
-import type { AIConfig, AIProvider, NovelWorldbuilding, CharacterInfo, CharacterRelationship } from "../types";
+import type { AIConfig, AIProvider, ApiFormat, NovelWorldbuilding, CharacterInfo, CharacterRelationship } from "../types";
 import { logger } from "./logger";
 import { normalizeCJKVariants } from "./normalizeCJK";
 import { generateId } from "./id";
@@ -26,6 +26,67 @@ export interface ChatCompletionResponse {
 	};
 }
 
+/** Anthropic Messages API 响应 */
+interface AnthropicMessageResponse {
+	content: { type: string; text: string }[];
+	usage?: {
+		input_tokens: number;
+		output_tokens: number;
+	};
+}
+
+/** 支持双格式（OpenAI / Anthropic）的提供商 */
+export const DUAL_FORMAT_PROVIDERS: Set<AIProvider> = new Set(["deepseek", "openrouter", "custom"]);
+
+/** 各提供商 Anthropic 兼容端点（未列出则直接复用 OpenAI 的 baseURL，末尾由代码拼接 /messages） */
+export const ANTHROPIC_BASE_URLS: Partial<Record<AIProvider, string>> = {
+	deepseek: "https://api.deepseek.com/anthropic/v1",
+};
+
+/** 获取配置的 API 格式（默认 openai） */
+function getApiFormat(config: AIConfig): ApiFormat {
+	return config.apiFormat ?? "openai";
+}
+
+/** 构建 Anthropic 格式的请求头（OpenRouter 使用 Bearer 鉴权，其余用 x-api-key） */
+function buildAnthropicHeaders(config: AIConfig, provider: AIProvider): Record<string, string> {
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+		"anthropic-version": "2023-06-01",
+		...config.customHeaders,
+	};
+	if (config.apiKey) {
+		if (provider === "openrouter") {
+			headers["Authorization"] = `Bearer ${config.apiKey}`;
+		} else {
+			headers["x-api-key"] = config.apiKey;
+		}
+	}
+	return headers;
+}
+
+/** 将 ChatMessage[] 转换为 Anthropic 格式（system 提取到顶层） */
+function buildAnthropicBody(messages: ChatMessage[], model: string, maxTokens: number): Record<string, unknown> {
+	const systemMessages = messages.filter(m => m.role === "system");
+	const chatMessages = messages.filter(m => m.role !== "system");
+
+	const body: Record<string, unknown> = {
+		model,
+		messages: chatMessages,
+		max_tokens: maxTokens,
+		temperature: 0.1,
+	};
+	if (systemMessages.length > 0) {
+		body.system = systemMessages.map(m => m.content).join("\n\n");
+	}
+	return body;
+}
+
+/** 从 Anthropic 响应提取文本内容 */
+function extractAnthropicContent(data: AnthropicMessageResponse): string {
+	return data.content?.[0]?.text ?? "";
+}
+
 // ============================================================
 // Provider 识别 & 错误码映射
 // ============================================================
@@ -37,6 +98,7 @@ export function detectProvider(baseURL: string): AIProvider {
 	if (url.includes("xiaomimimo") || url.includes("mimo")) return "mimo";
 	if (url.includes("dashscope") || url.includes("maas.aliyuncs")) return "qwen";
 	if (url.includes("bigmodel")) return "glm";
+	if (url.includes("openrouter")) return "openrouter";
 	if (url.includes("siliconflow")) return "siliconflow";
 	if (url.includes("openai")) return "openai";
 	if (url.includes("localhost:1234") || url.includes("127.0.0.1:1234")) return "lmstudio";
@@ -102,6 +164,16 @@ const ERROR_MESSAGES: Partial<Record<AIProvider, Record<number, string>>> = {
 		500: "OpenAI 服务器错误，请稍后重试",
 		503: "OpenAI 服务暂不可用，请稍后重试",
 	},
+	openrouter: {
+		400: "请求参数错误（invalid_request/invalid_grant）：必填字段缺失、格式错误，或令牌未被接受（策略不存在/已暂停、声明不满足、签名无效或已过期）",
+		401: "API Key 无效，请检查 OpenRouter API Key",
+		402: "OpenRouter 账户余额不足或信用额度已用尽，请前往充值",
+		403: "无权访问该模型，请检查 API Key 权限或开通对应模型",
+		413: "请求体超过 32KB 上限，请缩短输入文本",
+		429: "请求频率过高（invalid_request），请参考 Retry-After 响应头稍后重试",
+		502: "上游服务网关错误，OpenRouter 路由异常，建议稍后重试",
+		503: "服务暂时不可用（temporarily_unavailable），发现文档或 JWKS 获取失败，请稍后重试",
+	},
 };
 
 /** 尝试从响应体提取更具体的错误信息 */
@@ -122,6 +194,9 @@ function extractDetailError(body: string): string | null {
 const RETRYABLE_STATUS_CODES = [429, 500, 502, 503, 504];
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
+
+/** API 格式与响应结构不匹配（属于配置错误，重试无意义） */
+class ApiFormatMismatchError extends Error {}
 
 /**
  * 智谱 429 中属于账户/套餐问题的业务错误码（重试无意义）：
@@ -213,6 +288,7 @@ export function buildRequestConfig(
 		customHeaders: {},
 		maxCharsPerRequest: 0,
 		enableLogging: false,
+		apiFormat: aiConfig.apiFormat,
 		...overrides,
 	};
 }
@@ -226,36 +302,48 @@ export async function sendChatCompletion(
 	signal?: AbortSignal,
 ): Promise<string> {
 	const startTime = Date.now();
-	const url = `${config.baseURL.replace(/\/+$/, "")}/chat/completions`;
-
 	const provider = detectProvider(config.baseURL);
+	const apiFormat = getApiFormat(config);
 
-	const headers: Record<string, string> = {
-		"Content-Type": "application/json",
-		...config.customHeaders,
-	};
-	if (config.apiKey) {
-		if (provider === "mimo") {
-			// MiMo 新版接口使用 api-key 请求头
-			headers["api-key"] = config.apiKey;
-		} else {
-			headers["Authorization"] = `Bearer ${config.apiKey}`;
-		}
-	}
+	// 根据 API 格式构建 URL / headers / body
+	const anthropicBase = apiFormat === "anthropic" ? ANTHROPIC_BASE_URLS[provider] : undefined;
+	const baseUrl = (anthropicBase ?? config.baseURL).replace(/\/+$/, "");
+	const url = apiFormat === "anthropic"
+		? `${baseUrl}/messages`
+		: `${baseUrl}/chat/completions`;
 
 	const promptTokens = Math.floor(messages.reduce((acc, m) => acc + (m.content?.length || 0), 0) * 0.5);
 	const minMaxTokens = Math.max(131072, Math.floor(promptTokens * 1.5));
 
-	const body: Record<string, unknown> = {
-		model: config.model,
-		messages,
-		temperature: 0.1,
-	};
-	if (provider === "mimo") {
-		// MiMo 新版接口使用 max_completion_tokens
-		body.max_completion_tokens = minMaxTokens;
+	let headers: Record<string, string>;
+	let body: Record<string, unknown>;
+
+	if (apiFormat === "anthropic") {
+		headers = buildAnthropicHeaders(config, provider);
+		body = buildAnthropicBody(messages, config.model, minMaxTokens);
 	} else {
-		body.max_tokens = minMaxTokens;
+		headers = {
+			"Content-Type": "application/json",
+			...config.customHeaders,
+		};
+		if (config.apiKey) {
+			if (provider === "mimo") {
+				// MiMo 新版接口使用 api-key 请求头
+				headers["api-key"] = config.apiKey;
+			} else {
+				headers["Authorization"] = `Bearer ${config.apiKey}`;
+			}
+		}
+		body = {
+			model: config.model,
+			messages,
+			temperature: 0.1,
+		};
+		if (provider === "mimo") {
+			body.max_completion_tokens = minMaxTokens;
+		} else {
+			body.max_tokens = minMaxTokens;
+		}
 	}
 
 	for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -291,12 +379,34 @@ export async function sendChatCompletion(
 				throw new Error(parts.join(" — "));
 			}
 
-			const data: ChatCompletionResponse = await resp.json();
+			const duration = Date.now() - startTime;
+
+			if (apiFormat === "anthropic") {
+				const data: AnthropicMessageResponse & { choices?: unknown } = await resp.json();
+				logger.response(url, resp.status, data, Date.now());
+
+				// 服务端返回 OpenAI 结构，说明「API 格式」选错（Anthropic 结构无 choices 字段）
+				if (Array.isArray(data.choices)) {
+					throw new ApiFormatMismatchError("服务端返回 OpenAI 格式响应，请将「API 格式」切换为 OpenAI 格式");
+				}
+
+				const responsePromptTokens = data.usage?.input_tokens ?? 0;
+				const completionTokens = data.usage?.output_tokens ?? 0;
+				useAppMetaStore.getState().incrementAPIUsage(provider, true, responsePromptTokens, completionTokens, duration);
+
+				return extractAnthropicContent(data);
+			}
+
+			const data: ChatCompletionResponse & { type?: string } = await resp.json();
 			logger.response(url, resp.status, data, Date.now());
+
+			// 服务端返回 Anthropic 结构，说明「API 格式」选错（Anthropic 成功响应 type 为 message）
+			if (data.type === "message") {
+				throw new ApiFormatMismatchError("服务端返回 Anthropic 格式响应，请将「API 格式」切换为 Anthropic 格式");
+			}
 
 			const responsePromptTokens = data.usage?.prompt_tokens ?? 0;
 			const completionTokens = data.usage?.completion_tokens ?? 0;
-			const duration = Date.now() - startTime;
 			useAppMetaStore.getState().incrementAPIUsage(provider, true, responsePromptTokens, completionTokens, duration);
 
 			const content = data.choices?.[0]?.message?.content ?? "";
@@ -313,6 +423,11 @@ export async function sendChatCompletion(
 		} catch (err) {
 			// 取消请求：直接抛出，不重试
 			if (err instanceof DOMException && err.name === "AbortError") {
+				throw err;
+			}
+			// API 格式与响应结构不匹配：配置错误，重试无意义
+			if (err instanceof ApiFormatMismatchError) {
+				useAppMetaStore.getState().incrementAPIUsage(provider, false, 0, 0, Date.now() - startTime);
 				throw err;
 			}
 			if (attempt === MAX_RETRIES - 1) {
@@ -2035,6 +2150,7 @@ export async function analyzeCharactersInBatches(
 		customHeaders: config.customHeaders || {},
 		maxCharsPerRequest: config.maxCharsPerRequest || 0,
 		enableLogging: config.enableLogging || false,
+		apiFormat: config.apiFormat,
 	};
 
 	for (const [name, fragments] of characterFragments.entries()) {
@@ -2522,6 +2638,7 @@ export async function generateNovelEvents(
     customHeaders: config.customHeaders || {},
     maxCharsPerRequest: config.maxCharsPerRequest || 0,
     enableLogging: config.enableLogging || false,
+    apiFormat: config.apiFormat,
   };
 
   const allEventsFromChunks: NovelEventsResult["events"] = [];
@@ -2683,6 +2800,7 @@ export async function generateMajorEvents(
 		customHeaders: config.customHeaders || {},
 		maxCharsPerRequest: config.maxCharsPerRequest || 0,
 		enableLogging: config.enableLogging || false,
+		apiFormat: config.apiFormat,
 	};
 
 	// 第一阶段：逐批分析，提取每段中的事件

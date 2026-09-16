@@ -520,7 +520,10 @@ export function useAICheck() {
 			const chapter = latestChapters[latestChapterIndex];
 			if (!chapter) return;
 
-			startProofreadService().catch(() => {});
+			// 熄屏模式：启动 Android 前台服务并持有 WakeLock，避免锁屏后检测被冻结
+			if (proofreadConfig.keepAwakeOnScreenOff) {
+				startProofreadService().catch(() => {});
+			}
 
 			// 获取并发配置
 			const maxConcurrent = getMaxConcurrentBatches(

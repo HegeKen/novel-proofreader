@@ -20,6 +20,8 @@ export interface TTSConfig {
 export interface ProofreadConfig {
 	enableParallelProcessing: boolean;
 	maxConcurrentBatches: number;
+	/** 熄屏模式：Android 端校对期间启动前台服务并持有 WakeLock，锁屏后继续检测 */
+	keepAwakeOnScreenOff: boolean;
 }
 
 export interface ConfigState {
@@ -73,6 +75,7 @@ const DEFAULT_PROMPT_CONFIG: PromptConfig = {
 const DEFAULT_PROOFREAD_CONFIG: ProofreadConfig = {
 	enableParallelProcessing: true,
 	maxConcurrentBatches: 4,
+	keepAwakeOnScreenOff: false,
 };
 
 const loadedTtsApiKey = secureStorageGet("tts-api-key") || "";
