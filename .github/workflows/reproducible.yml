@@ -1,0 +1,259 @@
+name: Verify Reproducible Build
+
+# 目的：直接证明「配置一致的 key => 打包产物一致」。
+#
+# 做法：用同一份 signing.config.json、同一套签名 key，在**两台不同的 runner** 上
+# 各构建一次，然后逐产物比对 sha256 与签名证书指纹。
+#
+# 为什么默认只覆盖 Android / Linux：
+#   - Android：我们的管线会对 APK 做时间戳归一化并用同一 keystore 重签名，
+#     RSA PKCS#1 v1.5 是确定性签名，因此可以做到**逐字节一致**。
+#   - Linux (.deb)：ar/tar 打包在固定 SOURCE_DATE_EPOCH 后可以做到逐字节一致。
+#   - macOS (.app/.dmg) 与 Windows (.msi/.exe)：打包器会写入时间戳/UUID，
+#     目前只能保证「同一配置 + 同一工具链下稳定」，无法承诺跨机器逐字节一致。
+#     这类平台请用 `node scripts/verify-artifacts.mjs reproducible --expected=a.json --actual=b.json`
+#     在本地或两台机器上比对，工具会如实报告差异。
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 要验证的平台
+        required: true
+        default: android
+        type: choice
+        options:
+          - android
+          - linux
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    if: inputs.platform == 'android'
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [a, b]
+    runs-on: ubuntu-22.04
+
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install Android targets
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+
+      - name: Setup Java for Android
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: >
+            platform-tools
+            platforms;android-34
+            build-tools;34.0.0
+            cmdline-tools;latest
+            ndk;25.1.8937393
+          accept-android-sdk-licenses: true
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Install Android Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jdk libc6-dev libstdc++-10-dev
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Initialize Android project
+        run: |
+          cd src-tauri
+          pnpm tauri android init
+        env:
+          TAURI_ANDROID_MIN_SDK_VERSION: 24
+
+      - name: Setup release signing
+        uses: ./.github/actions/setup-release-signing
+        with:
+          restore-android: "true"
+          require-signing: "true"
+
+      - name: Build (run ${{ matrix.run }})
+        run: |
+          set -euo pipefail
+          cd src-tauri
+          pnpm tauri android build --target aarch64
+        env:
+          TAURI_ANDROID_MIN_SDK_VERSION: 24
+
+      - name: Normalize APK and generate manifest
+        run: |
+          node scripts/build-release.mjs --android --android-arch=aarch64 --skip-build \
+            --out=release-manifest-${{ matrix.run }}.json
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: manifest-android-${{ matrix.run }}
+          path: release-manifest-${{ matrix.run }}.json
+          retention-days: 7
+
+  linux:
+    if: inputs.platform == 'linux'
+    strategy:
+      fail-fast: false
+      matrix:
+        run: [a, b]
+    runs-on: ubuntu-22.04
+
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install target
+        run: rustup target add x86_64-unknown-linux-gnu
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup release signing
+        uses: ./.github/actions/setup-release-signing
+        with:
+          restore-android: "false"
+          require-signing: "false"
+
+      - name: Build (run ${{ matrix.run }})
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target x86_64-unknown-linux-gnu ${{ env.DSH_TAURI_CONFIG_ARGS }}
+
+      - name: Generate manifest
+        run: |
+          node scripts/build-release.mjs --target=x86_64-unknown-linux-gnu --skip-build \
+            --out=release-manifest-${{ matrix.run }}.json
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: manifest-linux-${{ matrix.run }}
+          path: release-manifest-${{ matrix.run }}.json
+          retention-days: 7
+
+  compare:
+    needs: [android, linux]
+    if: always() && !failure() && !cancelled()
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Download manifests from run a
+        uses: actions/download-artifact@v8
+        with:
+          pattern: manifest-*-a
+          path: manifests/a
+          merge-multiple: true
+
+      - name: Download manifests from run b
+        uses: actions/download-artifact@v8
+        with:
+          pattern: manifest-*-b
+          path: manifests/b
+          merge-multiple: true
+
+      - name: Compare manifests
+        run: |
+          set -euo pipefail
+          echo "### 可复现性比对结果" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          FAILED=0
+          shopt -s nullglob
+          for expected in manifests/a/*.json; do
+            name=$(basename "$expected")
+            actual="manifests/b/$name"
+            if [ ! -f "$actual" ]; then
+              echo "- ⚠️ 缺少对照清单: $name" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            echo "## $name" >> "$GITHUB_STEP_SUMMARY"
+            if node scripts/verify-artifacts.mjs reproducible --expected="$expected" --actual="$actual" \
+                 | tee /tmp/out.txt; then
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              cat /tmp/out.txt >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+            else
+              FAILED=1
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              cat /tmp/out.txt >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          if [ "$FAILED" = "1" ]; then
+            echo "存在不可复现的产物，详见上方输出。" >&2
+            exit 1
+          fi
+          echo "全部产物在两次独立构建中逐字节一致 ✅" >> "$GITHUB_STEP_SUMMARY"

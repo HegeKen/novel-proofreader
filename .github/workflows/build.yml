@@ -25,24 +25,50 @@ jobs:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
           - platform: windows-latest
-            target: aarch64-pc-windows-msvc  # Windows ARM64
+            target: aarch64-pc-windows-msvc
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-          # Android构建配置 - 使用Ubuntu 22.04 (最新可用版本)
           - platform: ubuntu-22.04
-            target: aarch64-linux-android  # ARM v8 (64-bit)
+            target: aarch64-linux-android
             android: true
             android_arch: aarch64
           - platform: ubuntu-22.04
-            target: armv7-linux-androideabi  # ARM v7 (32-bit)
+            target: armv7-linux-androideabi
             android: true
             android_arch: armv7
           - platform: ubuntu-22.04
-            target: x86_64-linux-android  # x86_64 (64-bit Intel/AMD)
+            target: x86_64-linux-android
             android: true
             android_arch: x86_64
 
     runs-on: ${{ matrix.platform }}
+
+    env:
+      # --- 发布签名材料（全部来自仓库 Secrets，由 composite action 还原到工作区） ---
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_CODE_SIGNING_ENDPOINT: ${{ secrets.AZURE_CODE_SIGNING_ENDPOINT }}
+      AZURE_CODE_SIGNING_ACCOUNT: ${{ secrets.AZURE_CODE_SIGNING_ACCOUNT }}
+      AZURE_CODE_SIGNING_CERTIFICATE_PROFILE: ${{ secrets.AZURE_CODE_SIGNING_CERTIFICATE_PROFILE }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - uses: actions/checkout@v7
@@ -50,20 +76,18 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24' # 更新到Node.js 24
+          node-version: '24'
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
         with:
           version: 9
-          
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          # 移除 targets 参数，因为在条件步骤中添加目标
-      
-      # Windows特定配置
+
       - name: Install Windows targets and tools
         if: matrix.platform == 'windows-latest'
         run: |
@@ -71,21 +95,14 @@ jobs:
           choco install nuget.commandline
         shell: powershell
 
-      # Android特定配置
       - name: Install Android targets
         if: matrix.android
-        run: |
-          rustup target add ${{ matrix.target }}
-          # 为Android构建添加通用的目标平台
-          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+        run: rustup target add ${{ matrix.target }} aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
 
-      # 修复非Android构建时错误添加Android目标的问题
       - name: Install non-Android targets
         if: "!matrix.android"
-        run: |
-          rustup target add ${{ matrix.target }}
+        run: rustup target add ${{ matrix.target }}
 
-      # Android特定：安装Java 17
       - name: Setup Java for Android
         if: matrix.android
         uses: actions/setup-java@v5
@@ -105,12 +122,9 @@ jobs:
             ndk;25.1.8937393
           accept-android-sdk-licenses: true
 
-      - name: Install Android dependencies (if building for Android)
+      - name: Install cargo-ndk
         if: matrix.android
-        run: |
-          echo "Installing Android dependencies"
-          cargo install cargo-ndk
-          cargo install tauri-cli
+        run: cargo install cargo-ndk
 
       - name: Install Linux dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04' && !matrix.android
@@ -118,54 +132,72 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
 
-      # Android构建需要的Linux依赖
       - name: Install Android Linux dependencies
         if: matrix.android
         run: |
           sudo apt-get update
           sudo apt-get install -y openjdk-17-jdk libc6-dev libstdc++-10-dev
 
+      # --frozen-lockfile：依赖版本必须由 pnpm-lock.yaml 唯一确定，否则产物不可复现
       - name: Install frontend dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
-      # Android构建步骤
       - name: Initialize Android project
         if: matrix.android
         run: |
           cd src-tauri
-          cargo tauri android init
+          pnpm tauri android init
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_ANDROID_MIN_SDK_VERSION: 24
+
+      # 必须在 android init 之后执行：init 可能重生成 gen/android，
+      # 该 action 会幂等地把签名与可复现补丁重新贴回项目文件。
+      - name: Setup release signing
+        uses: ./.github/actions/setup-release-signing
+        with:
+          restore-android: ${{ matrix.android }}
+          require-signing: ${{ github.event_name == 'push' }}
 
       - name: Build Tauri app for Android
         if: matrix.android
         run: |
+          set -euo pipefail
           cd src-tauri
-          cargo tauri android build --target ${{ matrix.android_arch }}
-          # 重命名 APK 和 AAB 文件
-          VERSION=$(cat Cargo.toml | grep 'version =' | head -n1 | sed 's/version = "\(.*\)"/\1/')
-          APP_NAME="ProofReader"
-          # 重命名 APK (release 版本)
-          find gen/android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | while read apk; do
-            mv "$apk" "gen/android/app/build/outputs/apk/release/${APP_NAME}-v${VERSION}-${{ matrix.android_arch }}.apk"
-          done
-          # 重命名 AAB (release 版本)
-          find gen/android/app/build/outputs/bundle/release -name "*.aab" 2>/dev/null | while read aab; do
-            mv "$aab" "gen/android/app/build/outputs/bundle/release/${APP_NAME}-v${VERSION}-${{ matrix.android_arch }}.aab"
-          done
+          # 使用 lockfile 中固定的 tauri CLI（pnpm tauri），而不是 cargo install 到的最新版，
+          # 否则 CLI 版本漂移会直接改变打包结果。
+          pnpm tauri android build --target ${{ matrix.android_arch }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_ANDROID_MIN_SDK_VERSION: 24
 
-      # 非Android构建步骤
+      # AGP 的输出路径随版本变化，且 --unsigned 产物意味着签名补丁没生效；
+      # 这两件事都交给脚本判断，避免写死路径导致"静默发出未签名包"。
+      - name: Verify signing and normalize Android artifact names
+        if: matrix.android
+        run: node scripts/rename-android-artifacts.mjs --arch=${{ matrix.android_arch }}
+
+      - name: Normalize Android archives and generate manifest
+        if: matrix.android
+        run: |
+          node scripts/build-release.mjs \
+            --android --android-arch=${{ matrix.android_arch }} --skip-build \
+            --out=release-manifest-${{ matrix.target }}.json
+
       - name: Build Tauri app for desktop
         if: "!matrix.android"
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} ${{ env.DSH_TAURI_CONFIG_ARGS }}
+
+      - name: Generate artifact manifest
+        if: "!matrix.android"
+        run: |
+          node scripts/build-release.mjs --target=${{ matrix.target }} --skip-build \
+            --out=release-manifest-${{ matrix.target }}.json
+
+      - name: Verify artifacts are signed
+        run: node scripts/verify-artifacts.mjs signed --manifest=release-manifest-${{ matrix.target }}.json
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -178,8 +210,10 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sig
             src-tauri/gen/android/app/build/outputs/apk/**/*
             src-tauri/gen/android/app/build/outputs/bundle/**/*
+            release-manifest-${{ matrix.target }}.json
           retention-days: 7
           compression-level: 0
 
@@ -189,14 +223,28 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
 
-      - name: List files to upload
-        run: find artifacts -type f -name "*.dmg" -o -name "*.exe" -o -name "*.msi" -o -name "*.apk" -o -name "*.aab" -o -name "*.deb" -o -name "*.AppImage"
+      - name: Merge per-target manifests
+        run: |
+          set -euo pipefail
+          INPUTS=$(ls artifacts/release-manifest-*.json | paste -sd, -)
+          echo "合并: $INPUTS"
+          node scripts/artifact-manifest.mjs merge --inputs="$INPUTS" --out=artifacts/release-manifest.json
+
+      - name: Verify merged manifest is fully signed
+        run: node scripts/verify-artifacts.mjs signed --manifest=artifacts/release-manifest.json
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -210,4 +258,6 @@ jobs:
             artifacts/**/*.aab
             artifacts/**/*.deb
             artifacts/**/*.AppImage
+            artifacts/**/*.sig
+            artifacts/release-manifest.json
           generate_release_notes: true

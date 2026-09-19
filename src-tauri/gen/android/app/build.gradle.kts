@@ -72,3 +72,64 @@ dependencies {
 }
 
 apply(from = "tauri.build.gradle.kts")
+
+// >>> dsh-signing:begin (由 pnpm run setup:signing 生成，请勿手工修改)
+val dshKeystorePropertiesFile = rootProject.file("keystore.properties")
+val dshKeystoreProps = mutableMapOf<String, String>()
+if (dshKeystorePropertiesFile.exists()) {
+    dshKeystorePropertiesFile.readLines().forEach { line ->
+        val trimmed = line.trim()
+        if (trimmed.isNotEmpty() && !trimmed.startsWith("#")) {
+            val separator = trimmed.indexOf('=')
+            if (separator > 0) {
+                dshKeystoreProps[trimmed.substring(0, separator).trim()] =
+                    trimmed.substring(separator + 1).trim()
+            }
+        }
+    }
+}
+
+if (!dshKeystorePropertiesFile.exists()) {
+    logger.warn("[dsh-signing] keystore.properties 不存在，release 产物不会被签名。请运行: pnpm run setup:signing")
+}
+
+android {
+    signingConfigs {
+        if (dshKeystorePropertiesFile.exists()) {
+            create("release") {
+                val dshStoreFile = dshKeystoreProps["storeFile"]
+                storeFile = if (dshStoreFile != null) rootProject.file(dshStoreFile) else null
+                // storeType 必须与文件真实格式一致（Android Studio 旧版产出 JKS，新版 PKCS12）
+                val dshStoreType = dshKeystoreProps["storeType"]
+                if (dshStoreType != null) storeType = dshStoreType
+                storePassword = dshKeystoreProps["storePassword"]
+                keyAlias = dshKeystoreProps["keyAlias"]
+                keyPassword = dshKeystoreProps["keyPassword"]
+                // 固定签名方案，保证同一 key 下签名结果稳定
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = false
+            }
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            if (dshKeystorePropertiesFile.exists()) {
+                signingConfig = signingConfigs.findByName("release")
+            }
+        }
+    }
+    // 依赖元数据块含构建期生成的哈希，是 APK/AAB 不可复现的主要来源之一
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+}
+
+// 归档任务可复现：不写入构建时间戳、条目顺序稳定
+tasks.withType<org.gradle.api.tasks.bundling.AbstractArchiveTask>().configureEach {
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
+// <<< dsh-signing:end

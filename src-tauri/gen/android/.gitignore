@@ -17,3 +17,10 @@ key.properties
 
 /.tauri
 /tauri.settings.gradle
+
+# 签名材料（由 pnpm run setup:signing 生成）
+keystore.properties
+keystore.jks
+*.jks
+*.keystore
+!debug.keystore

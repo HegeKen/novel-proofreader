@@ -1,0 +1,66 @@
+{
+  "$schema": "./signing.config.schema.json",
+  "schemaVersion": 1,
+  "app": {
+    "productName": "Proof Reader",
+    "identifier": "cn.helilab.proofreader",
+    "version": "0.15.0"
+  },
+  "reproducibility": {
+    "sourceDateEpoch": "commit",
+    "preserveFileTimestamps": false,
+    "reproducibleFileOrder": true,
+    "dependencyInfoInRelease": false,
+    "lockedDependencies": true,
+    "normalizeAndroidArchive": true
+  },
+  "android": {
+    "enabled": true,
+    "keystorePath": "src-tauri/gen/android/keystore.jks",
+    "keystorePropertiesPath": "src-tauri/gen/android/keystore.properties",
+    "keystoreType": "PKCS12",
+    "keyAlias": "proofreader",
+    "keyAlgorithm": "RSA",
+    "keySize": 4096,
+    "validityDays": 10950,
+    "signatureScheme": "v1+v2+v3",
+    "distinguishedName": {
+      "commonName": "Heli Lab",
+      "organizationalUnit": "Mobile",
+      "organization": "Heli Lab",
+      "locality": "Hangzhou",
+      "state": "Zhejiang",
+      "country": "CN"
+    }
+  },
+  "macos": {
+    "enabled": true,
+    "signingIdentityEnv": "APPLE_SIGNING_IDENTITY",
+    "hardenedRuntime": true,
+    "notarize": true,
+    "minimumSystemVersion": "10.15",
+    "entitlements": "src-tauri/entitlements.plist"
+  },
+  "windows": {
+    "enabled": true,
+    "mode": "pfx",
+    "digestAlgorithm": "sha256",
+    "timestampUrl": "http://timestamp.digicert.com",
+    "tsp": false,
+    "certificateThumbprint": "",
+    "azureTrustedSigning": {
+      "endpoint": "",
+      "account": "",
+      "certificateProfile": "",
+      "description": "",
+      "cliVersion": ""
+    }
+  },
+  "updater": {
+    "enabled": true,
+    "publicKey": "",
+    "keyId": "main",
+    "endpoints": []
+  },
+  "configKey": "sha256:3206027dc80cf17cdf429715d19874fe699efe25a0008c0b52de4e0eeedf4244"
+}

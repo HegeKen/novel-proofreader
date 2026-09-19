@@ -1,0 +1,7 @@
+# 固定 Rust 工具链版本 —— 这是"同一份配置 => 同一份产物"的前提之一。
+# 不同 rustc 版本会产生不同的机器码，产物哈希必然不同。
+# 升级这里时必须同步更新 release-manifest 基准，并把它当作一次"有意的产物变更"。
+[toolchain]
+channel = "1.90.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

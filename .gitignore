@@ -17,6 +17,16 @@ dist-ssr
 *.jks
 *.keystore
 keystore-base64.txt
+keystore.properties
+*.p12
+*.pfx
+
+# 发布配置引导生成的本地材料（keystore / 证书 / updater 私钥 / 口令 / Secrets 清单）
+.signing/
+
+# App Store Connect API 私钥（.p8）与 Windows 证书导出
+*.p8
+src-tauri/private_keys/
 
 # Editor directories and files
 .vscode/*

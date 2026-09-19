@@ -1,0 +1,142 @@
+name: Setup release signing
+description: >-
+  还原签名材料（Android keystore / updater 私钥 / Windows 代码签名证书）、
+  把签名与可复现补丁施加到项目文件，并导出可复现构建与签名所需的环境变量。
+  所有签名材料都来自 Secrets，绝不写入构建产物。
+
+# 说明：本 action 的 shell 步骤会继承调用方 job/workflow 级别的 env，
+# 因此调用方需在 job 上定义 ANDROID_KEYSTORE_BASE64、WINDOWS_CERTIFICATE 等
+# （见各 workflow 的 env 段）。
+
+inputs:
+  restore-android:
+    description: 是否从 Secrets 还原 Android keystore
+    required: false
+    default: "true"
+  require-signing:
+    description: 缺少签名材料时是否让 job 直接失败（tag 发布应为 true）
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: 还原签名材料并施加签名/可复现补丁
+      shell: bash
+      env:
+        DSH_RESTORE_ANDROID: ${{ inputs.restore-android }}
+        DSH_REQUIRE_SIGNING: ${{ inputs.require-signing }}
+      run: |
+        set -euo pipefail
+        ARGS="--apply"
+        if [ "$DSH_RESTORE_ANDROID" = "true" ]; then ARGS="$ARGS --restore-android-from-ci"; fi
+        if [ "$DSH_REQUIRE_SIGNING" = "true" ]; then ARGS="$ARGS --strict"; fi
+        node scripts/signing-check.mjs $ARGS
+
+    # tauri-bundler 判定「是否签名 Windows 产物」只看
+    # bundle.windows.certificateThumbprint / signCommand（见 settings.rs 的 can_sign），
+    # 它**不读** WINDOWS_CERTIFICATE 环境变量，所以必须把 pfx 导入证书存储并取出指纹。
+    - name: 导入 Windows 代码签名证书
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        if (-not $env:WINDOWS_CERTIFICATE) {
+          Write-Host "! 未提供 WINDOWS_CERTIFICATE，跳过导入（Windows 产物将未签名）"
+          exit 0
+        }
+        $base64 = ($env:WINDOWS_CERTIFICATE -replace '\s', '')
+        $pfxPath = Join-Path $env:RUNNER_TEMP 'dsh-code-signing.pfx'
+        [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($base64))
+        $secure = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
+        $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $secure
+        # 用 AppendAllText 而不是 Out-File，避免 PowerShell 写入 BOM 破坏 $GITHUB_ENV
+        [IO.File]::AppendAllText($env:GITHUB_ENV, "DSH_WINDOWS_CERT_THUMBPRINT=$($cert.Thumbprint)`n")
+        Remove-Item $pfxPath -Force
+        Write-Host "✓ 已导入代码签名证书，指纹 $($cert.Thumbprint)"
+
+    # App Store Connect API 密钥（.p8）只能以文件形式使用：tauri-bundler 读的是
+    # APPLE_API_KEY_PATH 指向的文件（缺省时会在 ./private_keys 下找 AuthKey_<KEY_ID>.p8）。
+    # 这里把 base64 的 Secret 落地成文件，并显式导出路径。
+    - name: 落地 App Store Connect API 密钥
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -z "${APPLE_API_KEY_P8:-}" ] || [ -z "${APPLE_API_KEY:-}" ]; then
+          echo "未提供 APPLE_API_KEY_P8 / APPLE_API_KEY，跳过（可改用 Apple ID 公证）"
+          exit 0
+        fi
+        KEY_DIR="src-tauri/private_keys"
+        mkdir -p "$KEY_DIR"
+        KEY_PATH="$KEY_DIR/AuthKey_${APPLE_API_KEY}.p8"
+        # GNU base64 与 BSD base64 的解码开关不同（--decode / -D）
+        if ! printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$KEY_PATH" 2>/dev/null; then
+          printf '%s' "$APPLE_API_KEY_P8" | base64 -D > "$KEY_PATH"
+        fi
+        chmod 600 "$KEY_PATH"
+        printf 'APPLE_API_KEY_PATH=%s\n' "$PWD/$KEY_PATH" >> "$GITHUB_ENV"
+        echo "✓ 已落地 App Store Connect API 密钥: $KEY_PATH"
+
+    # Azure Trusted Signing 需要外部的 trusted-signing-cli；
+    # 版本由 signing.config.json 的 windows.azureTrustedSigning.cliVersion 固定
+    # （签名工具版本会直接影响产物，因此纳入 configKey 指纹）。
+    - name: 安装 Azure Trusted Signing CLI
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        set -euo pipefail
+        MODE=$(node -e "try{process.stdout.write(require('./signing.config.json').windows?.mode||'')}catch{}")
+        if [ "$MODE" != "azure-trusted-signing" ]; then
+          echo "windows.mode=$MODE，无需 Trusted Signing CLI"
+          exit 0
+        fi
+        if command -v trusted-signing-cli >/dev/null 2>&1; then
+          echo "trusted-signing-cli 已存在"
+          exit 0
+        fi
+        VERSION=$(node -e "try{process.stdout.write(require('./signing.config.json').windows?.azureTrustedSigning?.cliVersion||'')}catch{}")
+        if [ -n "$VERSION" ]; then
+          echo "安装 trusted-signing-cli $VERSION（由 config 固定）"
+          cargo install trusted-signing-cli --version "$VERSION" --locked
+        else
+          echo "::warning::windows.azureTrustedSigning.cliVersion 未设置，安装 latest —— 这会使产物不可复现"
+          cargo install trusted-signing-cli --locked
+        fi
+
+    # 生成 tauri build --config 覆盖（updater 产物签名 / Windows 签名），
+    # 并把参数写入 DSH_TAURI_CONFIG_ARGS 供后续步骤与 tauri-action 使用
+    - name: 生成 tauri 构建覆盖配置
+      shell: bash
+      run: |
+        set -euo pipefail
+        ARGS="$(node scripts/signing-check.mjs --emit-tauri-config)"
+        if [ -n "$ARGS" ]; then
+          printf 'DSH_TAURI_CONFIG_ARGS=%s\n' "$ARGS" >> "$GITHUB_ENV"
+          echo "✓ 已生成覆盖配置: $ARGS"
+          cat .signing/tauri.release.conf.json
+        else
+          printf 'DSH_TAURI_CONFIG_ARGS=\n' >> "$GITHUB_ENV"
+          echo "! 无需要注入的构建覆盖项（updater 私钥与 Windows 签名均未配置）"
+        fi
+
+    - name: 导出可复现构建环境变量
+      shell: bash
+      env:
+        DSH_REQUIRE_SIGNING: ${{ inputs.require-signing }}
+      run: |
+        set -euo pipefail
+        node scripts/signing-check.mjs --print-env >> "$GITHUB_ENV"
+        # 是否允许未签名产物：由 require-signing 决定，脚本统一读取 DSH_ALLOW_UNSIGNED
+        if [ "$DSH_REQUIRE_SIGNING" = "true" ]; then
+          echo "DSH_ALLOW_UNSIGNED=false" >> "$GITHUB_ENV"
+        else
+          echo "DSH_ALLOW_UNSIGNED=true" >> "$GITHUB_ENV"
+        fi
+        echo "--- 已导出的可复现构建变量 ---"
+        grep -E '^(SOURCE_DATE_EPOCH|RUSTFLAGS|CARGO_INCREMENTAL|TZ|LC_ALL|TAURI_SIGNING|DSH_)' "$GITHUB_ENV" || true
+
+    - name: 记录配置指纹到 Job Summary
+      shell: bash
+      run: |
+        set -euo pipefail
+        node scripts/signing-check.mjs --summary >> "$GITHUB_STEP_SUMMARY"

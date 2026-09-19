@@ -1,0 +1,267 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Proof Reader 发布签名配置",
+  "description": "打包发布相关配置的唯一事实来源。同一份配置（同一 configKey）+ 同一套签名 key => 产物必须逐字节一致。不包含任何私钥。",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "app",
+    "reproducibility",
+    "android",
+    "macos",
+    "windows",
+    "updater"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "configKey": {
+      "type": "string",
+      "description": "由其余字段规范化后计算的 sha256 指纹，由脚本自动回填，请勿手改。",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "app": {
+      "type": "object",
+      "required": [
+        "productName",
+        "identifier",
+        "version"
+      ],
+      "properties": {
+        "productName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "identifier": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9.-]+$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+"
+        }
+      },
+      "additionalProperties": false
+    },
+    "reproducibility": {
+      "type": "object",
+      "required": [
+        "sourceDateEpoch",
+        "preserveFileTimestamps",
+        "reproducibleFileOrder",
+        "lockedDependencies"
+      ],
+      "properties": {
+        "sourceDateEpoch": {
+          "description": "构建时间戳来源。commit = 取 HEAD 提交时间；zero = 1970-01-01；数字 = 固定秒级时间戳。",
+          "oneOf": [
+            {
+              "enum": [
+                "commit",
+                "zero"
+              ]
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "preserveFileTimestamps": {
+          "const": false
+        },
+        "reproducibleFileOrder": {
+          "const": true
+        },
+        "dependencyInfoInRelease": {
+          "type": "boolean"
+        },
+        "lockedDependencies": {
+          "type": "boolean"
+        },
+        "normalizeAndroidArchive": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "android": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "keystorePath": {
+          "type": "string"
+        },
+        "keystorePropertiesPath": {
+          "type": "string"
+        },
+        "keystoreType": {
+          "enum": [
+            "PKCS12",
+            "JKS"
+          ]
+        },
+        "keyAlias": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keyAlgorithm": {
+          "enum": [
+            "RSA",
+            "EC"
+          ]
+        },
+        "keySize": {
+          "type": "integer",
+          "minimum": 2048
+        },
+        "validityDays": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "signatureScheme": {
+          "type": "string"
+        },
+        "distinguishedName": {
+          "type": "object",
+          "required": [
+            "commonName"
+          ],
+          "properties": {
+            "commonName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "organizationalUnit": {
+              "type": "string"
+            },
+            "organization": {
+              "type": "string"
+            },
+            "locality": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            },
+            "country": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "macos": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "signingIdentityEnv": {
+          "type": "string"
+        },
+        "hardenedRuntime": {
+          "type": "boolean"
+        },
+        "notarize": {
+          "type": "boolean"
+        },
+        "minimumSystemVersion": {
+          "type": "string"
+        },
+        "entitlements": {
+          "type": "string",
+          "description": "entitlements plist 路径，相对项目根解析（写入 tauri.conf.json 时会转换为相对 src-tauri/ 的路径）。"
+        }
+      },
+      "additionalProperties": false
+    },
+    "windows": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "mode": {
+          "enum": [
+            "pfx",
+            "azure-trusted-signing",
+            "none"
+          ]
+        },
+        "digestAlgorithm": {
+          "enum": [
+            "sha256",
+            "sha384",
+            "sha512"
+          ]
+        },
+        "timestampUrl": {
+          "type": "string"
+        },
+        "tsp": {
+          "type": "boolean",
+          "description": "是否使用 RFC 3161 TSP 时间戳（部分 CA 需要）"
+        },
+        "certificateThumbprint": {
+          "type": "string",
+          "description": "代码签名证书 SHA1 指纹（本地构建用；CI 导入 pfx 后自动注入）"
+        },
+        "azureTrustedSigning": {
+          "type": "object",
+          "description": "mode=azure-trusted-signing 时必填，会转换为 bundle.windows.signCommand",
+          "properties": {
+            "endpoint": {
+              "type": "string"
+            },
+            "account": {
+              "type": "string"
+            },
+            "certificateProfile": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "cliVersion": {
+              "type": "string",
+              "description": "trusted-signing-cli 的版本（建议固定；签名工具版本会影响产物字节）"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "updater": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "publicKey": {
+          "type": "string"
+        },
+        "keyId": {
+          "type": "string"
+        },
+        "endpoints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

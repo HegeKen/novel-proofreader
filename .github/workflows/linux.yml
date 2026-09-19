@@ -20,6 +20,11 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
 
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     steps:
       - uses: actions/checkout@v7
 
@@ -39,8 +44,7 @@ jobs:
           toolchain: stable
 
       - name: Install targets
-        run: |
-          rustup target add ${{ matrix.target }}
+        run: rustup target add ${{ matrix.target }}
 
       - name: Install Linux dependencies
         run: |
@@ -48,14 +52,28 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
 
       - name: Install frontend dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup release signing
+        uses: ./.github/actions/setup-release-signing
+        with:
+          restore-android: "false"
+          require-signing: "false"
 
       - name: Build Tauri app for desktop
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} ${{ env.DSH_TAURI_CONFIG_ARGS }}
+
+      - name: Generate artifact manifest
+        run: |
+          node scripts/build-release.mjs --target=${{ matrix.target }} --skip-build \
+            --out=release-manifest-${{ matrix.target }}.json
+
+      - name: Verify artifacts are signed
+        run: node scripts/verify-artifacts.mjs signed --manifest=release-manifest-${{ matrix.target }}.json
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -64,6 +82,8 @@ jobs:
           path: |
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sig
+            release-manifest-${{ matrix.target }}.json
           retention-days: 7
           compression-level: 0
 
@@ -73,11 +93,24 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Merge per-target manifests
+        run: |
+          set -euo pipefail
+          INPUTS=$(ls artifacts/release-manifest-*.json | paste -sd, -)
+          node scripts/artifact-manifest.mjs merge --inputs="$INPUTS" --out=artifacts/release-manifest.json
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -86,4 +119,6 @@ jobs:
           files: |
             artifacts/**/*.deb
             artifacts/**/*.AppImage
+            artifacts/**/*.sig
+            artifacts/release-manifest.json
           generate_release_notes: true

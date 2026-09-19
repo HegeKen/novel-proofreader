@@ -306,6 +306,45 @@ pnpm tauri android build      # Android 端
 
 构建产物位于 `src-tauri/target/release/bundle/`。
 
+### 发布签名与可复现打包
+
+> 完整说明见 [`docs/RELEASE_SIGNING.md`](docs/RELEASE_SIGNING.md)；
+> 各平台 keystore / 证书 / 密钥的**生产步骤与 GitHub Secrets 生成引导**见该文档第 4 节。
+
+本项目区分两种「配置」：应用内 AI 配置（API Key 等，用户数据），以及**打包发布配置**
+（keystore / 代码签名证书 / updater 密钥）。后者由 `signing.config.json` 统一定义。
+
+```bash
+# 1. 交互式配置引导：生成 Android keystore、配置 macOS/Windows 签名、生成 updater 密钥
+pnpm run setup:signing
+
+# 2. 自检（版本号跨文件一致性、keystore、Gradle 补丁、updater 公钥）
+pnpm run signing:check
+
+# 3. 查看还缺哪些 Secret，以及每个缺失项的「去哪拿 + 写入命令」
+pnpm run secrets:status
+
+# 4. 把签名材料写入 GitHub Secrets（需要 gh CLI 已登录）
+gh secret set -f .signing/github-secrets.env   # 向导已汇总成 dotenv
+bash scripts/ci/push-secrets.sh                # 等价的兜底脚本
+
+# 5. 可复现构建 + 生成产物清单
+pnpm run build:release -- --android --android-arch=arm64
+
+# 6. 跨机器/跨次比对产物是否逐字节一致
+pnpm run verify:reproducible -- --expected=a.json --actual=b.json
+```
+
+核心约定：
+
+- **同一 `configKey`（`signing.config.json` 的内容指纹）+ 同一套签名 key + 同一工具链 ⇒ 产物逐字节一致。**
+- 产物不包含任何私钥；签名材料只存在于 `.signing/`（已 gitignore）与 CI Secrets 中。
+- 每次构建都会生成 `release-manifest-*.json`，记录每个产物的 sha256、签名证书指纹与工具链指纹。
+- Android APK 在打包后会被归一化时间戳并用同一 keystore 重签名，因此可做到**逐字节一致**
+  （已由 `Verify Reproducible Build` workflow 在两台不同 runner 上实证）。
+- 工具链由 `rust-toolchain.toml`、`pnpm-lock.yaml` 与 `package.json` 固定；`tauri CLI`
+  使用 `pnpm tauri`（lockfile 版本）而非 `cargo install` 的最新版。
+
 ## 使用流程
 
 1. **启动应用** → 进入主页，可查看更新日志或直接进入应用

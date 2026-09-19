@@ -10,7 +10,18 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "setup:signing": "node scripts/setup-signing.mjs",
+    "signing:check": "node scripts/signing-check.mjs",
+    "signing:apply": "node scripts/signing-check.mjs --apply",
+    "build:release": "node scripts/build-release.mjs",
+    "artifact:manifest": "node scripts/artifact-manifest.mjs generate",
+    "artifact:merge": "node scripts/artifact-manifest.mjs merge",
+    "verify:reproducible": "node scripts/verify-artifacts.mjs reproducible",
+    "verify:signed": "node scripts/verify-artifacts.mjs signed",
+    "android:normalize": "node scripts/verify-artifacts.mjs apk --normalize",
+    "rename:android": "node scripts/rename-android-artifacts.mjs",
+    "secrets:status": "node scripts/secrets-status.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

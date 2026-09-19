@@ -29,4 +29,21 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  // 发布签名 / 可复现构建脚本（Node ESM）
+  {
+    files: ['scripts/**/*.mjs'],
+    extends: [js.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+      },
+    },
+    rules: {
+      // 这些脚本大量使用 `void x` 显式标注"故意忽略"，以及解构丢弃字段（_unused）
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
 ])

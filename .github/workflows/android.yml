@@ -27,6 +27,15 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
 
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     steps:
       - uses: actions/checkout@v7
 
@@ -68,10 +77,7 @@ jobs:
           accept-android-sdk-licenses: true
 
       - name: Install Android dependencies
-        run: |
-          echo "Installing Android dependencies"
-          cargo install cargo-ndk
-          cargo install tauri-cli
+        run: cargo install cargo-ndk
 
       - name: Install Android Linux dependencies
         run: |
@@ -79,34 +85,45 @@ jobs:
           sudo apt-get install -y openjdk-17-jdk libc6-dev libstdc++-10-dev
 
       - name: Install frontend dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Initialize Android project
         run: |
           cd src-tauri
-          cargo tauri android init
+          pnpm tauri android init
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_ANDROID_MIN_SDK_VERSION: 24
+
+      # 必须晚于 android init：init 可能重生成 gen/android，补丁会被重新贴上
+      - name: Setup release signing
+        uses: ./.github/actions/setup-release-signing
+        with:
+          restore-android: "true"
+          require-signing: "false"
 
       - name: Build Tauri app for Android
         run: |
+          set -euo pipefail
           cd src-tauri
-          cargo tauri android build --target ${{ matrix.android_arch }}
-          # 重命名 APK 和 AAB 文件
-          VERSION=$(cat Cargo.toml | grep 'version =' | head -n1 | sed 's/version = "\(.*\)"/\1/')
-          APP_NAME="ProofReader"
-          # 重命名 APK (release 版本)
-          find gen/android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | while read apk; do
-            mv "$apk" "gen/android/app/build/outputs/apk/release/${APP_NAME}-v${VERSION}-${{ matrix.android_arch }}.apk"
-          done
-          # 重命名 AAB (release 版本)
-          find gen/android/app/build/outputs/bundle/release -name "*.aab" 2>/dev/null | while read aab; do
-            mv "$aab" "gen/android/app/build/outputs/bundle/release/${APP_NAME}-v${VERSION}-${{ matrix.android_arch }}.aab"
-          done
+          # 用 lockfile 固定的 tauri CLI，避免 CLI 版本漂移影响打包结果
+          pnpm tauri android build --target ${{ matrix.android_arch }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_ANDROID_MIN_SDK_VERSION: 24
+
+      # AGP 的输出路径随版本变化，且 --unsigned 产物意味着签名补丁没生效；
+      # 这两件事都交给脚本判断，避免写死路径导致"静默发出未签名包"。
+      - name: Verify signing and normalize Android artifact names
+        if: matrix.android
+        run: node scripts/rename-android-artifacts.mjs --arch=${{ matrix.android_arch }}
+
+      - name: Normalize Android archives and generate manifest
+        run: |
+          node scripts/build-release.mjs \
+            --android --android-arch=${{ matrix.android_arch }} --skip-build \
+            --out=release-manifest-${{ matrix.target }}.json
+
+      - name: Verify artifacts are signed
+        run: node scripts/verify-artifacts.mjs signed --manifest=release-manifest-${{ matrix.target }}.json
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -115,6 +132,7 @@ jobs:
           path: |
             src-tauri/gen/android/app/build/outputs/apk/**/*
             src-tauri/gen/android/app/build/outputs/bundle/**/*
+            release-manifest-${{ matrix.target }}.json
           retention-days: 7
           compression-level: 0
 
@@ -124,11 +142,27 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Merge per-target manifests
+        run: |
+          set -euo pipefail
+          INPUTS=$(ls artifacts/release-manifest-*.json | paste -sd, -)
+          node scripts/artifact-manifest.mjs merge --inputs="$INPUTS" --out=artifacts/release-manifest.json
+
+      - name: Verify merged manifest is fully signed
+        run: node scripts/verify-artifacts.mjs signed --manifest=artifacts/release-manifest.json
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -137,4 +171,6 @@ jobs:
           files: |
             artifacts/**/*.apk
             artifacts/**/*.aab
+            artifacts/**/*.sig
+            artifacts/release-manifest.json
           generate_release_notes: true

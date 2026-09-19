@@ -36,7 +36,15 @@
     ],
     "android": {
       "minSdkVersion": 24
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.plist"
+    },
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com"
     }
-  },
-  "plugins": {}
+  }
 }
