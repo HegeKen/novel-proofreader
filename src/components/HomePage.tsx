@@ -476,7 +476,7 @@ export function HomePage({ onStart }: HomePageProps) {
 							</div>
 							{hasUpdate && release?.tag_name && (
 								<div className="config-section">
-									<p className="modal-description" style={{ fontSize: "0.9em", color: "#d97706", padding: "12px", backgroundColor: "#fef3c7", borderRadius: "8px", border: "1px solid #f59e0b" }}>
+									<p className="modal-description notice notice-warn">
 										🚀 发现新版本 {release.tag_name}，当前版本 {currentVersion}，建议更新以获取最新功能
 									</p>
 								</div>
@@ -490,7 +490,7 @@ export function HomePage({ onStart }: HomePageProps) {
 							) : release?.assets && release.assets.length > 0 ? (
 								<>
 									<div className="config-section">
-										<p className="modal-description" style={{ fontSize: "0.9em", color: "#666", padding: "12px", backgroundColor: "#f8f9fa", borderRadius: "8px" }}>
+										<p className="modal-description notice notice-info">
 											💡 如果 GitHub 官方源下载较慢，系统会自动尝试多个镜像加速源
 										</p>
 									</div>

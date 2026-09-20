@@ -308,6 +308,22 @@ export function getChapterDisplayTitle(chapter: { title?: string } | undefined, 
 }
 
 /**
+ * 判断章节列表是否只有结构、没有正文。
+ *
+ * novelStore 的 persist.partialize 会把每个 chapter 的 content 清空后再写入
+ * localStorage（大文本另存 IndexedDB），因此刷新/rehydrate 回来的 chapters
+ * 长度不为 0、却全部没有正文。此前的判断只看 `chapters.length === 0`，
+ * 导致刷新后正文再也不会从 fullText 重建（阅读区整片空白、章节字数全为 0）。
+ *
+ * @param chapters 待检查的章节列表
+ * @returns 需要依据 fullText 重新分章时返回 true
+ */
+export function chaptersNeedResplit(chapters: Array<{ content?: string }> | undefined | null): boolean {
+	if (!chapters || chapters.length === 0) return true;
+	return chapters.every((ch) => !ch.content);
+}
+
+/**
  * 将文本按最大字符数分块（用于 AI 请求）
  */
 export function splitTextChunks(text: string, maxChars: number): string[] {

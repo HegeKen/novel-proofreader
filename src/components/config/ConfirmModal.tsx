@@ -27,7 +27,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
 	return createPortal(
 		<div className="modal-overlay" onClick={onCancel}>
-			<div className="config-modal" style={{ width: 420 }} onClick={(e) => e.stopPropagation()}>
+			<div className="config-modal config-modal-sm" onClick={(e) => e.stopPropagation()}>
 				<div className="config-header">
 					<div className="config-title">
 						<span className="title-icon">

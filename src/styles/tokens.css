@@ -1,0 +1,296 @@
+/* ============================================================
+   设计令牌（Design Tokens）— 唯一来源
+   颜色 / 圆角 / 字号 / 间距 / 控件尺寸 / 弹窗骨架 / z-index
+   组件样式请一律引用这里的变量，不要再写裸 px 或十六进制色值。
+   ============================================================ */
+
+:root {
+	/* Liquid Glass Surface - 深色模式更柔和协调 */
+	--bg-base: linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
+	--bg-surface: rgba(30, 40, 60, 0.65);
+	--bg-raised: rgba(40, 50, 70, 0.75);
+	--bg-overlay: rgba(55, 65, 85, 0.5);
+	--bg-hover: rgba(70, 80, 100, 0.55);
+	--bg-active: rgba(85, 95, 115, 0.65);
+	--bg-highlight: rgba(50, 60, 80, 0.85);
+
+	/* Text - 更柔和的颜色 */
+	--text-primary: #e8e8ed;
+	--text-secondary: rgba(232, 232, 237, 0.7);
+	--text-muted: rgba(232, 232, 237, 0.45);
+	--text-inverse: #1a1a2e;
+
+	/* Accent - Apple Blue/Purple Gradient - 更和谐的配色 */
+	--accent: #5eb8ff;
+	--accent-secondary: #a78bfa;
+	--accent-gradient: linear-gradient(
+		135deg,
+		#5eb8ff 0%,
+		#a78bfa 50%,
+		#f472b6 100%
+	);
+	--accent-dim: rgba(94, 184, 255, 0.15);
+	--accent-hover: #7ec8ff;
+	--accent-glow: rgba(94, 184, 255, 0.35);
+
+	/* Semantic Colors - 更饱和但不过于刺眼 */
+	--red: #ff6b7a;
+	--red-dim: rgba(255, 107, 122, 0.15);
+	--yellow: #fbbf24;
+	--yellow-dim: rgba(251, 191, 36, 0.15);
+	--green: #4ade80;
+	--green-dim: rgba(74, 222, 128, 0.15);
+	--cyan: #22d3ee;
+
+	/* Border - 更柔和的分隔线 */
+	--border: rgba(255, 255, 255, 0.1);
+	--border-strong: rgba(255, 255, 255, 0.18);
+
+	/* Shadow - 更细腻的阴影 */
+	--shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+	--shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+	--shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+	--shadow-glow: 0 0 30px rgba(94, 184, 255, 0.2);
+	--shadow-inner:
+		inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+
+	/* Radius - Apple风格的圆角（唯一来源，不要再写裸 px 圆角） */
+	--r-xs: 6px;
+	--r-sm: 10px;
+	--r-md: 14px;
+	--r-lg: 20px;
+	--r-xl: 28px;
+	--r-xxl: 40px;
+	--r-full: 9999px;
+
+	/* Type scale - 字号阶梯（UI 区间紧凑，展示型单独成级） */
+	--fs-2xs: 10px;
+	--fs-xs: 11px;
+	--fs-sm: 12px;
+	--fs-base: 13px;
+	--fs-md: 14px;
+	--fs-lg: 16px;
+	--fs-xl: 18px;
+	--fs-2xl: 20px;
+	--fs-3xl: 24px;
+	--fs-4xl: 28px;
+	--fs-5xl: 36px;
+	--fs-6xl: 42px;
+	--fs-7xl: 48px;
+
+	/* Spacing scale - 间距阶梯 */
+	--sp-1: 2px;
+	--sp-2: 4px;
+	--sp-3: 6px;
+	--sp-4: 8px;
+	--sp-5: 10px;
+	--sp-6: 12px;
+	--sp-7: 14px;
+	--sp-8: 16px;
+	--sp-10: 20px;
+	--sp-12: 24px;
+	--sp-16: 32px;
+	--sp-20: 40px;
+	--sp-24: 48px;
+
+	/* Radius aliases for small surfaces (badges / chips / inputs) */
+	--r-badge: var(--r-sm);
+	--r-chip: var(--r-full);
+	--r-input: var(--r-sm);
+
+	/* Control sizing - 统一控件高度 */
+	--control-h-sm: 32px;
+	--control-h-md: 40px;
+	--control-h-lg: 44px;
+
+	/* Modal skeleton - 统一弹窗骨架 */
+	--modal-w-sm: 420px;
+	--modal-w-md: 560px;
+	--modal-w-lg: 900px;
+	--modal-pad-x: 22px;
+	--modal-footer-pad: var(--sp-6) var(--modal-pad-x);
+	--modal-header-pad: var(--sp-4) var(--modal-pad-x);
+
+	/* Z-index scale - 唯一的层级表（数值与历史行为一致，只是命名化） */
+	--z-ground: 0;
+	--z-base: 1;
+	--z-raised: 2;
+	--z-elevated: 5;
+	--z-sticky: 10;
+	--z-hint: 50;
+	--z-header: 100;
+	--z-panel: 101;
+	--z-mobile-nav: 102;
+	--z-overlay-dim: 990;
+	--z-overlay: 999;
+	--z-modal: 1000;
+	--z-modal-raised: 1001;
+	--z-toast: 1200;
+	--z-toast-float: 2000;
+	--z-max: 9999;
+
+	/* Role colors - 角色性别/身份语义色（深浅主题各自定义，不再硬编码） */
+	--role-male: #3b82f6;
+	--role-male-dim: rgba(59, 130, 246, 0.15);
+	--role-female: #ec4899;
+	--role-female-dim: rgba(236, 72, 153, 0.15);
+	--role-other: #8b5cf6;
+	--role-other-dim: rgba(139, 92, 246, 0.15);
+
+	/* RGB 分量：与语义色组合使用时避免同色不同源的 rgba 字面量 */
+	--red-rgb: 255, 107, 122;
+	--green-rgb: 74, 222, 128;
+	--yellow-rgb: 251, 191, 36;
+	--cyan-rgb: 34, 211, 238;
+	--accent-pink: #f472b6;
+	--accent-warm-rgb: 245, 158, 11;
+	--role-male-rgb: 59, 130, 246;
+	--role-female-rgb: 236, 72, 153;
+	--role-other-rgb: 139, 92, 246;
+
+	/* Warning / accent-warm - 与 --yellow 区分：用于「谨慎操作」提示 */
+	--accent-warm: #f59e0b;
+	--accent-warm-dim: rgba(245, 158, 11, 0.15);
+
+	/* Accent 的 RGB 分量，供 rgba(var(--accent-rgb), a) 使用 */
+	--accent-rgb: 94, 184, 255;
+
+	/* Liquid Glass */
+	--glass-bg: rgba(30, 40, 60, 0.8);
+	--glass-bg-strong: rgba(35, 45, 65, 0.9);
+	--glass-border: rgba(255, 255, 255, 0.12);
+	--glass-blur: 32px;
+	--glass-blur-strong: 56px;
+
+	/* Transition */
+	--ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+	--ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+	--duration: 250ms;
+	--duration-slow: 400ms;
+
+	/* ── 兼容别名 ──────────────────────────────────────────────
+	   历史代码里引用了 32 个从未定义的变量（其中 20 个连 fallback 都没有），
+	   导致声明在计算值阶段直接失效（背景变透明、文字继承父级颜色）。
+	   这里把它们统一指向已有语义令牌；var() 在使用处解析，
+	   所以在 [data-theme="light"] 下会自动取到亮色值。 */
+	--text: var(--text-primary);
+	--text-tertiary: var(--text-muted);
+	--text-color: var(--text-primary);
+	--bg: var(--bg-surface);
+	--bg-primary: var(--bg-surface);
+	--bg-secondary: var(--bg-overlay);
+	--bg-card: var(--bg-raised);
+	--bg-elevated: var(--bg-raised);
+	--bg-surface-elevated: var(--bg-raised);
+	--bg-input: var(--bg-surface);
+	--border-light: var(--border);
+	--border-hover: var(--border-strong);
+	--danger: var(--red);
+	--error: var(--red);
+	--success: var(--green);
+	--color-error: var(--red);
+	--color-success: var(--green);
+	--accent-color: var(--accent);
+	--accent-light: var(--accent-hover);
+	--accent-alpha: var(--accent-dim);
+	--toast-color: var(--accent);
+	--provider-color: var(--accent);
+	--font-size: var(--fs-md);
+	--font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+	--line-height: 32px;
+	--paragraph-spacing: var(--sp-4);
+	--text-indent: 2em;
+	--custom-bg: var(--bg-surface);
+	--custom-text: var(--text-primary);
+
+	/* 阅读模式「跟随主题」的阅读面与文字色 */
+	--reading-bg: #1b1c24;
+	--reading-text: #e6e6ea}
+
+/* Light Theme */
+[data-theme="light"] {
+	/* Liquid Glass Surface */
+	--bg-base: linear-gradient(180deg, #ffffff 0%, #f5f5f7 50%, #e8e8ed 100%);
+	--bg-surface: rgba(255, 255, 255, 0.7);
+	--bg-raised: rgba(255, 255, 255, 0.8);
+	--bg-overlay: rgba(255, 255, 255, 0.6);
+	--bg-hover: rgba(245, 245, 247, 0.8);
+	--bg-active: rgba(232, 232, 237, 0.9);
+	--bg-highlight: rgba(220, 220, 225, 0.9);
+
+	/* Text */
+	--text-primary: #1d1d1f;
+	--text-secondary: rgba(29, 29, 31, 0.7);
+	--text-muted: rgba(29, 29, 31, 0.4);
+	--text-inverse: #ffffff;
+
+	/* Accent */
+	--accent: #007aff;
+	--accent-secondary: #af52de;
+	--accent-gradient: linear-gradient(
+		135deg,
+		#007aff 0%,
+		#af52de 50%,
+		#ff2d55 100%
+	);
+	--accent-dim: rgba(0, 122, 255, 0.1);
+	--accent-hover: #0066d6;
+	--accent-glow: rgba(0, 122, 255, 0.25);
+
+	/* Semantic Colors */
+	--red: #ff3b30;
+	--red-dim: rgba(255, 59, 48, 0.1);
+	--yellow: #ffcc00;
+	--yellow-dim: rgba(255, 204, 0, 0.1);
+	--green: #34c759;
+	--green-dim: rgba(52, 199, 89, 0.1);
+	--cyan: #5ac8fa;
+
+	/* Border */
+	--border: rgba(0, 0, 0, 0.1);
+	--border-strong: rgba(0, 0, 0, 0.18);
+
+	/* Shadow */
+	--shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+	--shadow-md: 0 8px 32px rgba(0, 0, 0, 0.12);
+	--shadow-lg: 0 16px 64px rgba(0, 0, 0, 0.18);
+	--shadow-glow: 0 0 40px rgba(0, 122, 255, 0.2);
+	--shadow-inner:
+		inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(0, 0, 0, 0.05);
+
+	/* Liquid Glass */
+	--glass-bg: rgba(255, 255, 255, 0.65);
+	--glass-bg-strong: rgba(255, 255, 255, 0.85);
+	--glass-border: rgba(0, 0, 0, 0.08);
+	--glass-blur: 32px;
+	--glass-blur-strong: 48px;
+
+	/* Accent 的 RGB 分量（亮色主题为 #007aff） */
+	--accent-rgb: 0, 122, 255;
+
+	/* 角色语义色 - 亮色主题 */
+	--role-male: #007aff;
+	--role-male-dim: rgba(0, 122, 255, 0.12);
+	--role-female: #ff2d55;
+	--role-female-dim: rgba(255, 45, 85, 0.12);
+	--role-other: #af52de;
+	--role-other-dim: rgba(175, 82, 222, 0.12);
+
+	/* RGB 分量 - 亮色主题 */
+	--red-rgb: 255, 59, 48;
+	--green-rgb: 52, 199, 89;
+	--yellow-rgb: 255, 204, 0;
+	--cyan-rgb: 90, 200, 250;
+	--accent-pink: #ff2d55;
+	--accent-warm-rgb: 217, 119, 6;
+	--role-male-rgb: 0, 122, 255;
+	--role-female-rgb: 255, 45, 85;
+	--role-other-rgb: 175, 82, 222;
+
+	/* 谨慎操作提示色 - 亮色主题 */
+	--accent-warm: #d97706;
+	--accent-warm-dim: rgba(217, 119, 6, 0.12);
+
+	/* 阅读模式「跟随主题」- 亮色主题用米色纸 */
+	--reading-bg: #fdf6e3;
+	--reading-text: #333333}

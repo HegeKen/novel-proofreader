@@ -35,7 +35,7 @@ export const useUIStore = create<UIState>()(
 			readingMode: false,
 			lineSpacing: 32,
 			paragraphIndent: 2,
-			readingBackground: "cream",
+			readingBackground: "auto",
 			customTextColor: "#333333",
 			customBgColor: "#FDF6E3",
 			bgImageUrl: "",
@@ -55,6 +55,16 @@ export const useUIStore = create<UIState>()(
 		}),
 		{
 			name: "novel-proofreader-ui",
+			version: 1,
+			// v0 的默认值是 "cream"，用户从未改过时与主动选择无法区分；
+			// 统一迁移到 "auto"（跟随主题），需要固定米色的用户可在阅读设置里重新选择。
+			migrate: (persisted, version) => {
+				const state = persisted as Partial<UIState> | undefined;
+				if (version < 1 && state?.readingBackground === "cream") {
+					return { ...state, readingBackground: "auto" } as UIState;
+				}
+				return state as UIState;
+			},
 			partialize: (state) => ({
 				theme: state.theme,
 				fontSize: state.fontSize,

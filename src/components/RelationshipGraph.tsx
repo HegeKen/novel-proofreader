@@ -12,6 +12,7 @@ import { generateId } from "../utils/id";
 import { RELATION_TYPE_OPTIONS, makeRelationPairKey } from "../utils/characterRoles";
 import { useElapsedTime } from "../hooks/useElapsedTime";
 import { sendTaskNotification } from "../utils/notifications";
+import { AutoResizeTextarea } from "./AutoResizeTextarea";
 
 interface RelationshipGraphProps {
 	novelId: string;
@@ -1517,14 +1518,17 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 
 			{showAddModal && (
 				<div className="modal-overlay" onClick={() => setShowAddModal(false)}>
-					<div className="relation-edit-modal" onClick={(e) => e.stopPropagation()}>
-						<div className="modal-header">
-							<h3>{editingRelation ? "编辑关系" : "添加关系"}</h3>
-							<button className="modal-close" onClick={() => setShowAddModal(false)}>
-								<Icons.close size={18} />
+					<div className="config-modal relation-edit-modal" onClick={(e) => e.stopPropagation()}>
+						<div className="config-header">
+							<div className="config-title">
+								<span className="title-icon"><Icons.network size={16} /></span>
+								<span>{editingRelation ? "编辑关系" : "添加关系"}</span>
+							</div>
+							<button className="close-btn" onClick={() => setShowAddModal(false)} aria-label="关闭">
+								<Icons.close size={16} />
 							</button>
 						</div>
-						<div className="modal-body">
+						<div className="config-body">
 							<div className="relation-form-section">
 								<div className="form-field">
 									<label>源角色</label>
@@ -1540,8 +1544,8 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 
 								<div className="form-field">
 									<label>
-										{getCharacterById(relationForm.sourceId)?.name || "源角色"}对{" "}
-										{getCharacterById(relationForm.targetId)?.name || "目标角色"}的称呼
+										{getCharacterById(relationForm.sourceId)?.name || "源角色"} 对{" "}
+										{getCharacterById(relationForm.targetId)?.name || "目标角色"} 的称呼
 									</label>
 									<div className="nickname-input-row">
 										<input
@@ -1634,7 +1638,7 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 										))}
 									</div>
 									{relationForm.relationType.includes("other") && (
-										<textarea
+										<AutoResizeTextarea
 											className="config-textarea"
 											placeholder="请输入自定义关系类型..."
 											value={relationForm.customRelationType}
@@ -1642,14 +1646,15 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 												setRelationForm((prev) => ({ ...prev, customRelationType: e.target.value }))
 											}
 											rows={2}
+											maxHeight={200}
 										/>
 									)}
 								</div>
 
 								<div className="form-field">
 									<label>
-										{getCharacterById(relationForm.targetId)?.name || "目标角色"}对{" "}
-										{getCharacterById(relationForm.sourceId)?.name || "源角色"}的称呼
+										{getCharacterById(relationForm.targetId)?.name || "目标角色"} 对{" "}
+										{getCharacterById(relationForm.sourceId)?.name || "源角色"} 的称呼
 									</label>
 									<div className="nickname-input-row">
 										<input
@@ -1705,10 +1710,10 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 								</div>
 							</div>
 						</div>
-						<div className="modal-footer">
+						<div className="config-footer">
 							{editingRelation && (
 								<button
-									className="btn btn-danger"
+									className="btn btn-danger relation-modal-delete"
 									onClick={() => {
 										handleDeleteRelation(editingRelation.id);
 										setShowAddModal(false);
@@ -1718,24 +1723,22 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 									删除
 								</button>
 							)}
-							<div className="modal-footer-right">
-								<button className="btn" onClick={() => setShowAddModal(false)}>
-									取消
-								</button>
-								<button
-									className="btn"
-									onClick={handleSaveRelation}
-									disabled={
-										!relationForm.sourceId ||
-										!relationForm.targetId ||
-										relationForm.sourceId === relationForm.targetId ||
-										relationForm.sourceNickname.length === 0 ||
-										relationForm.targetNickname.length === 0
-									}
-								>
-									{editingRelation ? "保存" : "添加"}
-								</button>
-							</div>
+							<button className="btn" onClick={() => setShowAddModal(false)}>
+								取消
+							</button>
+							<button
+								className="btn"
+								onClick={handleSaveRelation}
+								disabled={
+									!relationForm.sourceId ||
+									!relationForm.targetId ||
+									relationForm.sourceId === relationForm.targetId ||
+									relationForm.sourceNickname.length === 0 ||
+									relationForm.targetNickname.length === 0
+								}
+							>
+								{editingRelation ? "保存" : "添加"}
+							</button>
 						</div>
 					</div>
 				</div>
@@ -1743,14 +1746,17 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 
 			{showCharacterModal && selectedCharacterId && (
 				<div className="modal-overlay" onClick={() => setShowCharacterModal(false)}>
-					<div className="relation-edit-modal" onClick={(e) => e.stopPropagation()}>
-						<div className="modal-header">
-							<h3>{getCharacterById(selectedCharacterId)?.name} 的关系</h3>
-							<button className="modal-close" onClick={() => setShowCharacterModal(false)}>
-								<Icons.close size={18} />
+					<div className="config-modal relation-edit-modal" onClick={(e) => e.stopPropagation()}>
+						<div className="config-header">
+							<div className="config-title">
+								<span className="title-icon"><Icons.network size={16} /></span>
+								<span>{getCharacterById(selectedCharacterId)?.name} 的关系</span>
+							</div>
+							<button className="close-btn" onClick={() => setShowCharacterModal(false)} aria-label="关闭">
+								<Icons.close size={16} />
 							</button>
 						</div>
-						<div className="modal-body">
+						<div className="config-body">
 							<div className="character-relations-list">
 								{getCharacterRelations(selectedCharacterId).length === 0 ? (
 									<div className="empty-relations">
@@ -1806,7 +1812,7 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 								)}
 							</div>
 						</div>
-						<div className="modal-footer">
+						<div className="config-footer">
 							<button
 								className="btn"
 								onClick={() => {

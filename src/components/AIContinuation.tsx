@@ -8,6 +8,7 @@ import { useConfigStore } from "../stores/configStore";
 import { generateContinuation, buildRequestConfig } from "../utils/aiClient";
 import type { ContinuationParams } from "../utils/aiClient";
 import { Icons } from "./Icons";
+import { AutoResizeTextarea } from "./AutoResizeTextarea";
 
 export function AIContinuation() {
 	const [isGenerating, setIsGenerating] = useState(false);
@@ -183,11 +184,12 @@ export function AIContinuation() {
 							<div className="mb-3 text-xs text-neutral-400">
 								以下内容由AI根据角色设定、世界观和当前章节上下文生成，将追加到最后一章末尾。
 							</div>
-							<textarea
+							<AutoResizeTextarea
 								className="config-input"
 								value={continuationContent}
 								readOnly
 								rows={20}
+								maxHeight={720}
 								style={{ fontSize: "14px", lineHeight: "1.8", fontFamily: "inherit" }}
 							/>
 						</div>

@@ -2,6 +2,7 @@ import type { CharacterInfo, CharacterRole } from "../../types";
 import { Icons } from "../Icons";
 import { Select } from "../Select";
 import { GENDER_OPTIONS, ROLE_OPTIONS } from "../../utils/characterRoles";
+import { AutoResizeTextarea } from "../AutoResizeTextarea";
 
 interface CharacterEditFormProps {
 	editForm: Partial<CharacterInfo>;
@@ -99,7 +100,7 @@ export function CharacterEditForm({
 						options={[{ value: "", label: "选择预设音色" }, ...voiceOptions]}
 						className="mb-2"
 					/>
-					<textarea
+					<AutoResizeTextarea
 						value={editForm.voiceDesignPrompt || ""}
 						onChange={(e) => onFormChange({ ...editForm, voiceDesignPrompt: e.target.value })}
 						className="config-input"
@@ -255,7 +256,7 @@ export function CharacterEditForm({
 				</div>
 				<div className="form-field">
 					<label>外貌特征</label>
-					<textarea
+					<AutoResizeTextarea
 						value={editForm.appearance || ""}
 						onChange={(e) => onFormChange({ ...editForm, appearance: e.target.value })}
 						placeholder="身高、体型、面容、穿着风格等"
@@ -265,7 +266,7 @@ export function CharacterEditForm({
 				</div>
 				<div className="form-field">
 					<label>出身背景</label>
-					<textarea
+					<AutoResizeTextarea
 						value={editForm.background || ""}
 						onChange={(e) => onFormChange({ ...editForm, background: e.target.value })}
 						placeholder="家庭背景、成长环境等"
@@ -275,7 +276,7 @@ export function CharacterEditForm({
 				</div>
 				<div className="form-field">
 					<label>角色弧光</label>
-					<textarea
+					<AutoResizeTextarea
 						value={editForm.characterArc || ""}
 						onChange={(e) => onFormChange({ ...editForm, characterArc: e.target.value })}
 						placeholder="角色成长变化、内心转变、价值观演变等"
@@ -286,7 +287,7 @@ export function CharacterEditForm({
 
 				<div className="form-field">
 					<label>备注</label>
-					<textarea
+					<AutoResizeTextarea
 						value={editForm.notes || ""}
 						onChange={(e) => onFormChange({ ...editForm, notes: e.target.value })}
 						className="config-input"

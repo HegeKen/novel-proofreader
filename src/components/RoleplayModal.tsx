@@ -19,6 +19,7 @@ import { logger } from "../utils/logger";
 import { formatDateTime } from "../utils/formatters";
 import { getRoleName } from "../utils/characterRoles";
 import type { CharacterInfo, CharacterRelationship, RoleplayMessage, RoleplaySession } from "../types";
+import { AutoResizeTextarea } from "./AutoResizeTextarea";
 
 interface RoleplayModalProps {
 	novelId: string;
@@ -786,11 +787,12 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 							</div>
 							{isEditing ? (
 								<div className="roleplay-msg-bubble roleplay-msg-editing">
-									<textarea
+									<AutoResizeTextarea
 										className="roleplay-edit-input"
 										value={editText}
 										onChange={(e) => setEditText(e.target.value)}
 										rows={3}
+										maxHeight={320}
 										autoFocus
 									/>
 									<div className="roleplay-edit-actions">

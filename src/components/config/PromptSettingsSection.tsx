@@ -2,6 +2,7 @@ import { logger } from "../../utils/logger";
 import { Icons } from "../Icons";
 import type { PromptConfig } from "./promptConfig";
 import { DEFAULTS, LABELS } from "./promptConfig";
+import { AutoResizeTextarea } from "../AutoResizeTextarea";
 
 export function PromptSettingsSection({
 	prompts,
@@ -31,9 +32,10 @@ export function PromptSettingsSection({
 							</button>
 						</div>
 					</div>
-					<textarea className="prompt-textarea" value={prompts[key]}
+					<AutoResizeTextarea className="prompt-textarea" value={prompts[key]}
 						onChange={(e) => onChange(key, e.target.value)}
-						rows={LABELS[key].rows} />
+						rows={LABELS[key].rows}
+						maxHeight={520} />
 					<p className="prompt-hint">{LABELS[key].hint}</p>
 				</div>
 			))}

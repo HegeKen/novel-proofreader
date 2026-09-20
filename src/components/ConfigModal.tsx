@@ -312,20 +312,14 @@ function ConfigModalContent({
 					{activeTab === "ai" && (
 						<button className="btn" onClick={() => onSave(config)}>
 							<Icons.save size={18} />
-							<span>保存配置</span>
+							<span>保存设置</span>
 						</button>
 					)}
 					{activeTab === "tts" && (
-						<>
-							<button className="btn" onClick={() => setShowWordReplacementModal(true)}>
-								<Icons.settings size={18} />
-								<span>管理词组</span>
-							</button>
-							<button className="btn" onClick={onClose}>
-								<Icons.checkCircle size={18} />
-								<span>完成</span>
-							</button>
-						</>
+						<button className="btn" onClick={() => setShowWordReplacementModal(true)}>
+							<Icons.settings size={18} />
+							<span>管理词组</span>
+						</button>
 					)}
 					{activeTab === "settings" && (
 						<button className="btn" onClick={() => onSave(config)}>
@@ -356,12 +350,6 @@ function ConfigModalContent({
 								<span>清空</span>
 							</button>
 						</>
-					)}
-					{activeTab === "data" && (
-						<button className="btn" onClick={onClose}>
-							<Icons.checkCircle size={18} />
-							<span>完成</span>
-						</button>
 					)}
 				</div>
 			</div>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { splitChapters, splitParagraphs, splitTextChunks } from '../chapterSplit'
+import { splitChapters, splitParagraphs, splitTextChunks, chaptersNeedResplit } from '../chapterSplit'
 
 describe('splitParagraphs', () => {
 	it('splits text by newlines', () => {
@@ -142,5 +142,41 @@ describe('splitChapters', () => {
 		const text = '第一章 开始\n正文\n1. 列表项一\n2. 列表项二\n第二章 继续\n正文'
 		const chapters = splitChapters(text)
 		expect(chapters.length).toBe(2)
+	})
+})
+
+describe('chaptersNeedResplit — 刷新后正文恢复（回归 BUG-01）', () => {
+	it('空列表需要重新分章', () => {
+		expect(chaptersNeedResplit([])).toBe(true)
+	})
+
+	it('undefined / null 需要重新分章', () => {
+		expect(chaptersNeedResplit(undefined)).toBe(true)
+		expect(chaptersNeedResplit(null)).toBe(true)
+	})
+
+	it('persist 回填的「有结构无正文」章节必须重新分章', () => {
+		const persisted = [
+			{ title: '第一章 夜雨', content: '' },
+			{ title: '第二章 旧信', content: '' },
+		]
+		expect(chaptersNeedResplit(persisted)).toBe(true)
+	})
+
+	it('已有正文时不再重新分章', () => {
+		const chapters = [
+			{ title: '第一章 夜雨', content: '正文……' },
+			{ title: '第二章 旧信', content: '' },
+		]
+		expect(chaptersNeedResplit(chapters)).toBe(false)
+	})
+
+	it('从持久化状态恢复后，splitChapters 能重建正文', () => {
+		const fullText = '第一章 开始\n\n第一段正文。\n\n第二章 继续\n\n第二段正文。'
+		const persisted = splitChapters(fullText).map(ch => ({ ...ch, content: '' }))
+		expect(chaptersNeedResplit(persisted)).toBe(true)
+		const restored = splitChapters(fullText)
+		expect(restored[0].content).toContain('第一段正文')
+		expect(restored[1].content).toContain('第二段正文')
 	})
 })

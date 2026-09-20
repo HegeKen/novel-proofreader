@@ -26,6 +26,7 @@ import { CharacterCard } from "./character-settings/CharacterCard";
 import { CharacterEditForm } from "./character-settings/CharacterEditForm";
 import { synthesizeSpeechWithVoice } from "../utils/ttsService";
 import { useElapsedTime, formatElapsedTime } from "../hooks/useElapsedTime";
+import { AutoResizeTextarea } from "./AutoResizeTextarea";
 
 // ============================================================
 // 角色排序组件 - 使用 Pointer Events 实现跨平台拖拽
@@ -660,7 +661,7 @@ function MergeConfigPanel({ sourceChars, onExecute, onBack }: MergeConfigPanelPr
 
 				<div className="form-field">
 					<label>自定义备注（追加到选中的备注后）</label>
-					<textarea
+					<AutoResizeTextarea
 						className="config-input"
 						value={customNotes}
 						onChange={(e) => setCustomNotes(e.target.value)}
@@ -799,7 +800,7 @@ function WorldbuildingSection({
 						{fields.map(({ key, label, hint }) => (
 							<div key={key} className="form-field">
 								<label>{label}</label>
-								<textarea
+								<AutoResizeTextarea
 									className="config-textarea"
 									value={form[key]}
 									onChange={(e) => onFormChange({ ...form, [key]: e.target.value })}
@@ -810,12 +811,13 @@ function WorldbuildingSection({
 						))}
 						<div className="form-field">
 							<label>完整世界观概述</label>
-							<textarea
+							<AutoResizeTextarea
 								className="config-textarea"
 								value={form.description}
 								onChange={(e) => onFormChange({ ...form, description: e.target.value })}
 								placeholder="综合以上所有维度的完整世界观描述"
 								rows={4}
+								maxHeight={360}
 							/>
 						</div>
 					</div>
@@ -2674,7 +2676,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 							</div>
 							<div className="form-field">
 								<label>备注</label>
-								<textarea
+								<AutoResizeTextarea
 									value={editForm.notes || ""}
 									onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
 									placeholder="可选的备注信息"
@@ -3254,26 +3256,36 @@ ${JSON.stringify(existingInfo, null, 2)}
 								</p>
 							</div>
 						) : (
-							<div className="space-y-4">
-								<p className="text-sm text-neutral-400">
+							<div className="analyze-intro">
+								<p className="analyze-lead">
 									AI 将分批分析整本小说，自动提取角色信息、人物小传及关系图谱，支持超大文本。
 								</p>
 								<div className="analyze-features">
-									<p className="analyze-features-title">功能特点</p>
-									<div className="analyze-features-list">
-										<span className="analyze-feature-item">自动识别小说中的主要角色及配角</span>
-										<span className="analyze-feature-item">提取角色性别、类别、外貌、性格、背景描述</span>
-										<span className="analyze-feature-item">识别角色别称、代称</span>
-										<span className="analyze-feature-item">分析角色之间的关系及称呼方式</span>
-										<span className="analyze-feature-item">提取角色音色设计描述</span>
-										<span className="analyze-feature-item">提取角色大事件经历</span>
-										<span className="analyze-feature-item">跳过已有角色，仅新增未识别的角色</span>
-										<span className="analyze-feature-item">分批处理，支持 1M+ 字符的超大文本</span>
-									</div>
+									<p className="analyze-features-title">
+										<Icons.list size={14} />
+										功能特点
+									</p>
+									<ul className="analyze-features-list">
+										{[
+											"自动识别小说中的主要角色及配角",
+											"提取角色性别、类别、外貌、性格、背景描述",
+											"识别角色别称、代称",
+											"分析角色之间的关系及称呼方式",
+											"提取角色音色设计描述",
+											"提取角色大事件经历",
+											"跳过已有角色，仅新增未识别的角色",
+											"分批处理，支持 1M+ 字符的超大文本",
+										].map((feature) => (
+											<li key={feature} className="analyze-feature-item">
+												<Icons.check size={14} className="analyze-feature-icon" />
+												<span>{feature}</span>
+											</li>
+										))}
+									</ul>
 								</div>
 								<div className="analyze-note">
-									<Icons.info size={14} />
-									<span>分析完成后如有未匹配的关系，可手动整理归属</span>
+									<Icons.info size={16} className="analyze-note-icon" />
+									<span>分析完成后如有未匹配的关系，可手动整理归属；已识别过的角色不会被重复添加。</span>
 								</div>
 							</div>
 						)}
@@ -3757,7 +3769,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 									))}
 								</div>
 								{relationForm.relationType.includes("other") && (
-									<textarea
+									<AutoResizeTextarea
 										className="config-textarea"
 										placeholder="请输入自定义关系类型..."
 										value={relationForm.customRelationType}
@@ -3765,6 +3777,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 											setRelationForm((prev) => ({ ...prev, customRelationType: e.target.value }))
 										}
 										rows={2}
+										maxHeight={200}
 									/>
 								)}
 							</div>

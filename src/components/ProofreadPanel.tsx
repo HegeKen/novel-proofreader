@@ -918,9 +918,9 @@ export function ProofreadPanel() {
 									{paraResult.status === "checking" ? (
 										<><span className="spinner" /> 检测中…</>
 									) : paraResult.status === "error" ? (
-										<><Icons.error size={14} /> 检测失败</>
+										<><Icons.error size={14} /> 重试</>
 									) : paraResult.status === "done" && paraResult.errors.length === 0 ? (
-										<><Icons.check size={14} /> 未发现问题</>
+										<><Icons.check size={14} /> 无问题</>
 									) : (
 										<><Icons.search size={14} /> 检测</>
 									)}

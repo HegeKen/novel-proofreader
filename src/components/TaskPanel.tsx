@@ -18,6 +18,7 @@ import { ScriptRenderer } from "./ScriptRenderer";
 import { logger } from "../utils/logger";
 import type { ChatMessage } from "../utils/aiClient";
 import type { Chapter, AIConfig, CharacterInfo } from "../types";
+import { AutoResizeTextarea } from "./AutoResizeTextarea";
 
 interface ScriptSegment {
 	chapterTitle: string;
@@ -558,12 +559,13 @@ function TaskPanelContent({
 			<div className="task-body">
 				<div className="task-section">
 					<div className="section-label">自定义提示词（可选）</div>
-					<textarea
+					<AutoResizeTextarea
 						value={prompt}
 						onChange={(e) => setPrompt(e.target.value)}
 						placeholder={SCRIPT_SYSTEM_PROMPT}
 						className="prompt-textarea"
 						rows={4}
+						maxHeight={560}
 					/>
 				</div>
 

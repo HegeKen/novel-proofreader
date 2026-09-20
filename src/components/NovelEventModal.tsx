@@ -14,6 +14,7 @@ import { generateId } from "../utils/id";
 import { useElapsedTime, formatElapsedTime } from "../hooks/useElapsedTime";
 import { sendTaskNotification } from "../utils/notifications";
 import { normalizeChapterTitle, parseChapterInfo, findMatchedChapter, normalizeEventChapter } from "../utils/chapterMatch";
+import { AutoResizeTextarea } from "./AutoResizeTextarea";
 
 interface NovelEventModalProps {
 	novelId: string | null;
@@ -138,7 +139,7 @@ function EventEditFormContent({
 			</div>
 			<div className="form-field">
 				<label>事件描述</label>
-				<textarea
+				<AutoResizeTextarea
 					className="config-input"
 					value={formData.description}
 					onChange={(e) => setFormData({ ...formData, description: e.target.value })}

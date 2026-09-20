@@ -1,5 +1,69 @@
 # Proof Reader Changelog
 
+## v0.15.2 (2026-09-21)
+
+### 🛠️ 工程与工具链
+
+**可复现发布签名与多平台构建管线（全新）**
+- 新增 `setup-release-signing` Composite GitHub Action，支持 macOS/Windows/Linux/Android 四平台代码签名
+- macOS：从 Keychain 导出开发者证书与私钥，通过 `APPLE_CERTIFICATE_BASE64`/`APPLE_CERTIFICATE_PASSWORD` 环境变量注入
+- Windows：通过 `WINDOWS_CERTIFICATE_BASE64`/`WINDOWS_CERTIFICATE_PASSWORD` 导入 PFX 证书
+- Linux：GPG 签名支持，`GPG_PRIVATE_KEY`/`GPG_PASSPHRASE` 环境变量配置
+- Android：v2/v3 签名方案，从 Keychain 提取 keystore 并配置到 `gradle.properties`
+
+**可复现构建工作流**
+- 新增 `reproducible.yml` 工作流，支持全平台可复现构建与签名验证
+- 新增 `scripts/build-release.mjs` 构建脚本，统一各平台构建参数与环境配置
+- 新增 `scripts/verify-artifacts.mjs` 产物验证脚本，校验签名、哈希与 manifest 一致性
+- Rust 工具链锁定：`rust-toolchain.toml` 固定 stable channel，`release` profile 启用 `codegen-units = 1` + `lto = true`
+
+**产物清单与验证系统**
+- 新增 `scripts/artifact-manifest.mjs`，构建后自动生成产物清单（JSON 格式，含文件名、哈希、大小）
+- 新增 `scripts/lib/manifest.mjs`，清单格式定义与校验工具
+- 新增 `scripts/lib/platforms.mjs`，平台检测与产物路径映射
+
+**APK 签名工具**
+- 新增 `scripts/lib/apk.mjs`，支持从 Keychain 导出 keystore 并配置 Android 签名
+- `src-tauri/gen/android/app/build.gradle.kts` 签名配置改为从 `gradle.properties` 读取
+
+**密钥管理**
+- 新增 `scripts/ci/push-secrets.sh`，CI 环境密钥注入脚本
+- 新增 `scripts/lib/secrets.mjs`，密钥状态检查与安全清理工具
+- 新增 `scripts/secrets-status.mjs`，本地密钥配置状态一览
+
+**签名配置**
+- 新增 `signing.config.json`，集中管理各平台签名参数
+- 新增 `signing.config.schema.json`，JSON Schema 验证签名配置格式
+
+**macOS 权限声明**
+- 新增 `src-tauri/entitlements.plist`，声明 `com.apple.security.network.client` 等运行时权限
+
+**构建脚本**
+- 新增 `scripts/lib/core.mjs`，核心构建工具库（日志、文件操作、命令执行）
+- 新增 `scripts/lib/project-files.mjs`，项目文件路径与版本号注入
+- 新增 `scripts/lib/prompt.mjs`，交互式提示与确认工具
+- 新增 `scripts/setup-signing.mjs`，签名环境初始化脚本
+- 新增 `scripts/signing-check.mjs`，签名配置校验脚本
+- 新增 `scripts/rename-android-artifacts.mjs`，Android 产物重命名工具
+
+**CI 工作流优化**
+- `build.yml`：接入 `setup-release-signing` Action，构建产物自动签名
+- `android.yml`：签名配置从环境变量注入，产物重命名后上传
+- `macos.yml`：Keychain 证书注入，DMG 签名与公证
+- `windows.yml`：PFX 证书导入，MSI/NSIS 签名
+- `linux.yml`：GPG 签名支持
+
+**文档与测试**
+- 新增 `docs/RELEASE_SIGNING.md`，完整的发布签名指南（691 行）
+- 新增 `scripts/__tests__/release-signing.test.mjs`，签名流程单元测试（777 行，覆盖证书解析、密钥管理、清单生成、APK 签名等）
+- ESLint 配置新增 Node.js 脚本规则
+
+**其他**
+- `.npmrc` 新增 publishConfig 配置
+- `.gitignore` 补充签名临时文件与构建产物忽略规则
+
+---
+
 ## v0.15.0 (2026-09-16)
 
 ### ✨ 功能更新

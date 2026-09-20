@@ -15,7 +15,7 @@ import { useUIStore } from "./stores/uiStore";
 import { useAppMetaStore } from "./stores/appMetaStore";
 import { useAIConfigStore } from "./stores/aiConfigStore";
 import { useProofreadMetaStore } from "./stores/proofreadMetaStore";
-import { splitChapters } from "./utils/chapterSplit";
+import { splitChapters, chaptersNeedResplit } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
 import { exportToFile, loadNovelsFromStorage, loadNovelContent, saveNovelToStorage, ensureTxtFilename, exportAllData } from "./utils/fileExport";
 import { loadNovelText, saveNovelText, getNovelStorageKey, listNovelKeys } from "./utils/novelStorage";
@@ -156,19 +156,22 @@ export default function App() {
 			return { ...novel, fullText: content };
 		}));
 
-		if (!updated) return;
+		if (updated) {
+			useNovelStore.setState({ novels: updatedNovels });
+		}
 
-		useNovelStore.setState({ novels: updatedNovels });
-
-		// 恢复当前选中小说的章节
+		// 恢复当前选中小说的章节。
+		// 注意：persist 只保存章节结构、清空 content，所以刷新后 chapters 长度不为 0
+		// 却没有任何正文，必须按 fullText 重新分章（见 chaptersNeedResplit）。
 		const newState = useNovelStore.getState();
-		const selectedNovel = updatedNovels.find(n => n.id === currentNovelId);
-		if (selectedNovel?.fullText && newState.chapters.length === 0) {
+		const selectedNovel = (updated ? updatedNovels : state.novels).find(n => n.id === currentNovelId);
+		if (selectedNovel?.fullText && chaptersNeedResplit(newState.chapters)) {
 			const chapters = splitChapters(selectedNovel.fullText);
 			const progress = useAppMetaStore.getState().getReadingProgress(selectedNovel.id);
 			useNovelStore.setState({ chapters });
 			if (progress) {
-				useNovelStore.setState({ currentChapterIndex: progress.currentChapterIndex });
+				const index = Math.min(Math.max(progress.currentChapterIndex, 0), Math.max(chapters.length - 1, 0));
+				useNovelStore.setState({ currentChapterIndex: index });
 			}
 		}
 	}, []);

@@ -18,7 +18,7 @@ export function TTSConfigSection({ onOpenWordReplacement }: Props) {
 		<>
 			<div className="config-section">
 				<div className="section-label"><Icons.volume size={14} />语音朗读 (TTS)</div>
-				<p style={{ fontSize: "12px", color: "#666", marginBottom: "12px" }}>使用 Xiaomi MiMo TTS API 将文本转换为语音。</p>
+				<p className="section-hint">使用 Xiaomi MiMo TTS API 将文本转换为语音。</p>
 				<form onSubmit={(e) => e.preventDefault()}>
 					<div className="form-field">
 						<label>MiMo API Key</label>
@@ -69,7 +69,7 @@ export function TTSConfigSection({ onOpenWordReplacement }: Props) {
 						]} />
 				</div>
 				<div className="form-field">
-					<label>语速 ({ttsConfig.speed}) <span style={{ fontSize: "11px", color: "#999", fontWeight: "normal" }}>（5=日常对话自然语速，3=舒缓叙述，7=激动急切）</span></label>
+					<label>语速 ({ttsConfig.speed}) <span className="label-hint">（5=日常对话自然语速，3=舒缓叙述，7=激动急切）</span></label>
 					<input type="range" min="1" max="10" value={ttsConfig.speed}
 						onChange={(e) => updateTTSConfig({ speed: parseInt(e.target.value) })} className="config-range" />
 				</div>
@@ -84,7 +84,7 @@ export function TTSConfigSection({ onOpenWordReplacement }: Props) {
 				</a>
 				<div className="divider"></div>
 				<div className="section-label"><Icons.punctuation size={14} />敏感词替换</div>
-				<p style={{ fontSize: "12px", color: "#666", marginBottom: "8px" }}>
+				<p className="section-hint section-hint-tight">
 					在请求 TTS 大模型前，会将文本中的敏感词替换为指定词组，用于规避敏感词拒绝生成的问题。
 				</p>
 				<div className="divider"></div>

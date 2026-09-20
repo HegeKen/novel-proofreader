@@ -22,6 +22,7 @@ import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { PeakHourBanner } from "./PeakHourBanner";
 import { logger } from "../utils/logger";
+import { AutoResizeTextarea } from "./AutoResizeTextarea";
 
 export function ReaderPanel({
 	showReadingModeToggle = false,
@@ -100,6 +101,9 @@ export function ReaderPanel({
 	const readingTextColor = useMemo(() => {
 		if (!readingMode) return undefined;
 		switch (readingBackground) {
+			case "auto":
+				// 由 CSS 变量按主题决定（深色主题 -> 浅色文字，亮色主题 -> 深色文字）
+				return "var(--reading-text)";
 			case "dark":
 				return "#E0E0E0";
 			case "mint":
@@ -305,15 +309,16 @@ export function ReaderPanel({
 		setEditingIndex(null);
 	}, []);
 
-	// 编辑模式下自动聚焦并调整 textarea 高度
+	const handleLineEditorReady = useCallback((el: HTMLTextAreaElement | null) => {
+		textareaRef.current = el;
+	}, []);
+
+	// 编辑模式下自动聚焦并把光标移到末尾（高度由 AutoResizeTextarea 负责）
 	useEffect(() => {
 		if (editingIndex !== null && textareaRef.current) {
 			const ta = textareaRef.current;
 			ta.focus();
 			ta.selectionStart = ta.value.length;
-			// 自动撑高
-			ta.style.height = "auto";
-			ta.style.height = ta.scrollHeight + "px";
 		}
 	}, [editingIndex]);
 
@@ -328,13 +333,10 @@ export function ReaderPanel({
 		};
 	}, [readingMode, readingReminderEnabled, readingReminderMinutes, startReadingTimer, stopReadingTimer]);
 
-	/** textarea 内容变化时自动撑高 */
+	/** 行内编辑内容变化（高度由 AutoResizeTextarea 自动处理） */
 	const handleTextareaInput = useCallback(
 		(e: React.ChangeEvent<HTMLTextAreaElement>) => {
 			setEditValue(e.target.value);
-			const ta = e.target;
-			ta.style.height = "auto";
-			ta.style.height = ta.scrollHeight + "px";
 		},
 		[],
 	);
@@ -638,7 +640,9 @@ export function ReaderPanel({
 				style={{
 					...(readingMode && {
 						backgroundColor:
-							readingBackground === "white"
+							readingBackground === "auto"
+								? "var(--reading-bg)"
+								: readingBackground === "white"
 								? "#FFFFFF"
 								: readingBackground === "cream"
 									? "#FDF6E3"
@@ -848,14 +852,15 @@ export function ReaderPanel({
 								</span>
 							)}
 							{isEditing ? (
-								<textarea
-									ref={textareaRef}
+								<AutoResizeTextarea
+									onReady={handleLineEditorReady}
 									className="line-edit-textarea"
 									value={editValue}
 									onChange={handleTextareaInput}
 									onKeyDown={handleTextareaKeyDown}
 									onBlur={saveEditing}
 									rows={1}
+									maxHeight={320}
 								/>
 							) : highlightInfo ? (
 								<span className="line-text">
@@ -978,6 +983,12 @@ export function ReaderPanel({
 								<div className="setting-control background-options">
 									{[
 										{
+											value: "auto",
+											label: "跟随主题",
+											color: "var(--reading-bg)",
+											textColor: "var(--reading-text)",
+										},
+										{
 											value: "white",
 											label: "白底",
 											color: "#FFFFFF",
@@ -1045,6 +1056,7 @@ export function ReaderPanel({
 											onClick={() =>
 												setReadingBackground(
 													bg.value as
+														| "auto"
 														| "white"
 														| "cream"
 														| "sepia"
@@ -1214,7 +1226,7 @@ export function ReaderPanel({
 									/>
 								</div>
 								<div className="tts-setting-item">
-									<label>语速 <span style={{ fontSize: "10px", color: "#999" }}>（5=日常对话，3=舒缓，7=激动）</span></label>
+									<label>语速 <span className="label-hint">（5=日常对话，3=舒缓，7=激动）</span></label>
 									<div className="tts-slider-group">
 										<input
 											type="range"

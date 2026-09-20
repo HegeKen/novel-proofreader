@@ -383,6 +383,8 @@ export interface CharacterRelationship {
 
 /** 阅读背景类型 */
 export type ReadingBackground =
+	/** 跟随应用主题（深色主题用深色阅读面，亮色主题用米色） */
+	| "auto"
 	| "white"
 	| "cream"
 	| "sepia"
