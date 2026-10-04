@@ -34,6 +34,8 @@ jobs:
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      # 未配置有效 keystore 时允许 unsigned 产物（可在 Secrets 中显式覆盖）
+      DSH_ALLOW_UNSIGNED: ${{ secrets.DSH_ALLOW_UNSIGNED || 'true' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:

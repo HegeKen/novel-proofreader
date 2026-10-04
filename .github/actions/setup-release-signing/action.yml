@@ -242,12 +242,18 @@ runs:
       shell: bash
       env:
         DSH_REQUIRE_SIGNING: ${{ inputs.require-signing }}
+        # 显式覆盖值由调用方从 secrets 映射进 job env（见各 workflow）
+        DSH_ALLOW_UNSIGNED_INPUT: ${{ env.DSH_ALLOW_UNSIGNED }}
       run: |
         set -euo pipefail
         node scripts/signing-check.mjs --print-env >> "$GITHUB_ENV"
-        # 是否允许未签名产物：由 require-signing 决定，脚本统一读取 DSH_ALLOW_UNSIGNED
-        if [ "$DSH_REQUIRE_SIGNING" = "true" ]; then
-          echo "DSH_ALLOW_UNSIGNED=false" >> "$GITHUB_ENV"
+        # 是否签名完全取决于「是否配置了有效的 key Secrets」（由预检步骤判定）：
+        #   - 配置了有效 key → 签名；
+        #   - 未配置 / 配置无效 → unsigned 产物照常发布，不阻断。
+        # DSH_ALLOW_UNSIGNED 仅作为显式开关：job env/secret 提供则尊重之，
+        # 默认 true（允许 unsigned）。需要强制签名时在 Secrets 设 DSH_ALLOW_UNSIGNED=false。
+        if [ -n "${DSH_ALLOW_UNSIGNED_INPUT:-}" ]; then
+          echo "DSH_ALLOW_UNSIGNED=$DSH_ALLOW_UNSIGNED_INPUT" >> "$GITHUB_ENV"
         else
           echo "DSH_ALLOW_UNSIGNED=true" >> "$GITHUB_ENV"
         fi
