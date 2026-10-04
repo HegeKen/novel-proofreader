@@ -97,7 +97,10 @@ jobs:
 
       - name: Install Android targets
         if: matrix.android
-        run: rustup target add ${{ matrix.target }} aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+        # 单架构构建（--target matrix.android_arch）只需对应 target；
+        # 不要再把三个 target 全集与 matrix.target 并列，重复安装同一组件
+        # 曾触发 rustup partial 文件 rename 竞争失败
+        run: rustup target add ${{ matrix.target }}
 
       - name: Install non-Android targets
         if: "!matrix.android"

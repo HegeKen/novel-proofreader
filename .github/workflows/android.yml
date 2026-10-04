@@ -53,11 +53,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-
-      - name: Install Android targets
-        run: |
-          rustup target add ${{ matrix.target }}
-          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          # 与 toolchain 同批安装该架构 target，避免连续两次 rustup target add
+          # 对同一组件重复下载（aarch64 曾出现 partial 文件 rename 竞争失败）
+          targets: ${{ matrix.target }}
 
       - name: Setup Java for Android
         uses: actions/setup-java@v5
