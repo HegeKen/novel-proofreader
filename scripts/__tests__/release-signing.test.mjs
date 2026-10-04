@@ -654,16 +654,22 @@ describe('构建期 tauri 配置覆盖（--config 注入）', () => {
 	it('updater 私钥可用时才注入 createUpdaterArtifacts（否则会让无密钥构建直接失败）', () => {
 		const config = base()
 		config.windows = { ...config.windows, mode: 'none' }
-		expect(buildTauriBuildOverrides(config, { updaterKeyAvailable: false })).toEqual({})
-		expect(buildTauriBuildOverrides(config, { updaterKeyAvailable: true })).toEqual({
+		expect(buildTauriBuildOverrides(config, { updaterKeyAvailable: false, updaterIntegrated: true })).toEqual({})
+		expect(buildTauriBuildOverrides(config, { updaterKeyAvailable: true, updaterIntegrated: true })).toEqual({
 			bundle: { createUpdaterArtifacts: true },
 		})
+	})
+
+	it('未集成 updater 插件时即使有私钥也不注入 createUpdaterArtifacts', () => {
+		const config = base()
+		config.windows = { ...config.windows, mode: 'none' }
+		expect(buildTauriBuildOverrides(config, { updaterKeyAvailable: true, updaterIntegrated: false })).toEqual({})
 	})
 
 	it('updater 与 Windows 签名可以同时注入', () => {
 		const config = base()
 		config.windows = { ...config.windows, mode: 'pfx', certificateThumbprint: 'AABB' }
-		const overrides = buildTauriBuildOverrides(config, { env: {}, updaterKeyAvailable: true })
+		const overrides = buildTauriBuildOverrides(config, { env: {}, updaterKeyAvailable: true, updaterIntegrated: true })
 		expect(overrides.bundle.createUpdaterArtifacts).toBe(true)
 		expect(overrides.bundle.windows.certificateThumbprint).toBe('AABB')
 	})

@@ -243,9 +243,16 @@ export function applyTauriConfigPatch(config, { dryRun = false } = {}) {
  * `sign_command.is_some() || certificate_thumbprint.is_some()`（见 settings.rs 的 can_sign），
  * 它**不读取** WINDOWS_CERTIFICATE 之类的环境变量，所以必须显式注入其中之一。
  */
-export function buildTauriBuildOverrides(config, { env = process.env, updaterKeyAvailable = false } = {}) {
+export function buildTauriBuildOverrides(config, { env = process.env, updaterKeyAvailable = false, updaterIntegrated } = {}) {
 	const bundle = {};
-	if (updaterKeyAvailable) bundle.createUpdaterArtifacts = true;
+	// createUpdaterArtifacts 要求项目已集成 tauri-plugin-updater：
+	// Cargo.toml 有依赖 且 tauri.conf.json 有 plugins.updater 配置。
+	// 仅本地存在 updater.key 但未集成插件时注入该字段会导致
+	// "plugins > updater doesn't exist" 构建失败。
+	const integrated = updaterIntegrated ?? updaterPluginIntegrated();
+	if (updaterKeyAvailable && integrated) {
+		bundle.createUpdaterArtifacts = true;
+	}
 
 	const windows = config.windows ?? {};
 	if (windows.enabled !== false && windows.mode !== "none") {
@@ -255,29 +262,55 @@ export function buildTauriBuildOverrides(config, { env = process.env, updaterKey
 		}
 		if (windows.mode === "azure-trusted-signing") {
 			const azure = windows.azureTrustedSigning ?? {};
-			// 用对象形式传参：字符串形式会被 Tauri 按空格拆分，
-			// 而 endpoint / 描述里都可能含空格。
-			bundle.windows = {
-				...(bundle.windows ?? {}),
-				signCommand: {
-					cmd: "trusted-signing-cli",
-					args: [
-						"-e",
-						azure.endpoint ?? "",
-						"-a",
-						azure.account ?? "",
-						"-c",
-						azure.certificateProfile ?? "",
-						"-d",
-						azure.description || config.app?.productName || "",
-						"%1",
-					],
-				},
-			};
+			// Azure Trusted Signing 三项必填缺一不可；任一项缺失则不注入 signCommand，
+			// tauri-bundler 检测不到签名配置就产出 unsigned 产物，而非在签名阶段崩溃
+			const azureReady = azure.endpoint && azure.account && azure.certificateProfile;
+			if (azureReady) {
+				bundle.windows = {
+					...(bundle.windows ?? {}),
+					signCommand: {
+						cmd: "trusted-signing-cli",
+						args: [
+							"-e",
+							azure.endpoint,
+							"-a",
+							azure.account,
+							"-c",
+							azure.certificateProfile,
+							"-d",
+							azure.description || config.app?.productName || "",
+							"%1",
+						],
+					},
+				};
+			}
 		}
 	}
 
 	return Object.keys(bundle).length > 0 ? { bundle } : {};
+}
+
+/**
+ * 检测项目是否真正集成了 tauri-plugin-updater：
+ *   1. Cargo.toml 声明了 tauri-plugin-updater 依赖；
+ *   2. tauri.conf.json 里存在 plugins.updater 配置节点。
+ * 两者缺一不可，否则注入 createUpdaterArtifacts 会触发
+ * "plugins > updater doesn't exist" 构建失败。
+ */
+export function updaterPluginIntegrated() {
+	const cargoPath = path.join(PROJECT_ROOT, "src-tauri", "Cargo.toml");
+	if (!fs.existsSync(cargoPath)) return false;
+	const cargo = fs.readFileSync(cargoPath, "utf8");
+	if (!/tauri-plugin-updater\s*=/.test(cargo)) return false;
+
+	const confPath = tauriConfPath();
+	if (!fs.existsSync(confPath)) return false;
+	try {
+		const conf = JSON.parse(fs.readFileSync(confPath, "utf8"));
+		return Boolean(conf.plugins?.updater);
+	} catch {
+		return false;
+	}
 }
 
 /** 校验 Gradle 补丁是否真的生效（CI 里 android init 之后用它兜底）。 */export function assertGradlePatchApplied(config) {

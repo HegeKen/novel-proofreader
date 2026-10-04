@@ -271,8 +271,22 @@ function main() {
 			}
 			if (fs.existsSync(keystorePath) && properties.storePassword) {
 				const fingerprint = readAndroidCertSha256({ config, storePassword: properties.storePassword });
-				if (fingerprint) check("Android 签名证书可读取", "ok", fingerprint);
-				else check("Android 签名证书可读取", "fail", "口令可能不正确");
+				if (fingerprint) {
+					check("Android 签名证书可读取", "ok", fingerprint);
+				} else {
+					// 口令错误或 alias 不存在：strict 模式硬失败（发布必须可签名）；
+					// 非 strict 模式降级为告警，并移除 keystore.properties，
+					// 让 Gradle 补丁走「keystore.properties 不存在 → unsigned」分支，
+					// 否则带错误口令的 properties 会让 Gradle 在签名阶段崩溃而非回退 unsigned
+					if (STRICT) {
+						check("Android 签名证书可读取", "fail", "口令可能不正确");
+					} else {
+						check("Android 签名证书可读取", "warn", "口令不正确，已移除签名配置以回退 unsigned 构建");
+						try {
+							fs.unlinkSync(propertiesPath);
+						} catch {}
+					}
+				}
 			}
 		} else {
 			check(

@@ -36,23 +36,92 @@ runs:
     # tauri-bundler 判定「是否签名 Windows 产物」只看
     # bundle.windows.certificateThumbprint / signCommand（见 settings.rs 的 can_sign），
     # 它**不读** WINDOWS_CERTIFICATE 环境变量，所以必须把 pfx 导入证书存储并取出指纹。
+    # 导入失败（base64 损坏 / 口令错误）时：非 strict 回退 unsigned，strict 硬失败。
     - name: 导入 Windows 代码签名证书
       if: runner.os == 'Windows'
       shell: pwsh
+      env:
+        DSH_REQUIRE_SIGNING: ${{ inputs.require-signing }}
       run: |
         if (-not $env:WINDOWS_CERTIFICATE) {
           Write-Host "! 未提供 WINDOWS_CERTIFICATE，跳过导入（Windows 产物将未签名）"
           exit 0
         }
-        $base64 = ($env:WINDOWS_CERTIFICATE -replace '\s', '')
         $pfxPath = Join-Path $env:RUNNER_TEMP 'dsh-code-signing.pfx'
-        [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($base64))
-        $secure = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
-        $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $secure
-        # 用 AppendAllText 而不是 Out-File，避免 PowerShell 写入 BOM 破坏 $GITHUB_ENV
-        [IO.File]::AppendAllText($env:GITHUB_ENV, "DSH_WINDOWS_CERT_THUMBPRINT=$($cert.Thumbprint)`n")
-        Remove-Item $pfxPath -Force
-        Write-Host "✓ 已导入代码签名证书，指纹 $($cert.Thumbprint)"
+        try {
+          $base64 = ($env:WINDOWS_CERTIFICATE -replace '\s', '')
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($base64))
+          $secure = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
+          $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $secure
+          # 用 AppendAllText 而不是 Out-File，避免 PowerShell 写入 BOM 破坏 $GITHUB_ENV
+          [IO.File]::AppendAllText($env:GITHUB_ENV, "DSH_WINDOWS_CERT_THUMBPRINT=$($cert.Thumbprint)`n")
+          Write-Host "✓ 已导入代码签名证书，指纹 $($cert.Thumbprint)"
+        } catch {
+          Write-Host "::warning::Windows 证书导入失败：$($_.Exception.Message)"
+          if ($env:DSH_REQUIRE_SIGNING -eq 'true') {
+            Write-Host "::error::Windows 签名证书无效，且 require-signing=true，发布构建必须可签名"
+            exit 1
+          }
+          # 不设置 DSH_WINDOWS_CERT_THUMBPRINT，tauri 覆盖配置里 certificateThumbprint 为空 → 不签名
+          Write-Host "! Windows 证书无效，已跳过签名，产物将未签名"
+        } finally {
+          if (Test-Path $pfxPath) { Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue }
+        }
+
+    # 预检 Apple 代码签名证书：
+    #   - 未提供 / base64 损坏 / 口令错误 → 清除 APPLE_CERTIFICATE 等变量，
+    #     tauri-bundler 检测不到签名材料就直接产出 unsigned 产物，
+    #     避免在 bundling 阶段因 security import 失败而崩溃。
+    #   - require-signing=true（tag 发布）时证书无效则硬失败。
+    - name: 预检 Apple 代码签名证书
+      if: runner.os == 'macOS'
+      shell: bash
+      env:
+        DSH_REQUIRE_SIGNING: ${{ inputs.require-signing }}
+      run: |
+        set -euo pipefail
+        if [ -z "${APPLE_CERTIFICATE:-}" ]; then
+          echo "! 未提供 APPLE_CERTIFICATE，macOS 产物将未签名"
+          exit 0
+        fi
+
+        # 解码到临时 p12
+        P12_PATH="$RUNNER_TEMP/dsh-apple-cert.p12"
+        if ! printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$P12_PATH" 2>/dev/null \
+           && ! printf '%s' "$APPLE_CERTIFICATE" | base64 -D > "$P12_PATH" 2>/dev/null; then
+          echo "::warning::APPLE_CERTIFICATE base64 解码失败"
+          rm -f "$P12_PATH"
+          _dsh_apple_cert_invalid=1
+        fi
+
+        # 导入到临时 keychain 验证口令与格式
+        if [ -z "${_dsh_apple_cert_invalid:-}" ]; then
+          TMP_KC="$RUNNER_TEMP/dsh-apple-verify.keychain-db"
+          rm -f "$TMP_KC"
+          security create-keychain -p "" "$TMP_KC" >/dev/null 2>&1 || true
+          if ! security import "$P12_PATH" -k "$TMP_KC" -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign >/dev/null 2>&1; then
+            echo "::warning::Apple 证书导入失败（口令错误或文件格式无效）"
+            _dsh_apple_cert_invalid=1
+          fi
+          security delete-keychain "$TMP_KC" >/dev/null 2>&1 || true
+          rm -f "$P12_PATH"
+        fi
+
+        if [ -n "${_dsh_apple_cert_invalid:-}" ]; then
+          if [ "$DSH_REQUIRE_SIGNING" = "true" ]; then
+            echo "::error::Apple 签名证书无效，且 require-signing=true，发布构建必须可签名"
+            exit 1
+          fi
+          # 清除签名变量，tauri-bundler 将产出 unsigned 产物
+          {
+            echo "APPLE_CERTIFICATE="
+            echo "APPLE_CERTIFICATE_PASSWORD="
+            echo "APPLE_SIGNING_IDENTITY="
+          } >> "$GITHUB_ENV"
+          echo "! Apple 证书无效，已清除签名环境变量，macOS 产物将未签名"
+        else
+          echo "✓ Apple 代码签名证书验证通过"
+        fi
 
     # App Store Connect API 密钥（.p8）只能以文件形式使用：tauri-bundler 读的是
     # APPLE_API_KEY_PATH 指向的文件（缺省时会在 ./private_keys 下找 AuthKey_<KEY_ID>.p8）。
