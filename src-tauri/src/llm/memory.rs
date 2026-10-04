@@ -55,11 +55,29 @@ pub fn get_total_memory_mb() -> u64 {
 
     #[cfg(target_os = "windows")]
     {
-        let mut status: libc::MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
-        status.dwLength = std::mem::size_of::<libc::MEMORYSTATUSEX>() as u32;
-        let ok = unsafe { libc::GlobalMemoryStatusEx(&mut status) };
+        // MEMORYSTATUSEX / GlobalMemoryStatusEx 属于 Win32 API，libc crate 在
+        // Windows 上只含 CRT 绑定，此处手工声明（kernel32 默认链接，无需新依赖）
+        #[repr(C)]
+        struct MemoryStatusEx {
+            dw_length: u32,
+            dw_memory_load: u32,
+            ull_total_phys: u64,
+            ull_avail_phys: u64,
+            ull_total_page_file: u64,
+            ull_avail_page_file: u64,
+            ull_total_virtual: u64,
+            ull_avail_virtual: u64,
+            ull_avail_extended_virtual: u64,
+        }
+        #[allow(non_snake_case)]
+        extern "C" {
+            fn GlobalMemoryStatusEx(lpBuffer: *mut MemoryStatusEx) -> i32;
+        }
+        let mut status: MemoryStatusEx = unsafe { std::mem::zeroed() };
+        status.dw_length = std::mem::size_of::<MemoryStatusEx>() as u32;
+        let ok = unsafe { GlobalMemoryStatusEx(&mut status) };
         if ok != 0 {
-            return (status.ullTotalPhys / 1024 / 1024) as u64;
+            return (status.ull_total_phys / 1024 / 1024) as u64;
         }
         0
     }

@@ -17,6 +17,33 @@ inputs:
     description: 缺少签名材料时是否让 job 直接失败（tag 发布应为 true）
     required: false
     default: "true"
+  apple-certificate:
+    description: Apple 代码签名证书（base64 p12）
+    required: false
+  apple-certificate-password:
+    description: Apple 证书口令
+    required: false
+  apple-signing-identity:
+    description: Apple 签名身份
+    required: false
+  apple-id:
+    description: Apple ID（公证用）
+    required: false
+  apple-password:
+    description: Apple ID 密码（公证用）
+    required: false
+  apple-team-id:
+    description: Apple Team ID
+    required: false
+  apple-api-key:
+    description: App Store Connect API Key ID
+    required: false
+  apple-api-issuer:
+    description: App Store Connect API Issuer
+    required: false
+  apple-api-key-p8:
+    description: App Store Connect API 私钥（base64 p8）
+    required: false
 
 runs:
   using: composite
@@ -69,37 +96,49 @@ runs:
         }
 
     # 预检 Apple 代码签名证书：
-    #   - 未提供 / base64 损坏 / 口令错误 → 清除 APPLE_CERTIFICATE 等变量，
-    #     tauri-bundler 检测不到签名材料就直接产出 unsigned 产物，
-    #     避免在 bundling 阶段因 security import 失败而崩溃。
-    #   - require-signing=true（tag 发布）时证书无效则硬失败。
+    #   - 通过 inputs 接收 secrets（而非 job env），验证通过后才导出到 GITHUB_ENV；
+    #     避免 job env 中的无效证书被 tauri-bundler 读取导致 security import 崩溃。
+    #   - 未提供 / base64 损坏 / 口令错误 → 不导出，产物 unsigned；
+    #     require-signing=true（tag 发布）时证书无效则硬失败。
     - name: 预检 Apple 代码签名证书
       if: runner.os == 'macOS'
       shell: bash
       env:
         DSH_REQUIRE_SIGNING: ${{ inputs.require-signing }}
+        DSH_APPLE_CERTIFICATE: ${{ inputs.apple-certificate }}
+        DSH_APPLE_CERTIFICATE_PASSWORD: ${{ inputs.apple-certificate-password }}
+        DSH_APPLE_SIGNING_IDENTITY: ${{ inputs.apple-signing-identity }}
+        DSH_APPLE_ID: ${{ inputs.apple-id }}
+        DSH_APPLE_PASSWORD: ${{ inputs.apple-password }}
+        DSH_APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
+        DSH_APPLE_API_KEY: ${{ inputs.apple-api-key }}
+        DSH_APPLE_API_ISSUER: ${{ inputs.apple-api-issuer }}
+        DSH_APPLE_API_KEY_P8: ${{ inputs.apple-api-key-p8 }}
       run: |
         set -euo pipefail
-        if [ -z "${APPLE_CERTIFICATE:-}" ]; then
-          echo "! 未提供 APPLE_CERTIFICATE，macOS 产物将未签名"
+
+        # 无证书：直接跳过，不导出任何 Apple 变量
+        if [ -z "${DSH_APPLE_CERTIFICATE:-}" ]; then
+          echo "! 未提供 Apple 证书，macOS 产物将未签名"
           exit 0
         fi
 
         # 解码到临时 p12
         P12_PATH="$RUNNER_TEMP/dsh-apple-cert.p12"
-        if ! printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$P12_PATH" 2>/dev/null \
-           && ! printf '%s' "$APPLE_CERTIFICATE" | base64 -D > "$P12_PATH" 2>/dev/null; then
-          echo "::warning::APPLE_CERTIFICATE base64 解码失败"
+        _dsh_apple_cert_invalid=""
+        if ! printf '%s' "$DSH_APPLE_CERTIFICATE" | base64 --decode > "$P12_PATH" 2>/dev/null \
+           && ! printf '%s' "$DSH_APPLE_CERTIFICATE" | base64 -D > "$P12_PATH" 2>/dev/null; then
+          echo "::warning::Apple 证书 base64 解码失败"
           rm -f "$P12_PATH"
           _dsh_apple_cert_invalid=1
         fi
 
         # 导入到临时 keychain 验证口令与格式
-        if [ -z "${_dsh_apple_cert_invalid:-}" ]; then
+        if [ -z "$_dsh_apple_cert_invalid" ]; then
           TMP_KC="$RUNNER_TEMP/dsh-apple-verify.keychain-db"
           rm -f "$TMP_KC"
           security create-keychain -p "" "$TMP_KC" >/dev/null 2>&1 || true
-          if ! security import "$P12_PATH" -k "$TMP_KC" -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign >/dev/null 2>&1; then
+          if ! security import "$P12_PATH" -k "$TMP_KC" -P "${DSH_APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign >/dev/null 2>&1; then
             echo "::warning::Apple 证书导入失败（口令错误或文件格式无效）"
             _dsh_apple_cert_invalid=1
           fi
@@ -107,32 +146,43 @@ runs:
           rm -f "$P12_PATH"
         fi
 
-        if [ -n "${_dsh_apple_cert_invalid:-}" ]; then
+        if [ -n "$_dsh_apple_cert_invalid" ]; then
           if [ "$DSH_REQUIRE_SIGNING" = "true" ]; then
             echo "::error::Apple 签名证书无效，且 require-signing=true，发布构建必须可签名"
             exit 1
           fi
-          # 清除签名变量，tauri-bundler 将产出 unsigned 产物
-          {
-            echo "APPLE_CERTIFICATE="
-            echo "APPLE_CERTIFICATE_PASSWORD="
-            echo "APPLE_SIGNING_IDENTITY="
-          } >> "$GITHUB_ENV"
-          echo "! Apple 证书无效，已清除签名环境变量，macOS 产物将未签名"
-        else
-          echo "✓ Apple 代码签名证书验证通过"
+          echo "! Apple 证书无效，不导出签名变量，macOS 产物将未签名"
+          exit 0
         fi
+
+        # 验证通过：导出到 GITHUB_ENV 供后续步骤使用
+        {
+          echo "APPLE_CERTIFICATE=$DSH_APPLE_CERTIFICATE"
+          echo "APPLE_CERTIFICATE_PASSWORD=$DSH_APPLE_CERTIFICATE_PASSWORD"
+          echo "APPLE_SIGNING_IDENTITY=$DSH_APPLE_SIGNING_IDENTITY"
+          echo "APPLE_ID=$DSH_APPLE_ID"
+          echo "APPLE_PASSWORD=$DSH_APPLE_PASSWORD"
+          echo "APPLE_TEAM_ID=$DSH_APPLE_TEAM_ID"
+          echo "APPLE_API_KEY=$DSH_APPLE_API_KEY"
+          echo "APPLE_API_ISSUER=$DSH_APPLE_API_ISSUER"
+          echo "APPLE_API_KEY_P8=$DSH_APPLE_API_KEY_P8"
+        } >> "$GITHUB_ENV"
+        echo "✓ Apple 代码签名证书验证通过，已导出签名环境变量"
 
     # App Store Connect API 密钥（.p8）只能以文件形式使用：tauri-bundler 读的是
     # APPLE_API_KEY_PATH 指向的文件（缺省时会在 ./private_keys 下找 AuthKey_<KEY_ID>.p8）。
-    # 这里把 base64 的 Secret 落地成文件，并显式导出路径。
+    # 仅在 Apple 证书预检通过（变量已导出到 GITHUB_ENV）后才落地。
     - name: 落地 App Store Connect API 密钥
       if: runner.os == 'macOS'
       shell: bash
+      env:
+        DSH_APPLE_API_KEY: ${{ inputs.apple-api-key }}
+        DSH_APPLE_API_KEY_P8: ${{ inputs.apple-api-key-p8 }}
       run: |
         set -euo pipefail
-        if [ -z "${APPLE_API_KEY_P8:-}" ] || [ -z "${APPLE_API_KEY:-}" ]; then
-          echo "未提供 APPLE_API_KEY_P8 / APPLE_API_KEY，跳过（可改用 Apple ID 公证）"
+        # 预检未通过时 APPLE_API_KEY 不会出现在环境中，跳过
+        if [ -z "${APPLE_API_KEY:-}" ] || [ -z "${APPLE_API_KEY_P8:-}" ]; then
+          echo "Apple 证书预检未通过或未提供 API 密钥，跳过"
           exit 0
         fi
         KEY_DIR="src-tauri/private_keys"
