@@ -2,14 +2,13 @@
 // 跨小说全文搜索组件
 // ============================================================
 import { useState, useCallback, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
 import { useNovelStore } from "../stores/novelStore";
 import { useUIStore } from "../stores/uiStore";
 import { useProofreadStore } from "../stores/proofreadStore";
-import { useMobile } from "../hooks/useMobile";
 import { splitParagraphs, splitChapters } from "../utils/chapterSplit";
 import { Icons } from "./Icons";
-import { CloseButton } from "./Modal";
+import { Modal } from "./Modal";
+import { Button } from "./Button";
 
 export interface SearchResult {
 	novelId: string;
@@ -145,124 +144,116 @@ export function GlobalSearch() {
 		}
 	}, [showSearch]);
 
-	const { isMobile } = useMobile();
-
 	return (
 		<>
-			<button
-				className={isMobile ? "btn-mobile" : "btn"}
+			<Button
 				onClick={() => setShowSearch(true)}
 				title="跨小说搜索 (Ctrl+F)"
+				icon={<Icons.search size={18} />}
 			>
-				<Icons.search size={18} />
-				{!isMobile && <span>全局搜索</span>}
-			</button>
+				全局搜索
+			</Button>
 
-			{showSearch && createPortal(
-				<div className="global-search-overlay" onClick={() => setShowSearch(false)}>
-					<div className="config-modal" onClick={(e) => e.stopPropagation()}>
-						<div className="config-header">
-							<div className="config-title">
-								<Icons.search size={18} />
-								<span>跨小说全文搜索</span>
-							</div>
-							<CloseButton onClick={() => setShowSearch(false)} />
-						</div>
-
-						<div className="global-search-input-wrapper">
-							<Icons.search size={16} className="search-icon" />
-							<input
-								ref={inputRef}
-								type="text"
-								className="global-search-input"
-								placeholder="搜索所有已导入的小说..."
-								value={searchQuery}
-								onChange={(e) => {
-									setSearchQuery(e.target.value);
-									performSearch(e.target.value);
-								}}
-							/>
-							{searchQuery && (
-								<button
-									className="global-search-clear"
-									onClick={() => {
-										setSearchQuery("");
-										performSearch("");
-									}}
-								>
-									<Icons.x size={14} />
-								</button>
-							)}
-						</div>
-
-						<div className="global-search-stats">
-							找到 {searchResults.length} 个匹配结果
-						</div>
-
-						<div className="global-search-results">
-							{searchResults.length === 0 ? (
-								<div className="global-search-empty">
-									<Icons.search size={48} />
-									<span>{searchQuery ? "未找到匹配结果" : "输入关键词开始搜索"}</span>
-								</div>
-							) : (
-								searchResults.map((result, index) => (
-									<div
-										key={index}
-										className={`global-search-result${index === currentMatchIndex ? " current" : ""}`}
-										onClick={() => handleResultClick(result)}
-									>
-										<div className="result-novel">📚 {result.novelName}</div>
-										<div className="result-chapter">
-											<Icons.book size={14} />
-											{result.chapterTitle}
-											<span className="result-line-number">行 {result.lineNumber}</span>
-										</div>
-										<div className="result-text">
-											{result.text.slice(0, result.matchStart)}
-											<span className="match-highlight">
-												{result.text.slice(result.matchStart, result.matchEnd)}
-											</span>
-											{result.text.slice(result.matchEnd)}
-										</div>
-									</div>
-								))
-							)}
-						</div>
-
-						{searchResults.length > 0 && (
-							<div className="global-search-nav">
-								<button
-									className="nav-btn"
-									onClick={() => {
-										if (currentMatchIndex > 0) {
-											setCurrentMatchIndex(currentMatchIndex - 1);
-										}
-									}}
-									disabled={currentMatchIndex === 0}
-								>
-									<Icons.chevronUp size={16} />
-								</button>
-								<span className="nav-info">
-									{currentMatchIndex + 1} / {searchResults.length}
-								</span>
-								<button
-									className="nav-btn"
-									onClick={() => {
-										if (currentMatchIndex < searchResults.length - 1) {
-											setCurrentMatchIndex(currentMatchIndex + 1);
-										}
-									}}
-									disabled={currentMatchIndex === searchResults.length - 1}
-								>
-									<Icons.chevronDown size={16} />
-								</button>
-							</div>
-						)}
-					</div>
+			<Modal
+				open={showSearch}
+				onClose={() => setShowSearch(false)}
+				title="跨小说全文搜索"
+				icon={<Icons.search size={18} />}
+				portal
+				overlayClassName="global-search-overlay"
+				bodyClassName="global-search-body"
+			>
+				<div className="global-search-input-wrapper">
+					<Icons.search size={16} className="search-icon" />
+					<input
+						ref={inputRef}
+						type="text"
+						className="global-search-input"
+						placeholder="搜索所有已导入的小说..."
+						value={searchQuery}
+						onChange={(e) => {
+							setSearchQuery(e.target.value);
+							performSearch(e.target.value);
+						}}
+					/>
+					{searchQuery && (
+						<button
+							className="global-search-clear"
+							onClick={() => {
+								setSearchQuery("");
+								performSearch("");
+							}}
+						>
+							<Icons.x size={14} />
+						</button>
+					)}
 				</div>
-				, document.body
-			)}
+
+				<div className="global-search-stats">
+					找到 {searchResults.length} 个匹配结果
+				</div>
+
+				<div className="global-search-results">
+					{searchResults.length === 0 ? (
+						<div className="global-search-empty">
+							<Icons.search size={48} />
+							<span>{searchQuery ? "未找到匹配结果" : "输入关键词开始搜索"}</span>
+						</div>
+					) : (
+						searchResults.map((result, index) => (
+							<div
+								key={index}
+								className={`global-search-result${index === currentMatchIndex ? " current" : ""}`}
+								onClick={() => handleResultClick(result)}
+							>
+								<div className="result-novel">📚 {result.novelName}</div>
+								<div className="result-chapter">
+									<Icons.book size={14} />
+									{result.chapterTitle}
+									<span className="result-line-number">行 {result.lineNumber}</span>
+								</div>
+								<div className="result-text">
+									{result.text.slice(0, result.matchStart)}
+									<span className="match-highlight">
+										{result.text.slice(result.matchStart, result.matchEnd)}
+									</span>
+									{result.text.slice(result.matchEnd)}
+								</div>
+							</div>
+						))
+					)}
+				</div>
+
+				{searchResults.length > 0 && (
+					<div className="global-search-nav">
+						<button
+							className="nav-btn"
+							onClick={() => {
+								if (currentMatchIndex > 0) {
+									setCurrentMatchIndex(currentMatchIndex - 1);
+								}
+							}}
+							disabled={currentMatchIndex === 0}
+						>
+							<Icons.chevronUp size={16} />
+						</button>
+						<span className="nav-info">
+							{currentMatchIndex + 1} / {searchResults.length}
+						</span>
+						<button
+							className="nav-btn"
+							onClick={() => {
+								if (currentMatchIndex < searchResults.length - 1) {
+									setCurrentMatchIndex(currentMatchIndex + 1);
+								}
+							}}
+							disabled={currentMatchIndex === searchResults.length - 1}
+						>
+							<Icons.chevronDown size={16} />
+						</button>
+					</div>
+				)}
+			</Modal>
 		</>
 	);
 }

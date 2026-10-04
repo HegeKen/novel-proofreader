@@ -1,10 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { CharacterInfo, CharacterRelationship, NovelWorldbuilding, NovelEvent } from "../types";
-import { generateId, filterRecordByKeys } from "../utils/id";
+import { generateId } from "../utils/id";
+import { filterRecordByKeys } from "../utils/record";
 
 
-export interface CharacterState {
+interface CharacterState {
 	novelCharacters: Record<string, CharacterInfo[]>;
 	characterRelationships: Record<string, CharacterRelationship[]>;
 	nodePositions: Record<string, Record<string, { x: number; y: number }>>;

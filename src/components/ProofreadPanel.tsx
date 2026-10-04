@@ -4,19 +4,21 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useNovelStore } from "../stores/novelStore";
 import { useProofreadStore } from "../stores/proofreadStore";
+import { useTtsStore } from "../stores/ttsStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useAICheck } from "../hooks/useAICheck";
-import { locateTextWithFallback } from "../hooks/useAICheck";
+import { locateTextWithFallback } from "../utils/proofreadPipeline";
 import { findWhitespaceInsensitive } from "../utils/textSearch";
-import { useMobile } from "../hooks/useMobile";
-import { buildParagraphIndexMap } from "../utils/formatters";
 import { EmptyState } from "./EmptyState";
-import { getNonEmptyParagraphs, splitParagraphs, getChapterDisplayTitle } from "../utils/chapterSplit";
+import { getNonEmptyParagraphs, splitParagraphs, getChapterDisplayTitle, buildParagraphIndexMap } from "../utils/chapterSplit";
 import { Icons } from "./Icons";
+import { Modal } from "./Modal";
+import { Button } from "./Button";
 import { IgnoredWordsManager } from "./IgnoredWordsManager";
 import { ProofreadQueuePanel } from "./ProofreadQueuePanel";
 import { PeakHourBanner } from "./PeakHourBanner";
-import { useAppMetaStore } from "../stores/appMetaStore";
+import { useUIStore } from "../stores/uiStore";
+import { useProofreadMetaStore } from "../stores/proofreadMetaStore";
 import { logger } from "../utils/logger";
 
 import type { ToastMessage } from "./Toast";
@@ -47,10 +49,9 @@ const ANIM_REPLACE_MS = 300;
 const ANIM_NEW_MS = 1200;
 
 export function ProofreadPanel() {
-	const { isMobile } = useMobile();
-
 	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 	const chapters = useNovelStore((s) => s.chapters);
+	const currentNovelId = useNovelStore((s) => s.currentNovelId);
 	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
 	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
 	const replaceParagraphText = useNovelStore((s) => s.replaceParagraphText);
@@ -64,13 +65,14 @@ export function ProofreadPanel() {
 	);
 	const toggleErrorApplied = useProofreadStore((s) => s.toggleErrorApplied);
 	const toggleErrorSkipped = useProofreadStore((s) => s.toggleErrorSkipped);
+	const skipAllErrors = useProofreadStore((s) => s.skipAllErrors);
 	const setApplyAnimation = useProofreadStore((s) => s.setApplyAnimation);
 	const updateErrorIndices = useProofreadStore((s) => s.updateErrorIndices);
 
 	const startLine = useProofreadStore((s) => s.startLine);
 	const setStartLine = useProofreadStore((s) => s.setStartLine);
-	const ttsPlaying = useProofreadStore((s) => s.ttsPlaying);
-	const ttsHighlightedPara = useProofreadStore((s) => s.ttsHighlightedPara);
+	const ttsPlaying = useTtsStore((s) => s.ttsPlaying);
+	const ttsHighlightedPara = useTtsStore((s) => s.ttsHighlightedPara);
 
 	const { checkChapter, cancelCheck, checkSingleLine } = useAICheck();
 	const [granularity, setGranularity] = useState<CheckGranularity>("paragraph");
@@ -87,7 +89,7 @@ export function ProofreadPanel() {
 
 	// 提示消息统一走全局 toast（appMetaStore），避免本地重复实现
 	const addToast = useCallback((type: ToastMessage["type"], message: string) => {
-		useAppMetaStore.getState().showToast(message, type);
+		useUIStore.getState().showToast(message, type);
 	}, []);
 	const paragraphRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -163,8 +165,20 @@ export function ProofreadPanel() {
 		}
 		if (lastChapterIdRef.current === chapter.id) return;
 		lastChapterIdRef.current = chapter.id;
-		// 切换章节时重置起始行
-		setStartLine(null);
+		// 切换章节时重置起始行；若存在未完成的校对进度，恢复到上次中断位置
+		const progress = currentNovelId
+			? useProofreadMetaStore.getState().getProofreadProgress(currentNovelId, chapter.id)
+			: undefined;
+		if (
+			progress &&
+			!progress.completed &&
+			progress.lastParagraphIndex >= 0 &&
+			progress.lastParagraphIndex < paragraphIndexMap.length
+		) {
+			setStartLine(paragraphIndexMap[progress.lastParagraphIndex]);
+		} else {
+			setStartLine(null);
+		}
 		// 如果该章节还没有校对结果，初始化为待校对列表（过滤掉空段落）
 		const existing = useProofreadStore.getState().results[chapter.id];
 		if (!existing || existing.length === 0) {
@@ -177,7 +191,7 @@ export function ProofreadPanel() {
 			}));
 			setResults(chapter.id, initial);
 		}
-	}, [chapter?.id, paragraphIndexMap, chapter, setResults, setStartLine]);
+	}, [chapter?.id, paragraphIndexMap, chapter, setResults, setStartLine, currentNovelId]);
 
 
 
@@ -185,7 +199,20 @@ export function ProofreadPanel() {
 		setChecking(true);
 		// 将原始索引转换为过滤后索引
 		const filteredStartLine = startLine !== null ? paragraphIndexMap.indexOf(startLine) : -1;
-		const actualStartLine = filteredStartLine >= 0 ? filteredStartLine : 0;
+		let actualStartLine = filteredStartLine >= 0 ? filteredStartLine : 0;
+		// 起始行未手动指定时，尝试从上次中断的校对进度继续
+		if (filteredStartLine < 0 && currentNovelId && chapter) {
+			const progress = useProofreadMetaStore.getState().getProofreadProgress(currentNovelId, chapter.id);
+			if (
+				progress &&
+				!progress.completed &&
+				progress.lastParagraphIndex >= 0 &&
+				progress.lastParagraphIndex < paragraphIndexMap.length
+			) {
+				actualStartLine = progress.lastParagraphIndex + 1;
+				addToast("info", `已从上次中断位置（第 ${paragraphIndexMap[progress.lastParagraphIndex] + 1} 段）继续检测`);
+			}
+		}
 		logger.proofread(`handleStartCheck 开始检测: granularity=${granularity}, startLine(原始)=${startLine ?? 0}, filteredStartLine=${actualStartLine}, totalLines=${totalLines}`);
 		// line 粒度时同步当前检测行到 singleCheckingLine（与 checkSingleLine 的 UI 反馈一致）
 		await checkChapter(granularity, actualStartLine, granularity === "line" ? setSingleCheckingLine : undefined);
@@ -373,8 +400,8 @@ export function ProofreadPanel() {
 						if (replaced) {
 							setHighlightedParagraph(actualParaIndex);
 						}
-						// 同步更新错误的位置信息，使其指向正确的段落和位置
-						toggleErrorApplied(chapterId, actualParaIndex, err.id);
+						// 错误状态记录归属原段落（err.id 中编码了 paraIndex），在归属段落标记采纳态
+						toggleErrorApplied(chapterId, paraIndex, err.id);
 						if (replaced) {
 							const lengthDiff = err.correctedText.length - err.originalText.length;
 							updateErrorIndices(chapterId, actualParaIndex, fallback.start, lengthDiff);
@@ -469,6 +496,78 @@ export function ProofreadPanel() {
 		},
 		[toggleErrorSkipped, addToast],
 	);
+
+	/** 批量采纳当前章节所有未处理错误（网络错误除外），从段落尾部向前替换避免索引偏移 */
+	const handleApplyAll = useCallback(() => {
+		const state = useNovelStore.getState();
+		const currentChapter = state.chapters[state.currentChapterIndex];
+		if (!currentChapter) return;
+		const chapterId = currentChapter.id;
+
+		let appliedCount = 0;
+		let failedCount = 0;
+
+		const chapterResultsNow = useProofreadStore.getState().results[chapterId] ?? [];
+		for (const para of chapterResultsNow) {
+			// 从后往前替换，避免替换后同段落内前面错误的索引偏移
+			const targets = para.errors
+				.filter((e) => !e.applied && !e.skipped && e.errorType !== "network")
+				.sort((a, b) => b.startIndex - a.startIndex);
+			for (const err of targets) {
+				let ok = replaceParagraphText(
+					chapterId,
+					para.paragraphIndex,
+					err.originalText,
+					err.correctedText,
+					err.startIndex,
+					err.endIndex,
+				);
+				// 当前段落替换失败时，跨段落 fallback 重新定位
+				if (!ok) {
+					const latestContent = useNovelStore.getState().chapters[state.currentChapterIndex]?.content ?? "";
+					const fallback = locateTextWithFallback(splitParagraphs(latestContent), para.paragraphIndex, err.originalText);
+					if (fallback) {
+						ok = replaceParagraphText(
+							chapterId,
+							fallback.paragraphIndex,
+							err.originalText,
+							err.correctedText,
+							fallback.start,
+							fallback.end,
+						);
+					}
+				}
+				if (ok) {
+					// 错误状态记录在检测时归属的段落，UI 也在该段落渲染采纳态；
+					// 即使文本实际在其他段落完成替换，该段落的 errors 中也不存在同一错误 id，只需标记归属段落一次
+					toggleErrorApplied(chapterId, para.paragraphIndex, err.id);
+					appliedCount++;
+				} else {
+					failedCount++;
+				}
+			}
+		}
+
+		if (appliedCount === 0 && failedCount === 0) {
+			addToast("info", "没有可批量采纳的错误");
+			return;
+		}
+		saveCurrentNovel();
+		if (failedCount > 0) {
+			addToast("warning", `已批量采纳 ${appliedCount} 处修改，${failedCount} 处定位失败未采纳`);
+		} else {
+			addToast("success", `已批量采纳 ${appliedCount} 处修改`);
+		}
+	}, [replaceParagraphText, toggleErrorApplied, addToast, saveCurrentNovel]);
+
+	/** 批量忽略当前章节所有未处理错误 */
+	const handleSkipAll = useCallback(() => {
+		const state = useNovelStore.getState();
+		const currentChapter = state.chapters[state.currentChapterIndex];
+		if (!currentChapter) return;
+		skipAllErrors(currentChapter.id);
+		addToast("info", "已忽略当前章节所有未处理错误");
+	}, [skipAllErrors, addToast]);
 
 	/** 接受段落合并建议 */
 	const handleAcceptMerge = useCallback(
@@ -726,37 +825,31 @@ export function ProofreadPanel() {
 							)}
 						</div>
 						<div className="toolbar-row-right">
-							<button
-								className={isMobile ? "btn-mobile" : "btn"}
+							<Button
 								onClick={handleScrollToTop}
 								title="返回顶部"
-							>
-								<Icons.chevronUp size={16} />
-							</button>
+								icon={<Icons.chevronUp size={16} />}
+							/>
 							{chapters.length > 1 && (
 								<>
-									<button
-										className={isMobile ? "btn-mobile" : "btn"}
+									<Button
 										disabled={currentChapterIndex <= 0}
 										onClick={() => {
 											saveCurrentNovel();
 											setCurrentChapterIndex(currentChapterIndex - 1);
 										}}
 										title={currentChapterIndex > 0 ? getChapterDisplayTitle(chapters[currentChapterIndex - 1], currentChapterIndex - 1) : "已是第一章"}
-									>
-										<Icons.skipBack size={16} />
-									</button>
-									<button
-										className={isMobile ? "btn-mobile" : "btn"}
+										icon={<Icons.skipBack size={16} />}
+									/>
+									<Button
 										disabled={currentChapterIndex >= chapters.length - 1}
 										onClick={() => {
 											saveCurrentNovel();
 											setCurrentChapterIndex(currentChapterIndex + 1);
 										}}
 										title={currentChapterIndex < chapters.length - 1 ? getChapterDisplayTitle(chapters[currentChapterIndex + 1], currentChapterIndex + 1) : "已是最后一章"}
-									>
-										<Icons.skipForward size={16} />
-									</button>
+										icon={<Icons.skipForward size={16} />}
+									/>
 								</>
 							)}
 						</div>
@@ -790,29 +883,35 @@ export function ProofreadPanel() {
 							</div>
 						</div>
 						<div className="toolbar-row-right">
-							<button
-								className={isMobile ? "btn-mobile" : "btn"}
-								onClick={() => setShowQueuePanel(!showQueuePanel)}
-								title="批量校对队列"
-							>
-								<Icons.listTodo size={16} />
-							</button>
-							<button
-								className={isMobile ? "btn-mobile" : "btn"}
+						{remainingNormalErrors > 0 && !checking && singleCheckingLine === null && (
+							<>
+								<Button
+									onClick={handleApplyAll}
+									title={`批量采纳当前章节所有未处理错误（共 ${remainingNormalErrors} 个）`}
+									icon={<Icons.checkAll size={16} />}
+								/>
+								<Button
+									onClick={handleSkipAll}
+									title="批量忽略当前章节所有未处理错误"
+									icon={<Icons.eyeOff size={16} />}
+								/>
+							</>
+						)}
+						<Button
+							onClick={() => setShowQueuePanel(!showQueuePanel)}
+							title="批量校对队列"
+							icon={<Icons.listTodo size={16} />}
+						/>
+							<Button
 								onClick={() => setShowIgnoredWordsModal(true)}
-								title="管理忽略单词"
-							>
-								<Icons.settings size={16} />
-							</button>
+								title="词典管理"
+								icon={<Icons.settings size={16} />}
+							/>
 							{/* 批量校对或单行检测进行中：显示取消按钮，点击停止当前校对任务 */}
 							{checking || singleCheckingLine !== null ? (
-								<button className={isMobile ? "btn-mobile" : "btn"} onClick={cancelCheck} title="停止当前校对任务">
-									<Icons.close size={16} />
-								</button>
+								<Button onClick={cancelCheck} title="停止当前校对任务" icon={<Icons.close size={16} />} />
 							) : (
-								<button className={isMobile ? "btn-mobile" : "btn"} onClick={handleStartCheck} title="开始校对">
-									<Icons.play size={16} />
-								</button>
+								<Button onClick={handleStartCheck} title="开始校对" icon={<Icons.play size={16} />} />
 							)}
 						</div>
 					</div>
@@ -835,34 +934,9 @@ export function ProofreadPanel() {
 		)}
 
 		{/* 批量校对队列面板 */}
-		{showQueuePanel && (
-				<div className="queue-panel-overlay" onClick={() => setShowQueuePanel(false)}>
-					<div className="queue-panel" onClick={(e) => e.stopPropagation()}>
-						<div className="config-header">
-							<div className="config-title">
-								<Icons.listTodo size={18} />
-								<span>批量校对队列</span>
-							</div>
-							<button
-								className="close-btn"
-								onClick={() => setShowQueuePanel(false)}
-							>
-								<svg
-									width="16"
-									height="16"
-									viewBox="0 0 16 16"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="2"
-								>
-									<path d="M3 3L13 13M13 3L3 13" />
-								</svg>
-							</button>
-						</div>
-						<ProofreadQueuePanel />
-					</div>
-				</div>
-			)}
+		<Modal open={showQueuePanel} onClose={() => setShowQueuePanel(false)} title="批量校对队列" icon={<Icons.listTodo size={18} />} className="queue-panel">
+			<ProofreadQueuePanel />
+		</Modal>
 
 			<div className="proofread-content" ref={proofreadContentRef}>
 				{displayResults.length === 0 ? (

@@ -17,7 +17,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { capture, log, tryRun } from "./core.mjs";
+import { log } from "./log.mjs";
+import { capture, tryRun } from "./exec.mjs";
 
 const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_SIGNATURE = 0x02014b50;

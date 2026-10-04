@@ -17,7 +17,7 @@ android {
     compileSdk = 36
     namespace = "cn.helilab.proofreader"
     defaultConfig {
-        manifestPlaceholders["usesCleartextTraffic"] = "false"
+        manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "cn.helilab.proofreader"
         minSdk = 24
         targetSdk = 36

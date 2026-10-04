@@ -9,7 +9,9 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { PROJECT_ROOT, log, readJson, relativeToRoot, resolveFromRoot, writeJson } from "./core.mjs";
+import { PROJECT_ROOT, relativeToRoot, resolveFromRoot } from "./paths.mjs";
+import { log } from "./log.mjs";
+import { readJson, writeJson } from "./exec.mjs";
 
 export const GRADLE_BEGIN = "// >>> dsh-signing:begin (由 pnpm run setup:signing 生成，请勿手工修改)";
 export const GRADLE_END = "// <<< dsh-signing:end";

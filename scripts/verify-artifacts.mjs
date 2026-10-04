@@ -13,7 +13,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { loadSigningConfig, log, relativeToRoot, resolveSourceDateEpoch, runCli, sha256File } from "./lib/core.mjs";
+import { loadSigningConfig } from "./lib/signing-config.mjs";
+import { log } from "./lib/log.mjs";
+import { relativeToRoot } from "./lib/paths.mjs";
+import { resolveSourceDateEpoch } from "./lib/build-env.mjs";
+import { runCli } from "./lib/cli.mjs";
+import { sha256File } from "./lib/crypto.mjs";
 import { readKeystoreProperties, androidKeystorePath } from "./lib/platforms.mjs";
 import { compareManifests, formatComparison } from "./lib/manifest.mjs";
 import * as apk from "./lib/apk.mjs";

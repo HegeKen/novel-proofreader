@@ -348,8 +348,6 @@ const CJK_RADICAL_SUPPLEMENT_TO_STANDARD: Record<string, string> = {
 	"\u2EF3": "\u9F9F", // ⻳ → 龟 (CJK RADICAL C-SIMPLIFIED TURTLE)
 };
 
-import type { Chapter } from "../types";
-
 /** 扫描结果中的一条变体字记录 */
 export interface CJKVariantEntry {
 	/** 变体字符 */
@@ -365,45 +363,10 @@ export interface CJKVariantEntry {
 }
 
 /**
- * 将全角字符（仅字母、数字、空格）转换为对应的半角字符。
- * 注意：标点符号不转换，中文小说中标点应保持全角。
- *
- * 规则：
- * - ０-９ (U+FF10-U+FF19) → 0-9 (U+0030-U+0039)
- * - Ａ-Ｚ (U+FF21-U+FF3A) → A-Z (U+0041-U+005A)
- * - ａ-ｚ (U+FF41-U+FF5A) → a-z (U+0061-U+007A)
- * - 全角空格 U+3000 → 半角空格 U+0020
- *
- * 不转换：全角标点符号（！？，．：；（）等），中文小说中标点应保持全角
- *
- * @param char 单个字符
- * @returns 转换后的半角字符，未匹配则返回 null
- */
-export function fullwidthToHalfwidthChar(char: string): string | null {
-	if (!char || char.length !== 1) return null;
-	const code = char.codePointAt(0)!;
-
-	// 全角空格 → 半角空格
-	if (code === 0x3000) return " ";
-
-	// 仅转换全角字母和数字（U+FF10-U+FF19 数字、U+FF21-U+FF3A 大写、U+FF41-U+FF5A 小写）
-	// 排除标点符号（U+FF01-U+FF0F, U+FF1A-U+FF20, U+FF3B-U+FF40, U+FF5B-U+FF5E）
-	if (
-		(code >= 0xFF10 && code <= 0xFF19) || // ０-９
-		(code >= 0xFF21 && code <= 0xFF3A) || // Ａ-Ｚ
-		(code >= 0xFF41 && code <= 0xFF5A)    // ａ-ｚ
-	) {
-		return String.fromCodePoint(code - 0xFEE0);
-	}
-
-	return null;
-}
-
-/**
  * 判断字符是否是全角字母/数字/空格（即能被转换为半角的字符）
  * 注意：不含标点符号，中文小说中标点应保持全角
  */
-export function isFullwidthAlphaNumSymbol(code: number): boolean {
+function isFullwidthAlphaNumSymbol(code: number): boolean {
 	if (code === 0x3000) return true; // 全角空格
 	return (
 		(code >= 0xFF10 && code <= 0xFF19) || // ０-９
@@ -416,7 +379,7 @@ export function isFullwidthAlphaNumSymbol(code: number): boolean {
  * 全角→半角映射表（用于扫描）：全角字符 → 半角字符
  * 仅包含字母、数字、空格，不含标点符号（中文小说标点应保持全角）
  */
-export const FULLWIDTH_TO_HALFWIDTH_MAP: Record<string, string> = (() => {
+const FULLWIDTH_TO_HALFWIDTH_MAP: Record<string, string> = (() => {
 	const map: Record<string, string> = {};
 	// 全角空格
 	map["\u3000"] = " ";
@@ -536,12 +499,4 @@ export function scanCJKVariants(text: string): CJKVariantEntry[] {
 			block: data.mapping.block,
 		}))
 		.sort((a, b) => b.count - a.count);
-}
-
-/**
- * 在小说全文（chapters）中查找所有变体字
- */
-export function scanChaptersVariants(chapters: Chapter[]): CJKVariantEntry[] {
-	const fullText = chapters.map(ch => ch.content).join("\n");
-	return scanCJKVariants(fullText);
 }

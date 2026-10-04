@@ -16,18 +16,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import {
-	PROJECT_ROOT,
-	collectConfigIssues,
-	detectToolchain,
-	gitInfo,
-	loadSigningConfig,
-	runCli,
-	log,
-	relativeToRoot,
-	resolveSourceDateEpoch,
-	sha256,
-} from "./lib/core.mjs";
+import { PROJECT_ROOT, relativeToRoot } from "./lib/paths.mjs";
+import { log } from "./lib/log.mjs";
+import { runCli } from "./lib/cli.mjs";
+import { sha256 } from "./lib/crypto.mjs";
+import { collectConfigIssues, loadSigningConfig } from "./lib/signing-config.mjs";
+import { detectToolchain, gitInfo, resolveSourceDateEpoch } from "./lib/build-env.mjs";
 import {
 	androidKeystorePath,
 	readKeystoreProperties,

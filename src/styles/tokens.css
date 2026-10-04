@@ -18,7 +18,6 @@
 	--text-primary: #e8e8ed;
 	--text-secondary: rgba(232, 232, 237, 0.7);
 	--text-muted: rgba(232, 232, 237, 0.45);
-	--text-inverse: #1a1a2e;
 
 	/* Accent - Apple Blue/Purple Gradient - 更和谐的配色 */
 	--accent: #5eb8ff;
@@ -40,7 +39,6 @@
 	--yellow-dim: rgba(251, 191, 36, 0.15);
 	--green: #4ade80;
 	--green-dim: rgba(74, 222, 128, 0.15);
-	--cyan: #22d3ee;
 
 	/* Border - 更柔和的分隔线 */
 	--border: rgba(255, 255, 255, 0.1);
@@ -85,31 +83,23 @@
 	--sp-4: 8px;
 	--sp-5: 10px;
 	--sp-6: 12px;
-	--sp-7: 14px;
 	--sp-8: 16px;
 	--sp-10: 20px;
 	--sp-12: 24px;
 	--sp-16: 32px;
-	--sp-20: 40px;
-	--sp-24: 48px;
 
 	/* Radius aliases for small surfaces (badges / chips / inputs) */
 	--r-badge: var(--r-sm);
-	--r-chip: var(--r-full);
-	--r-input: var(--r-sm);
 
 	/* Control sizing - 统一控件高度 */
 	--control-h-sm: 32px;
 	--control-h-md: 40px;
-	--control-h-lg: 44px;
 
 	/* Modal skeleton - 统一弹窗骨架 */
 	--modal-w-sm: 420px;
 	--modal-w-md: 560px;
-	--modal-w-lg: 900px;
 	--modal-pad-x: 22px;
 	--modal-footer-pad: var(--sp-6) var(--modal-pad-x);
-	--modal-header-pad: var(--sp-4) var(--modal-pad-x);
 
 	/* Z-index scale - 唯一的层级表（数值与历史行为一致，只是命名化） */
 	--z-ground: 0;
@@ -124,24 +114,19 @@
 	--z-overlay-dim: 990;
 	--z-overlay: 999;
 	--z-modal: 1000;
-	--z-modal-raised: 1001;
 	--z-toast: 1200;
 	--z-toast-float: 2000;
 	--z-max: 9999;
 
 	/* Role colors - 角色性别/身份语义色（深浅主题各自定义，不再硬编码） */
 	--role-male: #3b82f6;
-	--role-male-dim: rgba(59, 130, 246, 0.15);
 	--role-female: #ec4899;
-	--role-female-dim: rgba(236, 72, 153, 0.15);
 	--role-other: #8b5cf6;
-	--role-other-dim: rgba(139, 92, 246, 0.15);
 
 	/* RGB 分量：与语义色组合使用时避免同色不同源的 rgba 字面量 */
 	--red-rgb: 255, 107, 122;
 	--green-rgb: 74, 222, 128;
 	--yellow-rgb: 251, 191, 36;
-	--cyan-rgb: 34, 211, 238;
 	--accent-pink: #f472b6;
 	--accent-warm-rgb: 245, 158, 11;
 	--role-male-rgb: 59, 130, 246;
@@ -222,7 +207,6 @@
 	--text-primary: #1d1d1f;
 	--text-secondary: rgba(29, 29, 31, 0.7);
 	--text-muted: rgba(29, 29, 31, 0.4);
-	--text-inverse: #ffffff;
 
 	/* Accent */
 	--accent: #007aff;
@@ -244,7 +228,6 @@
 	--yellow-dim: rgba(255, 204, 0, 0.1);
 	--green: #34c759;
 	--green-dim: rgba(52, 199, 89, 0.1);
-	--cyan: #5ac8fa;
 
 	/* Border */
 	--border: rgba(0, 0, 0, 0.1);
@@ -270,17 +253,13 @@
 
 	/* 角色语义色 - 亮色主题 */
 	--role-male: #007aff;
-	--role-male-dim: rgba(0, 122, 255, 0.12);
 	--role-female: #ff2d55;
-	--role-female-dim: rgba(255, 45, 85, 0.12);
 	--role-other: #af52de;
-	--role-other-dim: rgba(175, 82, 222, 0.12);
 
 	/* RGB 分量 - 亮色主题 */
 	--red-rgb: 255, 59, 48;
 	--green-rgb: 52, 199, 89;
 	--yellow-rgb: 255, 204, 0;
-	--cyan-rgb: 90, 200, 250;
 	--accent-pink: #ff2d55;
 	--accent-warm-rgb: 217, 119, 6;
 	--role-male-rgb: 0, 122, 255;

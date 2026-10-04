@@ -385,13 +385,6 @@ function formatBlocksToPlainText(blocks: ScriptBlock[]): string {
 		.join("\n");
 }
 
-/** 标准化引号：将弯引号/中文引号转换为 JSON 合法直引号 */
-export function normalizeQuotes(str: string): string {
-	return str
-		.replace(/[\u201C\u201D]/g, '"')   // " " → "
-		.replace(/[\u2018\u2019]/g, "'");  // ' ' → '
-}
-
 /** 修复剧本内容中的常见 JSON 问题（引号混用、未转义换行、特殊字符等） */
 export function repairScriptContent(content: string): string {
 	return content

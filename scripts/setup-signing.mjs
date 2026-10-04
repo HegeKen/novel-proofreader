@@ -26,23 +26,23 @@ import {
 	SECRETS_CHECKLIST_PATH,
 	SIGNING_STATE_DIR,
 	SECRETS_DOTENV_PATH,
-	collectConfigIssues,
-	computeConfigKey,
-	defaultSigningConfig,
-	ensureDir,
-	loadSigningConfig,
-	log,
-	readJson,
-	readSigningEnv,
 	relativeToRoot,
-	resolveSourceDateEpoch,
-	runCli,
+} from "./lib/paths.mjs";
+import { log } from "./lib/log.mjs";
+import { runCli } from "./lib/cli.mjs";
+import { ensureDir, readJson } from "./lib/exec.mjs";
+import { computeConfigKey, sha256 } from "./lib/crypto.mjs";
+import {
+	collectConfigIssues,
+	defaultSigningConfig,
+	loadSigningConfig,
+	readSigningEnv,
 	saveSigningConfig,
-	sha256,
 	signingConfigExists,
 	writeSecretsDotenv,
 	writeSigningEnv,
-} from "./lib/core.mjs";
+} from "./lib/signing-config.mjs";
+import { resolveSourceDateEpoch } from "./lib/build-env.mjs";
 import { CancelledError, createPrompter } from "./lib/prompt.mjs";
 import {
 	SECRETS,

@@ -1,17 +1,19 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { AIConfig, AIProvider } from "../types";
+import type { AIConfig, AIProvider, LocalModelConfig } from "../types";
 import { setLoggerEnabled } from "../utils/logger";
 import { detectProvider } from "../utils/aiClient";
 import { secureStorageSet, secureStorageGet, preloadSecureStorage } from "../utils/secureStorage";
 
-export interface AIConfigState {
+interface AIConfigState {
 	aiConfig: AIConfig;
 	apiKeyMap: Partial<Record<AIProvider, string>>;
+	localModelConfig: LocalModelConfig;
 
 	setAIConfig: (config: Partial<AIConfig>) => void;
 	setApiKeyForProvider: (provider: AIProvider, key: string) => void;
 	getApiKeyForProvider: (provider: AIProvider) => string;
+	setLocalModelConfig: (config: Partial<LocalModelConfig>) => void;
 }
 
 const DEFAULT_AI_CONFIG: AIConfig = {
@@ -24,11 +26,23 @@ const DEFAULT_AI_CONFIG: AIConfig = {
 	apiFormat: "openai",
 };
 
+const DEFAULT_LOCAL_MODEL_CONFIG: LocalModelConfig = {
+	modelSource: "cloud",
+	externalEndpoint: "http://localhost:11434",
+	externalApiKey: "",
+	externalModel: "qwen2.5:7b",
+	builtinModelPath: "",
+	builtinContextSize: 4096,
+	gpuLayers: -1,
+	enabled: false,
+};
+
 export const useAIConfigStore = create<AIConfigState>()(
 	persist(
 		(set, get) => ({
 			aiConfig: DEFAULT_AI_CONFIG,
 			apiKeyMap: {},
+			localModelConfig: DEFAULT_LOCAL_MODEL_CONFIG,
 
 			setAIConfig: (config) =>
 				set((state) => {
@@ -57,12 +71,18 @@ export const useAIConfigStore = create<AIConfigState>()(
 				}
 				return state.apiKeyMap[provider] ?? "";
 			},
+
+			setLocalModelConfig: (config) =>
+				set((state) => ({
+					localModelConfig: { ...state.localModelConfig, ...config },
+				})),
 		}),
 		{
 			name: "novel-proofreader-ai-config",
 			partialize: (state) => ({
 				aiConfig: { ...state.aiConfig, apiKey: "" },
 				apiKeyMap: {},
+				localModelConfig: state.localModelConfig,
 			}),
 			onRehydrateStorage: () => async (state) => {
 				if (state) {

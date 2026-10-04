@@ -4,11 +4,16 @@ import type { ReactNode } from "react";
  * 可复用的格式化函数
  */
 
-export function formatFileSize(text: string): string {
-    const bytes = new TextEncoder().encode(text).length;
+/** 按字节数格式化文件大小 */
+export function formatFileSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** 按文本内容格式化大小（内部转为字节数） */
+export function formatTextSize(text: string): string {
+    return formatFileSize(new TextEncoder().encode(text).length);
 }
 
 export function formatDateTime(timestamp: number | Date): string {
@@ -22,29 +27,11 @@ export function formatDateTime(timestamp: number | Date): string {
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
-export function buildParagraphIndexMap(content: string): number[] {
-    const lines = content.split("\n");
-    const map: number[] = [];
-    lines.forEach((line, i) => {
-        if (line.trim() !== "") {
-            map.push(i);
-        }
-    });
-    return map;
-}
-
-// 新增：构建原始索引到过滤后索引的反向映射
-export function buildOriginalToFilteredMap(content: string): Record<number, number> {
-    const lines = content.split("\n");
-    const map: Record<number, number> = {};
-    let filteredIndex = 0;
-    lines.forEach((line, originalIndex) => {
-        if (line.trim() !== "") {
-            map[originalIndex] = filteredIndex;
-            filteredIndex++;
-        }
-    });
-    return map;
+/** 将秒数格式化为 分:秒（如 3:45），不足 1 秒显示 0:00 */
+export function formatElapsedTime(seconds: number): string {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 export function formatLargeNumber(value: number | undefined): ReactNode {

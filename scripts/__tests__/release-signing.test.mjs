@@ -15,13 +15,14 @@ import {
 	canonicalize,
 	canonicalJson,
 	computeConfigKey,
+	sha256,
+} from '../lib/crypto.mjs'
+import {
 	collectConfigIssues,
 	defaultSigningConfig,
-	isUnsignedAndroidArtifact,
 	looksLikeMinisignPublicKey,
-	resolveSourceDateEpoch,
-	sha256,
-} from '../lib/core.mjs'
+} from '../lib/signing-config.mjs'
+import { resolveSourceDateEpoch } from '../lib/build-env.mjs'
 import {
 	GRADLE_BEGIN,
 	buildGradlePatch,
@@ -36,6 +37,7 @@ import {
 	computeIdentityKey,
 	hashDirectory,
 	comparableProjection,
+	isUnsignedAndroidArtifact,
 } from '../lib/manifest.mjs'
 import { normalizeZipTimestamps, findEocdOffset, listZipEntries, verifyJarSignature } from '../lib/apk.mjs'
 import { buildDname, detectKeystoreType, escapeRdnValue, randomPassword } from '../lib/platforms.mjs'

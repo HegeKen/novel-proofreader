@@ -1,22 +1,23 @@
 import { useState, useEffect } from "react";
 import { Users, Cloud, MessageSquare, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { Icons } from "./Icons";
+import { Modal } from "./Modal";
+import { Select } from "./Select";
+import { Button } from "./Button";
 import { EmptyState } from "./EmptyState";
 import { DiffModal } from "./DiffModal";
-import { useMobile } from "../hooks/useMobile";
 import { logger } from "../utils/logger";
-import { useAppMetaStore } from "../stores/appMetaStore";
-import { WEB_VERSION } from "../utils/githubApi";	
+import { useUIStore } from "../stores/uiStore";
+import { WEB_VERSION, getCurrentVersion } from "../utils/version";
 
-import { fetchLatestReleaseWithAssets, fetchAllReleases, formatFileSize, getAllAssetsByPlatform, tryDownloadWithMirrors, downloadFromMirror, getMirrorUrl, GITHUB_MIRRORS, CORS_PROXIES, compareVersions, getCurrentVersion, type GitHubRelease, type MirrorSource } from "../utils/githubApi";
+import { fetchLatestReleaseWithAssets, fetchAllReleases, getAllAssetsByPlatform, tryDownloadWithMirrors, downloadFromMirror, getMirrorUrl, GITHUB_MIRRORS, CORS_PROXIES, compareVersions, type GitHubRelease, type MirrorSource } from "../utils/githubApi";
+import { formatFileSize } from "../utils/formatters";
 
 interface HomePageProps {
 	onStart?: () => void;
 }
 
 export function HomePage({ onStart }: HomePageProps) {
-	const { isMobile } = useMobile();
-	
 	const [release, setRelease] = useState<GitHubRelease | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [allReleases, setAllReleases] = useState<GitHubRelease[]>([]);
@@ -77,7 +78,7 @@ export function HomePage({ onStart }: HomePageProps) {
 			await tryDownloadWithMirrors(url, fileName);
 		} catch (error) {
 			logger.errorGeneric('HomePage - Download failed:', error);
-			useAppMetaStore.getState().showToast("下载失败，请稍后重试或尝试其他镜像源", "error");
+			useUIStore.getState().showToast("下载失败，请稍后重试或尝试其他镜像源", "error");
 		} finally {
 			setDownloadingAsset(null);
 		}
@@ -267,12 +268,11 @@ export function HomePage({ onStart }: HomePageProps) {
 		const ext = getFileExtension(asset.name);
 		const displayName = platformKey === "macos" ? arch : `${arch} (${ext})`;
 		return (
-			<div key={index} className="download-asset-wrapper" style={{ display: "flex", gap: "4px", flex: 1 }}>
+			<div key={index} className="download-asset-wrapper">
 				<button
 					onClick={() => handleDownload(asset.browser_download_url, asset.name)}
-					className="download-asset-btn"
+					className={`download-asset-btn${isDownloading ? " downloading" : ""}`}
 					disabled={isDownloading}
-					style={{ opacity: isDownloading ? 0.7 : 1, cursor: isDownloading ? "wait" : "pointer", flex: 1 }}
 				>
 					<div className="asset-icon">
 						{isDownloading ? (
@@ -307,7 +307,7 @@ export function HomePage({ onStart }: HomePageProps) {
 			<header className="app-header">
 				<div className="header-left">
 					<h1 className="app-title">
-						<a href="/" style={{ textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: "8px" }}>
+						<a href="/" className="app-title-link">
 							<img src="/icons/icon.png" alt="" className="app-icon" />
 							AI排版校对助手
 						</a>
@@ -317,15 +317,13 @@ export function HomePage({ onStart }: HomePageProps) {
 				</div>
 				<div className="header-right">
 					{onStart && (
-						<button className={isMobile ? "btn-mobile" : "btn"} onClick={handleStartApp}>
-							<Icons.book size={16} />
-							{!isMobile && <span>使用网页版</span>}
-						</button>
+						<Button onClick={handleStartApp} icon={<Icons.book size={16} />}>
+							使用网页版
+						</Button>
 					)}
-					<button className={isMobile ? "btn-mobile" : "btn"} onClick={() => setShowDownloadModal(true)}>
-						<Icons.download size={16} />
-						{!isMobile && <span>下载应用</span>}
-					</button>
+					<Button onClick={() => setShowDownloadModal(true)} icon={<Icons.download size={16} />}>
+						下载应用
+					</Button>
 				</div>
 			</header>
 
@@ -443,185 +441,151 @@ export function HomePage({ onStart }: HomePageProps) {
 				</div>
 			</section>
 
-			{showDownloadModal && (
-				<div className="modal-overlay" onClick={() => setShowDownloadModal(false)}>
-					<div className="config-modal" onClick={e => e.stopPropagation()}>
-						<div className="config-header">
-							<div className="config-title">
-								<span className="title-icon"><Icons.download size={16} /></span>
-								<span>下载应用</span>
-							</div>
-							<button className="close-btn" onClick={() => setShowDownloadModal(false)}>
-								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-									<path d="M3 3L13 13M13 3L3 13" />
-								</svg>
-							</button>
-						</div>
-						<div className="config-body">
-							<div className="config-section">
-								<div className="api-mirror-selector" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-									<Icons.server size={14} />
-									<select
-										value={selectedApiProxyIndex}
-										onChange={(e) => {
-											setSelectedApiProxyIndex(parseInt(e.target.value, 10));
-										}}
-										className="api-mirror-select"
-									>
-										{CORS_PROXIES.map((p, i) => (
-											<option key={i} value={i}>{p.name}</option>
-										))}
-									</select>
-								</div>
-							</div>
-							{hasUpdate && release?.tag_name && (
-								<div className="config-section">
-									<p className="modal-description notice notice-warn">
-										🚀 发现新版本 {release.tag_name}，当前版本 {currentVersion}，建议更新以获取最新功能
-									</p>
-								</div>
-							)}
-							{loading ? (
-								<div className="config-section">
-									<div className="loading-spinner">
-										<Loader2 className="animate-spin" size={24} />
-									</div>
-								</div>
-							) : release?.assets && release.assets.length > 0 ? (
-								<>
-									<div className="config-section">
-										<p className="modal-description notice notice-info">
-											💡 如果 GitHub 官方源下载较慢，系统会自动尝试多个镜像加速源
-										</p>
-									</div>
-									<div className="config-section">
-										<div className="download-platforms-list">
-											{[
-												{ key: "macos", name: "macOS", icon: Icons.laptop },
-												{ key: "windows", name: "Windows", icon: Icons.monitor },
-												{ key: "linux", name: "Linux", icon: Icons.server },
-												{ key: "android", name: "Android", icon: Icons.smartphone },
-											].map(platform => {
-												const assets = getAllAssetsByPlatform(release.assets, platform.key as "macos" | "windows" | "linux" | "android");
-												if (assets.length === 0) return null;
-												const assetPairs: typeof assets[] = [];
-												for (let i = 0; i < assets.length; i += 2) {
-													assetPairs.push(assets.slice(i, i + 2));
-												}
-												return (
-													<div key={platform.key} className="download-platform-section">
-														<div className="platform-header">
-															<platform.icon size={18} />
-															<span className="platform-name">{platform.name}</span>
-														</div>
-														<div className="platform-assets">
-															{assetPairs.map((pair, pairIndex) => (
-																<div key={pairIndex} style={{ display: "flex", gap: "8px", width: "100%" }}>
-																	{pair.map((asset, assetIndex) =>
-																		renderDownloadButton(asset, platform.key, pairIndex * 2 + assetIndex, downloadingAsset === asset.name)
-																	)}
-																	{pair.length === 1 && <div style={{ flex: 1 }} />}
-																</div>
-															))}
-														</div>
-													</div>
-												);
-											})}
-										</div>
-									</div>
-								</>
-							) : (
-								<div className="config-section">
-									<EmptyState
-										icon={<Icons.download size={48} className="empty-icon" />}
-										message="暂无可用下载"
-									/>
-								</div>
-							)}
-						</div>
-						<div className="character-actions-fab-wrapper">
-							<button className="btn" onClick={() => setShowDownloadModal(false)}>
-								<Icons.x size={18} />
-								<span>关闭</span>
-							</button>
-						</div>
+			{/* 下载应用弹窗 */}
+			<Modal open={showDownloadModal} onClose={() => setShowDownloadModal(false)} title="下载应用" icon={<Icons.download size={16} />}>
+				<div className="config-section">
+					<div className="api-mirror-selector">
+						<Icons.server size={14} />
+						<Select
+							value={String(selectedApiProxyIndex)}
+							onChange={(v) => setSelectedApiProxyIndex(parseInt(v, 10))}
+							options={CORS_PROXIES.map((p, i) => ({ value: String(i), label: p.name }))}
+							className="api-mirror-select"
+						/>
 					</div>
 				</div>
-			)}
+				{hasUpdate && release?.tag_name && (
+					<div className="config-section">
+						<p className="modal-description notice notice-warn">
+							🚀 发现新版本 {release.tag_name}，当前版本 {currentVersion}，建议更新以获取最新功能
+						</p>
+					</div>
+				)}
+				{loading ? (
+					<div className="config-section">
+						<div className="loading-spinner">
+							<Loader2 className="animate-spin" size={24} />
+						</div>
+					</div>
+				) : release?.assets && release.assets.length > 0 ? (
+					<>
+						<div className="config-section">
+							<p className="modal-description notice notice-info">
+								💡 如果 GitHub 官方源下载较慢，系统会自动尝试多个镜像加速源
+							</p>
+						</div>
+						<div className="config-section">
+							<div className="download-platforms-list">
+								{[
+									{ key: "macos", name: "macOS", icon: Icons.laptop },
+									{ key: "windows", name: "Windows", icon: Icons.monitor },
+									{ key: "linux", name: "Linux", icon: Icons.server },
+									{ key: "android", name: "Android", icon: Icons.smartphone },
+								].map(platform => {
+									const assets = getAllAssetsByPlatform(release.assets, platform.key as "macos" | "windows" | "linux" | "android");
+									if (assets.length === 0) return null;
+									const assetPairs: typeof assets[] = [];
+									for (let i = 0; i < assets.length; i += 2) {
+										assetPairs.push(assets.slice(i, i + 2));
+									}
+									return (
+										<div key={platform.key} className="download-platform-section">
+											<div className="platform-header">
+												<platform.icon size={18} />
+												<span className="platform-name">{platform.name}</span>
+											</div>
+											<div className="platform-assets">
+												{assetPairs.map((pair, pairIndex) => (
+													<div key={pairIndex} className="asset-pair-row">
+														{pair.map((asset, assetIndex) =>
+															renderDownloadButton(asset, platform.key, pairIndex * 2 + assetIndex, downloadingAsset === asset.name)
+														)}
+														{pair.length === 1 && <div className="asset-pair-spacer" />}
+													</div>
+												))}
+											</div>
+										</div>
+									);
+								})}
+							</div>
+						</div>
+					</>
+				) : (
+					<div className="config-section">
+						<EmptyState
+							icon={<Icons.download size={48} className="empty-icon" />}
+							message="暂无可用下载"
+						/>
+					</div>
+				)}
+				<div className="character-actions-fab-wrapper">
+					<button className="btn" onClick={() => setShowDownloadModal(false)}>
+						<Icons.x size={18} />
+						<span>关闭</span>
+					</button>
+				</div>
+			</Modal>
 
 			{/* 镜像源选择弹窗 */}
-			{mirrorPickerAsset && (
-				<div className="modal-overlay" onClick={handleCloseMirrorPicker}>
-					<div className="config-modal" onClick={e => e.stopPropagation()}>
-						<div className="config-header">
-							<div className="config-title">
-								<span className="title-icon"><Icons.download size={16} /></span>
-								<span>选择下载源</span>
+			<Modal open={!!mirrorPickerAsset} onClose={handleCloseMirrorPicker} title="选择下载源" icon={<Icons.download size={16} />}>
+				{mirrorPickerAsset && (
+					<>
+						<div className="config-section">
+							<div className="mirror-picker-info">
+								<span className="mirror-picker-file">{mirrorPickerAsset.displayName}</span>
+								<span className="mirror-picker-size">{formatFileSize(mirrorPickerAsset.size)}</span>
 							</div>
-							<button className="close-btn" onClick={handleCloseMirrorPicker}>
-								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-									<path d="M3 3L13 13M13 3L3 13" />
-								</svg>
-							</button>
 						</div>
-						<div className="config-body">
-							<div className="config-section">
-								<div className="mirror-picker-info">
-									<span className="mirror-picker-file">{mirrorPickerAsset.displayName}</span>
-									<span className="mirror-picker-size">{formatFileSize(mirrorPickerAsset.size)}</span>
-								</div>
-							</div>
-							<div className="config-section">
-								<div className="mirror-picker-list">
-									{GITHUB_MIRRORS.map((mirror) => {
-										const mirrorKey = mirror.name;
-										const isDownloadingThis = downloadingMirror === mirrorKey;
-										const result = mirrorResults[mirrorKey];
-										return (
-											<button
-												key={mirrorKey}
-												className={`mirror-picker-item ${result === "success" ? "success" : ""} ${result === "error" ? "error" : ""}`}
-												onClick={() => handleMirrorDownload(mirror)}
-												disabled={isDownloadingThis || result === "success"}
-											>
-												<div className="mirror-picker-item-left">
-													<div className="mirror-picker-item-icon">
-														{isDownloadingThis ? (
-															<Loader2 className="animate-spin" size={18} />
-														) : result === "success" ? (
-															<CheckCircle2 size={18} />
-														) : result === "error" ? (
-															<XCircle size={18} />
-														) : (
-															<Icons.download size={18} />
-														)}
-													</div>
-													<div className="mirror-picker-item-info">
-														<span className="mirror-picker-item-name">{mirror.name}</span>
-														<span className="mirror-picker-item-desc">{mirror.description}</span>
-													</div>
+						<div className="config-section">
+							<div className="mirror-picker-list">
+								{GITHUB_MIRRORS.map((mirror) => {
+									const mirrorKey = mirror.name;
+									const isDownloadingThis = downloadingMirror === mirrorKey;
+									const result = mirrorResults[mirrorKey];
+									return (
+										<button
+											key={mirrorKey}
+											className={`mirror-picker-item ${result === "success" ? "success" : ""} ${result === "error" ? "error" : ""}`}
+											onClick={() => handleMirrorDownload(mirror)}
+											disabled={isDownloadingThis || result === "success"}
+										>
+											<div className="mirror-picker-item-left">
+												<div className="mirror-picker-item-icon">
+													{isDownloadingThis ? (
+														<Loader2 className="animate-spin" size={18} />
+													) : result === "success" ? (
+														<CheckCircle2 size={18} />
+													) : result === "error" ? (
+														<XCircle size={18} />
+													) : (
+														<Icons.download size={18} />
+													)}
 												</div>
-												{result === "success" && (
-													<span className="mirror-picker-item-status">下载成功</span>
-												)}
-												{result === "error" && (
-													<span className="mirror-picker-item-status error">下载失败</span>
-												)}
-											</button>
-										);
-									})}
-								</div>
+												<div className="mirror-picker-item-info">
+													<span className="mirror-picker-item-name">{mirror.name}</span>
+													<span className="mirror-picker-item-desc">{mirror.description}</span>
+												</div>
+											</div>
+											{result === "success" && (
+												<span className="mirror-picker-item-status">下载成功</span>
+											)}
+											{result === "error" && (
+												<span className="mirror-picker-item-status error">下载失败</span>
+											)}
+										</button>
+									);
+								})}
 							</div>
 						</div>
-						<div className="character-actions-fab-wrapper">
-							<button className="btn" onClick={handleCloseMirrorPicker}>
-								<Icons.x size={18} />
-								<span>关闭</span>
-							</button>
-						</div>
-					</div>
+					</>
+				)}
+				<div className="character-actions-fab-wrapper">
+					<button className="btn" onClick={handleCloseMirrorPicker}>
+						<Icons.x size={18} />
+						<span>关闭</span>
+					</button>
 				</div>
-			)}
+			</Modal>
 
 			<DiffModal open={showDiffModal} onClose={() => setShowDiffModal(false)} />
 

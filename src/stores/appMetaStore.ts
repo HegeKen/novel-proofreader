@@ -1,45 +1,20 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { APIUsage, NovelCategory } from "../types";
-import type { ToastMessage } from "../components/Toast";
-import { generateId } from "../utils/id";
 
-export interface AppMetaState {
+interface AppMetaState {
 	apiUsage: APIUsage;
 	novelCategories: Record<string, NovelCategory>;
-	readingProgress: Record<string, {
-		currentChapterIndex: number;
-		currentParagraphIndex: number;
-		readingStartTime: number;
-		totalReadingTime: number;
-	}>;
-	readingReminderEnabled: boolean;
-	readingReminderMinutes: number;
-	toastMessages: ToastMessage[];
 
 	incrementAPIUsage: (provider: string, success: boolean, inputTokens?: number, outputTokens?: number, duration?: number) => void;
 	resetAPIUsage: () => void;
 
 	setNovelCategory: (novelId: string, category: NovelCategory) => void;
-
-	saveReadingProgress: (novelId: string, chapterIndex: number, paragraphIndex: number) => void;
-	getReadingProgress: (novelId: string) => {
-		currentChapterIndex: number;
-		currentParagraphIndex: number;
-		readingStartTime: number;
-		totalReadingTime: number;
-	} | undefined;
-
-	setReadingReminderEnabled: (enabled: boolean) => void;
-	setReadingReminderMinutes: (minutes: number) => void;
-
-	showToast: (message: string, type?: ToastMessage["type"], duration?: number) => void;
-	hideToast: (id: string) => void;
 }
 
 export const useAppMetaStore = create<AppMetaState>()(
 	persist(
-		(set, get) => ({
+		(set) => ({
 			apiUsage: {
 				totalRequests: 0,
 				successfulRequests: 0,
@@ -55,10 +30,6 @@ export const useAppMetaStore = create<AppMetaState>()(
 				dailyStats: {},
 			},
 			novelCategories: {},
-			readingProgress: {},
-			readingReminderEnabled: true,
-			readingReminderMinutes: 30,
-			toastMessages: [],
 
 			incrementAPIUsage: (provider, success, inputTokens = 0, outputTokens = 0, duration = 0) =>
 				set((state) => {
@@ -203,45 +174,12 @@ export const useAppMetaStore = create<AppMetaState>()(
 				set((state) => ({
 					novelCategories: { ...state.novelCategories, [novelId]: category },
 				})),
-
-			saveReadingProgress: (novelId, chapterIndex, paragraphIndex) =>
-				set((state) => ({
-					readingProgress: {
-						...state.readingProgress,
-						[novelId]: {
-							...state.readingProgress[novelId],
-							currentChapterIndex: chapterIndex,
-							currentParagraphIndex: paragraphIndex,
-							readingStartTime: Date.now(),
-						},
-					},
-				})),
-
-			getReadingProgress: (novelId) => get().readingProgress[novelId],
-
-			setReadingReminderEnabled: (enabled) => set({ readingReminderEnabled: enabled }),
-			setReadingReminderMinutes: (minutes) => set({ readingReminderMinutes: minutes }),
-
-			showToast: (message, type = "info", duration = 3000) => {
-				const id = generateId("toast");
-				set((state) => ({
-					toastMessages: [...state.toastMessages, { id, type, message, duration }],
-				}));
-			},
-
-			hideToast: (id) =>
-				set((state) => ({
-					toastMessages: state.toastMessages.filter((msg) => msg.id !== id),
-				})),
 		}),
 		{
 			name: "novel-proofreader-meta",
 			partialize: (state) => ({
 				apiUsage: state.apiUsage,
 				novelCategories: state.novelCategories,
-				readingProgress: state.readingProgress,
-				readingReminderEnabled: state.readingReminderEnabled,
-				readingReminderMinutes: state.readingReminderMinutes,
 			}),
 		},
 	),

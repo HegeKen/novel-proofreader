@@ -287,6 +287,36 @@ export function splitParagraphs(text: string): string[] {
 }
 
 /**
+ * 构建非空段落的原始行索引映射（跳过空白行）
+ */
+export function buildParagraphIndexMap(content: string): number[] {
+	const lines = content.split("\n");
+	const map: number[] = [];
+	lines.forEach((line, i) => {
+		if (line.trim() !== "") {
+			map.push(i);
+		}
+	});
+	return map;
+}
+
+/**
+ * 构建原始行索引到过滤后段落索引的反向映射
+ */
+export function buildOriginalToFilteredMap(content: string): Record<number, number> {
+	const lines = content.split("\n");
+	const map: Record<number, number> = {};
+	let filteredIndex = 0;
+	lines.forEach((line, originalIndex) => {
+		if (line.trim() !== "") {
+			map[originalIndex] = filteredIndex;
+			filteredIndex++;
+		}
+	});
+	return map;
+}
+
+/**
  * 获取章节中的非空段落（去除空白行）
  */
 export function getNonEmptyParagraphs(text: string): string[] {

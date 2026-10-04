@@ -3,8 +3,10 @@
 // ============================================================
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useNovelStore } from "../stores/novelStore";
-import { useAppMetaStore } from "../stores/appMetaStore";
+import { useUIStore } from "../stores/uiStore";
 import { Icons } from "./Icons";
+import { Modal } from "./Modal";
+import { Select } from "./Select";
 import { diffLines, diffLinesFine, getDiffStats, type DiffLine } from "../utils/textDiff";
 import { decodeTextBuffer } from "../utils/decodeText";
 import { logger } from "../utils/logger";
@@ -96,7 +98,7 @@ export function DiffModal({ open, onClose }: Props) {
 				});
 			} catch (err) {
 				logger.errorGeneric("[DiffModal]", "文件加载失败:", err);
-				useAppMetaStore.getState().showToast("文件加载失败", "error");
+				useUIStore.getState().showToast("文件加载失败", "error");
 			}
 		},
 		[setSide],
@@ -179,7 +181,7 @@ export function DiffModal({ open, onClose }: Props) {
 
 	const runCompare = useCallback((mode: "normal" | "fine") => {
 		if (!text1 || !text2) {
-			useAppMetaStore.getState().showToast("请先加载两段文本", "error");
+			useUIStore.getState().showToast("请先加载两段文本", "error");
 			return;
 		}
 		setComparing(true);
@@ -246,24 +248,7 @@ export function DiffModal({ open, onClose }: Props) {
 	if (!open) return null;
 
 	return (
-		<div className="diff-overlay">
-			<div className="diff-modal">
-				<div className="config-header">
-					<div className="config-title">
-						<span className="title-icon">
-							<Icons.compare size={16} />
-						</span>
-						<span>文本对比</span>
-					</div>
-					<button className="close-btn" onClick={onClose}>
-						<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-							<path d="M3 3L13 13M13 3L3 13" />
-						</svg>
-					</button>
-				</div>
-
-				<div
-					className="diff-body">
+		<Modal open onClose={onClose} title="文本对比" icon={<Icons.compare size={16} />} className="diff-modal" overlayClassName="diff-overlay" bodyClassName="diff-body">
 					{/* 输入区 - 有结果时折叠 */}
 					{inputCollapsed ? (
 						<div className="diff-input-collapsed">
@@ -399,9 +384,7 @@ export function DiffModal({ open, onClose }: Props) {
 							</div>
 						</div>
 					)}
-				</div>
-			</div>
-		</div>
+				</Modal>
 	);
 }
 
@@ -478,18 +461,13 @@ function TextInputPanel({
 						<Icons.import size={14} />
 						文件
 					</button>
-					<select
+					<Select
 						className="diff-novel-select"
 						value={novelId}
-						onChange={(e) => onNovelSelect(e.target.value)}
-					>
-						<option value="">从小说库选择...</option>
-						{novels.map((n) => (
-							<option key={n.id} value={n.id}>
-								{n.name}
-							</option>
-						))}
-					</select>
+						onChange={onNovelSelect}
+						placeholder="从小说库选择..."
+						options={novels.map((n) => ({ value: n.id, label: n.name }))}
+					/>
 					<button
 						className={`diff-source-btn ${isPasting ? "active" : ""}`}
 						onClick={onPasteToggle}

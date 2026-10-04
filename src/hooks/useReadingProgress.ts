@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNovelStore } from "../stores/novelStore";
-import { useAppMetaStore } from "../stores/appMetaStore";
+import { useReadingProgressStore } from "../stores/readingProgressStore";
 import { getNonEmptyParagraphs } from "../utils/chapterSplit";
 
 export function useReadingProgress() {
 	const chapters = useNovelStore((s) => s.chapters);
 	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
 	const currentNovelId = useNovelStore((s) => s.currentNovelId);
-	const saveReadingProgress = useAppMetaStore((s) => s.saveReadingProgress);
+	const saveReadingProgress = useReadingProgressStore((s) => s.saveReadingProgress);
 
 	const [currentParagraphIndex, setCurrentParagraphIndex] = useState(0);
 	const [readingTimeElapsed, setReadingTimeElapsed] = useState(0);

@@ -27,7 +27,7 @@ interface ScriptSegment {
 }
 
 // 内部组件，使用 key 重置状态
-function TaskPanelContent({
+function ScriptPanelContent({
 	chapter,
 	aiConfig,
 	currentNovelId,
@@ -705,7 +705,7 @@ function TaskPanelContent({
 }
 
 // 主组件
-export function TaskPanel() {
+export function ScriptPanel() {
 	const chapters = useNovelStore((s) => s.chapters);
 	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
 	const currentNovelId = useNovelStore((s) => s.currentNovelId);
@@ -727,7 +727,7 @@ export function TaskPanel() {
 	// 使用章节 ID 作为 key，确保章节切换时重新挂载组件
 	return (
 		<div className="task-panel">
-			<TaskPanelContent
+			<ScriptPanelContent
 				key={chapter.id}
 				chapter={chapter}
 				aiConfig={aiConfig}

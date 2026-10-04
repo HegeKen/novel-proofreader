@@ -4,7 +4,6 @@
 import { useEffect, useRef, forwardRef, useState, useCallback } from "react";
 import { useNovelStore } from "../stores/novelStore";
 import { useUIStore } from "../stores/uiStore";
-import { useAppMetaStore } from "../stores/appMetaStore";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { useSwipeGesture } from "../hooks/useSwipeGesture";
@@ -263,7 +262,7 @@ export function ChapterNav({
 	const handleResplitChapters = useCallback(async () => {
 		const currentNovel = novels.find(n => n.id === currentNovelId);
 		if (!currentNovel?.fullText) {
-			useAppMetaStore.getState().showToast("无法获取小说内容", "error");
+			useUIStore.getState().showToast("无法获取小说内容", "error");
 			return;
 		}
 
@@ -272,11 +271,11 @@ export function ChapterNav({
 			logger.info('[ChapterNav] 重新断章开始');
 			const newChapters = splitChapters(currentNovel.fullText);
 			setChapters(newChapters);
-			useAppMetaStore.getState().showToast(`重新断章完成，共 ${newChapters.length} 章`, "success");
+			useUIStore.getState().showToast(`重新断章完成，共 ${newChapters.length} 章`, "success");
 			logger.info('[ChapterNav] 重新断章完成', newChapters.length);
 		} catch (error) {
 			logger.errorGeneric('[ChapterNav] 重新断章失败:', error);
-			useAppMetaStore.getState().showToast("重新断章失败", "error");
+			useUIStore.getState().showToast("重新断章失败", "error");
 		} finally {
 			setIsResplitting(false);
 		}

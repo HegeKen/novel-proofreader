@@ -3,9 +3,9 @@ import { useNovelStore } from "../stores/novelStore";
 import { useConfigStore } from "../stores/configStore";
 import { useCharacterStore } from "../stores/characterStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
-import { useAppMetaStore } from "../stores/appMetaStore";
+import { useUIStore } from "../stores/uiStore";
 import { getNonEmptyParagraphs } from "../utils/chapterSplit";
-import { applyWordReplacements } from "../stores/wordReplacementStore";
+import { applyWordReplacements } from "../utils/textReplace";
 import { TTSPlayer, ScriptTTSPlayer, type TTSSentence } from "../utils/ttsService";
 import {
 	sendChatCompletion,
@@ -430,7 +430,7 @@ export function useTTS() {
 	const handleEnterStreamTTSSelectionMode = useCallback(() => {
 		if (isStreamTTSWaitingForStart) { setIsStreamTTSWaitingForStart(false); return; }
 		if (!ttsConfig.apiKey || !getEffectiveAiApiKey() || !chapter) {
-			useAppMetaStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用情感朗读", "warning");
+			useUIStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用情感朗读", "warning");
 			return;
 		}
 		if (ttsPlayerRef.current) { ttsPlayerRef.current.stop(); ttsPlayerRef.current = null; setTtsPlaying(false); setTtsHighlightedPara(-1); }
@@ -443,7 +443,7 @@ export function useTTS() {
 	const handleEnterBatchTTSSelectionMode = useCallback(() => {
 		if (isBatchTTSWaitingForStart) { setIsBatchTTSWaitingForStart(false); return; }
 		if (!ttsConfig.apiKey || !getEffectiveAiApiKey() || !chapter) {
-			useAppMetaStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用整段朗读", "warning");
+			useUIStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用整段朗读", "warning");
 			return;
 		}
 		if (ttsPlayerRef.current) { ttsPlayerRef.current.stop(); ttsPlayerRef.current = null; setTtsPlaying(false); setTtsHighlightedPara(-1); }
@@ -460,7 +460,7 @@ export function useTTS() {
 	 */
 	const handleBatchEnhancedChapterTTS = useCallback(async (startFromParagraph?: number) => {
 		if (!ttsConfig.apiKey || !getEffectiveAiApiKey() || !chapter) {
-			useAppMetaStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用整段朗读", "warning");
+			useUIStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用整段朗读", "warning");
 			return;
 		}
 		if (ttsPlayerRef.current && ttsPlaying) { ttsPlayerRef.current.pause(); setTtsPlaying(false); setTtsHighlightedPara(-1); }
@@ -475,7 +475,7 @@ export function useTTS() {
 			const startPara = startFromParagraph ?? 0;
 			const allParagraphs = getNonEmptyParagraphs(chapter.content);
 			if (startPara >= allParagraphs.length) {
-				useAppMetaStore.getState().showToast("所选段落超出章节范围", "warning");
+				useUIStore.getState().showToast("所选段落超出章节范围", "warning");
 				isStreamActiveRef.current = false;
 				setIsStreamTTSPlaying(false);
 				setBatchTTSPreparing(false);
@@ -517,7 +517,7 @@ export function useTTS() {
 			});
 
 			// ── 第一步：一次性发送整段（所选段落至章节结束）给 AI 做角色判断 + 情感分析 ──
-			useAppMetaStore.getState().showToast(`正在分析第 ${startPara + 1} 段至章节末尾...`, "info", 6000);
+			useUIStore.getState().showToast(`正在分析第 ${startPara + 1} 段至章节末尾...`, "info", 6000);
 			const batchResults = await analyzeBatchParagraphEmotion(startPara, allParagraphs);
 			if (!isStreamActiveRef.current) {
 				scriptTTS.stop();
@@ -525,7 +525,7 @@ export function useTTS() {
 				return;
 			}
 			if (batchResults.size === 0) {
-				useAppMetaStore.getState().showToast("整段情感分析失败，请检查 AI 配置后重试", "error");
+				useUIStore.getState().showToast("整段情感分析失败，请检查 AI 配置后重试", "error");
 				isStreamActiveRef.current = false;
 				setIsStreamTTSPlaying(false);
 				setBatchTTSPreparing(false);
@@ -533,7 +533,7 @@ export function useTTS() {
 				return;
 			}
 			const analyzedCount = batchResults.size;
-			useAppMetaStore.getState().showToast(`分析完成，开始逐段朗读（${analyzedCount} 段）`, "success", 3000);
+			useUIStore.getState().showToast(`分析完成，开始逐段朗读（${analyzedCount} 段）`, "success", 3000);
 
 			// ── 第二步：根据分析结果逐段发起 TTS 请求并播放 ──
 			for (let i = startPara; i < allParagraphs.length; i++) {
@@ -602,7 +602,7 @@ export function useTTS() {
 
 	const handleEnhancedChapterTTS = useCallback(async (startFromParagraph?: number) => {
 		if (!ttsConfig.apiKey || !getEffectiveAiApiKey() || !chapter) {
-			useAppMetaStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用情感朗读", "warning");
+			useUIStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用情感朗读", "warning");
 			return;
 		}
 		if (ttsPlayerRef.current && ttsPlaying) { ttsPlayerRef.current.pause(); setTtsPlaying(false); setTtsHighlightedPara(-1); }

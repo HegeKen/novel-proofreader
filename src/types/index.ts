@@ -44,7 +44,29 @@ export interface AIConfig {
 }
 
 /** 错误类型 */
-export type ErrorType = "typo" | "format" | "grammar" | "punctuation" | "variant" | "network";
+type ErrorType = "typo" | "format" | "grammar" | "punctuation" | "variant" | "network";
+
+/** TTS 语音朗读配置 */
+export interface TTSConfig {
+	enabled: boolean;
+	voice: string;
+	speed: number;
+	volume: number;
+	apiKey: string;
+	baseUrl: string;
+	characterVoices: Record<string, string>;
+	audioCacheEnabled: boolean;
+	audioCachePersistent: boolean;
+	dialect: string;
+}
+
+/** 校对引擎配置 */
+export interface ProofreadConfig {
+	enableParallelProcessing: boolean;
+	maxConcurrentBatches: number;
+	/** 熄屏模式：Android 端校对期间启动前台服务并持有 WakeLock，锁屏后继续检测 */
+	keepAwakeOnScreenOff: boolean;
+}
 
 /** 单个检测错误 */
 export interface ProofreadError {
@@ -84,19 +106,6 @@ export interface MergeSuggestion {
 /** 检测粒度 */
 export type CheckGranularity = "paragraph" | "chapter" | "line";
 
-/** 剧本转换任务状态 */
-export interface ScriptTask {
-	id: number;
-	chapterId: number;
-	chapterTitle: string;
-	status: "pending" | "running" | "done" | "error";
-	result?: string;
-	errorMessage?: string;
-}
-
-/** 应用标签页 */
-export type AppTab = "proofread" | "script";
-
 /** AI 模型提供商 */
 export type AIProvider =
 	| "openai"
@@ -130,6 +139,53 @@ export interface ProofreadProgress {
 	lastParagraphIndex: number; // 上次校对到的段落索引
 	completed: boolean; // 是否已完成
 	updatedAt: number;
+}
+
+/** 词典词条：忽略（校对跳过）或替换（可一键应用到全文） */
+export interface DictionaryWord {
+	word: string;
+	type: "ignore" | "replace";
+	/** 替换目标文本（type 为 replace 时必填） */
+	replacement?: string;
+}
+
+// ============================================================
+// 本地大模型类型
+// ============================================================
+
+/** 模型来源 */
+export type ModelSource = "cloud" | "local-external" | "local-builtin";
+
+/** 本地模型配置 */
+export interface LocalModelConfig {
+	/** 模型来源 */
+	modelSource: ModelSource;
+	/** 外部服务地址（Ollama / LM Studio） */
+	externalEndpoint: string;
+	/** 外部服务 API Key（LM Studio 等启用鉴权时必填，留空则不携带） */
+	externalApiKey: string;
+	/** 外部服务模型名称 */
+	externalModel: string;
+	/** 内置模型文件路径 */
+	builtinModelPath: string;
+	/** 内置模型上下文长度 */
+	builtinContextSize: number;
+	/** GPU 加速层数（-1 为自动） */
+	gpuLayers: number;
+	/** 是否启用本地模型 */
+	enabled: boolean;
+}
+
+/** 本地模型状态 */
+export interface LocalModelState {
+	/** 服务状态 */
+	status: "idle" | "connecting" | "ready" | "error" | "loading";
+	/** 已发现的模型列表 */
+	availableModels: string[];
+	/** 当前加载的模型 */
+	loadedModel: string | null;
+	/** 错误信息 */
+	errorMessage: string | null;
 }
 
 /** API 使用统计 */
@@ -191,22 +247,6 @@ export type NovelCategory =
 	| "dongman" // 动漫
 	| "qita"; // 其他
 
-/** 小说分类信息 */
-export interface NovelCategoryInfo {
-	id: NovelCategory;
-	name: string;
-	icon: string;
-}
-
-/** 阅读进度记录 */
-export interface ReadingProgress {
-	novelId: string;
-	currentChapterIndex: number;
-	currentParagraphIndex: number;
-	readingStartTime: number;
-	totalReadingTime: number; // 累计阅读时长（毫秒）
-}
-
 /** 角色类型枚举 */
 export type CharacterRole =
 	| "protagonist" // 男主
@@ -259,7 +299,7 @@ export interface NovelEvent {
 }
 
 /** 剧本块类型 */
-export type ScriptBlockType = "scene-header" | "action" | "dialogue" | "narration" | "transition";
+type ScriptBlockType = "scene-header" | "action" | "dialogue" | "narration" | "transition";
 
 /** 剧本块 */
 export interface ScriptBlock {
@@ -271,19 +311,19 @@ export interface ScriptBlock {
 }
 
 /** 场景时间信息 */
-export interface SceneTime {
+interface SceneTime {
 	period: string;   // 标准化时段：清晨/上午/正午/下午/黄昏/傍晚/夜间/深夜/凌晨
 	detail?: string;  // 可选，自然/环境描写（≤12字）
 }
 
 /** 场景地点信息 */
-export interface SceneLocation {
+interface SceneLocation {
 	scope: string;   // 内景/外景/内外
 	name: string;    // 具体地点名称
 }
 
 /** 场景氛围信息 */
-export interface SceneAtmosphere {
+interface SceneAtmosphere {
 	tag: string;       // 核心氛围词（≤4字）
 	intensity: string; // 氛围强度：弱/中/强
 }
@@ -350,6 +390,10 @@ export interface RoleplayMessage {
 	originalContent?: string;
 	/** 用户消息被编辑前，其输入对应的后续回复链（编辑保存时保留旧回复，用于查看修改前的完整对话） */
 	originalReplies?: RoleplayMessage[];
+	/** 群聊轮次标识：同一次 AI 请求生成的多条发言共享一个 turnId（用于 UI 轮次分组） */
+	turnId?: string;
+	/** 发言在本轮中的顺序（0-based，按 AI 实际输出顺序记录，不重排） */
+	turnOrder?: number;
 }
 
 /** 角色扮演会话 */
@@ -360,6 +404,8 @@ export interface RoleplaySession {
 	characterId: string;
 	/** 用户扮演的角色 ID（缺省表示用户是局外人/旁观者） */
 	userCharacterId?: string;
+	/** 群聊在场角色 ID 列表（持久化；含主角色，不含用户扮演角色；有序，新邀请的排前） */
+	presentCharacterIds: string[];
 	/** 剧情位置：章节索引 */
 	chapterIndex: number;
 	/** 会话标题 */

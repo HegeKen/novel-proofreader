@@ -8,11 +8,15 @@ import { useCharacterStore } from "../stores/characterStore";
 import { useRoleplayStore } from "../stores/roleplayStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useConfigStore } from "../stores/configStore";
-import { useAppMetaStore } from "../stores/appMetaStore";
+import { useUIStore } from "../stores/uiStore";
 import { sendChatCompletion, buildRoleplayMultiSystemPrompt, parseMultiRoleplayResponse, buildRequestConfig, isBracketOnlyContent } from "../utils/aiClient";
 import type { ChatMessage, MultiRoleplaySegment } from "../utils/aiClient";
+import { matchCharacterByName, detectPresenceIntent } from "../utils/roleplayPresence";
+import { generateId } from "../utils/id";
 import { synthesizeSpeechWithVoice, playAudio } from "../utils/ttsService";
 import { Icons } from "./Icons";
+import { Modal } from "./Modal";
+import { CharacterAvatar } from "./CharacterAvatar";
 import { Select } from "./Select";
 import { RoleplayProfileModal } from "./RoleplayProfileModal";
 import { logger } from "../utils/logger";
@@ -39,23 +43,6 @@ function formatSessionTime(ts: number): string {
 	return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** 角色头像：与角色卡片一致的性别渐变 + 名字首字；角色缺失时显示占位文字 */
-const CharacterAvatar: React.FC<{
-	character?: CharacterInfo | null;
-	className: string;
-	fallback?: string;
-	onClick?: (e: React.MouseEvent) => void;
-}> = ({ character, className, fallback = "?", onClick }) => (
-	<span
-		className={`${className} ${character ? character.gender : "outer"}${onClick ? " clickable" : ""}`}
-		onClick={onClick}
-	>
-		<span className="roleplay-avatar-text">
-			{character ? character.name.charAt(0) : fallback}
-		</span>
-	</span>
-);
-
 /** 渲染角色消息文本：括号包裹的状态描述（如（轻轻叹了口气））用斜体区分 */
 function renderRoleplayText(text: string): React.ReactNode {
 	const parts = text.split(/([（(][^（）()]*[)）])/g);
@@ -70,6 +57,17 @@ function renderRoleplayText(text: string): React.ReactNode {
 function stripRoleplayStateText(text: string): string {
 	const cleaned = text.replace(/[（(][^（）()]*[)）]/g, "").replace(/\n{3,}/g, "\n\n").trim();
 	return cleaned || text;
+}
+
+/** 提取括号内的神态/动作描写（消息中浅色显示的补充信息），作为 TTS 的语气情感提示 */
+function extractRoleplayStateHints(text: string): string | undefined {
+	const matches = text.match(/[（(][^（）()]*[)）]/g);
+	if (!matches || matches.length === 0) return undefined;
+	// 去括号、去重、限量（最多 3 条，每条 20 字），避免提示过长干扰 TTS
+	const hints = [...new Set(matches.map((m) => m.slice(1, -1).trim()).filter(Boolean))]
+		.slice(0, 3)
+		.map((h) => (h.length > 20 ? `${h.slice(0, 20)}…` : h));
+	return hints.length > 0 ? hints.join("；") : undefined;
 }
 
 /** MiMo 有效音色列表（与 ttsService 保持一致，用于音色校验与性别兜底） */
@@ -91,27 +89,6 @@ function recommendVoice(character: CharacterInfo | null | undefined, fallback: s
 const EMPTY_SESSIONS: RoleplaySession[] = [];
 const EMPTY_CHARACTERS: CharacterInfo[] = [];
 const EMPTY_RELATIONSHIPS: CharacterRelationship[] = [];
-
-/** 清理 AI 返回的角色名：去掉「」"" '' 《》 等包裹符号与空白 */
-function cleanRoleName(name: string): string {
-	return name.replace(/[「」""''《》【】()（）]/g, "").trim();
-}
-
-/** 按姓名或别名匹配角色（多角色气泡解析用；AI 可能用别名/简称/带标点，做宽容匹配） */
-function matchCharacterByName(name: string, characters: CharacterInfo[]): CharacterInfo | null {
-	const target = cleanRoleName(name);
-	if (!target) return null;
-	// 精确匹配姓名
-	let hit = characters.find((c) => c.name === target);
-	if (hit) return hit;
-	// 匹配别名（含清理后的别名）
-	hit = characters.find((c) => c.aliases?.some((a) => cleanRoleName(a) === target));
-	if (hit) return hit;
-	// 名称包含（AI 可能加"「」"或轻微改写）
-	hit = characters.find((c) => c.name.includes(target) || target.includes(c.name));
-	if (hit) return hit;
-	return null;
-}
 
 export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName, show, isMobile, onClose }) => {
 	const chapters = useNovelStore((s) => s.chapters);
@@ -148,6 +125,12 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 	const [mobileView, setMobileView] = useState<"sessions" | "picker" | "chat">("sessions");
 	// 用户扮演的角色 ID（空 = 局外人/旁观者）
 	const [userCharacterId, setUserCharacterId] = useState("");
+	// 新建会话时的多选角色（有序，首个为主角色）
+	const [pickerSelectedIds, setPickerSelectedIds] = useState<string[]>([]);
+	// 新建会话时的故事进度（章节位置，默认跟随当前阅读进度）
+	const [pickerChapterIndex, setPickerChapterIndex] = useState(0);
+	// 本轮未回应的在场角色（渲染"未回应"占位条，点击单独补发言）
+	const [unspokenCharacters, setUnspokenCharacters] = useState<CharacterInfo[]>([]);
 	const [playingMsgId, setPlayingMsgId] = useState<string | null>(null);
 	// 正在编辑的用户消息 ID + 编辑中的文本
 	const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
@@ -164,6 +147,9 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		if (show) {
 			setInput("");
 			setIsSending(false);
+			setPickerSelectedIds([]);
+			setUnspokenCharacters([]);
+			setPickerChapterIndex(currentChapterIndex);
 			if (isMobile) {
 				// 移动端：有会话先进会话列表，否则直接进入角色选择
 				setMobileView(sessions.length === 0 ? "picker" : "sessions");
@@ -203,26 +189,45 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		[sessions],
 	);
 
-	/** 创建新会话并进入对话 */
+	/** 角色选择器：点击卡片切换选中态（保持选择顺序，首个为主角色） */
+	const handleTogglePickerCharacter = useCallback((id: string) => {
+		setPickerSelectedIds((prev) =>
+			prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+		);
+	}, []);
+
+	/** 创建新会话并进入对话（支持多选：首个选中角色为主角色，其余为在场角色） */
 	const handleCreateSession = useCallback(
-		(character: CharacterInfo) => {
+		(selectedIds: string[]) => {
+			const selected = selectedIds
+				.map((id) => characters.find((c) => c.id === id))
+				.filter((c): c is CharacterInfo => !!c);
+			const main = selected[0];
+			if (!main) return;
+			// 在场角色只含 AI 扮演的角色（用户扮演的角色不由 AI 发言）
+			const presentIds = selected.map((c) => c.id).filter((id) => id !== userCharacterId);
 			createSession(novelId, {
-				characterId: character.id,
+				characterId: main.id,
 				userCharacterId: userCharacterId || undefined,
-				chapterIndex: currentChapterIndex,
+				presentCharacterIds: presentIds.length > 0 ? presentIds : [main.id],
+				chapterIndex: Math.max(0, Math.min(pickerChapterIndex, chapters.length - 1)),
 				title: "",
 			});
 			setShowCharacterPicker(false);
 			setMobileView("chat");
+			setPickerSelectedIds([]);
 			const identity = userCharacterId
 				? characters.find((c) => c.id === userCharacterId)?.name ?? "自己"
 				: "旁观者";
-			useAppMetaStore.getState().showToast(
-				`开始与「${character.name}」对话（${identity}视角）`,
+			const names = selected.map((c) => `「${c.name}」`).join("、");
+			useUIStore.getState().showToast(
+				selected.length > 1
+					? `开始与 ${names} 的群聊（${identity}视角）`
+					: `开始与${names}对话（${identity}视角）`,
 				"success",
 			);
 		},
-		[novelId, createSession, currentChapterIndex, userCharacterId, characters],
+		[novelId, createSession, pickerChapterIndex, chapters.length, userCharacterId, characters],
 	);
 
 	/** 删除会话 */
@@ -230,7 +235,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		(e: React.MouseEvent, session: RoleplaySession) => {
 			e.stopPropagation();
 			deleteSession(novelId, session.id);
-			useAppMetaStore.getState().showToast("会话已删除", "success");
+			useUIStore.getState().showToast("会话已删除", "success");
 		},
 		[novelId, deleteSession],
 	);
@@ -239,9 +244,70 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 	const handleDeleteActiveSession = useCallback(() => {
 		if (!activeSession) return;
 		deleteSession(novelId, activeSession.id);
-		useAppMetaStore.getState().showToast("会话已删除", "success");
+		useUIStore.getState().showToast("会话已删除", "success");
 		setMobileView("sessions");
 	}, [activeSession, novelId, deleteSession]);
+
+	/**
+	 * 发送一次多角色请求并返回解析后的发言段（失败返回 null）。
+	 * 供首轮请求、补齐轮次与"未回应角色补发言"复用。
+	 * @param contextMessages 完整消息序列（最后一条会被视为本次输入而不计入历史）
+	 * @param prompt 作为最后一条 user 消息发给 AI 的文本
+	 * @param present 本次请求的在场角色（系统提示词据此生成完整设定与发言顺序）
+	 */
+	const doRequest = useCallback(async (
+		session: RoleplaySession,
+		contextMessages: RoleplayMessage[],
+		prompt: string,
+		present: CharacterInfo[],
+		signal: AbortSignal,
+		extraUserNote?: string,
+		extraHistory?: RoleplayMessage[],
+	): Promise<{ segments: MultiRoleplaySegment[]; raw: string } | null> => {
+		const character = characters.find((c) => c.id === session.characterId);
+		if (!character) return null;
+		// 拼装上下文：主角色关系 + 世界观 + 当前剧情
+		const related = relationships.filter(
+			(r) => r.sourceId === character.id || r.targetId === character.id,
+		);
+		const chapter = chapters[session.chapterIndex];
+		const userCharacter = session.userCharacterId
+			? characters.find((c) => c.id === session.userCharacterId)
+			: null;
+		const systemPrompt = buildRoleplayMultiSystemPrompt({
+			character,
+			playableCharacters: characters,
+			presentCharacters: present,
+			relatedRelationships: related,
+			allCharacters: characters,
+			worldbuilding,
+			currentChapterTitle: chapter?.title ?? "",
+			recentPlot: chapter ? chapter.content.slice(0, 800) : "",
+			userCharacter,
+		}, promptConfig.roleplayMulti);
+		// 历史消息 = contextMessages 去掉最后一条（最后一条即本次输入）+ 附加上下文，保留最近 20 条；
+		// 多角色场景下给 AI 标出每条 assistant 消息来自哪个角色，避免串戏
+		const baseHistory: RoleplayMessage[] = [...contextMessages.slice(0, -1), ...(extraHistory ?? [])];
+		const history: ChatMessage[] = baseHistory
+			.slice(-20)
+			.map((m) => {
+				if (m.role === "assistant" && m.characterId) {
+					const c = characters.find((ch) => ch.id === m.characterId);
+					return { role: m.role as "assistant", content: c ? `（${c.name}）${m.content}` : m.content };
+				}
+				return { role: m.role, content: m.content };
+			});
+		const messages: ChatMessage[] = [
+			{ role: "system", content: systemPrompt },
+			...history,
+			{ role: "user", content: extraUserNote ? `${prompt}\n\n补充要求：${extraUserNote}` : prompt },
+		];
+
+		const config = buildRequestConfig(aiConfig, { enableLogging: aiConfig.enableLogging });
+		logger.info("[Roleplay]", `向「${character.name}」请求回复, 历史 ${history.length} 条`);
+		const reply = await sendChatCompletion(messages, config, signal);
+		return { segments: parseMultiRoleplayResponse(reply) ?? [], raw: reply };
+	}, [aiConfig, characters, relationships, worldbuilding, chapters, promptConfig]);
 
 	/**
 	 * 请求 AI 回复并追加到会话。
@@ -251,7 +317,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 	 */
 	const requestReply = useCallback(async (session: RoleplaySession, contextMessages: RoleplayMessage[], userText: string) => {
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置 AI 模型", "warning");
+			useUIStore.getState().showToast("请先在设置中配置 AI 模型", "warning");
 			return;
 		}
 		const character = characters.find((c) => c.id === session.characterId);
@@ -262,96 +328,65 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		abortRef.current = abort;
 
 		try {
-			// 拼装上下文：主角色关系 + 世界观 + 当前剧情
-			const related = relationships.filter(
-				(r) => r.sourceId === character.id || r.targetId === character.id,
-			);
-			const chapter = chapters[session.chapterIndex];
-			const userCharacter = session.userCharacterId
-				? characters.find((c) => c.id === session.userCharacterId)
-				: null;
-			// 多角色模式：可扮演角色 = 全部角色（AI 可依据输入引入其他角色）
-			// 当前在场角色 = 主角 + 历史对话中出现过的角色（去重），
-			// 另从本次用户输入中提取点名的角色（如"让林晚过来"），一并视为在场需发言
-			const presentIdSet = new Set<string>([character.id]);
-			for (const m of contextMessages) {
-				if (m.role === "assistant" && m.characterId) presentIdSet.add(m.characterId);
-			}
-			for (const c of characters) {
-				if (c.id === character.id) continue;
-				if (c.name && userText.includes(c.name)) presentIdSet.add(c.id);
-				else if (c.aliases?.some((a) => a && userText.includes(a))) presentIdSet.add(c.id);
-			}
-			const presentCharacters = characters.filter((c) => presentIdSet.has(c.id));
+			// 在场角色基线：会话持久化的在场列表（含主角色，不含用户扮演角色）
+			const baseIds = session.presentCharacterIds?.length ? session.presentCharacterIds : [character.id];
+			const presentIds = new Set(baseIds);
 
-			// 发送请求并返回解析后的发言段（失败返回 null）
-			const doRequest = async (
-				prompt: string,
-				present: CharacterInfo[],
-				extraUserNote?: string,
-				extraHistory?: RoleplayMessage[],
-			): Promise<{ segments: MultiRoleplaySegment[]; raw: string } | null> => {
-				const systemPrompt = buildRoleplayMultiSystemPrompt({
-					character,
-					playableCharacters: characters,
-					presentCharacters: present,
-					relatedRelationships: related,
-					allCharacters: characters,
-					worldbuilding,
-					currentChapterTitle: chapter?.title ?? "",
-					recentPlot: chapter ? chapter.content.slice(0, 800) : "",
-					userCharacter,
-				}, promptConfig.roleplayMulti);
-				// 历史消息 = contextMessages 去掉最后一条（最后一条即本次输入）+ 附加上下文，保留最近 20 条；
-				// 多角色场景下给 AI 标出每条 assistant 消息来自哪个角色，避免串戏
-				const baseHistory: RoleplayMessage[] = [...contextMessages.slice(0, -1), ...(extraHistory ?? [])];
-				const history: ChatMessage[] = baseHistory
-					.slice(-20)
-					.map((m) => {
-						if (m.role === "assistant" && m.characterId) {
-							const c = characters.find((ch) => ch.id === m.characterId);
-							return { role: m.role as "assistant", content: c ? `（${c.name}）${m.content}` : m.content };
-						}
-						return { role: m.role, content: m.content };
-					});
-				const messages: ChatMessage[] = [
-					{ role: "system", content: systemPrompt },
-					...history,
-					{ role: "user", content: extraUserNote ? `${prompt}\n\n补充要求：${extraUserNote}` : prompt },
-				];
+			// 用户输入中的邀请/离场意图（保守策略：仅"让XX过来""XX走了"等高置信度指令句式）
+			const intent = detectPresenceIntent(userText, presentIds, characters);
+			// 用户扮演的角色不由 AI 发言；主角色不可被驱退
+			const invited = intent.invited.filter((c) => c.id !== session.userCharacterId);
+			const dismissed = intent.dismissed.filter((c) => c.id !== character.id);
+			for (const c of invited) presentIds.add(c.id);
+			for (const c of dismissed) presentIds.delete(c.id);
 
-				const config = buildRequestConfig(aiConfig, { enableLogging: aiConfig.enableLogging });
-				logger.info("[Roleplay]", `向「${character.name}」请求回复, 历史 ${history.length} 条`);
-				const reply = await sendChatCompletion(messages, config, abort.signal);
-				return { segments: parseMultiRoleplayResponse(reply) ?? [], raw: reply };
-			};
+			// 发言顺序 = 在场列表顺序，新邀请的角色排最前
+			const orderedIds = [
+				...invited.map((c) => c.id),
+				...baseIds.filter((id) => presentIds.has(id)),
+			];
+			const presentCharacters = orderedIds
+				.map((id) => characters.find((c) => c.id === id))
+				.filter((c): c is CharacterInfo => !!c);
 
-			const first = await doRequest(userText, presentCharacters);
-			if (!first) return; // 请求被取消或失败
+			// 本轮发言分组标识（同一轮的多角色气泡共享 turnId，UI 据此分组紧凑显示）
+			const turnId = generateId("turn");
+			let turnOrder = 0;
 
 			// 本轮已正式发言的角色（有括号外实质台词）
 			const spokenIds = new Set<string>();
-			// 已生成的所有发言（作为后续补齐请求的上下文，避免 AI 重复内容）
+			// 已生成的所有发言（作为补齐请求的上下文，避免 AI 重复内容）
 			const addedContext: RoleplayMessage[] = [];
+			// AI 标记剧情内离场的角色（写入离场发言后从在场列表移除）
+			const departedIds = new Set<string>();
 
-			/** 处理一批发言段：只接收"属于目标角色 + 有实质台词 + 尚未发言"的段，并追加为消息 */
-			const processSegments = (segs: MultiRoleplaySegment[], targets: CharacterInfo[]): number => {
-				const targetIds = new Set(targets.map((t) => t.id));
+			/** 处理一批发言段：接收"属于目标角色 + 有实质台词 + 尚未发言"的段并追加为消息。
+			 *  targets 为 null 时接受所有可匹配角色（首轮，AI 可自发引入新角色） */
+			const processSegments = (segs: MultiRoleplaySegment[], targets: CharacterInfo[] | null): number => {
+				const targetIds = targets ? new Set(targets.map((t) => t.id)) : null;
 				let added = 0;
 				for (const seg of segs) {
-					const target = matchCharacterByName(seg.character, characters) ?? character;
-					// 只接收本轮目标角色（补齐轮次只补缺失角色，避免重复已有发言）
-					if (!targetIds.has(target.id)) continue;
-					// 本地校验：整段仅为一对括号包裹的描写（如"（沉默地看向窗外）"）→ 未正式发言，跳过等待补齐
+					const target = matchCharacterByName(seg.character, characters);
+					if (!target) continue;
+					// 补齐轮次只接收缺失角色；首轮接受全部可匹配角色
+					if (targetIds && !targetIds.has(target.id)) continue;
+					// 用户扮演的角色不由 AI 发言
+					if (target.id === session.userCharacterId) continue;
+					// 本地校验：整段仅为一对括号包裹的描写 → 未正式发言，跳过等待补齐
 					if (isBracketOnlyContent(seg.content)) continue;
 					// 已发言的角色不再重复追加（AI 可能输出多条同一角色的发言）
 					if (spokenIds.has(target.id)) continue;
 					spokenIds.add(target.id);
+					if (seg.departed) departedIds.add(target.id);
+					// AI 自发引入的新角色加入在场列表
+					presentIds.add(target.id);
 					added += 1;
 					addMessage(novelId, session.id, {
 						role: "assistant",
 						characterId: target.id,
 						content: seg.content,
+						turnId,
+						turnOrder: turnOrder++,
 					});
 					addedContext.push({
 						id: `seg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -364,39 +399,42 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 				return added;
 			};
 
-			const round0Added = processSegments(first.segments, presentCharacters);
+			const first = await doRequest(session, contextMessages, userText, presentCharacters, abort.signal);
+			if (!first) return; // 请求被取消或失败
+
+			const round0Added = processSegments(first.segments, null);
 			if (round0Added > 1) {
-				useAppMetaStore.getState().showToast(
+				useUIStore.getState().showToast(
 					`${round0Added} 位角色加入了对话`,
 					"info",
 				);
 			}
 
-			// 首轮完全没解析出任何发言段 → 模型未按格式输出，直接回退为单角色消息，不做无意义的补齐
+			// 首轮完全没解析出任何发言段 → 模型未按格式输出，直接回退为单角色消息，不做补齐
 			if (first.segments.length === 0) {
 				addMessage(novelId, session.id, {
 					role: "assistant",
 					characterId: character.id,
 					content: first.raw,
+					turnId,
+					turnOrder: turnOrder++,
 				});
 			} else {
-				// 补齐发言：循环请求直到所有在场角色都有实质发言为止（引入只增不减，参与人数不设上限）。
-				// 轮数上限仅作防死循环保护（随人数缩放），并非参与人数限制。
-				const MAX_FILL_ROUNDS = Math.max(2, Math.min(presentCharacters.length, 6));
-				let pending = presentCharacters.filter((c) => !spokenIds.has(c.id));
-				let round = 0;
-				while (pending.length > 0 && round < MAX_FILL_ROUNDS && !abort.signal.aborted) {
-					round += 1;
+				// 离场角色不再期待发言
+				for (const id of departedIds) presentIds.delete(id);
+
+				// 补齐发言：最多 1 轮；仍未发言的在场角色渲染"未回应"占位条，用户可点击单独补发言
+				let pending = presentCharacters.filter((c) => presentIds.has(c.id) && !spokenIds.has(c.id));
+				if (pending.length > 0 && !abort.signal.aborted) {
 					const pendingNames = pending.map((c) => c.name).join("、");
-					// 第一轮补齐说明具体原因（没发言 / 只写了括号描写），后续轮次仅提示仍有角色未发言
-					const note =
-						round === 1
-							? `角色「${pendingNames}」还没有给出正式发言（可能没有出现在回复中，或只写了括号内的动作/神态描写而没有真正说话）。请以这些角色各自的身份补上他们的发言（每个角色一条，必须是说出口的实质台词，可带少量括号描写辅助）。其他在场角色的发言已在上文给出，不要重复他们的内容。`
-							: `仍有角色「${pendingNames}」尚未发言，请再次以这些角色各自的身份补上他们的发言（每个角色一条实质台词）。不要重复任何已说过的内容。`;
-					const followUp = await doRequest(userText, pending, note, addedContext);
-					if (!followUp) break; // 请求被取消或失败，停止补齐
-					processSegments(followUp.segments, pending);
-					pending = pending.filter((c) => !spokenIds.has(c.id));
+					const note = `角色「${pendingNames}」还没有给出正式发言（可能没有出现在回复中，或只写了括号内的动作/神态描写而没有真正说话）。请以这些角色各自的身份补上他们的发言（每个角色一条，必须是说出口的实质台词，可带少量括号描写辅助）。其他在场角色的发言已在上文给出，不要重复他们的内容。`;
+					const followUp = await doRequest(session, contextMessages, userText, pending, abort.signal, note, addedContext);
+					if (followUp) {
+						processSegments(followUp.segments, pending);
+						// 补齐轮中离场的角色同样移出在场列表
+						for (const id of departedIds) presentIds.delete(id);
+					}
+					pending = pending.filter((c) => presentIds.has(c.id) && !spokenIds.has(c.id));
 				}
 
 				// 补齐后仍没有任何实质发言 → 回退为单角色消息（AI 未按格式输出时保持原行为）
@@ -405,13 +443,24 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 						role: "assistant",
 						characterId: character.id,
 						content: first.raw,
+						turnId,
+						turnOrder: turnOrder++,
 					});
+				} else {
+					// 未回应角色：显示占位条，点击可单独补发言
+					setUnspokenCharacters(pending);
+					// 持久化最新在场角色列表（保持发言顺序：新邀请在前，AI 自发引入的追加在后，剔除已离场）
+					const finalOrder = [
+						...orderedIds.filter((id) => presentIds.has(id)),
+						...[...presentIds].filter((id) => !orderedIds.includes(id)),
+					];
+					updateSession(novelId, session.id, { presentCharacterIds: finalOrder });
 				}
 			}
 		} catch (err) {
 			if (err instanceof Error && err.name !== "AbortError") {
 				logger.errorGeneric("[Roleplay]", "AI 回复失败", err);
-				useAppMetaStore.getState().showToast(
+				useUIStore.getState().showToast(
 					"获取回复失败: " + (err instanceof Error ? err.message : String(err)),
 					"error",
 				);
@@ -420,7 +469,57 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 			setIsSending(false);
 			abortRef.current = null;
 		}
-	}, [aiConfig, characters, relationships, worldbuilding, chapters, novelId, addMessage, promptConfig]);
+	}, [aiConfig, characters, novelId, addMessage, updateSession, doRequest]);
+
+	/** 单独让某位未回应的角色补发言（点击"未回应"占位条触发） */
+	const handleAskCharacterSpeak = useCallback(async (target: CharacterInfo) => {
+		const session = activeSession;
+		if (!session || isSending) return;
+		if (!aiConfig.apiKey || !aiConfig.baseURL) return;
+		setIsSending(true);
+		setUnspokenCharacters((prev) => prev.filter((c) => c.id !== target.id));
+		const abort = new AbortController();
+		abortRef.current = abort;
+		try {
+			// doRequest 会把 contextMessages 最后一条视为本次输入不计入历史，
+			// 这里追加一条占位消息，让全部历史都进入上下文
+			const contextMessages: RoleplayMessage[] = [
+				...session.messages,
+				{ id: "pending", role: "user", content: "", timestamp: Date.now() },
+			];
+			const result = await doRequest(
+				session,
+				contextMessages,
+				`请仅以「${target.name}」的身份回应当前对话：输出一条该角色的发言（以说出口的实质台词为主，可带少量括号描写）。不要输出其他角色的发言。`,
+				[target],
+				abort.signal,
+			);
+			if (!result) return;
+			const seg = result.segments.find((s) => matchCharacterByName(s.character, characters)?.id === target.id)
+				?? result.segments[0];
+			const content = seg && !isBracketOnlyContent(seg.content) ? seg.content : (result.segments.length === 0 ? result.raw : "");
+			if (content) {
+				addMessage(novelId, session.id, {
+					role: "assistant",
+					characterId: target.id,
+					content,
+					turnId: generateId("turn"),
+					turnOrder: 0,
+				});
+			}
+		} catch (err) {
+			if (err instanceof Error && err.name !== "AbortError") {
+				logger.errorGeneric("[Roleplay]", "补发言失败", err);
+				useUIStore.getState().showToast(
+					"获取回复失败: " + (err instanceof Error ? err.message : String(err)),
+					"error",
+				);
+			}
+		} finally {
+			setIsSending(false);
+			abortRef.current = null;
+		}
+	}, [activeSession, isSending, aiConfig, doRequest, characters, novelId, addMessage]);
 
 	/** 发送消息并请求 AI 回复 */
 	const handleSend = useCallback(async () => {
@@ -428,7 +527,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		if (!text || isSending || !activeSession) return;
 
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置 AI 模型", "warning");
+			useUIStore.getState().showToast("请先在设置中配置 AI 模型", "warning");
 			return;
 		}
 		const character = characters.find((c) => c.id === activeSession.characterId);
@@ -437,6 +536,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		// 追加用户消息
 		addMessage(novelId, activeSession.id, { role: "user", content: text });
 		setInput("");
+		setUnspokenCharacters([]);
 		// 首次发送时自动生成会话标题
 		if (!activeSession.title) {
 			updateSession(novelId, activeSession.id, { title: text.slice(0, 20) });
@@ -463,7 +563,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		if (!session || !editingMsgId) return;
 		const newText = editText.trim();
 		if (!newText) {
-			useAppMetaStore.getState().showToast("消息内容不能为空", "warning");
+			useUIStore.getState().showToast("消息内容不能为空", "warning");
 			return;
 		}
 		// 找到被编辑消息在截断前的位置与原文
@@ -501,7 +601,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		const session = activeSession;
 		if (!session || isSending) return;
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置 AI 模型", "warning");
+			useUIStore.getState().showToast("请先在设置中配置 AI 模型", "warning");
 			return;
 		}
 		// 该消息必须是会话最后一条用户消息（其后是待替换的回复）
@@ -527,7 +627,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 	const handlePlayMessage = useCallback(
 		async (msg: RoleplayMessage) => {
 			if (!ttsConfig.apiKey) {
-				useAppMetaStore.getState().showToast("请先在设置中配置 TTS API Key", "warning");
+				useUIStore.getState().showToast("请先在设置中配置 TTS API Key", "warning");
 				return;
 			}
 			if (playingMsgId === msg.id) {
@@ -553,14 +653,16 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 			ttsAbortRef.current = abort;
 			setPlayingMsgId(msg.id);
 			try {
-				// 朗读时移除括号内的状态描述（背景提示不朗读）
+				// 朗读时移除括号内的状态描述（背景提示不朗读），
+				// 但提取为语气情感提示传给 TTS，让朗读体现括号描写中的情绪状态
 				const ttsText = stripRoleplayStateText(msg.content);
-				const audio = await synthesizeSpeechWithVoice(ttsText, ttsConfig, voice, voiceDesignPrompt);
+				const deliveryHint = extractRoleplayStateHints(msg.content);
+				const audio = await synthesizeSpeechWithVoice(ttsText, ttsConfig, voice, voiceDesignPrompt, undefined, undefined, deliveryHint);
 				await playAudio(audio, abort.signal);
 			} catch (err) {
 				if (err instanceof DOMException && err.name === "AbortError") return;
 				logger.errorGeneric("[Roleplay]", "TTS 播放失败", err);
-				useAppMetaStore.getState().showToast("语音播放失败", "error");
+				useUIStore.getState().showToast("语音播放失败", "error");
 			} finally {
 				setPlayingMsgId(null);
 				ttsAbortRef.current = null;
@@ -589,6 +691,47 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		[activeSession, novelId, updateSession],
 	);
 
+	/** 当前会话的在场角色（按持久化顺序，用于在场角色栏） */
+	const presentCharactersOfSession = useMemo(() => {
+		if (!activeSession) return [];
+		const ids = activeSession.presentCharacterIds?.length
+			? activeSession.presentCharacterIds
+			: [activeSession.characterId];
+		return ids
+			.map((id) => characters.find((c) => c.id === id))
+			.filter((c): c is CharacterInfo => !!c);
+	}, [activeSession, characters]);
+
+	/** 在场角色栏：让某位在场角色离场（主角色不可移除） */
+	const handleDismissCharacter = useCallback(
+		(target: CharacterInfo) => {
+			if (!activeSession || target.id === activeSession.characterId) return;
+			const next = presentCharactersOfSession
+				.map((c) => c.id)
+				.filter((id) => id !== target.id);
+			updateSession(novelId, activeSession.id, {
+				presentCharacterIds: next.length > 0 ? next : [activeSession.characterId],
+			});
+			setUnspokenCharacters((prev) => prev.filter((c) => c.id !== target.id));
+		},
+		[activeSession, presentCharactersOfSession, novelId, updateSession],
+	);
+
+	/** 在场角色栏：邀请不在场角色加入（下一轮起参与发言） */
+	const handleInviteCharacter = useCallback(
+		(id: string) => {
+			if (!activeSession || !id) return;
+			// 用户扮演的角色不由 AI 发言，不加入在场列表
+			if (id === activeSession.userCharacterId) return;
+			const current = presentCharactersOfSession.map((c) => c.id);
+			if (current.includes(id)) return;
+			updateSession(novelId, activeSession.id, {
+				presentCharacterIds: [...current, id],
+			});
+		},
+		[activeSession, presentCharactersOfSession, novelId, updateSession],
+	);
+
 	const chatHeader = activeSession && activeCharacter && (
 		<div className="roleplay-chat-header">
 			<div
@@ -596,7 +739,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 				onClick={() => setProfileCharacter(activeCharacter)}
 				title="查看个人主页"
 			>
-				<CharacterAvatar character={activeCharacter} className="roleplay-actor-avatar" />
+				<CharacterAvatar character={activeCharacter} className="roleplay-actor-avatar" fallbackClass="outer" textClassName="roleplay-avatar-text" />
 				<div className="roleplay-actor-info">
 					<span className="roleplay-actor-name">{activeCharacter.name}</span>
 					<span className="roleplay-actor-desc">
@@ -662,10 +805,83 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		</div>
 	);
 
+	// 新建会话的故事进度选择行（桌面/移动端角色选择器共用）
+	const pickerChapterRow = (
+		<div className="roleplay-picker-identity">
+			<span className="roleplay-picker-identity-label">故事进度</span>
+			<Select
+				value={String(pickerChapterIndex)}
+				onChange={(v) => setPickerChapterIndex(Number(v))}
+				options={chapters.map((ch, i) => ({
+					value: String(i),
+					label: ch.title || `第 ${i + 1} 章`,
+				}))}
+			/>
+			<span className="roleplay-picker-identity-hint">
+				AI 将基于所选章节的剧情背景与你对话
+			</span>
+		</div>
+	);
+
+	// 开始对话 FAB（桌面/移动端角色选择器共用，浮动在选择器右下角）
+	const pickerFab = (
+		<button
+			className="roleplay-picker-fab"
+			disabled={pickerSelectedIds.length === 0}
+			onClick={() => handleCreateSession(pickerSelectedIds)}
+			title="开始对话"
+		>
+			<Icons.messageSquare size={18} />
+			<span>开始对话{pickerSelectedIds.length > 0 ? `（${pickerSelectedIds.length}）` : ""}</span>
+		</button>
+	);
+
 	// 对话内容（头部 + 消息区 + 输入栏），桌面端与移动端复用
 	const chatContent = activeSession ? (
 		<>
 			{isMobile ? mobileChatHeader : chatHeader}
+			{/* 在场角色栏：显示当前在场角色，可移除/邀请（主角色不可移除） */}
+			<div className="roleplay-presence-bar">
+				<span className="roleplay-presence-label">在场</span>
+				{presentCharactersOfSession.map((c) => (
+					<span
+						key={c.id}
+						className="roleplay-presence-chip"
+						onClick={() => setProfileCharacter(c)}
+						title="查看个人主页"
+					>
+						{c.name}
+						{c.id !== activeSession.characterId && (
+							<button
+								className="roleplay-presence-remove"
+								onClick={(e) => {
+									e.stopPropagation();
+									handleDismissCharacter(c);
+								}}
+								title={`让「${c.name}」离场`}
+							>
+								<Icons.x size={11} />
+							</button>
+						)}
+					</span>
+				))}
+				<div className="roleplay-presence-invite">
+					<Select
+						value=""
+						onChange={handleInviteCharacter}
+						options={[
+							{ value: "", label: "邀请角色…" },
+							...characters
+								.filter(
+									(c) =>
+										!presentCharactersOfSession.some((p) => p.id === c.id) &&
+										c.id !== activeSession.userCharacterId,
+								)
+								.map((c) => ({ value: c.id, label: c.name })),
+						]}
+					/>
+				</div>
+			</div>
 			<div className="roleplay-messages" ref={messagesContainerRef}>
 				{activeSession.messages.length === 0 && (
 					<div className="roleplay-empty">
@@ -693,7 +909,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 									return [...before, originalInput, ...viewOriginalMsg.originalReplies!];
 								})()
 							: activeSession.messages;
-					return displayMessages.map((msg) => {
+					return displayMessages.map((msg, msgIdx) => {
 					const isUser = msg.role === "user";
 					// 用户消息头像：选定的扮演角色；旁观者显示局外人默认头像
 					// AI 消息头像：消息对应的角色
@@ -706,6 +922,9 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 					const genderClass = !isUser && speaker
 						? ` speaker-${speaker.gender}`
 						: "";
+					// 同一轮（同 turnId）的连续 assistant 发言紧凑分组显示
+					const prevMsg = msgIdx > 0 ? displayMessages[msgIdx - 1] : null;
+					const sameTurn = !isUser && !!msg.turnId && prevMsg?.turnId === msg.turnId;
 					// 该消息是否为正在编辑/正在查看修改前的消息
 					const isEditing = isUser && editingMsgId === msg.id;
 					// 被编辑过的用户消息：有 originalContent 表示修改过
@@ -720,12 +939,14 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 					return (
 						<div
 							key={msg.id}
-							className={`roleplay-msg ${isUser ? "user" : "assistant"}${genderClass}`}
+							className={`roleplay-msg ${isUser ? "user" : "assistant"}${genderClass}${sameTurn ? " same-turn" : ""}`}
 						>
 							<CharacterAvatar
 							character={speaker}
 							className="roleplay-msg-avatar"
 							fallback={isUser ? "旁" : "?"}
+							fallbackClass="outer"
+							textClassName="roleplay-avatar-text"
 							onClick={
 								speaker
 									? (e) => {
@@ -827,9 +1048,24 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 					);
 				});
 				})()}
+				{/* 未回应占位条：补齐后仍未发言的在场角色，点击单独补发言 */}
+				{!isSending && unspokenCharacters.length > 0 && (
+					<div className="roleplay-unspoken-bar">
+						{unspokenCharacters.map((c) => (
+							<button
+								key={c.id}
+								className="roleplay-unspoken-chip"
+								onClick={() => void handleAskCharacterSpeak(c)}
+								title={`让「${c.name}」补发言`}
+							>
+								「{c.name}」未回应，点击邀请发言
+							</button>
+						))}
+					</div>
+				)}
 				{isSending && (
 					<div className="roleplay-msg assistant">
-						<CharacterAvatar character={activeCharacter} className="roleplay-msg-avatar" />
+						<CharacterAvatar character={activeCharacter} className="roleplay-msg-avatar" fallbackClass="outer" textClassName="roleplay-avatar-text" />
 						<div className="roleplay-msg-body">
 							<div className="roleplay-msg-meta">
 								<span className="roleplay-msg-name">
@@ -943,11 +1179,12 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 															key={s.id}
 															className="roleplay-mobile-session"
 															onClick={() => {
-																setActiveSession(novelId, s.id);
-																setMobileView("chat");
-															}}
+															setActiveSession(novelId, s.id);
+															setUnspokenCharacters([]);
+															setMobileView("chat");
+														}}
 														>
-															<CharacterAvatar character={char} className="roleplay-mobile-session-avatar" />
+															<CharacterAvatar character={char} className="roleplay-mobile-session-avatar" fallbackClass="outer" textClassName="roleplay-avatar-text" />
 															<div className="roleplay-mobile-session-info">
 																<div className="roleplay-mobile-session-line">
 																	<span className="roleplay-mobile-session-name">
@@ -1005,27 +1242,30 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 													]}
 												/>
 												<span className="roleplay-picker-identity-hint">
-													{userCharacterId
-														? "你将扮演该角色与对方对话"
-														: "以读者视角与角色对话"}
-												</span>
-											</div>
-											<div className="roleplay-mobile-picker-list">
-												{characters.length === 0 && (
-													<div className="roleplay-mobile-empty">
-														<p>暂无角色</p>
-														<p className="roleplay-empty-hint">
-															请先在小说设置中创建角色
-														</p>
-													</div>
-												)}
-												{characters.map((c) => (
+												{userCharacterId
+													? "你将扮演该角色与对方对话"
+													: "以读者视角与角色对话"}
+											</span>
+										</div>
+										{pickerChapterRow}
+										<div className="roleplay-mobile-picker-list">
+											{characters.length === 0 && (
+												<div className="roleplay-mobile-empty">
+													<p>暂无角色</p>
+													<p className="roleplay-empty-hint">
+														请先在小说设置中创建角色
+													</p>
+												</div>
+											)}
+											{characters.map((c) => {
+												const selectedIdx = pickerSelectedIds.indexOf(c.id);
+												return (
 													<button
 														key={c.id}
-														className="roleplay-mobile-picker-item"
-														onClick={() => handleCreateSession(c)}
+														className={`roleplay-mobile-picker-item${selectedIdx >= 0 ? " selected" : ""}`}
+														onClick={() => handleTogglePickerCharacter(c.id)}
 													>
-														<CharacterAvatar character={c} className="roleplay-mobile-picker-avatar" />
+														<CharacterAvatar character={c} className="roleplay-mobile-picker-avatar" fallbackClass="outer" textClassName="roleplay-avatar-text" />
 														<div className="roleplay-mobile-picker-info">
 															<span className="roleplay-mobile-picker-name">
 																{c.name}
@@ -1035,11 +1275,24 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 																{c.personality ? ` · ${c.personality}` : ""}
 															</span>
 														</div>
-														<Icons.chevronRight size={16} />
+														{selectedIdx >= 0 ? (
+															<span className="roleplay-picker-order">{selectedIdx + 1}</span>
+														) : (
+															<Icons.chevronRight size={16} />
+														)}
 													</button>
-												))}
-											</div>
+												);
+											})}
 										</div>
+										<div className="roleplay-picker-footer">
+											<span className="roleplay-picker-hint">
+												{pickerSelectedIds.length > 1
+													? "首个选中的角色为主角色"
+													: "可选择多位角色开启群聊"}
+											</span>
+										</div>
+									</div>
+									{pickerFab}
 									</>
 								)}
 								{mobileView === "chat" && activeSession && chatContent}
@@ -1057,22 +1310,8 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		<>
 			{createPortal(
 				show && (
-					<div className="modal-overlay" onClick={onClose}>
-						<div className="roleplay-modal" onClick={(e) => e.stopPropagation()}>
-							<div className="config-header">
-								<div className="config-title">
-									<span className="title-icon">
-										<Icons.messageSquare size={16} />
-									</span>
-									<span>角色扮演</span>
-									{novelName && <span className="title-novel-name">《{novelName}》</span>}
-								</div>
-								<button className="close-btn" onClick={onClose}>
-									<Icons.close size={16} />
-								</button>
-							</div>
-		
-							<div className="roleplay-body">
+					<Modal open onClose={onClose} title={<>角色扮演{novelName && <span className="title-novel-name">《{novelName}》</span>}</>} icon={<Icons.messageSquare size={16} />} className="roleplay-modal" portal={false}>
+						<div className="roleplay-body">
 								{/* 左侧：会话列表 */}
 								<div className="roleplay-sidebar">
 									<button
@@ -1097,6 +1336,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 													className={`roleplay-session-item${isActive ? " active" : ""}`}
 													onClick={() => {
 														setActiveSession(novelId, s.id);
+														setUnspokenCharacters([]);
 														setShowCharacterPicker(false);
 													}}
 												>
@@ -1122,34 +1362,38 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 								{/* 右侧：角色选择 / 对话区 */}
 								<div className="roleplay-main">
 									{showCharacterPicker ? (
+										<>
 										<div className="roleplay-picker">
-											<div className="roleplay-picker-title">选择要对话的角色</div>
-											<div className="roleplay-picker-identity">
-												<span className="roleplay-picker-identity-label">
-													我的身份
-												</span>
-												<Select
-													value={userCharacterId}
-													onChange={setUserCharacterId}
-													options={[
-														{ value: "", label: "旁观者（局外人）" },
-														...characters.map((c) => ({ value: c.id, label: `扮演 ${c.name}` })),
-													]}
-												/>
-												<span className="roleplay-picker-identity-hint">
-													{userCharacterId
-														? "你将扮演该角色与对方对话"
-														: "以读者视角与角色对话"}
-												</span>
-											</div>
-											<div className="roleplay-picker-grid">
-												{characters.map((c) => (
+										<div className="roleplay-picker-title">选择要对话的角色（可多选开启群聊）</div>
+										<div className="roleplay-picker-identity">
+											<span className="roleplay-picker-identity-label">
+												我的身份
+											</span>
+											<Select
+												value={userCharacterId}
+												onChange={setUserCharacterId}
+												options={[
+													{ value: "", label: "旁观者（局外人）" },
+													...characters.map((c) => ({ value: c.id, label: `扮演 ${c.name}` })),
+												]}
+											/>
+											<span className="roleplay-picker-identity-hint">
+												{userCharacterId
+													? "你将扮演该角色与对方对话"
+													: "以读者视角与角色对话"}
+											</span>
+										</div>
+										{pickerChapterRow}
+										<div className="roleplay-picker-grid">
+											{characters.map((c) => {
+												const selectedIdx = pickerSelectedIds.indexOf(c.id);
+												return (
 													<button
 														key={c.id}
-														className="roleplay-picker-card"
-														onClick={() => handleCreateSession(c)}
+														className={`roleplay-picker-card${selectedIdx >= 0 ? " selected" : ""}`}
+														onClick={() => handleTogglePickerCharacter(c.id)}
 													>
-														<CharacterAvatar character={c} className="roleplay-picker-avatar" />
+														<CharacterAvatar character={c} className="roleplay-picker-avatar" fallbackClass="outer" textClassName="roleplay-avatar-text" />
 														<span className="roleplay-picker-name">{c.name}</span>
 														<span className="roleplay-picker-role">
 															{getRoleName(c.role)}
@@ -1157,10 +1401,23 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 														<span className="roleplay-picker-desc">
 															{c.personality ?? c.background ?? c.identity ?? ""}
 														</span>
+														{selectedIdx >= 0 && (
+															<span className="roleplay-picker-order">{selectedIdx + 1}</span>
+														)}
 													</button>
-												))}
+												);
+											})}
+										</div>
+										<div className="roleplay-picker-footer">
+												<span className="roleplay-picker-hint">
+													{pickerSelectedIds.length > 1
+														? "首个选中的角色为主角色，其余为在场角色"
+														: "点击卡片选择角色，可选择多位开启群聊"}
+												</span>
 											</div>
 										</div>
+										{pickerFab}
+										</>
 									) : activeSession ? (
 										chatContent
 									) : (
@@ -1175,8 +1432,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 									)}
 								</div>
 							</div>
-						</div>
-					</div>
+						</Modal>
 					),
 					document.body,
 				)}

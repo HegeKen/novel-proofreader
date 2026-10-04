@@ -6,18 +6,21 @@ import { NovelList } from "./components/NovelList";
 import { ChapterNav } from "./components/ChapterNav";
 import { ReaderPanel } from "./components/ReaderPanel";
 import { ProofreadPanel } from "./components/ProofreadPanel";
-import { TaskPanel } from "./components/TaskPanel";
+import { ScriptPanel } from "./components/ScriptPanel";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { ToastContainer } from "./components/Toast";
 import { CJKVariantsModal } from "./components/CJKVariantsModal";
 import { useNovelStore } from "./stores/novelStore";
 import { useUIStore } from "./stores/uiStore";
 import { useAppMetaStore } from "./stores/appMetaStore";
+import { useReadingProgressStore } from "./stores/readingProgressStore";
+import { useLocalModelStore } from "./stores/localModelStore";
 import { useAIConfigStore } from "./stores/aiConfigStore";
 import { useProofreadMetaStore } from "./stores/proofreadMetaStore";
-import { splitChapters, chaptersNeedResplit } from "./utils/chapterSplit";
+import { splitChapters, chaptersNeedResplit, getChapterDisplayTitle } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
-import { exportToFile, loadNovelsFromStorage, loadNovelContent, saveNovelToStorage, ensureTxtFilename, exportAllData } from "./utils/fileExport";
+import { exportToFile, exportBinaryToFile, loadNovelsFromStorage, loadNovelContent, saveNovelToStorage, ensureTxtFilename, exportAllData } from "./utils/fileExport";
+import { parseEpub, buildEpub } from "./utils/epub";
 import { loadNovelText, saveNovelText, getNovelStorageKey, listNovelKeys } from "./utils/novelStorage";
 import { formatDateTime } from "./utils/formatters";
 import { parseURLParams, updateURLParams } from "./utils/urlParams";
@@ -28,7 +31,10 @@ import { audioCache } from "./utils/ttsService";
 import { useConfigStore } from "./stores/configStore";
 import { useMobile } from "./hooks/useMobile";
 import { ConfirmModal } from "./components/config/ConfirmModal";
-import { getCurrentVersion } from "./utils/githubApi";
+import { FirstRunGuideModal } from "./components/FirstRunGuideModal";
+import { Button } from "./components/Button";
+import { getCurrentVersion } from "./utils/version";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const ConfigModal = lazy(() => import("./components/ConfigModal").then(m => ({ default: m.ConfigModal })));
 const CharacterSettings = lazy(() => import("./components/CharacterSettings").then(m => ({ default: m.CharacterSettings })));
@@ -75,10 +81,13 @@ export default function App() {
 	const selectNovel = useNovelStore((s) => s.selectNovel);
 	const showCharacterSettings = useUIStore((s) => s.showCharacterSettings);
 	const setShowCharacterSettings = useUIStore((s) => s.setShowCharacterSettings);
-	const toastMessages = useAppMetaStore((s) => s.toastMessages);
-	const hideToast = useAppMetaStore((s) => s.hideToast);
+	const toastMessages = useUIStore((s) => s.toastMessages);
+	const hideToast = useUIStore((s) => s.hideToast);
 	const [configOpen, setConfigOpen] = useState(false);
 	const [showCJKVariantModal, setShowCJKVariantModal] = useState(false);
+	const [showLocalGuide, setShowLocalGuide] = useState(false);
+	const localGuideShown = useLocalModelStore((s) => s.localGuideShown);
+	const markLocalGuideShown = useLocalModelStore((s) => s.markLocalGuideShown);
 	const [showRoleplay, setShowRoleplay] = useState(false);
 	const [rightTab, setRightTab] = useState<RightTab>("proofread");
 	const [mobileTab, setMobileTab] = useState<MobileTab>("novels");
@@ -103,6 +112,18 @@ export default function App() {
 	useEffect(() => {
 		document.documentElement.setAttribute("data-theme", theme);
 	}, [theme]);
+
+	// 首次启动（已进入主界面且未展示过引导）时弹出 AI 模型来源引导
+	useEffect(() => {
+		if (!showHome && !localGuideShown) {
+			setShowLocalGuide(true);
+		}
+	}, [showHome, localGuideShown]);
+
+	const handleCloseLocalGuide = useCallback(() => {
+		markLocalGuideShown();
+		setShowLocalGuide(false);
+	}, [markLocalGuideShown]);
 
 	const audioCachePersistent = useConfigStore((s) => s.ttsConfig.audioCachePersistent);
 	useEffect(() => {
@@ -167,7 +188,7 @@ export default function App() {
 		const selectedNovel = (updated ? updatedNovels : state.novels).find(n => n.id === currentNovelId);
 		if (selectedNovel?.fullText && chaptersNeedResplit(newState.chapters)) {
 			const chapters = splitChapters(selectedNovel.fullText);
-			const progress = useAppMetaStore.getState().getReadingProgress(selectedNovel.id);
+			const progress = useReadingProgressStore.getState().getReadingProgress(selectedNovel.id);
 			useNovelStore.setState({ chapters });
 			if (progress) {
 				const index = Math.min(Math.max(progress.currentChapterIndex, 0), Math.max(chapters.length - 1, 0));
@@ -290,7 +311,12 @@ export default function App() {
 					clearInterval(checkInterval);
 				}
 			}, 100);
-			setTimeout(() => clearInterval(checkInterval), 5000);
+			const timeout = setTimeout(() => clearInterval(checkInterval), 5000);
+			// effect 重跑或组件卸载时清理定时器，避免残留轮询
+			return () => {
+				clearInterval(checkInterval);
+				clearTimeout(timeout);
+			};
 		}
 	}, [novels, selectNovel, setCurrentChapterIndex, setChapters, setReadingMode, setShowHome]);
 
@@ -343,17 +369,45 @@ export default function App() {
 	const handleImport = async () => {
 		const input = document.createElement("input");
 		input.type = "file";
-		input.accept = ".txt";
+		input.accept = ".txt,.epub";
 		input.onchange = async (e) => {
 			const file = (e.target as HTMLInputElement).files?.[0];
 			if (!file) return;
 
 			const buffer = await file.arrayBuffer();
-			const text = decodeTextBuffer(buffer);
+			let text: string;
+			if (file.name.toLowerCase().endsWith(".epub")) {
+				try {
+					text = parseEpub(buffer).text;
+				} catch (err) {
+					logger.errorGeneric('[App]', 'EPUB 解析失败:', err);
+					useUIStore.getState().showToast("EPUB 解析失败，请确认文件有效", "error");
+					return;
+				}
+			} else {
+				text = decodeTextBuffer(buffer);
+			}
 			const chapters = splitChapters(text);
 			setChapters(chapters);
 		};
 		input.click();
+	};
+
+	const handleExportEpub = async () => {
+		const novel = novels.find((n) => n.id === currentNovelId);
+		if (!novel) return;
+		const chapters = splitChapters(novel.fullText).map((ch, i) => ({
+			title: getChapterDisplayTitle(ch, i),
+			content: ch.content,
+		}));
+		const epubChapters = chapters.length > 0 ? chapters : [{ title: novel.name, content: novel.fullText }];
+		const data = buildEpub(novel.name, epubChapters);
+		const result = await exportBinaryToFile(data, `${novel.name}.epub`, "EPUB Files", "epub");
+		if (result === "success") {
+			useUIStore.getState().showToast("EPUB 已导出", "success");
+		} else if (result === "fallback") {
+			useUIStore.getState().showToast("EPUB 已下载！", "success");
+		}
 	};
 
 	const handleExportAsNew = async () => {
@@ -375,9 +429,9 @@ export default function App() {
 			onConfirm: async () => {
 				const result = await exportToFile(novel.fullText, `${novel.name}.txt`);
 				if (result === "success") {
-					useAppMetaStore.getState().showToast("文件已成功保存！", "success");
+					useUIStore.getState().showToast("文件已成功保存！", "success");
 				} else if (result === "fallback") {
-					useAppMetaStore.getState().showToast("文件已下载！请手动覆盖原文件。", "success");
+					useUIStore.getState().showToast("文件已下载！请手动覆盖原文件。", "success");
 				}
 				setConfirmModal(prev => ({ ...prev, show: false }));
 			},
@@ -418,8 +472,8 @@ export default function App() {
 			aiConfig: aiConfigState.aiConfig,
 			apiUsage: metaState.apiUsage,
 			novelCategories: metaState.novelCategories,
-			readingProgress: metaState.readingProgress,
-			ignoredWords: proofreadMetaState.ignoredWords,
+			readingProgress: useReadingProgressStore.getState().readingProgress,
+			dictionary: proofreadMetaState.dictionary,
 			exportTime: formatDateTime(Date.now()),
 			version: await getCurrentVersion(),
 		};
@@ -461,7 +515,9 @@ export default function App() {
 		<div className="app">
 			{showHome ? (
 				<Suspense fallback={null}>
-					<HomePage onStart={handleStartApp} />
+					<ErrorBoundary>
+						<HomePage onStart={handleStartApp} />
+					</ErrorBoundary>
 				</Suspense>
 			) : (
 				<>
@@ -475,29 +531,28 @@ export default function App() {
 					</h1>
 				</div>
 				<div className="header-center">
-					<button className={isMobile ? "btn-mobile" : "btn"} onClick={handleImport} aria-label="导入 TXT 文件">
-							<Icons.import size={16} />
-							导入 TXT 文件
-						</button>
+					<Button onClick={handleImport} aria-label="导入 TXT 或 EPUB 文件" icon={<Icons.import size={16} />}>
+							导入文件
+						</Button>
 						{currentNovelId && (
 							<>
-								<button className={isMobile ? "btn-mobile" : "btn"} onClick={handleExportAsNew}>
-									<Icons.save size={16} />
+								<Button onClick={handleExportAsNew} icon={<Icons.save size={16} />}>
 									导出修改版本
-								</button>
-								<button
-									className={isMobile ? "btn-mobile" : "btn"}
+								</Button>
+								<Button onClick={handleExportEpub} title="导出为 EPUB 电子书" icon={<Icons.book size={16} />}>
+									导出 EPUB
+								</Button>
+								<Button
 									onClick={handleSaveToOriginal}
+									icon={<Icons.fileOutput size={16} />}
 								>
-									<Icons.fileOutput size={16} />
 									保存到原文件
-								</button>
-								<button
-									className={isMobile ? "btn-mobile" : "btn"}
+								</Button>
+								<Button
 									onClick={handleSaveCache}
 									title="手动保存当前进度到缓存"
+									icon={<Icons.cache size={16} />}
 								>
-									<Icons.cache size={16} />
 									保存缓存
 									{lastCacheSaveTime && (
 										<span className="cache-time">
@@ -509,15 +564,14 @@ export default function App() {
 											)
 										</span>
 									)}
-								</button>
-								<button
-									className={isMobile ? "btn-mobile" : "btn"}
+								</Button>
+								<Button
 									onClick={handleExportAllData}
 									title="导出所有设置和校对结果"
+									icon={<Icons.downloadCloud size={16} />}
 								>
-									<Icons.downloadCloud size={16} />
 									导出全部数据
-								</button>
+								</Button>
 								{!isMobile && (
 									<button
 										className="btn"
@@ -533,49 +587,41 @@ export default function App() {
 				</div>
 				<div className="header-right">
 					{isMobile && currentNovelId && (
-						<button
-							className={isMobile ? "btn-mobile" : "btn"}
+						<Button
 							onClick={handleExportNovel}
 							title="导出整本小说"
 							aria-label="导出整本小说"
-						>
-							<Icons.download size={18} />
-						</button>
+							icon={<Icons.download size={18} />}
+						/>
 					)}
 					{isMobile && currentNovelId && (
-						<button
-							className={isMobile ? "btn-mobile" : "btn"}
+						<Button
 							onClick={handleSaveCache}
 							title="保存缓存"
 							aria-label="保存缓存"
-						>
-							<Icons.cache size={18} />
-						</button>
+							icon={<Icons.cache size={18} />}
+						/>
 					)}
 					{isMobile && currentNovelId && (
-						<button
-							className={isMobile ? "btn-mobile" : "btn"}
+						<Button
 							onClick={handleSaveToOriginal}
 							title="保存到原文件"
 							aria-label="保存到原文件"
-						>
-							<Icons.fileOutput size={18} />
-						</button>
+							icon={<Icons.fileOutput size={18} />}
+						/>
 					)}
-					<button
-						className={isMobile ? "btn-mobile" : "btn"}
+					<Button
 						onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
 						title={theme === "dark" ? "切换到亮色模式" : "切换到深色模式"}
 						aria-label={theme === "dark" ? "切换到亮色模式" : "切换到深色模式"}
+						icon={theme === "dark" ? <Icons.sun size={18} /> : <Icons.moon size={18} />}
 					>
-						{theme === "dark" ? <Icons.sun size={18} /> : <Icons.moon size={18} />}
-						{!isMobile && (theme === "dark" ? "切换到亮色" : "切换到深色")}
-					</button>
+						{theme === "dark" ? "切换到亮色" : "切换到深色"}
+					</Button>
 					<GlobalSearch />
-					<button className={isMobile ? "btn-mobile" : "btn"} onClick={() => setConfigOpen(true)} aria-label="设置">
-						<Icons.bolt size={18} />
-						{!isMobile && "设置"}
-					</button>
+					<Button onClick={() => setConfigOpen(true)} aria-label="设置" icon={<Icons.bolt size={18} />}>
+						设置
+					</Button>
 				</div>
 			</header>
 
@@ -622,7 +668,7 @@ export default function App() {
 					className={`app-right ${rightTab === "task" ? "task-mode" : ""} ${isMobile && mobileTab === "task" ? "mobile-active" : ""} ${!isMobile && readingMode ? "hidden-panel" : ""}`}
 				>
 					{isMobile && mobileTab === "task" ? (
-						<TaskPanel />
+						<ScriptPanel />
 					) : (
 						<>
 							<div className="right-tabs">
@@ -642,7 +688,7 @@ export default function App() {
 								</button>
 							</div>
 							<div className="right-content">
-								{rightTab === "proofread" ? <ProofreadPanel /> : <TaskPanel />}
+								{rightTab === "proofread" ? <ProofreadPanel /> : <ScriptPanel />}
 							</div>
 						</>
 					)}
@@ -710,30 +756,42 @@ export default function App() {
 			)}
 
 			<Suspense fallback={null}>
-				<ConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
+				{/* key 随开关变化重挂载，崩溃后重新打开可自愈；fallback=null 避免弹窗崩溃导致整页白屏 */}
+				<ErrorBoundary key={String(configOpen)} fallback={null}>
+					<ConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
+				</ErrorBoundary>
 			</Suspense>
+			<FirstRunGuideModal
+				open={showLocalGuide}
+				onClose={handleCloseLocalGuide}
+				onOpenConfig={() => setConfigOpen(true)}
+			/>
 			<CJKVariantsModal
 				open={showCJKVariantModal}
 				onClose={() => setShowCJKVariantModal(false)}
 			/>
 			{showCharacterSettings && (
 				<Suspense fallback={null}>
-					<CharacterSettings
-						novelId={showCharacterSettings}
-						novelName={novels.find(n => n.id === showCharacterSettings)?.name || ""}
-						onClose={() => setShowCharacterSettings(null)}
-					/>
+					<ErrorBoundary fallback={null}>
+						<CharacterSettings
+							novelId={showCharacterSettings}
+							novelName={novels.find(n => n.id === showCharacterSettings)?.name || ""}
+							onClose={() => setShowCharacterSettings(null)}
+						/>
+					</ErrorBoundary>
 				</Suspense>
 			)}
 			{currentNovelId && showRoleplay && (
 				<Suspense fallback={null}>
-					<RoleplayModal
-						novelId={currentNovelId}
-						novelName={novels.find((n) => n.id === currentNovelId)?.name ?? ""}
-						show={showRoleplay}
-						isMobile={isMobile}
-						onClose={() => setShowRoleplay(false)}
-					/>
+					<ErrorBoundary fallback={null}>
+						<RoleplayModal
+							novelId={currentNovelId}
+							novelName={novels.find((n) => n.id === currentNovelId)?.name ?? ""}
+							show={showRoleplay}
+							isMobile={isMobile}
+							onClose={() => setShowRoleplay(false)}
+						/>
+					</ErrorBoundary>
 				</Suspense>
 			)}
 			<ToastContainer

@@ -3,7 +3,7 @@
 // ============================================================
 import { useState, useCallback, useMemo } from "react";
 import { useNovelStore } from "../stores/novelStore";
-import { useAppMetaStore } from "../stores/appMetaStore";
+import { useUIStore } from "../stores/uiStore";
 import { Icons } from "./Icons";
 import { Modal } from "./Modal";
 import { scanCJKVariants, normalizeCJKVariants, type CJKVariantEntry } from "../utils/normalizeCJK";
@@ -58,14 +58,14 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 				setVariantEntries(result);
 				setScanning(false);
 				if (result.length === 0) {
-					useAppMetaStore.getState().showToast("未发现变体字", "success");
+					useUIStore.getState().showToast("未发现变体字", "success");
 				}
 			} else {
 				const result = scanTraditionalChars(currentNovel.fullText);
 				setTradEntries(result);
 				setScanning(false);
 				if (result.length === 0) {
-					useAppMetaStore.getState().showToast("未发现繁体字", "success");
+					useUIStore.getState().showToast("未发现繁体字", "success");
 				}
 			}
 		}, 50);
@@ -90,10 +90,10 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 				});
 				if (isVariantTab) setVariantEntries([]); else setTradEntries([]);
 				logger.info(tag, `全文替换完成，共 ${totalCount} 处`);
-				useAppMetaStore.getState().showToast(doneMsg, "success");
+				useUIStore.getState().showToast(doneMsg, "success");
 			} catch (err) {
 				logger.errorGeneric(tag, '替换失败:', err);
-				useAppMetaStore.getState().showToast("替换失败", "error");
+				useUIStore.getState().showToast("替换失败", "error");
 			} finally {
 				setReplacing(false);
 				onClose();

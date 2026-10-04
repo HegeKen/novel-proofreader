@@ -18,7 +18,7 @@ const LSQ = "\u2018";
 const RSQ = "\u2019";
 
 /** 异常编号 → 异常信息 */
-export const ANOMALY_TYPES: Record<number, { name: string; description: string }> = {
+const ANOMALY_TYPES: Record<number, { name: string; description: string }> = {
 	1: { name: "缺失右引号", description: `中文双引号${LDQ}${RDQ}不配对，缺少右引号${RDQ}` },
 	2: { name: "缺失左引号", description: `中文双引号${LDQ}${RDQ}不配对，缺少左引号${LDQ}` },
 	3: { name: "缺失句末标点", description: "段落末尾缺少句号/问号/感叹号等" },
@@ -59,7 +59,7 @@ function shouldSkipEndCheck(para: string): boolean {
  * @param anomalyNo 异常编号
  * @returns 验证通过返回修复信息，不通过返回 null
  */
-export function verifyAnomaly(
+function verifyAnomaly(
 	para: string,
 	anomalyNo: number,
 ): { verified: boolean; fixText?: string; description?: string } {

@@ -1,0 +1,12 @@
+# ============================================================
+# Cargo 构建配置
+# ============================================================
+
+[env]
+# macOS 27+ SDK 已移除 ___isPlatformVersionAtLeast 符号的 tbd 声明。
+# llama.cpp Metal 后端的 @available(macOS 15.0, *) 检查在部署目标 < 15.0 时
+# 会生成对该符号的调用，导致 -nodefaultlibs 链接失败。
+# 将 llama.cpp（唯一的 cmake 依赖）的部署目标提升到 15.0，
+# 使 @available(macOS 15.0, *) 在编译期被判定为恒真，消除符号引用。
+# 注：此变量仅影响 cmake 构建，不影响 Rust 代码或 Tauri 应用本身的部署目标。
+CMAKE_OSX_DEPLOYMENT_TARGET = "15.0"

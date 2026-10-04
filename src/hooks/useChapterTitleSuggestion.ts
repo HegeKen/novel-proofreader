@@ -2,8 +2,9 @@ import { useState, useCallback } from "react";
 import { useNovelStore } from "../stores/novelStore";
 import { useCharacterStore } from "../stores/characterStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
-import { useAppMetaStore } from "../stores/appMetaStore";
+import { useUIStore } from "../stores/uiStore";
 import { generateChapterTitle } from "../utils/aiClient";
+import { isDefaultChapterTitle } from "../utils/chapterSplit";
 import { logger } from "../utils/logger";
 
 /** 从大事记中筛选与指定章节相关的事件（按 chapter 字段匹配章节标题，或 timeInfo 提及章节） */
@@ -52,11 +53,24 @@ export function useChapterTitleSuggestion() {
 		setChapterTitleSuggestions(prev => ({ ...prev, [chapterId]: [] }));
 
 		try {
-			const previousChapters: Record<string, string> = {};
-			for (let i = Math.max(0, chapterIndex - 5); i < chapterIndex; i++) {
-				const prevChapter = chapters[i];
-				if (prevChapter?.title) previousChapters[prevChapter.title] = prevChapter.content.slice(0, 200);
+			// 收集当前章节前后最近的"有标题"章节（跳过"第X章"默认标题与卷名），作为标题风格参考
+			const referenceTitles = new Map<number, string>();
+			for (let offset = 1; offset < chapters.length; offset++) {
+				if (chapterIndex - offset < 0 && chapterIndex + offset >= chapters.length) break;
+				for (const idx of [chapterIndex - offset, chapterIndex + offset]) {
+					if (idx < 0 || idx >= chapters.length || referenceTitles.has(idx)) continue;
+					const refChapter = chapters[idx];
+					if (!refChapter?.title || refChapter.isVolume) continue;
+					if (isDefaultChapterTitle(refChapter.title)) continue;
+					referenceTitles.set(idx, refChapter.title);
+				}
+				if (referenceTitles.size >= 8) break;
 			}
+			// 按章节顺序输出，供 AI 学习已有标题的命名风格
+			const previousChapters: Record<string, string> = {};
+			[...referenceTitles.entries()]
+				.sort((a, b) => a[0] - b[0])
+				.forEach(([, title]) => { previousChapters[title] = ""; });
 			// 有小说大事记时，同步推送该章节涉及的大事记作为参考
 			const allEvents = currentNovelId ? getEvents(currentNovelId) : [];
 			const relatedEvents = filterEventsForChapter(
@@ -80,7 +94,7 @@ export function useChapterTitleSuggestion() {
 			setChapterTitleSuggestions(prev => ({ ...prev, [chapterId]: suggestions }));
 		} catch (error) {
 			logger.errorGeneric('Failed to generate chapter title:', error);
-			useAppMetaStore.getState().showToast("生成章节名失败，请检查AI配置", "error");
+			useUIStore.getState().showToast("生成章节名失败，请检查AI配置", "error");
 			// 失败时清除加载状态；成功时保留 suggestingChapterId，供面板显示候选标题弹窗
 			setSuggestingChapterId(null);
 			setChapterTitleSuggestions(prev => {

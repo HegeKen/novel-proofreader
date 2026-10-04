@@ -1,20 +1,22 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { createPortal } from "react-dom";
 import { useCharacterStore } from "../stores/characterStore";
 import { useNovelStore } from "../stores/novelStore";
 import type { NovelEvent, CharacterInfo, Chapter } from "../types";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
-import { useAppMetaStore } from "../stores/appMetaStore";
+import { Modal } from "./Modal";
+import { useUIStore } from "../stores/uiStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useConfigStore } from "../stores/configStore";
 import { generateNovelEvents, sendChatCompletion, extractJSON } from "../utils/aiClient";
 import { logger } from "../utils/logger";
 import { generateId } from "../utils/id";
-import { useElapsedTime, formatElapsedTime } from "../hooks/useElapsedTime";
+import { useElapsedTime } from "../hooks/useElapsedTime";
+import { GenerationProgress } from "./GenerationProgress";
 import { sendTaskNotification } from "../utils/notifications";
 import { normalizeChapterTitle, parseChapterInfo, findMatchedChapter, normalizeEventChapter } from "../utils/chapterMatch";
 import { AutoResizeTextarea } from "./AutoResizeTextarea";
+import { ConfirmModal } from "./config/ConfirmModal";
 
 interface NovelEventModalProps {
 	novelId: string | null;
@@ -220,6 +222,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 	const editFormRef = useRef<HTMLDivElement>(null);
 	const [formData, setFormData] = useState<EventFormData>(emptyForm);
 	const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+	const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 1 });
 	const [generationPhase, setGenerationPhase] = useState<string>("");
@@ -363,7 +366,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 	const handleSave = useCallback(() => {
 		if (!novelId) return;
 		if (!formData.title.trim()) {
-			useAppMetaStore.getState().showToast("请输入事件标题", "warning");
+			useUIStore.getState().showToast("请输入事件标题", "warning");
 			return;
 		}
 		if (editingId === "__new__") {
@@ -373,7 +376,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		}
 		setEditingId(null);
 		setFormData(emptyForm);
-		useAppMetaStore.getState().showToast(
+		useUIStore.getState().showToast(
 			editingId === "__new__" ? "大事记已添加" : "大事记已更新",
 			"success",
 		);
@@ -384,7 +387,7 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 			if (!novelId) return;
 			removeEvent(novelId, eventId);
 			setShowDeleteConfirm(null);
-			useAppMetaStore.getState().showToast("大事记已删除", "success");
+			useUIStore.getState().showToast("大事记已删除", "success");
 		},
 		[novelId, removeEvent],
 	);
@@ -527,15 +530,11 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		}
 	}, [novelId, selectedChapterIds, chapters, characters, aiConfig, storeEvents, isGenerating, getChapterOrder, getVolumeForChapter, promptConfig]);
 
-	const handleGenerateWithAI = useCallback(async () => {
-		if (!novelId || !chapters.length || isGenerating) return;
+	/** 实际执行 AI 生成（确认重新生成后也走这里） */
+	const runGenerateWithAI = useCallback(async () => {
+		if (!novelId) return;
 
 		if (storeEvents.length > 0) {
-			const confirmed = window.confirm(`当前已有 ${storeEvents.length} 个大事记，重新生成将清除所有现有记录，确定继续吗？`);
-			if (!confirmed) {
-				return;
-			}
-			
 			const setEvents = useCharacterStore.getState().setEvents;
 			setEvents(novelId, []);
 		}
@@ -709,7 +708,19 @@ export const NovelEventModal: React.FC<NovelEventModalProps> = ({ novelId, show,
 		} finally {
 			setIsGenerating(false);
 		}
-	}, [novelId, chapters, characters, aiConfig, addEvent, storeEvents.length, isGenerating, promptConfig]);
+	}, [novelId, chapters, characters, aiConfig, addEvent, storeEvents.length, promptConfig]);
+
+	const handleGenerateWithAI = useCallback(async () => {
+		if (!novelId || !chapters.length || isGenerating) return;
+
+		// 已有大事记时先弹确认框，确认后清空现有记录并继续生成
+		if (storeEvents.length > 0) {
+			setShowRegenerateConfirm(true);
+			return;
+		}
+
+		await runGenerateWithAI();
+	}, [novelId, chapters.length, isGenerating, storeEvents.length, runGenerateWithAI]);
 
 	const handleReorderWithAI = useCallback(async () => {
 		if (!novelId || storeEvents.length === 0 || isGenerating) return;
@@ -800,7 +811,7 @@ ${eventsJson}`;
 	const handleSyncChapters = useCallback(() => {
 		if (!novelId) return;
 		if (storeEvents.length === 0) {
-			useAppMetaStore.getState().showToast("暂无大事记可同步", "info");
+			useUIStore.getState().showToast("暂无大事记可同步", "info");
 			return;
 		}
 
@@ -824,68 +835,87 @@ ${eventsJson}`;
 		if (updatedCount > 0) {
 			const setEvents = useCharacterStore.getState().setEvents;
 			setEvents(novelId, updatedEvents);
-			useAppMetaStore.getState().showToast(`同步完成，更新了 ${updatedCount} 个事件的章节信息`, "success");
+			useUIStore.getState().showToast(`同步完成，更新了 ${updatedCount} 个事件的章节信息`, "success");
 			logger.info(`[NovelEventModal] 同步完成，更新了 ${updatedCount} 个事件的章节/卷字段`);
 		} else {
-			useAppMetaStore.getState().showToast("所有事件的章节信息已是最新", "info");
+			useUIStore.getState().showToast("所有事件的章节信息已是最新", "info");
 		}
 	}, [novelId, storeEvents, chapters]);
 
 	if (!show || !novelId) return null;
 
-	return createPortal(
-		<div className="modal-overlay" onClick={onClose}>
-			<div className="config-modal novel-event-modal" onClick={(e) => e.stopPropagation()}>
-				<div className="config-header">
-					<div className="config-title">
-						<Icons.list size={18} />
-						<span>小说大事记</span>
-					</div>
-					<button className="close-btn" onClick={onClose}>
-						<Icons.x size={16} />
+	return (
+		<Modal
+			open={show && !!novelId}
+			onClose={onClose}
+			title="小说大事记"
+			icon={<Icons.list size={18} />}
+			className="config-modal novel-event-modal"
+			portal
+			footer={
+				<>
+					<button
+						className="btn"
+						onClick={handleAdd}
+						disabled={editingId !== null}
+						title="新增大事记"
+					>
+						<Icons.plus size={16} />
+						<span>新增</span>
 					</button>
-				</div>
-
-				<div className="config-body">
+					<button
+						className={`btn ${sortMode === 'time' ? 'btn-primary' : ''}`}
+						onClick={() => setSortMode(sortMode === 'chapter' ? 'time' : 'chapter')}
+						disabled={editingId !== null || sortedEvents.length === 0}
+						title={sortMode === 'chapter' ? "切换为按事件发生时间排序" : "切换为按章节顺序排序"}
+					>
+						<Icons.listOrdered size={16} />
+						<span>{sortMode === 'chapter' ? "按章节" : "按时间"}</span>
+					</button>
+					<button
+						className="btn"
+						onClick={handleSyncChapters}
+						disabled={editingId !== null || isGenerating || storeEvents.length === 0}
+						title="重新匹配事件与章节，标准化章节字段"
+					>
+						<Icons.refreshCw size={16} />
+						<span>同步</span>
+					</button>
+					<button
+						className="btn"
+						onClick={handleReorderWithAI}
+						disabled={editingId !== null || isGenerating || storeEvents.length === 0}
+						title="AI 根据故事逻辑重新排序现有大事记"
+					>
+						<Icons.arrowDownUp size={16} />
+						<span>{isGenerating ? "排序中..." : "AI 排序"}</span>
+					</button>
+					<button
+						className="btn"
+						onClick={handleGenerateWithAI}
+						disabled={editingId !== null || isGenerating || !chapters.length}
+						title="AI 分析小说内容生成大事记"
+					>
+						<Icons.brain size={16} />
+						<span>{isGenerating ? "生成中..." : "AI 生成"}</span>
+					</button>
+				</>
+			}
+		>
 					{(isGenerating || generationStatus) && (
-						<div className={`generation-progress ${generationStatus || "info"}`}>
-							<div className="generation-progress-header">
-								<Icons.brain size={16} />
-								<span className="generation-progress-phase">{generationPhase}</span>
-								{isGenerating && (
-									<Icons.loader2 size={14} className="generation-spinner" />
-								)}
-								{!isGenerating && generationStatus && (
-									<button
-										className="generation-progress-close"
-										onClick={() => {
-											setGenerationStatus(null);
-											setGenerationMessage("");
-											setGenerationProgress({ current: 0, total: 1 });
-										}}
-									>
-										<Icons.x size={14} />
-									</button>
-								)}
-							</div>
-							<div className="generation-progress-bar">
-								<div
-									className="generation-progress-fill"
-									style={{ width: `${(generationProgress.current / generationProgress.total) * 100}%` }}
-								/>
-							</div>
-							<div className="generation-progress-footer">
-								<span className="generation-progress-message">{generationMessage}</span>
-								{isGenerating && (
-									<span className="generation-progress-counter">
-										已耗时 {formatElapsedTime(generationElapsed)}
-									</span>
-								)}
-								{generationProgress.total > 1 && (
-									<span className="generation-progress-counter">{generationProgress.current}/{generationProgress.total}</span>
-								)}
-							</div>
-						</div>
+						<GenerationProgress
+							phase={generationPhase}
+							message={generationMessage}
+							progress={generationProgress}
+							elapsed={isGenerating ? generationElapsed : undefined}
+							status={generationStatus}
+							isRunning={isGenerating}
+							onClose={generationStatus ? () => {
+								setGenerationStatus(null);
+								setGenerationMessage("");
+								setGenerationProgress({ current: 0, total: 1 });
+							} : undefined}
+						/>
 					)}
 
 					{/* 新增大事记表单 - 在列表顶部显示 */}
@@ -1109,58 +1139,20 @@ ${eventsJson}`;
 							</div>
 						))}
 					</div>
-				</div>
 
-				{/* 底部操作按钮 */}
-				<div className="character-actions-fab-wrapper">
-					<button
-						className="btn"
-						onClick={handleAdd}
-						disabled={editingId !== null}
-						title="新增大事记"
-					>
-						<Icons.plus size={16} />
-						<span>新增</span>
-					</button>
-					<button
-						className={`btn ${sortMode === 'time' ? 'btn-primary' : ''}`}
-						onClick={() => setSortMode(sortMode === 'chapter' ? 'time' : 'chapter')}
-						disabled={editingId !== null || sortedEvents.length === 0}
-						title={sortMode === 'chapter' ? "切换为按事件发生时间排序" : "切换为按章节顺序排序"}
-					>
-						<Icons.listOrdered size={16} />
-						<span>{sortMode === 'chapter' ? "按章节" : "按时间"}</span>
-					</button>
-					<button
-						className="btn"
-						onClick={handleSyncChapters}
-						disabled={editingId !== null || isGenerating || storeEvents.length === 0}
-						title="重新匹配事件与章节，标准化章节字段"
-					>
-						<Icons.refreshCw size={16} />
-						<span>同步</span>
-					</button>
-					<button
-						className="btn"
-						onClick={handleReorderWithAI}
-						disabled={editingId !== null || isGenerating || storeEvents.length === 0}
-						title="AI 根据故事逻辑重新排序现有大事记"
-					>
-						<Icons.arrowDownUp size={16} />
-						<span>{isGenerating ? "排序中..." : "AI 排序"}</span>
-					</button>
-					<button
-						className="btn"
-						onClick={handleGenerateWithAI}
-						disabled={editingId !== null || isGenerating || !chapters.length}
-						title="AI 分析小说内容生成大事记"
-					>
-						<Icons.brain size={16} />
-						<span>{isGenerating ? "生成中..." : "AI 生成"}</span>
-					</button>
-				</div>
-			</div>
-		</div>,
-		document.body,
+			<ConfirmModal
+				show={showRegenerateConfirm}
+				title="重新生成大事记"
+				message={`当前已有 ${storeEvents.length} 个大事记，重新生成将清除所有现有记录，确定继续吗？`}
+				danger
+				confirmText="确定"
+				cancelText="取消"
+				onConfirm={() => {
+					setShowRegenerateConfirm(false);
+					void runGenerateWithAI();
+				}}
+				onCancel={() => setShowRegenerateConfirm(false)}
+			/>
+		</Modal>
 	);
 };

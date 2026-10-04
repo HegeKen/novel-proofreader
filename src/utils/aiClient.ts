@@ -1,7 +1,7 @@
 // ============================================================
 // AI 调用封装 — 支持 OpenAI 兼容接口 & Anthropic 接口
 // ============================================================
-import type { AIConfig, AIProvider, ApiFormat, NovelWorldbuilding, CharacterInfo, CharacterRelationship } from "../types";
+import type { AIConfig, AIProvider, ApiFormat, LocalModelConfig, NovelWorldbuilding, CharacterInfo, CharacterRelationship } from "../types";
 import { logger } from "./logger";
 import { normalizeCJKVariants } from "./normalizeCJK";
 import { generateId } from "./id";
@@ -13,11 +13,11 @@ export interface ChatMessage {
 	content: string;
 }
 
-export interface ChatCompletionChoice {
+interface ChatCompletionChoice {
 	message: { role: string; content: string };
 }
 
-export interface ChatCompletionResponse {
+interface ChatCompletionResponse {
 	choices: ChatCompletionChoice[];
 	usage?: {
 		prompt_tokens: number;
@@ -237,7 +237,7 @@ async function waitForRetry(attempt: number, signal?: AbortSignal): Promise<void
 }
 
 /** 创建统一的取消异常（AbortError），供所有调用方一致识别 */
-export function createAbortError(): DOMException {
+function createAbortError(): DOMException {
 	return new DOMException("请求已被取消", "AbortError");
 }
 
@@ -305,12 +305,18 @@ export async function sendChatCompletion(
 	const provider = detectProvider(config.baseURL);
 	const apiFormat = getApiFormat(config);
 
+	// 本地模型（Ollama / LM Studio / vLLM）使用 OpenAI 兼容端点，无需鉴权
+	const isLocalProvider = provider === "ollama" || provider === "lmstudio" || provider === "vllm";
+
 	// 根据 API 格式构建 URL / headers / body
 	const anthropicBase = apiFormat === "anthropic" ? ANTHROPIC_BASE_URLS[provider] : undefined;
 	const baseUrl = (anthropicBase ?? config.baseURL).replace(/\/+$/, "");
+	// 本地服务通常以 /v1 结尾，OpenAI 兼容路径需要拼接 /chat/completions
 	const url = apiFormat === "anthropic"
 		? `${baseUrl}/messages`
-		: `${baseUrl}/chat/completions`;
+		: isLocalProvider && !baseUrl.endsWith("/v1") && !baseUrl.endsWith("/v1/")
+			? `${baseUrl}/v1/chat/completions`
+			: `${baseUrl}/chat/completions`;
 
 	const promptTokens = Math.floor(messages.reduce((acc, m) => acc + (m.content?.length || 0), 0) * 0.5);
 	const minMaxTokens = Math.max(131072, Math.floor(promptTokens * 1.5));
@@ -341,6 +347,9 @@ export async function sendChatCompletion(
 		};
 		if (provider === "mimo") {
 			body.max_completion_tokens = minMaxTokens;
+		} else if (isLocalProvider) {
+			// 本地模型通常上下文较小，限制 max_tokens 避免浪费
+			body.max_tokens = Math.min(minMaxTokens, 8192);
 		} else {
 			body.max_tokens = minMaxTokens;
 		}
@@ -698,8 +707,231 @@ export async function testConnection(
 	}
 }
 
+// ============================================================
+// 本地大模型调用辅助
+// ============================================================
+
+/**
+ * 判断是否使用本地模型（外部服务或内置）
+ */
+export function isLocalModel(localConfig: LocalModelConfig): boolean {
+	return localConfig.enabled && localConfig.modelSource !== "cloud";
+}
+
+/**
+ * 发送 Chat Completion（按模型来源自动路由：云端 API / 本地外部服务 / 内置模型）
+ */
+export async function sendChatCompletionAuto(
+	messages: ChatMessage[],
+	config: AIConfig,
+	localConfig: LocalModelConfig,
+	signal?: AbortSignal,
+): Promise<string> {
+	if (!isLocalModel(localConfig)) {
+		return sendChatCompletion(messages, config, signal);
+	}
+
+	if (localConfig.modelSource === "local-builtin") {
+		return callBuiltinChat(messages, signal);
+	}
+
+	// local-external：以本地服务端点和模型覆盖云端配置；API Key 可选（LM Studio 启用鉴权时必填）
+	// 规范化端点为 origin 级基地址（剥离误粘贴的 /api/v1/chat 等路径），再拼 /v1
+	const extBaseURL = `${normalizeLocalEndpoint(localConfig.externalEndpoint)}/v1`;
+	return sendChatCompletion(
+		messages,
+		{
+			...config,
+			baseURL: extBaseURL,
+			model: localConfig.externalModel,
+			apiKey: localConfig.externalApiKey,
+		},
+		signal,
+	);
+}
+
+/**
+ * 调用内置本地模型（Rust llama.cpp 引擎，通过 Tauri Command）
+ * 仅在桌面应用环境可用；浏览器/测试环境调用会抛出明确错误
+ *
+ * 注意：内置模型多为中文纠错专用模型（如 ChineseErrorCorrector4-4B），
+ * 训练目标是输出"纠正后的完整句子"，而非 JSON 错误列表。
+ * 因此校对请求会自动使用简化的纠错 prompt，输出纠正后句子，
+ * 由前端 diff 生成错误列表。
+ */
+async function callBuiltinChat(
+	messages: ChatMessage[],
+	signal?: AbortSignal,
+): Promise<string> {
+	if (signal?.aborted) {
+		throw new DOMException("请求已取消", "AbortError");
+	}
+
+	// 检测是否为校对请求（system prompt 包含"校对"或"文字编辑"）
+	const systemMsg = messages.find((m) => m.role === "system");
+	const userMsg = messages.find((m) => m.role === "user");
+	const isProofread =
+		systemMsg?.content.includes("校对") || systemMsg?.content.includes("文字编辑");
+
+	let adaptedMessages = messages;
+	if (isProofread && userMsg) {
+		// 从校对 user prompt 中提取待纠正纯文本：
+		// buildProofreadUserPrompt 生成的指令前缀/忽略词约束会让蒸馏类通用模型
+		// 复述指令（如"用户要求我检查文本中的错别字…"）而非执行纠错，
+		// 纠错任务说明已由下方专用 system prompt 承载，user 只保留纯文本
+		let userText = userMsg.content;
+		const prefixIdx = userText.indexOf("请检查以下文本：\n\n");
+		if (prefixIdx >= 0) {
+			userText = userText.slice(prefixIdx + "请检查以下文本：\n\n".length);
+		}
+		const constraintIdx = userText.indexOf("\n\n【强制约束】");
+		if (constraintIdx >= 0) {
+			userText = userText.slice(0, constraintIdx);
+		}
+
+		// 校对专用模型使用简化 prompt：直接输出纠正后的完整句子
+		adaptedMessages = [
+			{
+				role: "system",
+				content:
+					"你是一个中文文本纠错专家。请纠正输入句子中的错别字、语法错误、的/地/得混用等问题。只输出纠正后的完整句子，禁止输出思考过程、解释、原因或任何标记（包括<think>标签）。如果原句没有错误，原样输出原句。",
+			},
+			{ role: "user", content: userText },
+		];
+	}
+
+	// 将消息拼装为 ChatML 格式（Qwen 系列模型原生模板）
+	const prompt =
+		adaptedMessages
+			.map((m) => `<|im_start|>${m.role}\n${m.content}<|im_end|>`)
+			.join("\n") + "\n<|im_start|>assistant\n";
+
+	try {
+		const { invoke } = await import("@tauri-apps/api/core");
+		const output = await invoke<string>("llm_inference", { prompt });
+		if (isProofread) {
+			logger.info(
+				"[AI] 内置模型校对输出（纠正后句子）:",
+				output.slice(0, 300),
+			);
+		}
+		return output;
+	} catch (err: unknown) {
+		const msg = err instanceof Error ? err.message : String(err);
+		throw new Error(`内置模型推理失败: ${msg}`);
+	}
+}
+
+/**
+ * 规范化本地服务端点为 origin 级基地址
+ * 用户可能从文档/curl 示例粘贴完整 API 路径（如 /api/v1/chat、/v1/chat/completions），
+ * 此处剥离这些后缀，调用方再统一拼接所需路径
+ */
+export function normalizeLocalEndpoint(endpoint: string): string {
+	let base = endpoint.trim().replace(/\/+$/, "");
+	// 已知 API 路径后缀（长的在前，优先匹配）
+	const suffixes = [
+		"/api/v1/chat",
+		"/v1/chat/completions",
+		"/chat/completions",
+		"/v1/completions",
+		"/v1/models",
+		"/api/tags",
+		"/v1",
+	];
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (const suffix of suffixes) {
+			if (base.endsWith(suffix)) {
+				base = base.slice(0, -suffix.length).replace(/\/+$/, "");
+				changed = true;
+				break;
+			}
+		}
+	}
+	return base;
+}
+
+/**
+ * 获取实际的 baseURL（本地模型覆盖）
+ */
+export function getEffectiveBaseURL(config: AIConfig, localConfig: LocalModelConfig): string {
+	if (!localConfig.enabled || localConfig.modelSource === "cloud") {
+		return config.baseURL;
+	}
+
+	if (localConfig.modelSource === "local-external") {
+		return normalizeLocalEndpoint(localConfig.externalEndpoint);
+	}
+
+	// local-builtin 模式走 Tauri Command，此处返回占位
+	return "builtin://local";
+}
+
+/**
+ * 流式调用本地模型（OpenAI 兼容，用于角色扮演等需要实时输出的场景）
+ */
+export async function* callLocalStream(
+	messages: ChatMessage[],
+	localConfig: LocalModelConfig,
+	signal?: AbortSignal,
+): AsyncGenerator<string> {
+	const url = `${normalizeLocalEndpoint(localConfig.externalEndpoint)}/v1/chat/completions`;
+
+	const body = {
+		model: localConfig.externalModel,
+		messages,
+		temperature: 0.7,
+		max_tokens: 2048,
+		stream: true,
+	};
+
+	const resp = await fetch(url, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			...(localConfig.externalApiKey ? { Authorization: `Bearer ${localConfig.externalApiKey}` } : {}),
+		},
+		body: JSON.stringify(body),
+		signal,
+	});
+
+	if (!resp.ok) {
+		throw new Error(`本地模型请求失败: ${resp.status}`);
+	}
+
+	const reader = resp.body!.getReader();
+	const decoder = new TextDecoder();
+	let buffer = "";
+
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+
+		buffer += decoder.decode(value, { stream: true });
+		const lines = buffer.split("\n");
+		buffer = lines.pop() || "";
+
+		for (const line of lines) {
+			if (line.startsWith("data: ")) {
+				const data = line.slice(6).trim();
+				if (data === "[DONE]") return;
+
+				try {
+					const parsed = JSON.parse(data);
+					const content = parsed.choices?.[0]?.delta?.content;
+					if (content) yield content;
+				} catch {
+					// 忽略解析错误
+				}
+			}
+		}
+	}
+}
+
 /** 账户余额信息（DeepSeek 官方接口返回结构） */
-export interface BalanceInfo {
+interface BalanceInfo {
 	currency: string;
 	total_balance: string;
 	granted_balance: string;
@@ -757,24 +989,24 @@ export async function fetchAccountBalance(
 // Prompt 模板
 // ============================================================
 
-/** 校对系统 prompt（段落级别） */
-export const PROOFREAD_SYSTEM_PROMPT = `你是小说文字编辑。输出JSON数组，每个错误含：line(行号从1)、find(原文连续片段，含错误及前后至少3字符，10-40字)、replace(修正后片段)、type(typo/format/punctuation/grammar/variant)、reason(≤10汉字)。
-
-类型说明：
+/** 校对类型说明（段落 / 章节 / 双段落 prompt 共享） */
+const PROOFREAD_TYPE_RULES = `类型说明：
 - typo：错别字（如"倾盘大雨"→"倾盆大雨"）
 - format：排版空格空行
 - punctuation：标点致命错误
 - grammar：病句（如"的/地/得"混用）
-- variant：康熙字典变体字/异体字/旧字形（如"⿰亻⿱⻊夂"、"⿲⿰⻊夂⻊夂"、"曱甴"等生僻字或旧字形，需修正为现代通用标准字）
+- variant：康熙字典变体字/异体字/旧字形（如"丼""氼""仌"等生僻字或旧字形，需修正为现代通用标准字）`;
 
-上下文完整性要求（避免误判的关键）：
+/** 上下文完整性规则（段落 / 章节 / 双段落 prompt 共享） */
+const PROOFREAD_CONTEXT_RULES = `上下文完整性要求（避免误判的关键）：
 1. 如错误靠近句末，find必须包含句末标点（句号、问号、感叹号、逗号等）
 2. find应包含完整的语义单元（完整词语、完整句子片段），不要截断词语
 3. 上下文完整性优先于字数限制，宁可超出字数也要保证完整
 4. 如错误涉及句子结构，应包含足够上下文以判断是否真正错误
-5. 禁止为满足字数限制而删除必要的标点或截断词语
+5. 禁止为满足字数限制而删除必要的标点或截断词语`;
 
-变体字精校规则：
+/** 变体字精校规则（段落 / 章节 / 双段落 prompt 共享） */
+const PROOFREAD_VARIANT_RULES = `变体字精校规则：
 1. 识别康熙字典中的生僻异体字、旧字形、俗字、讹字
 2. 识别Unicode扩展区中的生僻字（如U+2F00-U+2FFF康熙部首区、U+3400-U+4DBF扩展A区等）
 3. 将变体字修正为现代通用标准汉字
@@ -785,7 +1017,16 @@ export const PROOFREAD_SYSTEM_PROMPT = `你是小说文字编辑。输出JSON数
    - 异体字「羣」→「群」
    - 旧字形「刄」→「刃」
    - 俗字「巛」→「川」
-   - 旧字形「鉨」→「镍」
+   - 旧字形「鉨」→「镍」`;
+
+/** 校对系统 prompt（段落级别） */
+export const PROOFREAD_SYSTEM_PROMPT = `你是小说文字编辑。输出JSON数组，每个错误含：line(行号从1)、find(原文连续片段，含错误及前后至少3字符，10-40字)、replace(修正后片段)、type(typo/format/punctuation/grammar/variant)、reason(≤10汉字)。
+
+${PROOFREAD_TYPE_RULES}
+
+${PROOFREAD_CONTEXT_RULES}
+
+${PROOFREAD_VARIANT_RULES}
 
 示例：[{"line":3,"find":"他很高兴地笑了。","replace":"他很高兴地笑了。","type":"typo","reason":"的/地混用"}]
 约束：find精确复制且唯一；同行的find不重叠；无法定位则跳过；无错返回[]；变体字检测优先级高于普通错别字。
@@ -794,32 +1035,11 @@ ${ANOMALY_PROMPT_TEXT}`;
 /** 校对系统 prompt（章节级别 - 每行返回一条错误） */
 export const PROOFREAD_SYSTEM_PROMPT_CHAPTER = `你是小说文字编辑，校对整章JSON（key为行号，value为段落文本）。逐行检查typo(错别字)/format(排版空格空行)/punctuation(标点致命错误)/grammar(病句)/variant(康熙变体字)。输出JSON数组，字段：lineNumber(与输入key一致，string)、column(错误起始列，从1计数)、find(原文连续片段，含错误及前后各≥3字符，8-40字)、replace(修正后)、type、reason(≤10汉字)。严格约束：lineNumber须存在；column基于该行逐字符计算(含空格标点)；find精确复制；不跨行；无错返回[]；只输出JSON数组，无markdown。
 
-类型说明：
-- typo：错别字（如"倾盘大雨"→"倾盆大雨"）
-- format：排版空格空行
-- punctuation：标点致命错误
-- grammar：病句（如"的/地/得"混用）
-- variant：康熙字典变体字/异体字/旧字形（如"丼""氼""仌"等生僻字或旧字形，需修正为现代通用标准字）
+${PROOFREAD_TYPE_RULES}
 
-上下文完整性要求（避免误判的关键）：
-1. 如错误靠近句末，find必须包含句末标点（句号、问号、感叹号、逗号等）
-2. find应包含完整的语义单元（完整词语、完整句子片段），不要截断词语
-3. 上下文完整性优先于字数限制，宁可超出字数也要保证完整
-4. 如错误涉及句子结构，应包含足够上下文以判断是否真正错误
-5. 禁止为满足字数限制而删除必要的标点或截断词语
+${PROOFREAD_CONTEXT_RULES}
 
-变体字精校规则：
-1. 识别康熙字典中的生僻异体字、旧字形、俗字、讹字
-2. 识别Unicode扩展区中的生僻字（如U+2F00-U+2FFF康熙部首区、U+3400-U+4DBF扩展A区等）
-3. 将变体字修正为现代通用标准汉字
-4. 常见变体字示例：
-   - 旧字形「丼」→标准字「井」
-   - 俗字「氼」→「溺」
-   - 异体字「仌」→「冰」
-   - 异体字「羣」→「群」
-   - 旧字形「刄」→「刃」
-   - 俗字「巛」→「川」
-   - 旧字形「鉨」→「镍」
+${PROOFREAD_VARIANT_RULES}
 
 示例输入{"0":"第一章","1":"倾盘大雨。"} → [{"lineNumber":"1","column":5,"find":"倾盘大雨。","replace":"倾盆大雨。","type":"typo","reason":"错别字"}]。的/地/得错误：find含错误及前后各≥2字符。优先级：变体字>错别字>语法>排版>标点。不修改风格化/口语化表达。
 
@@ -857,18 +1077,9 @@ export const PROOFREAD_SYSTEM_PROMPT_DUAL = `你是小说文字编辑。系统�
 ## 首要任务：逐段校对错误
 分别检查两个段落中的文字错误。错误检测是首要任务，必须确保每个段落的错误都被完整检测出来。
 
-上下文完整性要求（避免误判的关键）：
-1. 如错误靠近句末，find必须包含句末标点（句号、问号、感叹号、逗号等）
-2. find应包含完整的语义单元（完整词语、完整句子片段），不要截断词语
-3. 上下文完整性优先于字数限制，宁可超出字数也要保证完整
-4. 如错误涉及句子结构，应包含足够上下文以判断是否真正错误
-5. 禁止为满足字数限制而删除必要的标点或截断词语
+${PROOFREAD_CONTEXT_RULES}
 
-变体字精校规则：
-1. 识别康熙字典中的生僻异体字、旧字形、俗字、讹字
-2. 识别Unicode扩展区中的生僻字（U+2F00-U+2FFF康熙部首区、U+3400-U+4DBF扩展A区等）
-3. 将变体字修正为现代通用标准汉字
-4. 常见变体字示例：丼→井、氼→溺、仌→冰、羣→群、刄→刃、巛→川、鉨→镍
+${PROOFREAD_VARIANT_RULES}
 
 ## 附加任务：评估段落分割
 在校对完成后，评估两个段落的分割是否合理：
@@ -920,6 +1131,23 @@ export function buildDualParagraphUserPrompt(
 
 	return prompt;
 }
+
+// ============================================================
+// 本地小模型（1.5B-7B）专用简化 Prompt
+// ============================================================
+
+/** 本地模型校对系统 prompt（段落级） */
+export const LOCAL_PROOFREAD_SYSTEM_PROMPT = `你是一位校对专家。请检查以下文本中的错误。
+
+## 要求
+1. 只检查错别字、标点符号错误、明显语病
+2. 不要修改正确的内容
+3. 必须严格按照 JSON 格式输出，不要输出任何解释或 markdown
+
+## 输出格式
+{"errors":[{"start":错误起始位置,"end":错误结束位置,"type":"typo|punctuation|grammar","original":"原文","corrected":"修正后","note":"原因说明"}],"needMerge":false}
+
+如果没有错误，输出：{"errors":[],"needMerge":false}`;
 
 /** 剧本转换系统 prompt */
 export const SCRIPT_SYSTEM_PROMPT = `你是剧本改编编剧。将小说章节转为中文影视拍摄剧本格式。输出纯JSON，无markdown，不要任何开场白。
@@ -1217,16 +1445,6 @@ export const NOVEL_TTS_ENHANCE_SYSTEM_PROMPT = `你是有声书演播导演。�
 - 语速必须与情绪匹配：平静=5，激动=7-8，抒情=3-4
 `;
 
-/** 构建小说章节TTS情感增强的user prompt */
-export function buildNovelTTSEnhanceUserPrompt(chapterContent: string, configuredCharacters?: Array<{ name: string; dialect?: string }>): string {
-        const dialectChars = configuredCharacters?.filter(c => c.dialect) || [];
-        const dialectInstruction = dialectChars.length > 0
-                ? `\n\n重要-角色方言指定：以下角色出现时，其对话必须加上对应方言标签：\n${dialectChars.map(c => `- ${c.name}：使用(${c.dialect})`).join('\n')}\n请根据角色名识别对话归属，为对应角色的对话添加正确的方言标签。`
-                : '';
-        
-        return `为以下小说章节添加情感/音色标注(TTS)。规则：每段加合适标签和语速，格式(标签|语速)，语速1-10（5=日常对话，3=舒缓，7=激动）。对话丰富，叙述平稳，唱歌加(唱歌|语速)。纯文本输出，保留原文结构与内容。情感要贴近生活、自然真实，克制内敛，避免舞台腔/过度戏剧化；日常对话优先用"平静/温柔/无奈"等克制标签+语速5，真正激动时才用"愤怒/恐惧/动情"+语速7-8；旁白默认"平静"+语速5，仅在大起大落处换标签。${dialectInstruction}\n\n${chapterContent}`;
-}
-
 // ============================================================
 // 阅读模式逐段TTS情感增强Prompt
 // ============================================================
@@ -1347,7 +1565,7 @@ ${chars}${narratorInstruction}${dialectInstruction}${eventsContext}
 }
 
 /** 文本片段类型 */
-export interface TextSegment {
+interface TextSegment {
 	type: 'narration' | 'dialogue';
 	speaker: string;
 	emotion: string;
@@ -1479,7 +1697,7 @@ ${numberedParagraphs}
 }
 
 /** 批量段落情感分析结果类型（一次请求分析多段） */
-export interface BatchParagraphEmotionResult {
+interface BatchParagraphEmotionResult {
 	paragraphs: Array<{
 		index: number;
 		characters: string[];
@@ -2006,7 +2224,7 @@ export const RELATIONSHIP_GRAPH_LAYOUT_SYSTEM_PROMPT = `你是一位小说角色
 必须为【每一个】角色都输出一个坐标，不要遗漏，也不要输出不存在的角色。`;
 
 /** 角色分析结果类型 */
-export interface CharacterAnalysisResult {
+interface CharacterAnalysisResult {
 	characters: Array<{
 		id?: string;
 		name: string;
@@ -2597,7 +2815,7 @@ export const NOVEL_EVENTS_MERGE_PROMPT = `你是小说剧情分析专家。以�
  * @param onProgress 进度回调
  * @returns 小说大事记结果
  */
-export interface NovelEventsResult {
+interface NovelEventsResult {
   events: Array<{
     title: string;
     description: string;
@@ -2760,111 +2978,8 @@ ${eventsJson}`;
   return { events: allEventsFromChunks };
 }
 
-/**
- * 分批分析整本小说，提取角色的大事件
- * @param fullText 小说全文
- * @param characterInfo 角色信息
- * @param config AI配置
- * @returns 角色大事件文本
- */
-export async function generateMajorEvents(
-	fullText: string,
-	characterInfo: {
-		name: string;
-		gender: "male" | "female" | "other";
-		role?: string;
-		notes?: string;
-		aliases?: string[];
-	},
-	config: AIConfig,
-): Promise<string> {
-	if (!config.apiKey || !config.baseURL) {
-		throw new Error("AI配置不完整");
-	}
-
-	// 分批处理，每批 80000 字符
-	const batchSize = 80000;
-	const chunks: string[] = [];
-	for (let i = 0; i < fullText.length; i += batchSize) {
-		chunks.push(fullText.slice(i, i + batchSize));
-	}
-
-	const roleLabel = characterInfo.role === "protagonist" ? "男主" :
-		characterInfo.role === "heroine" ? "女主" :
-		characterInfo.role === "antagonist" ? "反派" : (characterInfo.role || "角色");
-
-	const configForCall = {
-		baseURL: config.baseURL,
-		apiKey: config.apiKey,
-		model: config.model,
-		customHeaders: config.customHeaders || {},
-		maxCharsPerRequest: config.maxCharsPerRequest || 0,
-		enableLogging: config.enableLogging || false,
-		apiFormat: config.apiFormat,
-	};
-
-	// 第一阶段：逐批分析，提取每段中的事件
-	const allEvents: string[] = [];
-	for (let i = 0; i < chunks.length; i++) {
-		const chunk = chunks[i];
-		const userPrompt = `角色名：${characterInfo.name}
-别称：${characterInfo.aliases?.length ? characterInfo.aliases.join('、') : '无'}
-角色类型：${roleLabel}
-
-请分析以下小说文本片段（第 ${i + 1}/${chunks.length} 部分），找出该角色在这部分中的关键经历和大事件：
-
-${chunk}`;
-
-		const messages: ChatMessage[] = [
-			{ role: "system", content: MAJOR_EVENTS_SYSTEM_PROMPT },
-			{ role: "user", content: userPrompt },
-		];
-
-		try {
-			const response = await sendChatCompletion(messages, configForCall);
-			const trimmed = response.trim();
-			if (trimmed !== "无" && trimmed !== "") {
-				allEvents.push(trimmed);
-			}
-		} catch (err) {
-			logger.warn(`[MajorEvents] 批次 ${i + 1} 分析失败:`, err);
-			// 继续处理其他批次
-		}
-	}
-
-	if (allEvents.length === 0) {
-		return "暂无分析结果";
-	}
-
-	if (allEvents.length === 1) {
-		return allEvents[0];
-	}
-
-	// 第二阶段：合并所有批次的结果
-	const combinedEvents = allEvents.join("\n");
-	const mergePrompt = `角色名：${characterInfo.name}
-角色类型：${roleLabel}
-
-以下是各文本片段分析出的事件列表，请合并去重并按时间顺序排列：
-
-${combinedEvents}`;
-
-	const mergeMessages: ChatMessage[] = [
-		{ role: "system", content: MAJOR_EVENTS_MERGE_PROMPT },
-		{ role: "user", content: mergePrompt },
-	];
-
-	try {
-		const finalResponse = await sendChatCompletion(mergeMessages, configForCall);
-		return finalResponse.trim();
-	} catch (err) {
-		logger.warn("[MajorEvents] 合并阶段失败，返回原始结果:", err);
-		return combinedEvents;
-	}
-}
-
 /** 章节名生成系统 prompt */
-export const CHAPTER_TITLE_SYSTEM_PROMPT = `你是小说编辑专家。根据提供的章节内容和前几章的章节名，为当前章节生成合适的章节标题。
+export const CHAPTER_TITLE_SYSTEM_PROMPT = `你是小说编辑专家。根据提供的章节内容和已有章节的标题，为当前章节生成合适的章节标题。
 
 ## 输出格式
 请返回一个JSON数组，包含3-5个建议的章节名选项：
@@ -2874,18 +2989,19 @@ export const CHAPTER_TITLE_SYSTEM_PROMPT = `你是小说编辑专家。根据提
 1. 章节名必须符合中文小说的命名习惯
 2. 标题要能概括章节主要内容或核心事件
 3. 避免剧透但要有吸引力
-4. 保持与已有章节名风格一致
+4. **必须先分析【已有章节标题】体现的命名风格**——包括字数长短（如统一4字/5-7字）、结构（主谓/动宾/偏正/并列等）、用词气质（古风/现代/热血/悬疑等）、标点与格式习惯，然后严格按照该风格生成标题；已有标题若多为4字短语，就生成4字短语；若已有标题带有特定句式或意象，沿用同类句式与意象
 5. 生成的标题**不要**包含"第X章"或"第X回"前缀，只需纯标题内容
 
 ## 示例
 输入章节内容："林辰走出家门，来到了繁华的京城大街上。他此行的目的是寻找传说中的铁匠铺..."
-已有章节名：{"初入江湖":"第一章内容..."}
-输出：[{"title":"京城寻踪"},{"title":"铁匠传说"},{"title":"繁华都市"}]`;
+已有章节标题：{"初入江湖":"第一章内容...","比武惊变":"第二章内容...","剑冢迷踪":"第三章内容..."}
+风格分析：已有标题均为4字偏正结构，古风武侠气质
+输出：[{"title":"京城寻踪"},{"title":"铁匠传说"},{"title":"神兵现世"}]`;
 
 /**
  * 生成章节名建议
  * @param chapterContent 当前章节内容
- * @param previousChapters 前几章的章节名和内容（{title: content}格式）
+ * @param previousChapters 已有章节标题（风格参考，{title: content}格式，当前仅使用 title）
  * @param chapterNumber 当前章节编号
  * @param config AI配置
  * @returns 章节名建议数组
@@ -2899,23 +3015,22 @@ export async function generateChapterTitle(
 	novelEvents?: Array<{ title: string; description: string; chapter: string; timeInfo: string; volume?: string }>,
 ): Promise<string[]> {
 	// 构建用户prompt
-	const previousTitles = Object.keys(previousChapters).slice(-5); // 最多取前5章
+	const previousTitles = Object.keys(previousChapters).slice(0, 8); // 最多取8个风格参考标题
 	const titlesText = previousTitles.map((title, idx) => `${idx + 1}. ${title}`).join("\n");
 
 	// 大事记参考（仅注入与当前章节相关的事件，避免无关信息干扰标题生成）
 	const eventsText = novelEvents && novelEvents.length > 0
 		? `\n\n【本章涉及的小说大事记参考】\n${novelEvents.map((evt, idx) => `${idx + 1}. [${evt.volume ? evt.volume + "·" : ""}${evt.chapter || evt.timeInfo || "本章"}] ${evt.title}：${evt.description}`).join("\n")}\n请结合这些大事记，使生成的章节名能反映本章的关键事件与剧情走向。`
 		: "";
-	
+
 	const userPrompt = `请为以下章节生成合适的章节名：
 
-【章节内容】
+【本章内容】
 ${chapterContent.slice(0, 1000)}...
 
-【前几章章节名参考】
+【已有章节标题（风格参考）】
 ${titlesText || "无"}
-${eventsText}
-请生成3-5个合适的章节名建议。`;
+请先分析上述已有标题的命名风格（字数、结构、用词特点），再生成3-5个与该风格一致的章节名建议。${eventsText}`;
 
 	const messages: ChatMessage[] = [
 		{ role: "system", content: CHAPTER_TITLE_SYSTEM_PROMPT },
@@ -2980,7 +3095,7 @@ export const ROLEPLAY_SYSTEM_PROMPT = `你正在扮演小说中的一位角色�
 7. 若用户的问题超出角色认知范围（如未来剧情），应表现出角色真实的反应（困惑、回避等），而不是直接回答`;
 
 /** 角色扮演上下文参数 */
-export interface RoleplayContextParams {
+interface RoleplayContextParams {
 	/** 扮演的角色 */
 	character: CharacterInfo;
 	/** 与该角色相关的人物关系 */
@@ -3014,67 +3129,11 @@ function formatCharacterInfo(c: CharacterInfo): string {
 	return lines.join("\n");
 }
 
-/** 构建角色扮演的系统提示词（角色设定 + 关系 + 世界观 + 剧情位置 + 对话者身份） */
-export function buildRoleplaySystemPrompt(
-	params: RoleplayContextParams,
-	customSystemPrompt?: string,
-): string {
-	const {
-		character,
-		relatedRelationships,
-		allCharacters,
-		worldbuilding,
-		currentChapterTitle,
-		recentPlot,
-		userCharacter,
-	} = params;
-
-	const charById = new Map(allCharacters.map((c) => [c.id, c]));
-
-	// 对话者身份说明
-	const userIdentity = userCharacter
-		? `用户正在扮演「${userCharacter.name}」（${userCharacter.role ?? "小说角色"}）与你对话。请以你对「${userCharacter.name}」的了解来称呼与回应 TA，语气符合你与 TA 的关系与熟悉程度。`
-		: "用户是故事之外的旁观者（局外人），以读者视角与你交谈。你可以把他当作一个了解你故事、对你和剧情感兴趣的人，自然地回应 TA 的问题。";
-
-	// 人物关系摘要
-	const relationLines = relatedRelationships
-		.map((r) => {
-			const isSource = r.sourceId === character.id;
-			const otherId = isSource ? r.targetId : r.sourceId;
-			const other = charById.get(otherId);
-			if (!other) return null;
-			const typeText = r.relationType?.length
-				? r.relationType.join("、")
-				: r.customRelationType || "相识";
-			const nickname = (isSource ? r.sourceNickname : r.targetNickname)?.filter(Boolean);
-			return `与「${other.name}」是${typeText}关系${nickname?.length ? `，你称呼他/她为：${nickname.join("、")}` : ""}`;
-		})
-		.filter((l): l is string => l !== null);
-
-	// 世界观摘要（取主要维度）
-	const wbLines: string[] = [];
-	if (worldbuilding) {
-		if (worldbuilding.worldType) wbLines.push(`世界背景：${worldbuilding.worldType}`);
-		if (worldbuilding.eraDescription) wbLines.push(`时代背景：${worldbuilding.eraDescription}`);
-		if (worldbuilding.geography) wbLines.push(`地理环境：${worldbuilding.geography}`);
-		if (worldbuilding.socialStructure) wbLines.push(`社会结构：${worldbuilding.socialStructure}`);
-		if (worldbuilding.powerSystem) wbLines.push(`力量体系：${worldbuilding.powerSystem}`);
-		if (worldbuilding.coreSettings) wbLines.push(`核心设定：${worldbuilding.coreSettings}`);
-		if (wbLines.length === 0 && worldbuilding.description) wbLines.push(`世界观概述：${worldbuilding.description}`);
-	}
-
-	return `${customSystemPrompt || ROLEPLAY_SYSTEM_PROMPT}
-
-【你的角色设定】
-${formatCharacterInfo(character)}
-
-【对话者身份】
-${userIdentity}
-
-${relationLines.length ? `【你的人际关系】\n${relationLines.join("\n")}\n` : ""}${wbLines.length ? `【世界背景】\n${wbLines.join("\n")}\n` : ""}【当前剧情位置】
-当前故事进行到：${currentChapterTitle || "未知章节"}
-最近剧情片段：
-${recentPlot}`;
+/** 压缩角色卡（不在场角色的单行简介，仅提供引入时所需的最小信息） */
+function formatCharacterBrief(c: CharacterInfo): string {
+	const genderText = c.gender === "male" ? "男" : c.gender === "female" ? "女" : "其他";
+	const parts = [c.role ?? c.identity, c.personality].filter((s): s is string => !!s);
+	return `- ${c.name}（${genderText}）${parts.length ? `：${parts.join("，")}` : ""}`;
 }
 
 // ============================================================
@@ -3087,31 +3146,34 @@ export interface MultiRoleplaySegment {
 	character: string;
 	/** 该角色的发言内容 */
 	content: string;
+	/** 剧情内离场标记：该角色在本次发言后离开当前场景，后续不再发言（除非再被邀请） */
+	departed?: boolean;
 }
 
 export const ROLEPLAY_MULTI_SYSTEM_PROMPT = `你正在同时扮演小说中的多个角色，与用户进行沉浸式群像对话。你可以依据用户输入或剧情需要，将其他角色引入当前对话。
 
-## 在场角色与引入规则
-1. 【当前在场角色】是这场对话中已经出现的角色，他们一直都在场，理应参与发言
-2. 当用户提到、请求或暗示某个不在场的角色加入时，该角色立即加入在场角色行列，并参与本次发言。角色加入只增不减：新角色入场后，原有在场角色全部保留、继续在场，严禁用新角色替换、挤掉或忽略任何已在场角色
-3. 主角始终在场，除非剧情明确让其离开
+## 在场角色与引入/离场规则
+1. 【当前在场角色】是这场对话中正在场的角色，本轮输出中每个在场角色都必须各发言一条，缺一不可
+2. 当用户明确邀请（如"让某某过来""叫上某某"）或剧情需要某不在场角色加入时，可引入该角色并让其立即发言；引入的新角色排在发言顺序最前
+3. 在场角色可依剧情离场（如角色自己告辞、被支开）：该角色正常说出离场台词，并在其 JSON 元素中附加 "departed": true。离场后的角色不再发言，除非用户再次明确邀请
+4. 主角始终在场，除非剧情明确让其离开（同样以 "departed": true 标记）
 
 ## 输出格式（非常重要）
-4. 输出为 JSON 数组，数组中的元素数量必须等于【当前在场角色】的数量——【当前在场角色】列出的每个名字都必须出现且只能出现一次，每个元素是一条发言：{"character":"角色名","content":"发言内容"}。参与人数没有上限：无论在场角色是 2 个、3 个、4 个还是更多，都必须全员发言、一人不少；人数较多时，各角色发言可适当简短，但人人必须有实质台词
-5. 当用户请求或暗示某角色加入时（如"让某某过来""某某来了""叫上某某"），该角色加入在场角色，主角与引入角色都必须发言；严禁只让其中一个角色说话，也严禁因为人数增多而漏掉、省略或顶替任何已在场角色
-6. 每条发言的 content 必须以括号外的实质内容为主体——即必须有角色真正说出口的台词（对话、回应、反问、陈述等），括号内的动作/神态/心理描写只是辅助；严禁只输出一个"（动作/神态描写）"而没有台词
-7. 角色名必须是下方【可扮演角色】列表中存在的姓名，不得使用列表外的名字，也不得使用"旁白""叙述"等非角色名
-8. 历史消息中形如"（角色名）内容"的记录，表示该角色说过的话，用于理解上下文
+5. 输出为 JSON 数组，严格按照【当前在场角色】列出的顺序输出，每个在场角色一条发言：{"character":"角色名","content":"发言内容"}；若有新引入的角色，其发言排在数组最前。参与人数没有上限：无论在场角色是 2 个、3 个、4 个还是更多，都必须全员发言、一人不少；人数较多时，各角色发言可适当简短，但人人必须有实质台词
+6. 离场角色的元素格式为：{"character":"角色名","content":"离场台词","departed":true}
+7. 每条发言的 content 必须以括号外的实质内容为主体——即必须有角色真正说出口的台词（对话、回应、反问、陈述等），括号内的动作/神态/心理描写只是辅助；严禁只输出一个"（动作/神态描写）"而没有台词
+8. 角色名必须是下方【在场角色设定】或【可引入角色】列表中存在的姓名，不得使用列表外的名字，也不得使用"旁白""叙述"等非角色名
+9. 历史消息中形如"（角色名）内容"的记录，表示该角色说过的话，用于理解上下文
 
 ## 扮演规则
-9. 每个角色都要完全代入其身份、性格与说话方式，说话风格必须贴合各自设定，用第一人称"我"
-10. 每条发言必须先有实质台词（角色真正说出口的话），可再辅以括号包裹的动作/神态/语气/心理描写（如："你终于来了，（轻轻松了口气）我等了很久。"）；内容一般控制在 100-400 字以内（在场角色较多时，每人发言可适当压缩，保证全员都能发言），禁止只有括号内描写而没有台词
-11. 角色之间可以相互对话、插话、回应，形成自然的群像互动
-12. 严禁出现"作为AI""语言模型""根据设定"等字眼
-13. 只输出 JSON 数组本身，不要输出任何解释、markdown 代码块标记或其他文字`;
+10. 每个角色都要完全代入其身份、性格与说话方式，说话风格必须贴合各自设定，用第一人称"我"
+11. 每条发言必须先有实质台词（角色真正说出口的话），可再辅以括号包裹的动作/神态/语气/心理描写（如："你终于来了，（轻轻松了口气）我等了很久。"）；内容一般控制在 100-400 字以内（在场角色较多时，每人发言可适当压缩，保证全员都能发言），禁止只有括号内描写而没有台词
+12. 角色之间可以相互对话、插话、回应，形成自然的群像互动
+13. 严禁出现"作为AI""语言模型""根据设定"等字眼
+14. 只输出 JSON 数组本身，不要输出任何解释、markdown 代码块标记或其他文字`;
 
 /** 多角色扮演上下文参数 */
-export interface RoleplayMultiContextParams extends RoleplayContextParams {
+interface RoleplayMultiContextParams extends RoleplayContextParams {
 	/** 全部可扮演角色（含主角，供 AI 引入其他角色） */
 	playableCharacters: CharacterInfo[];
 	/** 当前在场角色（主角 + 历史对话中出现过的角色），这些角色都应参与发言 */
@@ -3141,13 +3203,18 @@ export function buildRoleplayMultiSystemPrompt(
 		? `用户正在扮演「${userCharacter.name}」（${userCharacter.role ?? "小说角色"}）。请以各自对「${userCharacter.name}」的了解来称呼与回应 TA。`
 		: "用户是故事之外的旁观者（局外人），以读者视角与在场角色交谈。";
 
-	// 全部可扮演角色设定（含主角，供 AI 引入其他角色）
-	const charLines = playableCharacters.map((c) => formatCharacterInfo(c));
+	// 在场角色列表（主角始终在场）；顺序即发言顺序（新邀请的角色排在最前）
+	const presentList = presentCharacters && presentCharacters.length > 0
+		? presentCharacters
+		: [mainCharacter];
+	const presentIdSet = new Set(presentList.map((c) => c.id));
+	const presentNames = presentList.map((c) => c.name).join("、");
 
-	// 当前在场角色（主角始终在场 + 历史出现过的角色）
-	const presentNames = presentCharacters && presentCharacters.length > 0
-		? presentCharacters.map((c) => c.name).join("、")
-		: mainCharacter.name;
+	// 在场角色输出完整设定；不在场角色只给压缩卡，节省 token
+	const presentCharLines = presentList.map((c) => formatCharacterInfo(c));
+	const absentBriefLines = playableCharacters
+		.filter((c) => !presentIdSet.has(c.id))
+		.map((c) => formatCharacterBrief(c));
 
 	// 主角色的人际关系摘要（帮助其他角色理解主角与谁相识）
 	const relationLines = relatedRelationships
@@ -3177,13 +3244,13 @@ export function buildRoleplayMultiSystemPrompt(
 
 	return `${customSystemPrompt || ROLEPLAY_MULTI_SYSTEM_PROMPT}
 
-【当前在场角色】（这些角色都在场，本轮输出中每个角色都必须各发言一条，缺一不可）
+【当前在场角色】（按此顺序输出发言，每人一条，缺一不可）
 ${presentNames}
 
-【可扮演角色】（全部可被引入对话的角色，不在场角色可依剧情引入）
-${charLines.join("\n\n")}
+【在场角色设定】
+${presentCharLines.join("\n\n")}
 
-【当前对话的主角色】
+${absentBriefLines.length ? `【可引入角色】（当前不在场，仅在用户明确邀请或剧情需要时引入；引入后排在发言顺序最前）\n${absentBriefLines.join("\n")}\n\n` : ""}【当前对话的主角色】
 ${formatCharacterInfo(mainCharacter)}
 
 【对话者身份】
@@ -3271,14 +3338,15 @@ export function isBracketOnlyContent(content: string): boolean {
 	return /^[（(【][^（）()【】]{1,}[）)】]$/.test(content.trim());
 }
 
-/** 从单个 JSON 项提取发言段（兼容 character/name、content/text 字段） */
+/** 从单个 JSON 项提取发言段（兼容 character/name、content/text 字段；departed/left 标记离场） */
 function extractSegment(item: unknown): MultiRoleplaySegment | null {
 	if (typeof item !== "object" || item === null) return null;
 	const o = item as Record<string, unknown>;
 	const character = String(o.character ?? o.name ?? "").trim();
 	const content = String(o.content ?? o.text ?? "").trim();
 	if (!character || !content) return null;
-	return { character, content };
+	const departed = o.departed === true || o.left === true;
+	return departed ? { character, content, departed } : { character, content };
 }
 
 /** 解析多个 JSON 对象拼接的文本（如 {"character":"A",...}\n{"character":"B",...}） */

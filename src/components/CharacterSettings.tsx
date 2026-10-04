@@ -4,14 +4,16 @@ import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useCharacterStore } from "../stores/characterStore";
 import { useProofreadMetaStore } from "../stores/proofreadMetaStore";
 import { useAppMetaStore } from "../stores/appMetaStore";
+import { useUIStore } from "../stores/uiStore";
 import { useConfigStore } from "../stores/configStore";
 import type { CharacterInfo, CharacterRelationship, CharacterRole, NovelCategory, NovelWorldbuilding, RelationType, NovelEvent } from "../types";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { logger } from "../utils/logger";
 import { ConfirmModal } from "./config/ConfirmModal";
-import { loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/fileExport";
-import type { DetectedCharacter } from "../utils/fileExport";
+import { loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/characterConfigStorage";
+import { detectCharactersFromText } from "../utils/characterDetection";
+import type { DetectedCharacter } from "../utils/characterDetection";
 import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign, analyzeWorldbuilding, sendChatCompletion, extractJSON, buildRequestConfig } from "../utils/aiClient";
 import type { ChatMessage } from "../utils/aiClient";
 import { generateId } from "../utils/id";
@@ -19,264 +21,16 @@ import { normalizeEventChapter } from "../utils/chapterMatch";
 import { NovelEventModal } from "./NovelEventModal";
 import { formatDateTime } from "../utils/formatters";
 import { sendTaskNotification } from "../utils/notifications";
-import { getRoleName, RELATION_TYPE_OPTIONS, GENDER_OPTIONS, ROLE_OPTIONS, makeRelationPairKey } from "../utils/characterRoles";
+import { RELATION_TYPE_OPTIONS, GENDER_OPTIONS, ROLE_OPTIONS, makeRelationPairKey } from "../utils/characterRoles";
 import { RelationshipGraph } from "./RelationshipGraph";
 import type { RelationshipGraphHandle, RelationshipGraphAIState } from "./RelationshipGraph";
 import { CharacterCard } from "./character-settings/CharacterCard";
 import { CharacterEditForm } from "./character-settings/CharacterEditForm";
 import { synthesizeSpeechWithVoice } from "../utils/ttsService";
-import { useElapsedTime, formatElapsedTime } from "../hooks/useElapsedTime";
+import { useElapsedTime } from "../hooks/useElapsedTime";
+import { formatElapsedTime } from "../utils/formatters";
 import { AutoResizeTextarea } from "./AutoResizeTextarea";
-
-// ============================================================
-// 角色排序组件 - 使用 Pointer Events 实现跨平台拖拽
-// ============================================================
-interface CharacterSortingSectionProps {
-	novelId: string;
-	characters: CharacterInfo[];
-	updateCharacter: (novelId: string, charId: string, updates: Partial<CharacterInfo>) => void;
-}
-
-export function CharacterSortingSection({ novelId, characters, updateCharacter }: CharacterSortingSectionProps) {
-	const [dragState, setDragState] = useState<{
-		isDragging: boolean;
-		draggedIndex: number | null;
-		dragOverIndex: number | null;
-		startY: number;
-		currentY: number;
-	}>({
-		isDragging: false,
-		draggedIndex: null,
-		dragOverIndex: null,
-		startY: 0,
-		currentY: 0,
-	});
-	
-	const containerRef = useRef<HTMLDivElement>(null);
-	const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-	const dragThresholdRef = useRef(10); // 拖拽触发阈值
-	
-	// 排序后的角色列表
-	const sortedCharacters = useMemo(() => {
-		const sorted = [...characters];
-		sorted.sort((a, b) => {
-			const aOrder = a.order ?? 9999;
-			const bOrder = b.order ?? 9999;
-			if (aOrder !== bOrder) {
-				return aOrder - bOrder;
-			}
-			return a.name.localeCompare(b.name, 'zh-CN');
-		});
-		return sorted;
-	}, [characters]);
-	
-	// 重新排序角色
-	const reorderCharacters = useCallback((fromIndex: number, toIndex: number) => {
-		if (fromIndex === toIndex) return;
-		
-		const newCharacters = [...sortedCharacters];
-		const [removed] = newCharacters.splice(fromIndex, 1);
-		newCharacters.splice(toIndex, 0, removed);
-		
-		// 更新所有角色的 order 字段
-		newCharacters.forEach((char, index) => {
-			updateCharacter(novelId, char.id, { order: index });
-		});
-	}, [sortedCharacters, novelId, updateCharacter]);
-	
-	// 计算拖拽目标位置
-	const calculateDropIndex = useCallback((currentIndex: number, deltaY: number) => {
-		if (!containerRef.current) return currentIndex;
-		
-		const items = Array.from(itemRefs.current.values());
-		if (items.length === 0) return currentIndex;
-		
-		// 计算当前拖拽位置
-		const draggedItem = items[currentIndex];
-		if (!draggedItem) return currentIndex;
-		
-		const draggedRect = draggedItem.getBoundingClientRect();
-		const draggedCenterY = draggedRect.top + draggedRect.height / 2 + deltaY;
-		
-		// 找到最接近的位置
-		let newIndex = currentIndex;
-		for (let i = 0; i < items.length; i++) {
-			if (i === currentIndex) continue;
-			
-			const item = items[i];
-			const rect = item.getBoundingClientRect();
-			const centerY = rect.top + rect.height / 2;
-			
-			// 判断是否应该交换位置
-			if (i < currentIndex && draggedCenterY < centerY) {
-				newIndex = i;
-				break;
-			} else if (i > currentIndex && draggedCenterY > centerY) {
-				newIndex = i;
-			}
-		}
-		
-		return newIndex;
-	}, []);
-	
-	// Pointer 事件处理
-	const handlePointerDown = useCallback((e: React.PointerEvent, index: number) => {
-		// 记录初始位置
-		setDragState({
-			isDragging: false,
-			draggedIndex: index,
-			dragOverIndex: null,
-			startY: e.clientY,
-			currentY: e.clientY,
-		});
-		
-		// 设置 pointer capture，确保后续事件都能被捕获
-		const target = e.currentTarget as HTMLDivElement;
-		target.setPointerCapture(e.pointerId);
-		
-		// 阻止默认行为（如文本选择）
-		e.preventDefault();
-	}, []);
-	
-	const handlePointerMove = useCallback((e: React.PointerEvent) => {
-		if (dragState.draggedIndex === null) return;
-		
-		const deltaY = e.clientY - dragState.startY;
-		
-		// 检测是否开始拖拽（需要超过阈值）
-		if (!dragState.isDragging && Math.abs(deltaY) > dragThresholdRef.current) {
-			setDragState(prev => ({
-				...prev,
-				isDragging: true,
-				currentY: e.clientY,
-			}));
-		} else if (dragState.isDragging) {
-			// 计算新的目标位置
-			const newIndex = calculateDropIndex(dragState.draggedIndex, deltaY);
-			
-			setDragState(prev => ({
-				...prev,
-				currentY: e.clientY,
-				dragOverIndex: newIndex !== prev.draggedIndex ? newIndex : null,
-			}));
-		}
-	}, [dragState, calculateDropIndex]);
-	
-	const handlePointerUp = useCallback((e: React.PointerEvent) => {
-		if (dragState.isDragging && dragState.draggedIndex !== null && dragState.dragOverIndex !== null) {
-			reorderCharacters(dragState.draggedIndex, dragState.dragOverIndex);
-		}
-		
-		// 释放 pointer capture
-		const target = e.currentTarget as HTMLDivElement;
-		target.releasePointerCapture(e.pointerId);
-		
-		setDragState({
-			isDragging: false,
-			draggedIndex: null,
-			dragOverIndex: null,
-			startY: 0,
-			currentY: 0,
-		});
-	}, [dragState, reorderCharacters]);
-	
-	const handlePointerCancel = useCallback((e: React.PointerEvent) => {
-		// 释放 pointer capture
-		const target = e.currentTarget as HTMLDivElement;
-		try {
-			target.releasePointerCapture(e.pointerId);
-		} catch {
-			// ignore
-		}
-		
-		setDragState({
-			isDragging: false,
-			draggedIndex: null,
-			dragOverIndex: null,
-			startY: 0,
-			currentY: 0,
-		});
-	}, []);
-	
-	// 注册 item ref
-	const setItemRef = useCallback((charId: string, el: HTMLDivElement | null) => {
-		if (el) {
-			itemRefs.current.set(charId, el);
-		} else {
-			itemRefs.current.delete(charId);
-		}
-	}, []);
-	
-	// 计算拖拽偏移样式
-	const getDragStyle = useCallback((index: number) => {
-		if (!dragState.isDragging || dragState.draggedIndex !== index) {
-			return {};
-		}
-		
-		const deltaY = dragState.currentY - dragState.startY;
-		return {
-			transform: `translateY(${deltaY}px) scale(1.02)`,
-			zIndex: 100,
-		};
-	}, [dragState]);
-	
-	return (
-		<div className="character-sorting-section" ref={containerRef}>
-			<div className="sorting-header">
-				<div className="section-label">
-					<Icons.list size={16} />
-					角色排序
-				</div>
-				<span className="sorting-hint">拖拽调整顺序</span>
-			</div>
-			
-			<div className="sorting-list">
-				{sortedCharacters.map((char, index) => (
-					<div
-						key={char.id}
-						ref={(el) => setItemRef(char.id, el)}
-						className={`sorting-item ${dragState.draggedIndex === index && dragState.isDragging ? 'dragging' : ''} ${dragState.dragOverIndex === index ? 'drag-over' : ''}`}
-						style={getDragStyle(index)}
-						onPointerDown={(e) => handlePointerDown(e, index)}
-						onPointerMove={handlePointerMove}
-						onPointerUp={handlePointerUp}
-						onPointerCancel={handlePointerCancel}
-					>
-						<div className="sorting-grip">
-							<Icons.listOrdered size={16} />
-						</div>
-						
-						<div className="sorting-order">
-							{index + 1}
-						</div>
-						
-						<div className="sorting-info">
-							<div className="sorting-name">{char.name}</div>
-							{char.role && (
-								<div className="sorting-role">{getRoleName(char.role)}</div>
-							)}
-						</div>
-						
-						<div className="sorting-actions">
-							{char.gender && (
-								<span className={`gender-badge ${char.gender}`}>
-									{char.gender === "male" ? "♂" : char.gender === "female" ? "♀" : "⚧"}
-								</span>
-							)}
-						</div>
-					</div>
-				))}
-			</div>
-			
-			{dragState.isDragging && (
-				<div className="sorting-tip">
-					<Icons.alertCircle size={14} />
-					<span>正在拖拽，松开完成排序</span>
-				</div>
-			)}
-		</div>
-	);
-}
+import { CharacterSortingSection } from "./CharacterSortingSection";
 
 interface CharacterSettingsProps {
 	novelId: string;
@@ -357,11 +111,11 @@ function OrganizeRelationItem({ rel, characters, novelId, onAdded }: OrganizeRel
 
 	const handleAdd = () => {
 		if (!sourceId || !targetId) {
-			useAppMetaStore.getState().showToast("请选择源角色和目标角色", "warning");
+			useUIStore.getState().showToast("请选择源角色和目标角色", "warning");
 			return;
 		}
 		if (sourceId === targetId) {
-			useAppMetaStore.getState().showToast("源角色和目标角色不能相同", "warning");
+			useUIStore.getState().showToast("源角色和目标角色不能相同", "warning");
 			return;
 		}
 
@@ -386,54 +140,36 @@ function OrganizeRelationItem({ rel, characters, novelId, onAdded }: OrganizeRel
 			<div className="organize-relation-form">
 				<div className="organize-relation-row">
 					<div className="organize-relation-field">
-						<label>源角色</label>
-						<select
-							value={sourceId}
-							onChange={(e) => setSourceId(e.target.value)}
-							className="form-select"
-						>
-							<option value="">选择角色...</option>
-							{characters.map((char) => (
-								<option key={char.id} value={char.id}>
-									{char.name}
-								</option>
-							))}
-						</select>
-					</div>
-					<div className="organize-relation-arrow">
-						<Icons.chevronRight size={16} />
-					</div>
-					<div className="organize-relation-field">
-						<label>目标角色</label>
-						<select
-							value={targetId}
-							onChange={(e) => setTargetId(e.target.value)}
-							className="form-select"
-						>
-							<option value="">选择角色...</option>
-							{characters.map((char) => (
-								<option key={char.id} value={char.id}>
-									{char.name}
-								</option>
-							))}
-						</select>
-					</div>
+							<label>源角色</label>
+							<Select
+								value={sourceId}
+								onChange={setSourceId}
+								placeholder="选择角色..."
+								options={characters.map((char) => ({ value: char.id, label: char.name }))}
+							/>
+						</div>
+						<div className="organize-relation-arrow">
+							<Icons.chevronRight size={16} />
+						</div>
+						<div className="organize-relation-field">
+							<label>目标角色</label>
+							<Select
+								value={targetId}
+								onChange={setTargetId}
+								placeholder="选择角色..."
+								options={characters.map((char) => ({ value: char.id, label: char.name }))}
+							/>
+						</div>
 				</div>
 				<div className="organize-relation-row">
 					<div className="organize-relation-field">
-						<label>关系类型</label>
-						<select
-							value={relationType}
-							onChange={(e) => setRelationType(e.target.value as RelationType)}
-							className="form-select"
-						>
-							{RELATION_TYPE_OPTIONS.map((opt) => (
-								<option key={opt.value} value={opt.value}>
-									{opt.label}
-								</option>
-							))}
-						</select>
-					</div>
+							<label>关系类型</label>
+							<Select
+								value={relationType}
+								onChange={(v) => setRelationType(v as RelationType)}
+								options={RELATION_TYPE_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))}
+							/>
+						</div>
 					<div className="organize-relation-field">
 						<label>源对目标的称呼</label>
 						<input
@@ -549,7 +285,7 @@ function MergeConfigPanel({ sourceChars, onExecute, onBack }: MergeConfigPanelPr
 
 	const handleExecute = () => {
 		if (!mergedName.trim()) {
-			useAppMetaStore.getState().showToast("请输入合并后的角色名称", "warning");
+			useUIStore.getState().showToast("请输入合并后的角色名称", "warning");
 			return;
 		}
 
@@ -838,7 +574,7 @@ function WorldbuildingSection({
 						</div>
 						{/* 完整概述 */}
 						{form.description && (
-							<div className="worldbuilding-field">
+							<div className="worldbuilding-field worldbuilding-overview">
 								<div className="worldbuilding-field-label">世界观概述</div>
 								<div className="worldbuilding-field-value">{form.description}</div>
 							</div>
@@ -948,11 +684,11 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		const aiConfig = useAIConfigStore.getState().aiConfig;
 
 		if (!currentNovel?.fullText) {
-			useAppMetaStore.getState().showToast("无法获取小说内容", "error");
+			useUIStore.getState().showToast("无法获取小说内容", "error");
 			return;
 		}
 		if (!aiConfig?.apiKey || !aiConfig?.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			useUIStore.getState().showToast("请先在设置中配置AI模型", "warning");
 			return;
 		}
 
@@ -980,7 +716,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					coreSettings: result.coreSettings || "",
 					description: result.description || "",
 				});
-				useAppMetaStore.getState().showToast("世界观分析完成", "success");
+				useUIStore.getState().showToast("世界观分析完成", "success");
 				sendTaskNotification("世界观分析完成", "已提取世界观信息");
 			} else {
 				setWbAnalyzeError("未能从小说内容中提取世界观信息");
@@ -1010,6 +746,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const [showDetectModal, setShowDetectModal] = useState(false);
 	const [detectedCharacters, setDetectedCharacters] = useState<DetectedCharacter[]>([]);
 	const [detectSearchQuery, setDetectSearchQuery] = useState("");
+	const [isDetecting, setIsDetecting] = useState(false);
 
 	// 角色分析弹窗状态
 	const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
@@ -1162,7 +899,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 合并角色关系：将 fromId 角色的所有关系转移到 toId 角色，然后删除 fromId 角色
 	const handleMergeCharacter = useCallback((fromId: string, toId: string) => {
 		if (fromId === toId) {
-			useAppMetaStore.getState().showToast("不能合并同一个角色", "warning");
+			useUIStore.getState().showToast("不能合并同一个角色", "warning");
 			return;
 		}
 
@@ -1170,7 +907,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		const fromChar = characters.find(c => c.id === fromId);
 		const toChar = characters.find(c => c.id === toId);
 		if (!fromChar || !toChar) {
-			useAppMetaStore.getState().showToast("角色不存在", "error");
+			useUIStore.getState().showToast("角色不存在", "error");
 			return;
 		}
 
@@ -1192,7 +929,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		// 删除被合并的角色
 		removeCharacter(novelId, fromId);
 
-		useAppMetaStore.getState().showToast(`已将「${fromChar.name}」合并到「${toChar.name}」，转移 ${mergedRels.length} 条关系`, "success");
+		useUIStore.getState().showToast(`已将「${fromChar.name}」合并到「${toChar.name}」，转移 ${mergedRels.length} 条关系`, "success");
 	}, [novelId, characters, getRelationshipsForNovel, setRelationshipsForNovel, updateCharacter, removeCharacter]);
 
 	// 小说设置标签页状态：'list' | 'graph' | 'worldbuilding'
@@ -1475,7 +1212,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			if (isMobile && data.length > CHUNK_SIZE) {
 				// 移动端：分段复制
 				const totalChunks = Math.ceil(data.length / CHUNK_SIZE);
-				useAppMetaStore.getState().showToast(`数据较大，将分 ${totalChunks} 次复制到剪贴板，请依次粘贴`, "info");
+				useUIStore.getState().showToast(`数据较大，将分 ${totalChunks} 次复制到剪贴板，请依次粘贴`, "info");
 				
 				for (let i = 0; i < totalChunks; i++) {
 					const start = i * CHUNK_SIZE;
@@ -1498,7 +1235,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 									resolve();
 								},
 								onCancel: () => {
-									useAppMetaStore.getState().showToast(`已取消复制，共复制了 ${i + 1}/${totalChunks} 部分`, "warning");
+									useUIStore.getState().showToast(`已取消复制，共复制了 ${i + 1}/${totalChunks} 部分`, "warning");
 									setConfirmModal(p => ({ ...p, show: false }));
 									resolve();
 								},
@@ -1507,15 +1244,15 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					}
 				}
 				
-				useAppMetaStore.getState().showToast(`成功复制全部 ${totalChunks} 部分数据到剪贴板！`, "success");
+				useUIStore.getState().showToast(`成功复制全部 ${totalChunks} 部分数据到剪贴板！`, "success");
 			} else {
 				// 桌面端或数据较小：直接复制
 				await navigator.clipboard.writeText(data);
-				useAppMetaStore.getState().showToast("已复制到剪贴板！", "success");
+				useUIStore.getState().showToast("已复制到剪贴板！", "success");
 			}
 		} catch (err) {
 			logger.errorGeneric('CharacterSettings - 复制失败:', err);
-			useAppMetaStore.getState().showToast("复制失败，请手动选择复制", "error");
+			useUIStore.getState().showToast("复制失败，请手动选择复制", "error");
 		}
 	}, [isMobile]);
 
@@ -1583,7 +1320,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				});
 			} catch (clipErr) {
 				logger.errorGeneric("CharacterSettings - 网页端剪贴板复制失败:", clipErr);
-				useAppMetaStore.getState().showToast("复制失败，请手动复制", "error");
+				useUIStore.getState().showToast("复制失败，请手动复制", "error");
 			}
 			return;
 		}
@@ -1613,7 +1350,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				}
 			} catch (e) {
 				logger.errorGeneric("CharacterSettings - Tauri保存文件失败:", e);
-				useAppMetaStore.getState().showToast("导出失败，请重试", "error");
+				useUIStore.getState().showToast("导出失败，请重试", "error");
 			}
 		} else {
 			// Tauri 环境但插件不可用 → 回退到剪贴板
@@ -1628,7 +1365,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				});
 			} catch (clipErr) {
 				logger.errorGeneric("CharacterSettings - Tauri环境下回退剪贴板失败:", clipErr);
-				useAppMetaStore.getState().showToast("复制失败，请手动复制", "error");
+				useUIStore.getState().showToast("复制失败，请手动复制", "error");
 			}
 		}
 	}, [sortedCharacters, relationships, novelName, novelId, nodePositions, ignoredWords, ignoredCharacterNames, novelCategory, setExportModal, getWorldbuilding, allEvents, copyToClipboard]);
@@ -1673,7 +1410,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						// 旧格式：CharacterInfo[]
 						importedChars = imported;
 					} else {
-						useAppMetaStore.getState().showToast("文件格式错误：无法识别的数据格式", "error");
+						useUIStore.getState().showToast("文件格式错误：无法识别的数据格式", "error");
 						return;
 					}
 
@@ -1684,7 +1421,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					);
 
 					if (!valid) {
-						useAppMetaStore.getState().showToast("文件格式错误：角色数据格式不正确", "error");
+						useUIStore.getState().showToast("文件格式错误：角色数据格式不正确", "error");
 						return;
 					}
 
@@ -1848,9 +1585,9 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 						(importedIgnoredCharacterNames.length > 0 ? `，导入 ${importedIgnoredCharacterNames.length} 个忽略角色` : "") +
 						(hasWorldbuilding ? "，导入世界观设定" : "") +
 						(importedEvents.length > 0 ? `，导入 ${importedEvents.length} 个大事记` : "");
-					useAppMetaStore.getState().showToast(msg, "success");
+					useUIStore.getState().showToast(msg, "success");
 				} catch (err) {
-					useAppMetaStore.getState().showToast("文件解析失败：" + (err instanceof Error ? err.message : String(err)), "error");
+					useUIStore.getState().showToast("文件解析失败：" + (err instanceof Error ? err.message : String(err)), "error");
 				} finally {
 					setIsImporting(false);
 				}
@@ -1863,12 +1600,12 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 使用AI分析整本小说提取角色和关系
 	const handleAnalyzeCharacters = useCallback(async () => {
 		if (!currentNovel?.fullText) {
-			useAppMetaStore.getState().showToast("无法获取小说内容", "error");
+			useUIStore.getState().showToast("无法获取小说内容", "error");
 			return;
 		}
 
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			useUIStore.getState().showToast("请先在设置中配置AI模型", "warning");
 			return;
 		}
 
@@ -2082,7 +1819,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					});
 				});
 			} else {
-				useAppMetaStore.getState().showToast(`分析完成！新增 ${newCharactersWithIds.length} 个角色和 ${newRelationships.length} 条关系`, "success");
+				useUIStore.getState().showToast(`分析完成！新增 ${newCharactersWithIds.length} 个角色和 ${newRelationships.length} 条关系`, "success");
 				setShowAnalyzeModal(false);
 			}
 		} catch (err) {
@@ -2118,7 +1855,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 进入配置模式，准备合并
 	const handleProceedToMergeConfig = () => {
 		if (selectedForMerge.length < 2) {
-			useAppMetaStore.getState().showToast("请至少选择2个角色进行合并", "warning");
+			useUIStore.getState().showToast("请至少选择2个角色进行合并", "warning");
 			return;
 		}
 		const chars = characters.filter(c => selectedForMerge.includes(c.id));
@@ -2148,7 +1885,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		}
 		// 关闭弹窗
 		setShowMergeModal(false);
-		useAppMetaStore.getState().showToast(`成功合并 ${deleteIds.length + 1} 个角色为 "${mergedChar.name}"`, "success");
+		useUIStore.getState().showToast(`成功合并 ${deleteIds.length + 1} 个角色为 "${mergedChar.name}"`, "success");
 	};
 
 	// 全选/取消全选
@@ -2162,6 +1899,35 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		}
 		setDetectedSelections(newSelections);
 	}, [detectedCharacters, detectedSelections, setDetectedSelections]);
+
+	// 检测新角色：扫描小说全文，找出可能遗漏的角色
+	const handleDetectCharacters = useCallback(() => {
+		const text = currentNovel?.fullText;
+		if (!text) {
+			useUIStore.getState().showToast("无法获取小说内容", "error");
+			return;
+		}
+		setIsDetecting(true);
+		// 延迟执行，让"检测中"状态先渲染（全文检测较耗时）
+		setTimeout(() => {
+			try {
+				const detected = detectCharactersFromText(text);
+				// 过滤已收录的角色名与别名
+				const knownNames = new Set(characters.flatMap((c) => [c.name, ...(c.aliases || [])]));
+				const fresh = detected.filter((c) => !knownNames.has(c.name));
+				if (fresh.length === 0) {
+					useUIStore.getState().showToast("未检测到新角色", "info");
+					return;
+				}
+				setDetectedCharacters(fresh);
+				setDetectedSelections({});
+				setDetectSearchQuery("");
+				setShowDetectModal(true);
+			} finally {
+				setIsDetecting(false);
+			}
+		}, 50);
+	}, [currentNovel, characters]);
 
 	// 添加选中的检测角色
 	const handleAddSelectedCharacters = useCallback(() => {
@@ -2208,19 +1974,19 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 		const messages = [];
 		if (addedCount > 0) messages.push(`新增 ${addedCount} 个角色`);
 		if (mergedCount > 0) messages.push(`合并 ${mergedCount} 个到已有角色`);
-		useAppMetaStore.getState().showToast(messages.join('，'), "success");
+		useUIStore.getState().showToast(messages.join('，'), "success");
 	}, [detectedCharacters, detectedSelections, novelId, characters, addCharacter, updateCharacter, setShowDetectModal]);
 
 	
 	// 重新分析角色小传
 	const handleReanalyzeBiography = useCallback(async (character: CharacterInfo) => {
 		if (!currentNovel?.fullText) {
-			useAppMetaStore.getState().showToast("无法获取小说内容", "error");
+			useUIStore.getState().showToast("无法获取小说内容", "error");
 			return;
 		}
 
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			useUIStore.getState().showToast("请先在设置中配置AI模型", "warning");
 			return;
 		}
 
@@ -2291,10 +2057,10 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 				voiceDesignPrompt: result,
 			}));
 			
-			useAppMetaStore.getState().showToast("音色设计生成成功", "success");
+			useUIStore.getState().showToast("音色设计生成成功", "success");
 		} catch (error) {
 			logger.errorGeneric("生成音色设计失败", { error });
-			useAppMetaStore.getState().showToast("生成音色设计失败", "error");
+			useUIStore.getState().showToast("生成音色设计失败", "error");
 		} finally {
 			setIsGeneratingVoiceDesign(false);
 		}
@@ -2304,7 +2070,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	const handleEnhanceCharacter = useCallback(async () => {
 		if (!editForm.name) return;
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			useUIStore.getState().showToast("请先在设置中配置AI模型", "warning");
 			return;
 		}
 
@@ -2396,10 +2162,10 @@ ${JSON.stringify(existingInfo, null, 2)}
 				relationTerms: Array.isArray(parsed.relationTerms) ? parsed.relationTerms as string[] : prev.relationTerms,
 			}));
 
-			useAppMetaStore.getState().showToast("角色卡片完善成功", "success");
+			useUIStore.getState().showToast("角色卡片完善成功", "success");
 		} catch (err) {
 			logger.errorGeneric("角色卡片完善失败", { error: err });
-			useAppMetaStore.getState().showToast("角色卡片完善失败: " + (err instanceof Error ? err.message : String(err)), "error");
+			useUIStore.getState().showToast("角色卡片完善失败: " + (err instanceof Error ? err.message : String(err)), "error");
 		} finally {
 			setIsEnhancingCharacter(false);
 		}
@@ -2839,6 +2605,15 @@ ${JSON.stringify(existingInfo, null, 2)}
 						>
 							<Icons.sparkle size={18} />
 							<span>{isAnalyzing ? "分析中" : "AI分析"}</span>
+						</button>
+						<button
+							className="action-btn character-action"
+							onClick={handleDetectCharacters}
+							title="自动检测小说中未收录的角色"
+							disabled={isDetecting}
+						>
+							{isDetecting ? <Icons.loader2 size={18} className="animate-spin" /> : <Icons.search size={18} />}
+							<span>{isDetecting ? "检测中" : "检测"}</span>
 						</button>
 						<button
 							className={`action-btn character-action ${isDragMode ? 'active' : ''}`}
@@ -3438,7 +3213,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 						<button
 							className="btn"
 							onClick={() => {
-								useAppMetaStore.getState().showToast(`成功添加 ${skippedRelationships.length} 条关系`, "success");
+								useUIStore.getState().showToast(`成功添加 ${skippedRelationships.length} 条关系`, "success");
 								setShowOrganizeRelationsModal(false);
 							}}
 							disabled={skippedRelationships.length === 0}
@@ -3466,17 +3241,15 @@ ${JSON.stringify(existingInfo, null, 2)}
 					<div className="config-body">
 						<div className="flex items-center gap-2 mb-4">
 							<label className="text-sm text-neutral-400">查看角色的关系：</label>
-							<select
+							<Select
 								value={selectedCharacterForRelations || ""}
-								onChange={(e) => setSelectedCharacterForRelations(e.target.value || null)}
-								className="form-select"
-								style={{ maxWidth: "200px" }}
-							>
-								<option value="">查看所有角色关系</option>
-								{characters.map((char) => (
-									<option key={char.id} value={char.id}>{char.name}</option>
-								))}
-							</select>
+								onChange={(v) => setSelectedCharacterForRelations(v || null)}
+								className="relation-filter-select"
+								options={[
+									{ value: "", label: "查看所有角色关系" },
+									...characters.map((char) => ({ value: char.id, label: char.name })),
+								]}
+							/>
 						</div>
 						<div className="flex items-center gap-2 justify-between mb-4">
 							<div className="flex items-center gap-2">
@@ -3885,15 +3658,15 @@ ${JSON.stringify(existingInfo, null, 2)}
 							className="btn"
 							onClick={() => {
 								if (!relationForm.sourceId || !relationForm.targetId) {
-									useAppMetaStore.getState().showToast("请选择源角色和目标角色", "warning");
+									useUIStore.getState().showToast("请选择源角色和目标角色", "warning");
 									return;
 								}
 								if (relationForm.sourceId === relationForm.targetId) {
-									useAppMetaStore.getState().showToast("源角色和目标角色不能相同", "warning");
+									useUIStore.getState().showToast("源角色和目标角色不能相同", "warning");
 									return;
 								}
 								if (relationForm.relationType.length === 0) {
-									useAppMetaStore.getState().showToast("请至少选择一种关系类型", "warning");
+									useUIStore.getState().showToast("请至少选择一种关系类型", "warning");
 									return;
 								}
 
@@ -3918,7 +3691,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 
 									existingRels.forEach(r => removeRelationship(novelId, r.id));
 									updateRelationship(novelId, editingRelation!.id, mergedRelation);
-									useAppMetaStore.getState().showToast(`已合并 ${existingRels.length + 1} 条关系`, "success");
+									useUIStore.getState().showToast(`已合并 ${existingRels.length + 1} 条关系`, "success");
 								} else {
 									updateRelationship(novelId, editingRelation!.id, {
 										sourceId: relationForm.sourceId,
@@ -3927,7 +3700,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 										sourceNickname: relationForm.sourceNickname,
 										targetNickname: relationForm.targetNickname,
 									});
-									useAppMetaStore.getState().showToast("关系已更新", "success");
+									useUIStore.getState().showToast("关系已更新", "success");
 								}
 								setEditingRelation(null);
 							}}

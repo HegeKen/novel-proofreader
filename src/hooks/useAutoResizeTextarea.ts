@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
-export interface AutoResizeTextareaOptions {
+interface AutoResizeTextareaOptions {
 	/**
 	 * 最小高度（px）。不传时以「一行」为下限（等同单行输入框的高度）。
 	 * 需要留出更大的空白输入区时显式传入。

@@ -90,3 +90,6 @@ mod android_service {
         Ok(())
     }
 }
+
+/// 本地 LLM 命令模块（实现见 commands/llm.rs）
+pub mod llm;

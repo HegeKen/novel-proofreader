@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { repairTruncatedJson, extractJSON, normalizeErrors, parseMultiRoleplayResponse, hasSubstantiveContent, isBracketOnlyContent, parseBatchParagraphEmotionResult } from '../aiClient'
+import { isLocalModel, getEffectiveBaseURL, sendChatCompletionAuto, normalizeLocalEndpoint } from '../aiClient'
+import type { AIConfig, LocalModelConfig } from '../../types'
 
 describe('repairTruncatedJson', () => {
 	it('returns valid JSON unchanged', () => {
@@ -280,5 +282,171 @@ describe('parseBatchParagraphEmotionResult - 整段朗读批量情感分析', ()
 		expect(parseBatchParagraphEmotionResult('完全不是JSON')).toBeNull()
 		expect(parseBatchParagraphEmotionResult('')).toBeNull()
 		expect(parseBatchParagraphEmotionResult('{"foo":"bar"}')).toBeNull()
+	})
+})
+
+describe('normalizeLocalEndpoint', () => {
+	it('剥离误粘贴的 API 路径后缀', () => {
+		expect(normalizeLocalEndpoint('http://localhost:1234/api/v1/chat')).toBe('http://localhost:1234')
+		expect(normalizeLocalEndpoint('http://localhost:1234/v1/chat/completions')).toBe('http://localhost:1234')
+		expect(normalizeLocalEndpoint('http://localhost:11434/api/tags')).toBe('http://localhost:11434')
+		expect(normalizeLocalEndpoint('http://localhost:1234/v1/models')).toBe('http://localhost:1234')
+	})
+
+	it('剥离 /v1 后缀', () => {
+		expect(normalizeLocalEndpoint('http://localhost:1234/v1')).toBe('http://localhost:1234')
+		expect(normalizeLocalEndpoint('http://localhost:1234/v1/')).toBe('http://localhost:1234')
+	})
+
+	it('保留干净的基地址不变', () => {
+		expect(normalizeLocalEndpoint('http://localhost:11434')).toBe('http://localhost:11434')
+		expect(normalizeLocalEndpoint('http://127.0.0.1:61843')).toBe('http://127.0.0.1:61843')
+	})
+
+	it('去除首尾空白和尾部斜杠', () => {
+		expect(normalizeLocalEndpoint('  http://localhost:1234/  ')).toBe('http://localhost:1234')
+	})
+})
+
+describe('isLocalModel', () => {
+	const localConfig: LocalModelConfig = {
+		modelSource: 'local-external',
+		externalEndpoint: 'http://localhost:11434',
+		externalApiKey: '',
+		externalModel: 'qwen2.5:7b',
+		builtinModelPath: '',
+		builtinContextSize: 4096,
+		gpuLayers: -1,
+		enabled: true,
+	}
+
+	it('returns true for local-external when enabled', () => {
+		expect(isLocalModel(localConfig)).toBe(true)
+	})
+
+	it('returns false when disabled', () => {
+		expect(isLocalModel({ ...localConfig, enabled: false })).toBe(false)
+	})
+
+	it('returns false for cloud source even when enabled', () => {
+		expect(isLocalModel({ ...localConfig, modelSource: 'cloud' })).toBe(false)
+	})
+
+	it('returns true for local-builtin when enabled', () => {
+		expect(isLocalModel({ ...localConfig, modelSource: 'local-builtin' })).toBe(true)
+	})
+})
+
+describe('getEffectiveBaseURL', () => {
+	const cloudConfig: AIConfig = {
+		baseURL: 'https://api.deepseek.com/v1',
+		apiKey: 'test-key',
+		model: 'deepseek-chat',
+		customHeaders: {},
+		maxCharsPerRequest: 2000,
+		enableLogging: false,
+		apiFormat: 'openai',
+	}
+
+	const localConfig: LocalModelConfig = {
+		modelSource: 'local-external',
+		externalEndpoint: 'http://localhost:11434',
+		externalApiKey: '',
+		externalModel: 'qwen2.5:7b',
+		builtinModelPath: '',
+		builtinContextSize: 4096,
+		gpuLayers: -1,
+		enabled: true,
+	}
+
+	it('returns cloud baseURL when local model disabled', () => {
+		expect(getEffectiveBaseURL(cloudConfig, { ...localConfig, enabled: false })).toBe('https://api.deepseek.com/v1')
+	})
+
+	it('returns cloud baseURL when modelSource is cloud', () => {
+		expect(getEffectiveBaseURL(cloudConfig, { ...localConfig, modelSource: 'cloud' })).toBe('https://api.deepseek.com/v1')
+	})
+
+	it('returns external endpoint for local-external', () => {
+		expect(getEffectiveBaseURL(cloudConfig, localConfig)).toBe('http://localhost:11434')
+	})
+
+	it('returns builtin placeholder for local-builtin', () => {
+		expect(getEffectiveBaseURL(cloudConfig, { ...localConfig, modelSource: 'local-builtin' })).toBe('builtin://local')
+	})
+})
+
+describe('sendChatCompletionAuto - 模型来源路由', () => {
+	const cloudConfig: AIConfig = {
+		baseURL: 'https://api.deepseek.com/v1',
+		apiKey: 'test-key',
+		model: 'deepseek-chat',
+		customHeaders: {},
+		maxCharsPerRequest: 2000,
+		enableLogging: false,
+		apiFormat: 'openai',
+	}
+
+	const messages = [{ role: 'user' as const, content: '测试' }]
+
+	const makeLocal = (overrides: Partial<LocalModelConfig> = {}): LocalModelConfig => ({
+		modelSource: 'local-external',
+		externalEndpoint: 'http://localhost:11434',
+		externalApiKey: '',
+		externalModel: 'qwen2.5:7b',
+		builtinModelPath: '',
+		builtinContextSize: 4096,
+		gpuLayers: -1,
+		enabled: true,
+		...overrides,
+	})
+
+	it('云端模式走 fetch 请求', async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({ choices: [{ message: { content: '云端回复' } }] }),
+		})
+		vi.stubGlobal('fetch', fetchMock)
+		try {
+			const reply = await sendChatCompletionAuto(messages, cloudConfig, makeLocal({ enabled: false }))
+			expect(reply).toBe('云端回复')
+			expect(fetchMock).toHaveBeenCalledOnce()
+			expect(String(fetchMock.mock.calls[0][0])).toContain('api.deepseek.com')
+		} finally {
+			vi.unstubAllGlobals()
+		}
+	})
+
+	it('本地外部服务模式覆盖 baseURL 与 model，不携带 API Key', async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({ choices: [{ message: { content: '本地回复' } }] }),
+		})
+		vi.stubGlobal('fetch', fetchMock)
+		try {
+			const reply = await sendChatCompletionAuto(messages, cloudConfig, makeLocal())
+			expect(reply).toBe('本地回复')
+			const [url, init] = fetchMock.mock.calls[0]
+			expect(String(url)).toContain('localhost:11434')
+			const body = JSON.parse(String(init?.body))
+			expect(body.model).toBe('qwen2.5:7b')
+			expect(init?.headers?.Authorization).toBeUndefined()
+		} finally {
+			vi.unstubAllGlobals()
+		}
+	})
+
+	it('内置模型模式在非 Tauri 环境抛出明确错误', async () => {
+		await expect(
+			sendChatCompletionAuto(messages, cloudConfig, makeLocal({ modelSource: 'local-builtin' })),
+		).rejects.toThrow('内置模型推理失败')
+	})
+
+	it('signal 已中止时内置模型模式直接抛 AbortError', async () => {
+		const controller = new AbortController()
+		controller.abort()
+		await expect(
+			sendChatCompletionAuto(messages, cloudConfig, makeLocal({ modelSource: 'local-builtin' }), controller.signal),
+		).rejects.toThrow('请求已取消')
 	})
 })

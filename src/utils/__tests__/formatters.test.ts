@@ -1,19 +1,24 @@
 import { describe, it, expect } from 'vitest'
-import { formatFileSize, formatDateTime, buildParagraphIndexMap, buildOriginalToFilteredMap } from '../formatters'
+import { formatFileSize, formatTextSize, formatDateTime } from '../formatters'
+import { buildParagraphIndexMap, buildOriginalToFilteredMap } from '../chapterSplit'
 
 describe('formatFileSize', () => {
 	it('formats bytes', () => {
-		expect(formatFileSize('hello')).toBe('5 B')
+		expect(formatFileSize(5)).toBe('5 B')
 	})
 
 	it('formats kilobytes', () => {
-		const text = 'a'.repeat(2000)
-		expect(formatFileSize(text)).toContain('KB')
+		expect(formatFileSize(2000)).toContain('KB')
 	})
 
 	it('formats megabytes', () => {
-		const text = 'a'.repeat(2 * 1024 * 1024)
-		expect(formatFileSize(text)).toContain('MB')
+		expect(formatFileSize(2 * 1024 * 1024)).toContain('MB')
+	})
+})
+
+describe('formatTextSize', () => {
+	it('formats text by byte length', () => {
+		expect(formatTextSize('hello')).toBe('5 B')
 	})
 })
 

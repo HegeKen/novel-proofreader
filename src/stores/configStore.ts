@@ -1,28 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { secureStorageSet, secureStorageGet, preloadSecureStorage } from "../utils/secureStorage";
+import type { TTSConfig, ProofreadConfig } from "../types";
 import type { PromptConfig } from "../components/config/promptConfig";
-
-
-export interface TTSConfig {
-	enabled: boolean;
-	voice: string;
-	speed: number;
-	volume: number;
-	apiKey: string;
-	baseUrl: string;
-	characterVoices: Record<string, string>;
-	audioCacheEnabled: boolean;
-	audioCachePersistent: boolean;
-	dialect: string;
-}
-
-export interface ProofreadConfig {
-	enableParallelProcessing: boolean;
-	maxConcurrentBatches: number;
-	/** 熄屏模式：Android 端校对期间启动前台服务并持有 WakeLock，锁屏后继续检测 */
-	keepAwakeOnScreenOff: boolean;
-}
 
 export interface ConfigState {
 	ttsConfig: TTSConfig;

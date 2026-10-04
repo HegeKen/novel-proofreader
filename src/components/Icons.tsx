@@ -176,5 +176,3 @@ export const Icons = {
 	wallet: Wallet,
 	arrowDownUp: ArrowDownUp,
 };
-
-export type IconName = keyof typeof Icons;

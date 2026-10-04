@@ -3,13 +3,16 @@
 // ============================================================
 import { useNovelStore } from "../stores/novelStore";
 import { useUIStore } from "../stores/uiStore";
-import { useAppMetaStore } from "../stores/appMetaStore";
+import { useReadingProgressStore } from "../stores/readingProgressStore";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { saveNovelToStorage, deleteNovelFromStorage, createCharacterTemplate, loadNovelContent } from "../utils/fileExport";
+import { saveNovelToStorage, deleteNovelFromStorage, loadNovelContent } from "../utils/fileExport";
+import { createCharacterTemplate } from "../utils/characterConfigStorage";
 import { loadNovelText, saveNovelText, deleteNovelText, getNovelStorageKey } from "../utils/novelStorage";
 import { splitChapters } from "../utils/chapterSplit";
 import { decodeTextBuffer } from "../utils/decodeText";
-import { formatFileSize, formatDateTime } from "../utils/formatters";
+import { parseEpub } from "../utils/epub";
+import { logger } from "../utils/logger";
+import { formatTextSize, formatDateTime } from "../utils/formatters";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { useMobile } from "../hooks/useMobile";
@@ -29,7 +32,7 @@ export function NovelList({
 	const setChapters = useNovelStore((s) => s.setChapters);
 	const refreshNovels = useNovelStore((s) => s.refreshNovels);
 	const setShowCharacterSettings = useUIStore((s) => s.setShowCharacterSettings);
-	const getReadingProgress = useAppMetaStore((s) => s.getReadingProgress);
+	const getReadingProgress = useReadingProgressStore((s) => s.getReadingProgress);
 	const setCurrentChapterIndex = useNovelStore((s) => s.setCurrentChapterIndex);
 	const [contextMenu, setContextMenu] = useState<{
 		x: number;
@@ -46,16 +49,32 @@ export function NovelList({
 	const handleImport = async () => {
 		const input = document.createElement("input");
 		input.type = "file";
-		input.accept = ".txt";
+		input.accept = ".txt,.epub";
 		input.onchange = async (e) => {
 			const file = (e.target as HTMLInputElement).files?.[0];
 			if (!file) return;
 
+			const isEpub = file.name.toLowerCase().endsWith(".epub");
 			const buffer = await file.arrayBuffer();
-			const text = decodeTextBuffer(buffer);
+			let text: string;
+			let novelName: string;
+			if (isEpub) {
+				try {
+					const parsed = parseEpub(buffer);
+					text = parsed.text;
+					novelName = parsed.title || file.name.replace(/\.epub$/i, "");
+				} catch (err) {
+					logger.errorGeneric('[NovelList]', 'EPUB 解析失败:', err);
+					useUIStore.getState().showToast("EPUB 解析失败，请确认文件有效", "error");
+					return;
+				}
+			} else {
+				text = decodeTextBuffer(buffer);
+				novelName = file.name.replace(/\.txt$/i, "");
+			}
 			const novel: Novel = {
 				id: `novel-${Date.now()}`,
-				name: file.name.replace(/\.txt$/i, ""),
+				name: novelName,
 				fullText: text,
 				importedAt: Date.now(),
 				chapters: [], // 添加空的章节数组以满足类型定义
@@ -188,7 +207,7 @@ export function NovelList({
 								<div className="novel-item-name">{novel.name}</div>
 								<div className="novel-item-meta">
 									<span className="meta-item">
-										<Icons.file size={12} /> {formatFileSize(novel.fullText)}
+										<Icons.file size={12} /> {formatTextSize(novel.fullText)}
 									</span>
 									<span className="meta-item">
 										<Icons.calendar size={12} /> {formatDateTime(novel.importedAt)}

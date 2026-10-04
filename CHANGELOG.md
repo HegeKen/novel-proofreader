@@ -1,5 +1,74 @@
 # Proof Reader Changelog
 
+## v0.16.0 (2026-10-03)
+
+### ✨ 功能更新
+
+**本地大模型集成（Rust 原生 llama.cpp 推理）**
+- 支持三种模型来源：云端 API、本地外部服务（Ollama / LM Studio / vLLM）、内置模型（Rust 原生推理）
+- 内置推理引擎基于 llama-cpp-2 v0.1.158，通过 `cargo build --features local-llm` 启用，macOS 默认启用 Metal GPU 加速
+- 新增 11 个 Tauri Command：`llm_get_status`、`llm_load_model`、`llm_unload_model`、`llm_inference`、`llm_inference_stream`、`llm_download_model`、`llm_delete_model`、`llm_get_system_info`、`llm_scan_models`、`llm_import_model`、`llm_open_models_dir`
+- 首次启动引导：新用户首次打开时自动弹出引导窗口，三选一快速上手（配置云端 API / 连接 Ollama / 下载内置模型）
+- `sendChatCompletionAuto` 统一路由：根据 `modelSource` 自动分流云端 fetch / 本地外部覆盖 / 内置 Tauri invoke
+
+**内置中文文本纠错模型**
+- 预置 `QuantFactory/chinese-text-correction-1.5b-GGUF`（Q4_K_M 量化，约 1.1 GB），擅长语法和语义纠错
+- 新增预置 `Qwen3.8-4B-Distill (Q6_K)`（约 4.2 GB），提供更强的通用纠错能力，可选下载
+- 支持从 HuggingFace 流式下载，实时进度通过 `llm-download-progress` 事件推送
+- 支持用户手动导入本地已下载的 `.gguf` 文件，同名冲突自动加 `_1` 后缀
+- 自动扫描模型目录，识别用户导入模型与预置模型
+- 系统资源检测（内存/磁盘可用空间），智能推荐适配模型（≥16GB 推荐 7B，否则 1.5B）
+- 「导入模型」区域新增「打开文件夹」按钮，一键在系统文件管理器中打开模型存储目录（macOS/Windows/Linux）
+
+**本地外部服务增强**
+- 支持 LM Studio 启用 API Key 鉴权（"Server → Require API Key"），留空则不携带 Authorization 头，不影响 Ollama 等无鉴权服务
+- 服务地址自动规范化：剥离误粘贴的 API 路径后缀（如 `http://localhost:1234/api/v1/chat`、`http://localhost:1234/v1/chat/completions` → 恢复为 `http://localhost:1234`），兼容非标准端口
+- 服务连接检测遇 401/403 时提示「服务要求 API Key，请填写正确的密钥」
+
+**设置页布局重构**
+- 标签页从 6 个精简为 5 个：「AI 模型」「校对引擎」「语音朗读」「数据管理」「开发者工具」
+- 原「设置」标签页拆分：校对相关配置（并发/熄屏）并入「校对引擎」，调试开关与日志并入「开发者工具」
+- Prompt 模板从独立标签页降级为「校对引擎」的子区域（Prompt 是校对的上游配置，关系紧密）
+- API 使用统计从「设置」页迁入「数据管理」
+- 原「日志」独立标签页并入「开发者工具」（调试开关 + 日志列表 + 关于区域）
+- 底部操作栏统一为「关闭」+「保存所有设置」，减少条件分支，简化交互逻辑
+- 提供商网格精简：移除 lmstudio / ollama / vllm，统一归入「本地服务」来源选择
+
+**开发者工具**
+- 合并原「调试开关」与「日志」标签页，统一展示
+- 新增「关于」区域，显示应用版本号
+
+### 🐛 Bug 修复
+
+- 修复 Rust `engine.rs` 中 `InferenceConfig` 字段在默认构建（未启用 `local-llm` feature）下误报 dead_code 的问题（条件豁免，feature 开启时仍保留完整检查）
+- 修复非标准端口本地服务端点（如 `127.0.0.1:61843`）URL 拼接缺少 `/v1` 路径的问题
+- 修复 Android 端无法访问局域网明文 HTTP 本地服务（如 Mac 上运行的 LM Studio `http://192.168.x.x:1234`）的问题，release 构建同步启用 `usesCleartextTraffic`
+- 修复 Android 端下载模型时报「创建模型目录失败: Read-only file system」的问题，模型存储目录改用 Tauri `app_data_dir` 应用私有目录（`/data/data/<包名>/files/novel-proofreader/models`）
+- 修复内置纠错模型（ChineseErrorCorrector 等）在「按章批量校对」「双段落校对」下错误漏检的问题：内置模型路径统一改为逐段处理，Prompt 明确要求只输出纠正后的完整句子，并正则清洗 `<RichMediaReference>...</RichMediaReference>` 思考过程块后再做 diff 分析
+
+### ♻️ 优化
+
+- 新增 `normalizeLocalEndpoint` 工具函数，统一规范化本地服务端点（去除尾部斜杠、剥离误粘贴的 API 路径后缀），覆盖服务检测、模型获取、推理测试、校对路由、流式调用全链路
+- 本地模型模式使用简化版校对 Prompt，降低本地模型推理负担
+- 预置模型下载采用临时文件（`.download` 后缀）+ 原子重命名，避免下载中断导致文件损坏
+- 模型下载韧性增强：HuggingFace 主站请求失败时自动回退 `hf-mirror.com` 镜像；HTTP 客户端改用 `rustls-tls`（纯 Rust TLS，规避 Android 交叉编译缺少 OpenSSL 的问题），设置 30 秒连接超时与 10 分钟总超时；错误日志通过 `format_error_chain` 输出完整错误链（DNS/TLS 握手/超时等根因一目了然）
+- 内置模型日志降噪：默认静默 llama.cpp 的技术细节输出（llama_context 构建、ggml_metal 初始化、KV 缓存分配、调度保留过程等），仅保留带 `[LLM]` 标记的输入/输出业务日志
+- **校对模块架构重构**：段落 / 按章 / 双段落三种校对模式的错误处理收敛为统一管线（新增 `utils/proofreadPipeline.ts`），过滤（无错误标记/空文本/相同文本/忽略词）、定位（column→精确→空白不敏感→模糊→跨段落 fallback）、`anomaly_no` 本地验证、结果去重合并各只维护一份，消除原先三处重复实现；`checkChapter` 从约 670 行拆分为章节/段落两个模块级执行函数
+- 三个校对 Prompt（段落/章节/双段落）中重复的类型说明、上下文完整性规则、变体字精校规则提取为共享常量，规则变更只需修改一处
+- 章节批量校对补齐与段落模式一致的客户端防护：忽略词二次过滤、`anomaly_no` 本地验证与修复文本覆盖；双段落响应对象/数组两种格式由同一解析器统一处理
+
+### 🛠️ 工程与工具链
+
+- llama-cpp-2 作为可选依赖（`local-llm = ["dep:llama-cpp-2"]`），默认关闭以保 Android/CI 兼容
+- 新增 `src-tauri/src/llm/` 模块：`engine.rs`（推理核心）、`memory.rs`（系统资源检测）、`model_manager.rs`（模型列表/下载/导入/扫描）
+- 新增 Rust 单元测试（engine feature 门控、memory 资源检测、model_manager 模型列表）
+- 前端新增 4 个 `normalizeLocalEndpoint` 单元测试，覆盖常见误粘贴场景
+- 新增 29 个校对管线单元测试（三种模式的过滤/定位/解析、内置模型纠正文本 diff、统一响应入口、store 合并去重），前端测试总数达 246 个
+- CI 发布矩阵扩展：`build.yml`、`macos.yml`、`windows.yml`、`linux.yml` 新增 `build-local-llm` 任务，以 `--features local-llm` 构建内置模型推理版本，产物统一加 `-local-llm` 后缀并生成独立 manifest，标签推送时随标准版一同签名发布（Android 与可复现构建因交叉编译复杂度暂不包含）
+- 版本一致性：`package.json`、`tauri.conf.json`、`Cargo.toml` 统一为 `0.16.0`
+
+---
+
 ## v0.15.2 (2026-09-21)
 
 ### 🛠️ 工程与工具链
@@ -209,7 +278,7 @@
 - 新增 `saveNovelText`，小说导入与保存缓存时同步写入 IndexedDB（Web 端全文持久化依赖 IndexedDB，Tauri 端作为防丢失兜底）
 
 **默认模型更新**
-- 默认 AI 模型调整为 `deepseek-v4-flash`
+- 默认 AI 模型调整为 `deepseek-flash`
 
 ### 🐛 Bug 修复
 

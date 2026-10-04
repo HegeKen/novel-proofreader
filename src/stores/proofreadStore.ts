@@ -2,10 +2,10 @@
 // 校对结果状态
 // ============================================================
 import { create } from "zustand";
-import type { ParagraphResult, ProofreadError, ScriptTask } from "../types";
+import type { ParagraphResult, ProofreadError } from "../types";
 
 /** 采纳动画阶段 */
-export interface ApplyAnimation {
+interface ApplyAnimation {
 	chapterId: number;
 	paragraphIndex: number;
 	phase: "highlight-old" | "replacing" | "highlight-new";
@@ -25,13 +25,6 @@ interface ProofreadState {
 	startLine: number | null;
 	// 采纳动画
 	applyAnimation: ApplyAnimation | null;
-	// 剧本转换任务
-	scriptTasks: ScriptTask[];
-	// 剧本转换进度
-	scriptRunning: boolean;
-	// TTS 朗读状态
-	ttsPlaying: boolean;
-	ttsHighlightedPara: number;
 
 	// Actions
 	setResults: (chapterId: number, results: ParagraphResult[]) => void;
@@ -51,20 +44,13 @@ interface ProofreadState {
 		errorId: string,
 	) => void;
 	applyAllErrors: (chapterId: number, paragraphIndex: number) => void;
+	skipAllErrors: (chapterId: number) => void;
 	clearResults: (chapterId: number) => void;
 	clearAllResults: () => void;
 	setHighlightedParagraph: (index: number | null) => void;
 	setStartLine: (line: number | null) => void;
 	setApplyAnimation: (anim: ApplyAnimation | null) => void;
 	updateErrorIndices: (chapterId: number, paragraphIndex: number, startIndex: number, lengthDiff: number) => void;
-
-	// Script actions
-	addScriptTask: (task: ScriptTask) => void;
-	updateScriptTask: (taskId: number, update: Partial<ScriptTask>) => void;
-	clearScriptTasks: () => void;
-	setScriptRunning: (running: boolean) => void;
-	setTtsPlaying: (playing: boolean) => void;
-	setTtsHighlightedPara: (paraIndex: number) => void;
 }
 
 /** 获取章节结果副本，自动扩展数组长度 */
@@ -81,10 +67,6 @@ export const useProofreadStore = create<ProofreadState>((set) => ({
 	highlightedParagraph: null,
 	startLine: null,
 	applyAnimation: null,
-	scriptTasks: [],
-	scriptRunning: false,
-	ttsPlaying: false,
-	ttsHighlightedPara: -1,
 
 	setResults: (chapterId, results) =>
 		set((state) => ({
@@ -134,6 +116,24 @@ export const useProofreadStore = create<ProofreadState>((set) => ({
 				};
 			}
 			return { results: { ...state.results, [chapterId]: updated } };
+		}),
+
+	// 批量忽略章节内所有未处理错误（已采纳的不动）
+	skipAllErrors: (chapterId) =>
+		set((state) => {
+			const chapterResults = state.results[chapterId] ?? [];
+			let changed = false;
+			const updated = chapterResults.map((para) => {
+				if (!para.errors.some((e) => !e.applied && !e.skipped)) return para;
+				changed = true;
+				return {
+					...para,
+					errors: para.errors.map((e) =>
+						!e.applied && !e.skipped ? { ...e, skipped: true } : e,
+					),
+				};
+			});
+			return changed ? { results: { ...state.results, [chapterId]: updated } } : state;
 		}),
 
 	toggleErrorSkipped: (chapterId, paragraphIndex, errorId) =>
@@ -190,22 +190,4 @@ export const useProofreadStore = create<ProofreadState>((set) => ({
 			}
 			return { results: { ...state.results, [chapterId]: updated } };
 		}),
-
-	addScriptTask: (task) =>
-		set((state) => ({ scriptTasks: [...state.scriptTasks, task] })),
-
-	updateScriptTask: (taskId, update) =>
-		set((state) => ({
-			scriptTasks: state.scriptTasks.map((t) =>
-				t.id === taskId ? { ...t, ...update } : t,
-			),
-		})),
-
-	clearScriptTasks: () => set({ scriptTasks: [] }),
-
-	setScriptRunning: (running) => set({ scriptRunning: running }),
-
-	setTtsPlaying: (playing) => set({ ttsPlaying: playing }),
-
-	setTtsHighlightedPara: (paraIndex) => set({ ttsHighlightedPara: paraIndex }),
 }));

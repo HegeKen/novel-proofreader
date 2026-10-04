@@ -1,5 +1,6 @@
 import type { CharacterInfo, NovelEvent } from "../../types";
 import { Icons } from "../Icons";
+import { CharacterAvatar } from "../CharacterAvatar";
 import { getRoleName, getGenderName } from "../../utils/characterRoles";
 
 interface CharacterCardProps {
@@ -40,10 +41,8 @@ export function CharacterCard({
 			<div className="character-card-content">
 				<div className="character-main-section" onClick={onToggleExpand} style={{ cursor: 'pointer' }}>
 					<div className="character-avatar">
-						<div className={`avatar-circle ${character.gender}`}>
-							<span className="avatar-text">{character.name.charAt(0)}</span>
-						</div>
-					</div>
+					<CharacterAvatar character={character} className="avatar-circle" textClassName="avatar-text" />
+				</div>
 
 					<div className="character-info">
 						<div className="character-header">

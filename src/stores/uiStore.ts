@@ -1,8 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ReadingBackground } from "../types";
+import type { ToastMessage } from "../components/Toast";
+import { generateId } from "../utils/id";
 
-export interface UIState {
+interface UIState {
 	theme: "light" | "dark";
 	fontSize: number;
 	readingMode: boolean;
@@ -14,6 +16,7 @@ export interface UIState {
 	bgImageUrl: string;
 	hideProofread: boolean;
 	showCharacterSettings: string | null;
+	toastMessages: ToastMessage[];
 
 	setTheme: (theme: "light" | "dark") => void;
 	setFontSize: (size: number) => void;
@@ -25,6 +28,8 @@ export interface UIState {
 	setBgImageUrl: (url: string) => void;
 	setHideProofread: (hide: boolean) => void;
 	setShowCharacterSettings: (novelId: string | null) => void;
+	showToast: (message: string, type?: ToastMessage["type"], duration?: number) => void;
+	hideToast: (id: string) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -41,6 +46,7 @@ export const useUIStore = create<UIState>()(
 			bgImageUrl: "",
 			hideProofread: false,
 			showCharacterSettings: null,
+			toastMessages: [],
 
 			setTheme: (theme) => set({ theme }),
 			setFontSize: (size) => set({ fontSize: size }),
@@ -52,6 +58,16 @@ export const useUIStore = create<UIState>()(
 			setBgImageUrl: (url) => set({ bgImageUrl: url }),
 			setHideProofread: (hide) => set({ hideProofread: hide }),
 			setShowCharacterSettings: (novelId) => set({ showCharacterSettings: novelId }),
+			showToast: (message, type = "info", duration = 3000) => {
+				const id = generateId("toast");
+				set((state) => ({
+					toastMessages: [...state.toastMessages, { id, type, message, duration }],
+				}));
+			},
+			hideToast: (id) =>
+				set((state) => ({
+					toastMessages: state.toastMessages.filter((msg) => msg.id !== id),
+				})),
 		}),
 		{
 			name: "novel-proofreader-ui",

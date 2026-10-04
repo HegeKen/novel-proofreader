@@ -22,20 +22,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import {
-	PROJECT_ROOT,
-	collectConfigIssues,
-	detectToolchain,
-	gitInfo,
-	isUnsignedAndroidArtifact,
-	loadSigningConfig,
-	runCli,
-	log,
-	relativeToRoot,
-	resolveSourceDateEpoch,
-	run,
-	writeSigningEnv,
-} from "./lib/core.mjs";
+import { PROJECT_ROOT, relativeToRoot } from "./lib/paths.mjs";
+import { log } from "./lib/log.mjs";
+import { runCli } from "./lib/cli.mjs";
+import { run } from "./lib/exec.mjs";
+import { collectConfigIssues, loadSigningConfig, writeSigningEnv } from "./lib/signing-config.mjs";
+import { detectToolchain, gitInfo, resolveSourceDateEpoch } from "./lib/build-env.mjs";
+import { isUnsignedAndroidArtifact } from "./lib/manifest.mjs";
 import {
 	SECRETS,
 	androidKeystorePath,

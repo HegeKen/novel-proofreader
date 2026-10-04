@@ -1,10 +1,12 @@
 import { useState, useCallback, useMemo, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import { useCharacterStore } from "../stores/characterStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
-import { useAppMetaStore } from "../stores/appMetaStore";
+import { useUIStore } from "../stores/uiStore";
 import type { CharacterInfo, CharacterRelationship, RelationType } from "../types";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
+import { Modal } from "./Modal";
+import { CharacterAvatar } from "./CharacterAvatar";
 import { ConfirmModal } from "./config/ConfirmModal";
 import { sendChatCompletion, extractJSON, buildRequestConfig, RELATIONSHIP_GRAPH_LAYOUT_SYSTEM_PROMPT } from "../utils/aiClient";
 import type { ChatMessage } from "../utils/aiClient";
@@ -757,11 +759,11 @@ export const RelationshipGraph = forwardRef<RelationshipGraphHandle, Relationshi
 	// AI生成角色关系
 	const handleGenerateRelationships = useCallback(async () => {
 		if (characters.length < 2) {
-			useAppMetaStore.getState().showToast("至少需要2个角色才能生成关系", "warning");
+			useUIStore.getState().showToast("至少需要2个角色才能生成关系", "warning");
 			return;
 		}
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			useUIStore.getState().showToast("请先在设置中配置AI模型", "warning");
 			return;
 		}
 
@@ -899,10 +901,10 @@ ${existingRelationships.length > 0 ? JSON.stringify(existingRelationships, null,
 				}
 			}
 
-			useAppMetaStore.getState().showToast(`关系生成完成，新增/更新 ${addedCount} 条关系`, "success");
+			useUIStore.getState().showToast(`关系生成完成，新增/更新 ${addedCount} 条关系`, "success");
 			sendTaskNotification("关系生成完成", `新增/更新 ${addedCount} 条角色关系`);
 		} catch (err) {
-			useAppMetaStore.getState().showToast("关系生成失败: " + (err instanceof Error ? err.message : String(err)), "error");
+			useUIStore.getState().showToast("关系生成失败: " + (err instanceof Error ? err.message : String(err)), "error");
 		} finally {
 			setIsGeneratingRelationships(false);
 		}
@@ -911,11 +913,11 @@ ${existingRelationships.length > 0 ? JSON.stringify(existingRelationships, null,
 	// AI 梳理合并现有角色关系：将角色+关系数据发给 AI，由 AI 整合后替换现有关系
 	const handleMergeRelationships = useCallback(async () => {
 		if (relationships.length === 0) {
-			useAppMetaStore.getState().showToast("暂无关系可梳理", "warning");
+			useUIStore.getState().showToast("暂无关系可梳理", "warning");
 			return;
 		}
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			useUIStore.getState().showToast("请先在设置中配置AI模型", "warning");
 			return;
 		}
 
@@ -1022,10 +1024,10 @@ ${JSON.stringify(currentRels, null, 2)}
 			}
 
 			setRelationshipsForNovel(novelId, newRelationships);
-			useAppMetaStore.getState().showToast(`关系梳理完成，共 ${newRelationships.length} 条关系`, "success");
+			useUIStore.getState().showToast(`关系梳理完成，共 ${newRelationships.length} 条关系`, "success");
 			sendTaskNotification("关系梳理完成", `整合为 ${newRelationships.length} 条角色关系`);
 		} catch (err) {
-			useAppMetaStore.getState().showToast("关系梳理失败: " + (err instanceof Error ? err.message : String(err)), "error");
+			useUIStore.getState().showToast("关系梳理失败: " + (err instanceof Error ? err.message : String(err)), "error");
 		} finally {
 			setIsMergingRelationships(false);
 		}
@@ -1034,11 +1036,11 @@ ${JSON.stringify(currentRels, null, 2)}
 	// AI 绘制节点位置：让 AI 根据角色重要程度与关系亲密度设计最佳观看布局
 	const handleAIDrawNodePositions = useCallback(async () => {
 		if (characters.length === 0) {
-			useAppMetaStore.getState().showToast("暂无可绘制的角色节点", "warning");
+			useUIStore.getState().showToast("暂无可绘制的角色节点", "warning");
 			return;
 		}
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			useUIStore.getState().showToast("请先在设置中配置AI模型", "warning");
 			return;
 		}
 
@@ -1137,7 +1139,7 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 				...normalizedPositions,
 			});
 
-			useAppMetaStore.getState().showToast(`AI绘制关系布局完成，已更新 ${Object.keys(normalizedPositions).length} 个节点位置`, "success");
+			useUIStore.getState().showToast(`AI绘制关系布局完成，已更新 ${Object.keys(normalizedPositions).length} 个节点位置`, "success");
 			sendTaskNotification("AI绘制关系布局完成", `已以主角、反派为中心绘制 ${Object.keys(normalizedPositions).length} 个角色节点位置`);
 
 			// 延迟后自适应视口，确保布局完整可见
@@ -1145,7 +1147,7 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 				handleResetLayout();
 			}, 150);
 		} catch (err) {
-			useAppMetaStore.getState().showToast("AI绘制布局失败: " + (err instanceof Error ? err.message : String(err)), "error");
+			useUIStore.getState().showToast("AI绘制布局失败: " + (err instanceof Error ? err.message : String(err)), "error");
 		} finally {
 			setIsDrawingNodePositions(false);
 		}
@@ -1516,20 +1518,46 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 				</div>
 			</div>
 
-			{showAddModal && (
-				<div className="modal-overlay" onClick={() => setShowAddModal(false)}>
-					<div className="config-modal relation-edit-modal" onClick={(e) => e.stopPropagation()}>
-						<div className="config-header">
-							<div className="config-title">
-								<span className="title-icon"><Icons.network size={16} /></span>
-								<span>{editingRelation ? "编辑关系" : "添加关系"}</span>
-							</div>
-							<button className="close-btn" onClick={() => setShowAddModal(false)} aria-label="关闭">
-								<Icons.close size={16} />
+			<Modal
+				open={showAddModal}
+				onClose={() => setShowAddModal(false)}
+				title={editingRelation ? "编辑关系" : "添加关系"}
+				icon={<Icons.network size={16} />}
+				className="config-modal relation-edit-modal"
+				footer={
+					<>
+						{editingRelation && (
+							<button
+								className="btn btn-danger relation-modal-delete"
+								onClick={() => {
+									handleDeleteRelation(editingRelation.id);
+									setShowAddModal(false);
+								}}
+							>
+								<Icons.trash2 size={14} />
+								删除
 							</button>
-						</div>
-						<div className="config-body">
-							<div className="relation-form-section">
+						)}
+						<button className="btn" onClick={() => setShowAddModal(false)}>
+							取消
+						</button>
+						<button
+							className="btn"
+							onClick={handleSaveRelation}
+							disabled={
+								!relationForm.sourceId ||
+								!relationForm.targetId ||
+								relationForm.sourceId === relationForm.targetId ||
+								relationForm.sourceNickname.length === 0 ||
+								relationForm.targetNickname.length === 0
+							}
+						>
+							{editingRelation ? "保存" : "添加"}
+						</button>
+					</>
+				}
+			>
+						<div className="relation-form-section">
 								<div className="form-field">
 									<label>源角色</label>
 									<Select
@@ -1708,55 +1736,29 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 										</div>
 									)}
 								</div>
-							</div>
-						</div>
-						<div className="config-footer">
-							{editingRelation && (
-								<button
-									className="btn btn-danger relation-modal-delete"
-									onClick={() => {
-										handleDeleteRelation(editingRelation.id);
-										setShowAddModal(false);
-									}}
-								>
-									<Icons.trash2 size={14} />
-									删除
-								</button>
-							)}
-							<button className="btn" onClick={() => setShowAddModal(false)}>
-								取消
-							</button>
-							<button
-								className="btn"
-								onClick={handleSaveRelation}
-								disabled={
-									!relationForm.sourceId ||
-									!relationForm.targetId ||
-									relationForm.sourceId === relationForm.targetId ||
-									relationForm.sourceNickname.length === 0 ||
-									relationForm.targetNickname.length === 0
-								}
-							>
-								{editingRelation ? "保存" : "添加"}
-							</button>
-						</div>
-					</div>
-				</div>
-			)}
+								</div>
+					</Modal>
 
-			{showCharacterModal && selectedCharacterId && (
-				<div className="modal-overlay" onClick={() => setShowCharacterModal(false)}>
-					<div className="config-modal relation-edit-modal" onClick={(e) => e.stopPropagation()}>
-						<div className="config-header">
-							<div className="config-title">
-								<span className="title-icon"><Icons.network size={16} /></span>
-								<span>{getCharacterById(selectedCharacterId)?.name} 的关系</span>
-							</div>
-							<button className="close-btn" onClick={() => setShowCharacterModal(false)} aria-label="关闭">
-								<Icons.close size={16} />
-							</button>
-						</div>
-						<div className="config-body">
+					{showCharacterModal && selectedCharacterId && (
+				<Modal
+					open
+					onClose={() => setShowCharacterModal(false)}
+					title={<>{getCharacterById(selectedCharacterId)?.name} 的关系</>}
+					icon={<Icons.network size={16} />}
+					className="config-modal relation-edit-modal"
+					footer={
+						<button
+							className="btn"
+							onClick={() => {
+								setShowCharacterModal(false);
+								handleOpenAddModal(selectedCharacterId);
+							}}
+						>
+							<Icons.plus size={14} />
+							添加新关系
+						</button>
+					}
+				>
 							<div className="character-relations-list">
 								{getCharacterRelations(selectedCharacterId).length === 0 ? (
 									<div className="empty-relations">
@@ -1772,10 +1774,8 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 											<div key={rel.id} className="relation-item">
 												<div className="relation-item-info">
 													<div className="relation-item-avatar">
-														<div className={`avatar-circle-sm ${otherChar?.gender || "other"}`}>
-															{otherChar?.name.charAt(0) || "?"}
-														</div>
-													</div>
+													<CharacterAvatar character={otherChar} className="avatar-circle-sm" />
+												</div>
 													<div className="relation-item-details">
 														<div className="relation-item-name">{otherChar?.name || "未知"}</div>
 														<div className="relation-item-nicknames">
@@ -1811,24 +1811,10 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 									})
 								)}
 							</div>
-						</div>
-						<div className="config-footer">
-							<button
-								className="btn"
-								onClick={() => {
-									setShowCharacterModal(false);
-									handleOpenAddModal(selectedCharacterId);
-								}}
-							>
-								<Icons.plus size={14} />
-								添加新关系
-							</button>
-						</div>
-					</div>
-				</div>
-			)}
+					</Modal>
+				)}
 
-			{/* 按钮区域由父组件渲染 */}
+				{/* 按钮区域由父组件渲染 */}
 
 			<ConfirmModal
 				show={confirmModal.show}

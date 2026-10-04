@@ -56,10 +56,7 @@ async function doSaveNovelText(key: string, text: string): Promise<boolean> {
 		const tx = db.transaction(STORE_NAME, "readwrite");
 		const store = tx.objectStore(STORE_NAME);
 
-		// 先清除旧数据
-		store.delete(key);
-
-		// 分块存储
+		// 分块存储（put 按 keyPath 覆盖旧数据，同事务原子提交，无需先 delete）
 		const chunks: string[] = [];
 		for (let i = 0; i < text.length; i += CHUNK_SIZE) {
 			chunks.push(text.slice(i, i + CHUNK_SIZE));

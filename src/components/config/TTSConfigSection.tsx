@@ -87,6 +87,20 @@ export function TTSConfigSection({ onOpenWordReplacement }: Props) {
 				<p className="section-hint section-hint-tight">
 					在请求 TTS 大模型前，会将文本中的敏感词替换为指定词组，用于规避敏感词拒绝生成的问题。
 				</p>
+				<button
+					type="button"
+					className="btn btn-secondary"
+					onClick={() => {
+						if (onOpenWordReplacement) {
+							onOpenWordReplacement();
+						} else {
+							setShowWordReplacementModal(true);
+						}
+					}}
+				>
+					<Icons.edit size={14} />
+					<span>管理替换规则</span>
+				</button>
 				<div className="divider"></div>
 				<div className="section-label"><Icons.cache size={14} />音频缓存设置</div>
 				<div className="toggle-item">

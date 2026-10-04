@@ -13,18 +13,18 @@
 :where(
 	.btn, .btn-primary, .btn-danger, .btn-small, .btn-large, .btn-mobile,
 	.btn-import-novel, .novel-item-btn, .btn-hide-proofread,
-	.reader-search-btn, .reader-bar-btn ,
+	.reader-bar-btn ,
 	.tts-playback-btn, .tts-toggle-btn, .image-upload-btn, .image-remove-btn,
 	.btn-check, .btn-cancel, .btn-ignored-words,
 	.btn-apply, .btn-skip, .btn-single-check,
 	.btn-generate, .btn-script-tts, .btn-voice-settings,
 	.select-all-btn, .select-none-btn, .quick-btn, .action-btn,
-	.character-action-btn, .btn-reset-usage,
-	.btn-save, .btn-test, .btn-add-word,
+	.btn-reset-usage,
+	.btn-save, .btn-test,
 	.start-btn, .download-btn, 
 	.btn-clear-queue, .btn-start-queue, .btn-add-selected,
 	.relation-action-btn, .nickname-add-btn, .btn-sm,
-	.nav-btn, .close-btn, .mobile-proofread-toggle,
+	.nav-btn, .close-btn,
 	.search-nav-btn, .graph-zoom-btn, .btn-secondary,
 	.notes-play-btn, .suggest-title-btn, .close-suggestions,
 	.word-remove, .queue-item-remove, .btn-close
@@ -130,8 +130,7 @@
 .btn-hide-proofread:active,
 .btn-resplit:active:not(:disabled),
 .btn-script-tts:active,
-.btn-voice-settings:active,
-.reader-search-btn:active {
+.btn-voice-settings:active {
 	transform: scale(0.95)}
 
 .btn-danger {
@@ -209,10 +208,6 @@
 	background: var(--accent-dim);
 	border-color: rgba(10, 132, 255, 0.4);
 	box-shadow: 0 0 20px rgba(10, 132, 255, 0.15)}
-
-.list-item.active .list-item-title {
-	color: var(--accent);
-	font-weight: 600}
 
 .modal-container {
 	position: relative;
@@ -421,19 +416,6 @@ select {
 	align-items: center;
 	gap: 16px}
 
-.app-logo {
-	font-size: var(--fs-3xl);
-	filter: drop-shadow(0 0 12px rgba(var(--accent-rgb), 0.4));
-	animation: logoPulse 3s ease-in-out infinite}
-
-@keyframes logoPulse {
-	0%,
-	100% {
-		transform: scale(1)}
-	50% {
-		transform: scale(1.05)}
-}
-
 .app-title {
 	display: flex;
 	align-items: center;
@@ -492,22 +474,19 @@ select {
 	color: var(--text)}
 
 .api-mirror-select {
-	appearance: none;
-	-webkit-appearance: none;
+	min-width: 120px}
+
+.api-mirror-select .custom-select-trigger {
 	background: transparent;
 	border: none;
-	color: var(--text-primary);
-	font-size: var(--fs-base);
-	font-family: inherit;
-	font-weight: 500;
-	outline: none;
-	cursor: pointer;
 	padding: 0 4px;
-	min-width: 56px}
+	font-size: var(--fs-base);
+	font-weight: 500;
+	gap: 4px}
 
-.api-mirror-select option {
-	background: var(--bg-primary);
-	color: var(--text-primary)}
+.api-mirror-select .custom-select-trigger:hover:not(:disabled) {
+	background: transparent;
+	border: none}
 
 /* ============================================================
    Body Layout - Liquid Glass 4 Columns
@@ -953,23 +932,6 @@ border: 1px solid var(--border);
 box-shadow: var(--shadow-sm);
 min-width: 200px}
 
-/* Reader Search Button */
-.reader-search-btn {
-	font-weight: 500;
-	box-shadow: var(--shadow-sm)}
-
-.reader-search-btn svg {
-	flex-shrink: 0;
-	display: block;
-	width: 18px;
-	height: 18px}
-
-.reader-search-btn:hover {
-	background: var(--bg-hover);
-	border-color: var(--border-strong);
-	transform: translateY(-1px);
-	box-shadow: var(--shadow-md)}
-
 /* Desktop Reader Bar */
 .reader-bar {
 	position: fixed;
@@ -1086,14 +1048,12 @@ min-width: 200px}
 	opacity: 0.5;
 	cursor: not-allowed}
 
-.reader-bar-btn .preparing,
-.mobile-reader-bar-btn.preparing {
+.reader-bar-btn .preparing {
 	background: var(--accent-dim);
 	border-color: var(--accent);
 	color: var(--accent)}
 
-.reader-bar-btn .waiting-selection,
-.mobile-reader-bar-btn.waiting-selection {
+.reader-bar-btn .waiting-selection {
 	background: var(--accent);
 	color: white;
 	border-color: var(--accent);
@@ -2602,11 +2562,6 @@ color: var(--text-primary)}
 	border-color: var(--accent);
 	color: var(--accent)}
 
-.error-count-divider {
-	margin: 0 6px;
-	color: rgba(0, 0, 0, 0.2);
-}
-
 .error-info-container {
 	display: flex;
 	flex-direction: column;
@@ -2842,25 +2797,6 @@ color: var(--text-primary)}
 	color: var(--text-muted);
 	margin-bottom: 8px;
 	line-height: 1.5;
-}
-
-.merge-suggestion-preview {
-	background: var(--bg-surface);
-	padding: 8px 10px;
-	border-radius: var(--r-sm);
-	font-size: var(--fs-sm);
-	color: var(--text);
-	margin-bottom: 10px;
-	line-height: 1.5;
-	border: 1px solid var(--border);
-}
-
-.preview-label {
-	display: block;
-	font-size: var(--fs-xs);
-	color: var(--text-muted);
-	margin-bottom: 4px;
-	font-weight: 500;
 }
 
 .preview-text {
@@ -3937,60 +3873,6 @@ color: var(--text-primary)}
 	background: var(--bg-highlight);
 	border-color: var(--border-strong)}
 
-/* 检测到新角色弹窗样式 */
-
-
-.new-character-list {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 10px;
-	justify-content: center;
-	max-height: 200px;
-	overflow-y: auto;
-	padding: 10px 0}
-
-.new-character-item {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	padding: 8px 12px;
-	background: var(--bg-hover);
-	border: 1px solid var(--border);
-	border-radius: var(--r-lg);
-	font-size: var(--fs-md);
-	color: var(--text-primary)}
-
-.new-character-item svg {
-	color: var(--accent)}
-
-
-.new-character-actions .action-btn {
-	flex: 1;
-	padding: 10px 16px;
-	border-radius: var(--r-lg);
-	font-size: var(--fs-md);
-	font-weight: 500}
-
-.new-character-actions .action-btn.primary {
-	background: linear-gradient(135deg, var(--accent), var(--accent-hover));
-	color: white;
-	border: none;
-	box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.3)}
-
-.new-character-actions .action-btn.primary:hover {
-	background: linear-gradient(135deg, var(--accent-hover), var(--accent));
-	transform: translateY(-1px);
-	box-shadow: 0 6px 16px rgba(var(--accent-rgb), 0.4)}
-
-.new-character-actions .action-btn.secondary {
-	background: var(--bg-hover);
-	color: var(--text-primary);
-	border: 1px solid var(--border)}
-
-.new-character-actions .action-btn.secondary:hover {
-	background: var(--bg-highlight);
-	border-color: var(--border-strong)}
-
 /* 扫描检测角色弹窗样式 */
 .modal-content.detect-characters-modal {
 	width: 560px;
@@ -4530,7 +4412,6 @@ color: var(--text-primary)}
 	color: var(--text-tertiary);
 	padding-bottom: 8px}
 
-.organize-relation-field .form-select,
 .organize-relation-field .form-input {
 	width: 100%;
 	padding: 8px 12px;
@@ -4540,7 +4421,6 @@ color: var(--text-primary)}
 	color: var(--text-primary);
 	font-size: var(--fs-base)}
 
-.organize-relation-field .form-select:focus,
 .organize-relation-field .form-input:focus {
 	outline: none;
 	border-color: var(--accent);
@@ -4624,8 +4504,6 @@ color: var(--text-primary)}
 	gap: 6px;
 	flex-shrink: 0}
 
-.edit-relation-field .form-select,
-.edit-relation-field .form-select:focus,
 /* AI分析进度容器 */
 .analyze-progress-container {
 	text-align: center;
@@ -4719,16 +4597,6 @@ color: var(--text-primary)}
 	font-size: var(--fs-base);
 	color: var(--text-tertiary);
 	margin-top: 8px}
-
-.analyze-elapsed {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 4px;
-	font-size: var(--fs-sm);
-	font-weight: 600;
-	color: var(--accent);
-	margin-top: 6px}
 
 .detected-characters-list {
 	max-height: 400px;
@@ -4836,9 +4704,6 @@ color: var(--text-primary)}
 
 .merge-target-select {
 	margin-top: 8px}
-
-.merge-target-select .config-select {
-	width: 100%}
 
 .detected-character-quick-actions {
 	display: flex;
@@ -5111,11 +4976,6 @@ color: var(--text-primary)}
 	align-items: baseline;
 	gap: 6px}
 
-.character-profile-section .profile-detail {
-	display: flex;
-	flex-direction: column;
-	gap: 2px}
-
 .character-profile-section .profile-label {
 	font-size: var(--fs-xs);
 	font-weight: 600;
@@ -5126,16 +4986,6 @@ color: var(--text-primary)}
 	font-size: var(--fs-sm);
 	color: var(--text-primary);
 	line-height: 1.5}
-
-.character-profile-section .profile-experiences {
-	font-size: var(--fs-sm);
-	color: var(--text-primary);
-	line-height: 1.5;
-	padding-left: 16px;
-	margin: 0}
-
-.character-profile-section .profile-experiences li {
-	margin-bottom: 2px}
 
 .character-notes-section {
 	margin-top: 8px;
@@ -5156,14 +5006,6 @@ color: var(--text-primary)}
 	align-items: center;
 	gap: 4px;
 	margin-bottom: 8px}
-
-.character-major-events-section .events-content {
-	font-size: var(--fs-base);
-	line-height: 1.6;
-	color: var(--text-primary);
-	white-space: pre-wrap;
-	word-break: break-word
-}
 
 /* 大事记时间线 */
 .events-timeline {
@@ -5732,11 +5574,6 @@ color: var(--text-primary)}
 	padding: 12px;
 	text-align: center}
 
-/* 展开/折叠指示器 */
-
-.character-main-section:hover .expand-indicator {
-	opacity: 1}
-
 /* 别称/代称标签区块 */
 .character-tags-section {
 	margin-top: 12px;
@@ -5991,6 +5828,10 @@ color: var(--text-primary)}
 	border-radius: var(--r-md);
 	padding: 12px 14px;
 	transition: all var(--duration) var(--ease)}
+
+/* 完整世界观概述卡片：全局 reset（* { margin: 0 }）会覆盖 Tailwind 的 space-y 工具类，这里单独补间距 */
+.worldbuilding-overview {
+	margin-top: 16px}
 
 .worldbuilding-field-label {
 	font-size: var(--fs-xs);
@@ -6276,38 +6117,7 @@ color: var(--text-primary)}
 	background: rgba(0, 0, 0, 0.03);
 	border-color: rgba(0, 0, 0, 0.08)}
 
-/* 角色编辑按钮样式 */
-
-.character-action-btn svg {
-	flex-shrink: 0;
-	display: block;
-	width: 16px;
-	height: 16px}
-
-.character-action-btn:hover {
-	background: var(--bg-hover);
-	border-color: var(--border-strong);
-	transform: translateY(-1px);
-	box-shadow: var(--shadow-md)}
-
-.character-action-btn:active {
-	transform: translateY(0)}
-
 @media (max-width: 768px) {
-	.character-action-btn {
-		font-size: 0;
-		padding: 0;
-		width: 36px;
-		height: 36px;
-		border-radius: 50%}
-	
-	.character-action-btn svg {
-		width: 18px;
-		height: 18px}
-	
-	.character-action-btn span {
-		display: none}
-	
 	/* 角色操作悬浮按钮 / 弹窗页脚：移动端保留文字标签，
 	   只做紧凑化处理（此前直接 font-size:0 + 隐藏 span，
 	   导致「关闭 / 保存 / 清除」在移动端变成一排无法区分的圆图标）。 */
@@ -6398,37 +6208,6 @@ color: var(--text-primary)}
 		display: flex;
 		align-items: center}
 
-	.btn-theme-toggle {
-		font-size: 0;
-		padding: 6px;
-		min-width: 36px;
-		min-height: 36px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 50%}
-
-	.btn-theme-toggle svg {
-		font-size: var(--fs-xl)}
-
-	.btn-settings {
-		font-size: 0;
-		padding: 0;
-		width: 36px;
-		height: 36px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 50%}
-
-	.btn-settings svg {
-		width: 18px;
-		height: 18px;
-		flex-shrink: 0}
-
-	.btn-settings:hover {
-		transform: none}
-
 	/* 移动端按钮使用统一的 .btn-mobile 样式 */
 	.btn-mobile {
 		font-size: 0;
@@ -6509,88 +6288,6 @@ color: var(--text-primary)}
 	.mobile-tab-btn.active {
 		color: var(--accent);
 		background: var(--accent-dim)}
-
-	/* Mobile Reader Bar - Above Tab Bar, Similar Design */
-	.mobile-reader-bar {
-		display: flex;
-		position: fixed;
-		bottom: 64px;
-		left: 0;
-		right: 0;
-		height: 56px;
-		background: var(--glass-bg-strong);
-		backdrop-filter: blur(var(--glass-blur-strong));
-		-webkit-backdrop-filter: blur(var(--glass-blur-strong));
-		border-top: 1px solid var(--border);
-		z-index: var(--z-overlay);
-		padding: 0 12px;
-		padding-bottom: env(safe-area-inset-bottom, 0);
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px}
-
-	.mobile-reader-bar .reading-progress {
-		display: flex;
-		flex-direction: row;
-		align-items: center;
-		gap: 10px;
-		padding: 6px 12px;
-		background: var(--glass-bg);
-		backdrop-filter: blur(20px);
-		-webkit-backdrop-filter: blur(20px);
-		border-radius: var(--r-lg);
-		border: 1px solid var(--border);
-		flex: 1;
-		min-width: 0;
-		max-width: none;
-		box-shadow: none}
-
-	.mobile-reader-bar .progress-info {
-		display: flex;
-		flex-direction: column;
-		gap: 2px}
-
-	.mobile-reader-bar .progress-label {
-		font-size: var(--fs-2xs);
-		color: var(--text-muted)}
-
-	.mobile-reader-bar .progress-value {
-		font-size: var(--fs-base);
-		font-weight: 600;
-		color: var(--accent)}
-
-	.mobile-reader-bar .progress-bar {
-		flex: 1;
-		height: 4px;
-		background: var(--bg-secondary);
-		border-radius: var(--r-sm);
-		overflow: hidden;
-		min-width: 60px}
-
-	.mobile-reader-bar .progress-fill {
-		height: 100%;
-		background: linear-gradient(90deg, var(--accent), var(--accent-light));
-		border-radius: var(--r-sm);
-		transition: width 0.3s ease}
-
-	.mobile-reader-bar .time-info {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 2px}
-
-	.mobile-reader-bar .time-label {
-		font-size: var(--fs-2xs);
-		color: var(--text-muted)}
-
-	.mobile-reader-bar .time-value {
-		font-size: var(--fs-xs);
-		font-weight: 500}
-
-	.mobile-reader-bar-actions {
-		display: flex;
-		align-items: center;
-		gap: 6px}
 
 	/* Vertical Stack Layout */
 	.app-body {
@@ -6741,7 +6438,6 @@ color: var(--text-primary)}
 		padding: 10px 16px;
 		flex-shrink: 0}
 
-	.reader-search-btn,
 	.reader-tts-btn,
 	.reader-settings-btn,
 	.reading-settings-toggle {
@@ -6754,7 +6450,6 @@ color: var(--text-primary)}
 		justify-content: center;
 		border-radius: 50%}
 
-	.reader-search-btn svg,
 	.reader-tts-btn svg,
 	.reader-settings-btn svg,
 	.reading-settings-toggle svg {
@@ -6762,7 +6457,6 @@ color: var(--text-primary)}
 		height: 18px;
 		flex-shrink: 0}
 
-	.reader-search-btn:hover,
 	.reader-tts-btn:hover,
 	.reader-settings-btn:hover,
 	.reading-settings-toggle:hover {
@@ -6813,32 +6507,6 @@ color: var(--text-primary)}
 		display: flex;
 		flex-direction: column}
 
-	.mobile-proofread-toggle {
-		padding: 8px 16px;
-		border-radius: var(--r-md);
-		font-size: var(--fs-base);
-		font-weight: 500;
-		background: var(--glass-bg);
-		color: var(--text-primary);
-		border: 1px solid var(--border);
-		backdrop-filter: blur(20px);
-		-webkit-backdrop-filter: blur(20px);
-		transition: all var(--duration) var(--ease);
-		box-shadow: var(--shadow-sm);
-		z-index: var(--z-header);
-		position: sticky;
-		top: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 6px}
-
-	.mobile-proofread-toggle:hover {
-		background: var(--bg-hover);
-		border-color: var(--border-strong);
-		transform: scale(1.02);
-		box-shadow: var(--shadow-md)}
-
 	.mobile-proofread-section {
 		flex: 1;
 		min-height: 0;
@@ -6866,85 +6534,6 @@ color: var(--text-primary)}
 		min-height: 0;
 		padding: 12px;
 		overflow-y: auto}
-
-	/* Mobile Chapter Nav (浮动在 proofread-panel 顶部) */
-	.mobile-chapter-nav {
-		position: sticky;
-		top: 0;
-		z-index: var(--z-mobile-nav);
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		padding: 10px 16px;
-		margin: 12px;
-		background: var(--glass-bg-strong);
-		backdrop-filter: blur(var(--glass-blur-strong));
-		-webkit-backdrop-filter: blur(var(--glass-blur-strong));
-		border-radius: var(--r-xl);
-		border: 1px solid var(--glass-border);
-		box-shadow:
-			var(--shadow-lg),
-			0 0 40px rgba(var(--accent-rgb), 0.08);
-		animation: slideDown 0.3s var(--ease)}
-
-	.chapter-nav-btn {
-		flex: 1;
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 10px 14px;
-		border: 1px solid transparent;
-		border-radius: var(--r-lg);
-		background: var(--bg-hover);
-		color: var(--text-primary);
-		font-size: var(--fs-base);
-		font-weight: 500;
-		cursor: pointer;
-		transition: all var(--duration) var(--ease);
-		overflow: hidden;
-		white-space: nowrap;
-		text-overflow: ellipsis;
-		min-width: 0}
-
-	.chapter-nav-btn:first-child {
-		justify-content: flex-start}
-
-	.chapter-nav-btn:last-child {
-		justify-content: flex-end}
-
-	.chapter-nav-btn span {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		max-width: calc(100% - 36px)}
-
-	.chapter-nav-btn:hover:not(:disabled) {
-		background: var(--accent-dim);
-		border-color: rgba(var(--accent-rgb), 0.3);
-		transform: translateY(-1px);
-		box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.15)}
-
-	.chapter-nav-btn:active:not(:disabled) {
-		background: var(--accent);
-		color: white;
-		border-color: var(--accent);
-		transform: scale(0.98)}
-
-	.chapter-nav-btn:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-		background: transparent}
-
-	.chapter-nav-btn:disabled span {
-		color: var(--text-muted)}
-
-	.chapter-nav-btn:disabled svg {
-		opacity: 0.3}
-
-	.chapter-nav-btn svg {
-		flex-shrink: 0;
-		width: 18px;
-		height: 18px}
 
 	/* Task Panel Mobile */
 	.task-panel {
@@ -7103,9 +6692,6 @@ color: var(--text-primary)}
 	.character-major-events-section .events-label {
 		font-size: var(--fs-xs)}
 
-	.character-major-events-section .events-content {
-		font-size: var(--fs-sm)}
-
 	.character-tags-section {
 		margin-top: 8px;
 		padding-top: 8px;
@@ -7130,9 +6716,6 @@ color: var(--text-primary)}
 		font-size: var(--fs-2xs)}
 
 	.character-profile-section .profile-value {
-		font-size: var(--fs-xs)}
-
-	.character-profile-section .profile-experiences {
 		font-size: var(--fs-xs)}
 
 	.notes-label {
@@ -7174,12 +6757,6 @@ color: var(--text-primary)}
 
 	.modal-body {
 		padding: 16px}
-
-	.add-word-form {
-		flex-direction: column}
-
-	.btn-add-word {
-		justify-content: center}
 
 	.hero-section {
 		padding: 40px 16px 60px;
@@ -7673,12 +7250,6 @@ color: var(--text-primary)}
 	line-height: 1.7;
 	color: var(--text-secondary)}
 
-.result-message .md-paragraph {
-	margin: 0 0 12px 0}
-
-.result-message .md-paragraph:last-child {
-	margin-bottom: 0}
-
 /* ── 账户余额 ── */
 .section-label .balance-actions {
 	margin-left: auto;
@@ -7743,36 +7314,9 @@ color: var(--text-primary)}
 	border: 1px solid rgba(var(--red-rgb), 0.3);
 	border-radius: var(--r-md)}
 
-.result-message .md-heading {
-	font-weight: 600;
-	color: var(--text-primary);
-	margin: 16px 0 8px 0}
-
-.result-message .md-heading:first-child {
-	margin-top: 0}
-
-.result-message .md-h1 {
-	font-size: var(--fs-md)}
-
-.result-message .md-h2 {
-	font-size: var(--fs-md)}
-
-.result-message .md-h3 {
-	font-size: var(--fs-base)}
-
 .result-message strong {
 	font-weight: 600;
 	color: var(--text-primary)}
-
-.result-message .md-list {
-	margin: 8px 0;
-	padding-left: 20px}
-
-.result-message .md-list li {
-	margin: 4px 0}
-
-.result-message .md-list li::marker {
-	color: var(--text-muted)}
 
 .result-message em {
 	font-style: italic;
@@ -7784,20 +7328,6 @@ color: var(--text-primary)}
 	border-radius: 4px;
 	font-size: var(--fs-sm);
 	color: var(--accent)}
-
-.result-message .md-quote {
-	margin: 12px 0;
-	padding: 10px 14px;
-	background: var(--bg-overlay);
-	border-left: 3px solid var(--accent);
-	border-radius: 0 var(--r-sm) var(--r-sm) 0;
-	font-style: italic;
-	color: var(--text-secondary)}
-
-.result-message .md-hr {
-	border: none;
-	border-top: 1px solid var(--border);
-	margin: 16px 0}
 
 /* Tab 切换样式 */
 .config-tabs {
@@ -8558,34 +8088,6 @@ color: var(--text-primary)}
 	box-sizing: border-box;
 	overflow-y: auto}
 
-.form-select {
-	width: 100%;
-	padding: 10px 12px;
-	border: 1px solid var(--border);
-	border-radius: var(--r-lg);
-	background: var(--glass-bg);
-	color: var(--text-primary);
-	font-size: var(--fs-md);
-	outline: none;
-	cursor: pointer;
-	transition: all var(--duration) var(--ease);
-	appearance: none;
-	-webkit-appearance: none;
-	-moz-appearance: none;
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-	background-repeat: no-repeat;
-	background-position: right 12px center;
-	padding-right: 36px}
-.form-select:hover {
-	border-color: var(--border-strong);
-	background-color: var(--bg-hover)}
-.form-select:focus {
-	border-color: var(--accent);
-	box-shadow: 0 0 0 3px var(--accent-dim)}
-.form-select option {
-	background: var(--bg-surface);
-	color: var(--text-primary)}
-
 /* Custom Select (dropdown) */
 .custom-select {
 	position: relative;
@@ -9303,9 +8805,7 @@ color: var(--text-primary)}
 	.btn-save-original,
 	.btn-save-cache,
 	.btn-export-all,
-	.global-search-btn,
-	.btn-settings,
-	.btn-theme-toggle {
+	.global-search-btn {
 		padding: 8px 14px;
 		font-size: var(--fs-base)}
 
@@ -9323,14 +8823,6 @@ color: var(--text-primary)}
 @media (max-width: 480px) {
 	.app-title {
 		font-size: var(--fs-base)}
-
-	.file-name {
-		display: none}
-
-	.btn-theme-toggle {
-		width: 36px;
-		height: 36px;
-		font-size: var(--fs-lg)}
 
 	.mobile-tab-btn {
 		font-size: var(--fs-2xl)}
@@ -9423,9 +8915,6 @@ color: var(--text-primary)}
 		padding: 8px 10px;
 		margin: 4px 0}
 
-	.error-text {
-		font-size: var(--fs-sm)}
-
 	.error-suggestion {
 		font-size: var(--fs-sm)}
 
@@ -9433,8 +8922,7 @@ color: var(--text-primary)}
 		grid-template-columns: repeat(2, 1fr)}
 
 	.btn-check,
-	.btn-cancel,
-	.btn-export {
+	.btn-cancel {
 		padding: 5px 10px;
 		font-size: var(--fs-sm)}
 
@@ -9534,9 +9022,6 @@ color: var(--text-primary)}
 	.character-major-events-section .events-label {
 		font-size: var(--fs-2xs)}
 
-	.character-major-events-section .events-content {
-		font-size: var(--fs-xs)}
-
 	.character-tags-section {
 		margin-top: 6px;
 		padding-top: 6px;
@@ -9562,9 +9047,6 @@ color: var(--text-primary)}
 		font-size: var(--fs-2xs)}
 
 	.character-profile-section .profile-value {
-		font-size: var(--fs-2xs)}
-
-	.character-profile-section .profile-experiences {
 		font-size: var(--fs-2xs)}
 
 	.notes-label {
@@ -9618,7 +9100,73 @@ color: var(--text-primary)}
 	margin: 0 0 16px 0;
 	line-height: 1.6}
 
+/* 引导弹窗样式 */
+.guide-system-info {
+	padding: 8px 12px;
+	border-radius: var(--r-sm);
+	background: var(--bg-hover);
+	font-size: 13px;
+	color: var(--text-secondary);
+	margin-bottom: 16px}
 
+.guide-disk-low {
+	color: var(--red);
+	margin-left: 8px}
+
+.guide-option-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px}
+
+.guide-option-btn {
+	justify-content: flex-start;
+	text-align: left;
+	padding: 12px 16px}
+
+.guide-option-btn > span {
+	display: inline-block;
+	vertical-align: middle}
+
+.guide-option-hint {
+	font-size: 12px;
+	color: var(--text-secondary)}
+
+.word-type-badge {
+	font-size: 10px;
+	padding: 1px 6px;
+	border-radius: var(--r-xs, 6px);
+	background: var(--bg-hover, rgba(128,128,128,0.15));
+	color: var(--text-secondary)}
+
+.word-type-badge--replace {
+	background: var(--yellow, #faad14);
+	color: #000}
+
+.word-add-row {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap}
+
+.word-type-select {
+	width: 100px;
+	flex: none}
+
+.word-input-flex {
+	flex: 1;
+	min-width: 120px}
+
+.hidden-file-input {
+	display: none}
+
+.model-select-row {
+	display: flex;
+	gap: 8px}
+
+.model-select-row .custom-select {
+	flex: 1}
+
+.relation-filter-select {
+	max-width: 200px}
 
 .word-input:focus {
 	border-color: var(--accent);
@@ -9626,19 +9174,6 @@ color: var(--text-primary)}
 
 .word-input::placeholder {
 	color: var(--text-muted)}
-
-
-.btn-add-word:hover:not(:disabled) {
-	transform: translateY(-1px);
-	box-shadow: var(--shadow-md)}
-
-.btn-add-word:active:not(:disabled) {
-	transform: translateY(0)}
-
-.btn-add-word:disabled {
-	opacity: 0.5;
-	cursor: not-allowed}
-
 
 .list-header {
 	font-size: var(--fs-base);
@@ -10097,6 +9632,10 @@ color: var(--text-primary)}
 	flex: 1;
 	justify-content: center}
 
+.download-asset-btn.downloading {
+	opacity: 0.7;
+	cursor: wait}
+
 .download-asset-btn:hover {
 	background: var(--border);
 	transform: translateY(-2px)}
@@ -10156,6 +9695,21 @@ color: var(--text-primary)}
 	display: flex;
 	gap: 4px;
 	flex: 1}
+
+.asset-pair-row {
+	display: flex;
+	gap: 8px;
+	width: 100%}
+
+.asset-pair-spacer {
+	flex: 1}
+
+.app-title-link {
+	text-decoration: none;
+	color: inherit;
+	display: flex;
+	align-items: center;
+	gap: 8px}
 
 .mirror-picker-btn {
 	display: flex;
@@ -10362,6 +9916,12 @@ color: var(--text-primary)}
 	z-index: var(--z-modal);
 	animation: fade-in 0.25s var(--ease)}
 
+.global-search-body {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0}
+
 .global-search-input-wrapper {
 	position: relative;
 	display: flex;
@@ -10528,19 +10088,6 @@ color: var(--text-primary)}
 /* ============================================================
    Proofread Queue Panel Modal
    ============================================================ */
-.queue-panel-overlay {
-	position: fixed;
-	inset: 0;
-	background: rgba(0, 0, 0, 0.5);
-	backdrop-filter: blur(8px);
-	-webkit-backdrop-filter: blur(8px);
-	will-change: transform;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	z-index: var(--z-modal);
-	animation: fade-in 0.25s var(--ease)}
-
 .queue-panel {
 	width: 520px;
 	max-height: 80vh;
@@ -10860,17 +10407,9 @@ color: var(--text-primary)}
 	gap: 8px;
 	flex-shrink: 0}
 
-
-.graph-focus-controls .config-select {
-	width: fit-content}
-
-/* 统一的 config-select 样式 */
-
-
 .graph-zoom-btn:hover {
 	background: var(--bg-hover);
 	color: var(--text-primary)}
-
 
 .relationship-graph-viewport {
 	flex: 1;
@@ -11556,7 +11095,8 @@ color: var(--text-primary)}
 	display: flex;
 	flex-direction: column;
 	background-color: #0f0f23;
-	overflow: hidden}
+	overflow: hidden;
+	animation: modal-in 0.3s var(--ease-bounce)}
 
 .diff-body {
 	flex: 1;
@@ -11680,14 +11220,16 @@ color: var(--text-primary)}
 	border-color: var(--accent, var(--accent))}
 
 .diff-novel-select {
+	max-width: 160px}
+
+.diff-novel-select .custom-select-trigger {
 	font-size: var(--fs-sm);
 	padding: 4px 8px;
 	border: 1px solid var(--border);
 	border-radius: var(--r-sm);
 	background: var(--bg-secondary);
 	color: var(--text-primary);
-	max-width: 160px;
-	cursor: pointer}
+	gap: 4px}
 
 .diff-clear-btn {
 	display: flex;
@@ -11801,9 +11343,6 @@ color: var(--text-primary)}
 	.diff-text-paragraph {
 		border-bottom-color: rgba(255,255,255,0.05)}
 }
-
-.hidden-file-input {
-	display: none}
 
 .diff-swap-btn {
 	display: flex;
@@ -12167,13 +11706,47 @@ color: var(--text-primary)}
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
-	min-height: 0}
+	min-height: 0;
+	position: relative}
 
 /* 角色选择视图 */
 .roleplay-picker {
 	flex: 1;
 	overflow-y: auto;
-	padding: 20px 24px}
+	/* 底部留白避免被开始对话 FAB 遮挡 */
+	padding: 20px 24px 88px}
+
+/* 开始对话 FAB（浮动于选择器右下角） */
+.roleplay-picker-fab {
+	position: absolute;
+	bottom: 24px;
+	right: 24px;
+	z-index: 100;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 12px 22px;
+	border-radius: var(--r-full);
+	border: none;
+	background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+	color: white;
+	font-size: var(--fs-md);
+	font-weight: 600;
+	cursor: pointer;
+	box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.3);
+	transition: all var(--duration) var(--ease)}
+
+.roleplay-picker-fab:hover:not(:disabled) {
+	transform: translateY(-2px);
+	box-shadow: 0 6px 16px rgba(var(--accent-rgb), 0.4)}
+
+.roleplay-picker-fab:disabled {
+	opacity: 0.5;
+	cursor: not-allowed}
+
+/* 移动端避开底部安全区 */
+.roleplay-mobile .roleplay-picker-fab {
+	bottom: calc(24px + env(safe-area-inset-bottom))}
 
 .roleplay-picker-title {
 	font-size: var(--fs-md);
@@ -12197,12 +11770,49 @@ color: var(--text-primary)}
 	background: var(--bg-surface);
 	text-align: left;
 	cursor: pointer;
+	position: relative;
 	transition: all var(--duration) var(--ease)}
 
 .roleplay-picker-card:hover {
 	background: var(--bg-hover);
 	border-color: var(--accent);
 	transform: translateY(-2px)}
+
+/* 多选选中态 */
+.roleplay-picker-card.selected {
+	border-color: var(--accent);
+	background: var(--accent-dim);
+	box-shadow: 0 0 0 1px var(--accent)}
+
+/* 选中顺序角标（数字即选择顺序，1 为主角色） */
+.roleplay-picker-order {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	min-width: 20px;
+	height: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--r-full);
+	background: var(--accent);
+	color: white;
+	font-size: var(--fs-xs);
+	font-weight: 700}
+
+/* 选择器底部操作栏 */
+.roleplay-picker-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 12px 4px 0;
+	border-top: 1px solid var(--glass-border);
+	margin-top: 12px}
+
+.roleplay-picker-hint {
+	font-size: var(--fs-xs);
+	color: var(--text-muted)}
 
 .roleplay-picker-avatar {
 	width: 36px;
@@ -12360,6 +11970,85 @@ color: var(--text-primary)}
 
 .roleplay-msg.user {
 	flex-direction: row-reverse}
+
+/* 同一轮（同 turnId）的连续多角色发言紧凑分组 */
+.roleplay-msg.same-turn {
+	margin-top: -8px}
+
+/* 在场角色栏 */
+.roleplay-presence-bar {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding: 6px 16px;
+	border-bottom: 1px solid var(--glass-border);
+	background: var(--glass-bg);
+	flex-shrink: 0}
+
+.roleplay-presence-label {
+	font-size: var(--fs-xs);
+	color: var(--text-muted);
+	flex-shrink: 0}
+
+.roleplay-presence-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 10px;
+	border-radius: var(--r-full);
+	border: 1px solid var(--glass-border);
+	background: var(--bg-surface);
+	font-size: var(--fs-xs);
+	color: var(--text-primary);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.roleplay-presence-chip:hover {
+	border-color: var(--accent);
+	background: var(--accent-dim)}
+
+.roleplay-presence-remove {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	border-radius: var(--r-full);
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: 0;
+	transition: all var(--duration) var(--ease)}
+
+.roleplay-presence-remove:hover {
+	background: var(--red);
+	color: white}
+
+.roleplay-presence-invite {
+	margin-left: auto}
+
+/* 未回应占位条（点击单独补发言） */
+.roleplay-unspoken-bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px}
+
+.roleplay-unspoken-chip {
+	padding: 6px 12px;
+	border-radius: var(--r-full);
+	border: 1px dashed var(--border-strong);
+	background: transparent;
+	font-size: var(--fs-xs);
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.roleplay-unspoken-chip:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+	background: var(--accent-dim)}
 
 .roleplay-msg-avatar {
 	width: 26px;
@@ -12707,7 +12396,8 @@ color: var(--text-primary)}
 	display: flex;
 	flex-direction: column;
 	background: var(--bg-surface);
-	overflow: hidden}
+	overflow: hidden;
+	position: relative}
 
 /* 移动端顶部导航栏 */
 .roleplay-mobile-header {
@@ -12887,7 +12577,8 @@ color: var(--text-primary)}
 	flex: 1;
 	min-height: 0;
 	overflow-y: auto;
-	padding: 6px 12px calc(12px + env(safe-area-inset-bottom))}
+	/* 底部留白避免被开始对话 FAB 遮挡 */
+	padding: 6px 12px calc(88px + env(safe-area-inset-bottom))}
 
 .roleplay-mobile-picker .roleplay-picker-identity {
 	margin-bottom: 12px;
@@ -12918,7 +12609,13 @@ color: var(--text-primary)}
 	background: var(--bg-surface);
 	text-align: left;
 	cursor: pointer;
+	position: relative;
 	transition: all var(--duration) var(--ease)}
+
+/* 移动端多选选中态 */
+.roleplay-mobile-picker-item.selected {
+	border-color: var(--accent);
+	background: var(--accent-dim)}
 
 .roleplay-mobile-picker-item:active {
 	background: var(--bg-hover);
@@ -13018,6 +12715,13 @@ color: var(--text-primary)}
 
 .roleplay-profile.mobile .profile-grid {
 	grid-template-columns: 1fr}
+
+/* Modal 外壳的 body 包装层：保持 flex 布局，让 profile-body 滚动生效 */
+.profile-modal-wrap {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0}
 
 @keyframes profile-in {
 	from {

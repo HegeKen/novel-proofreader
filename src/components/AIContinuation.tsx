@@ -1,13 +1,13 @@
 import { useState, useRef, useCallback } from "react";
-import { createPortal } from "react-dom";
 import { useNovelStore } from "../stores/novelStore";
 import { useCharacterStore } from "../stores/characterStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
-import { useAppMetaStore } from "../stores/appMetaStore";
+import { useUIStore } from "../stores/uiStore";
 import { useConfigStore } from "../stores/configStore";
 import { generateContinuation, buildRequestConfig } from "../utils/aiClient";
 import type { ContinuationParams } from "../utils/aiClient";
 import { Icons } from "./Icons";
+import { Modal } from "./Modal";
 import { AutoResizeTextarea } from "./AutoResizeTextarea";
 
 export function AIContinuation() {
@@ -24,7 +24,7 @@ export function AIContinuation() {
 		if (!currentNovelId || chapters.length === 0) return;
 		const aiConfig = useAIConfigStore.getState().aiConfig;
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			useUIStore.getState().showToast("请先在设置中配置AI模型", "warning");
 			return;
 		}
 
@@ -116,9 +116,9 @@ export function AIContinuation() {
 			setContinuationContent(result);
 			setShowPreview(true);
 
-			useAppMetaStore.getState().showToast(`续写完成，生成 ${result.length} 字符`, "success");
+			useUIStore.getState().showToast(`续写完成，生成 ${result.length} 字符`, "success");
 		} catch (err) {
-			useAppMetaStore.getState().showToast("续写失败: " + (err instanceof Error ? err.message : String(err)), "error");
+			useUIStore.getState().showToast("续写失败: " + (err instanceof Error ? err.message : String(err)), "error");
 		} finally {
 			setIsGenerating(false);
 		}
@@ -133,7 +133,7 @@ export function AIContinuation() {
 		continuationContentRef.current = "";
 		setContinuationContent("");
 		setShowPreview(false);
-		useAppMetaStore.getState().showToast("续写内容已追加到章节末尾", "success");
+		useUIStore.getState().showToast("续写内容已追加到章节末尾", "success");
 	}, [chapters]);
 
 	// 取消
@@ -168,45 +168,37 @@ export function AIContinuation() {
 			</div>
 
 			{/* 续写预览弹窗 — 全局渲染 */}
-			{showPreview && createPortal(
-				<div className="modal-overlay" onClick={handleCancel}>
-					<div className="config-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "700px" }}>
-						<div className="config-header">
-							<div className="config-title">
-								<Icons.penLine size={18} />
-								<span>AI续写预览</span>
-							</div>
-							<button className="close-btn" onClick={handleCancel}>
-								<Icons.x size={16} />
-							</button>
-						</div>
-						<div className="config-body">
-							<div className="mb-3 text-xs text-neutral-400">
-								以下内容由AI根据角色设定、世界观和当前章节上下文生成，将追加到最后一章末尾。
-							</div>
-							<AutoResizeTextarea
-								className="config-input"
-								value={continuationContent}
-								readOnly
-								rows={20}
-								maxHeight={720}
-								style={{ fontSize: "14px", lineHeight: "1.8", fontFamily: "inherit" }}
-							/>
-						</div>
-						<div className="flex justify-end gap-2 pt-2">
-							<button className="btn" onClick={handleCancel}>
-								<Icons.x size={14} />
-								<span>取消</span>
-							</button>
-							<button className="btn btn-primary" onClick={handleApply}>
-								<Icons.saveIcon size={14} />
-								<span>确认追加</span>
-							</button>
-						</div>
-					</div>
-				</div>,
-				document.body
-			)}
+			<Modal
+				open={showPreview}
+				onClose={handleCancel}
+				title="AI续写预览"
+				icon={<Icons.penLine size={18} />}
+				portal
+				footer={
+					<>
+						<button className="btn" onClick={handleCancel}>
+							<Icons.x size={14} />
+							<span>取消</span>
+						</button>
+						<button className="btn btn-primary" onClick={handleApply}>
+							<Icons.saveIcon size={14} />
+							<span>确认追加</span>
+						</button>
+					</>
+				}
+			>
+				<div className="mb-3 text-xs text-neutral-400">
+					以下内容由AI根据角色设定、世界观和当前章节上下文生成，将追加到最后一章末尾。
+				</div>
+				<AutoResizeTextarea
+					className="config-input"
+					value={continuationContent}
+					readOnly
+					rows={20}
+					maxHeight={720}
+					style={{ fontSize: "14px", lineHeight: "1.8", fontFamily: "inherit" }}
+				/>
+			</Modal>
 		</>
 	);
 }

@@ -3,7 +3,7 @@
 // ============================================================
 import { generateId } from "./id";
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface LogEntry {
 	id: string;

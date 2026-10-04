@@ -19,16 +19,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
-import {
-	PROJECT_ROOT,
-	isUnsignedAndroidArtifact,
-	loadSigningConfig,
-	runCli,
-	log,
-	readJson,
-	relativeToRoot,
-	sha256File,
-} from './lib/core.mjs';
+import { PROJECT_ROOT, relativeToRoot } from './lib/paths.mjs';
+import { log } from './lib/log.mjs';
+import { runCli } from './lib/cli.mjs';
+import { readJson } from './lib/exec.mjs';
+import { sha256File } from './lib/crypto.mjs';
+import { loadSigningConfig } from './lib/signing-config.mjs';
+import { isUnsignedAndroidArtifact } from './lib/manifest.mjs';
 
 function parseArgs(argv) {
 	const options = { arch: 'universal', appName: null, dryRun: false, allowUnsigned: null };

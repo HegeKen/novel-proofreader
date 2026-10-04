@@ -1,7 +1,7 @@
-import type { TTSConfig } from "../stores/configStore";
+import type { TTSConfig } from "../types";
 import { logger } from "./logger";
 import { useAppMetaStore } from "../stores/appMetaStore";
-import { applyWordReplacements } from "../stores/wordReplacementStore";
+import { applyWordReplacements } from "./textReplace";
 import { Queue } from "./concurrent";
 
 // 有效的 MiMo 语音列表
@@ -161,6 +161,7 @@ async function _synthesizeSpeech(
 	logTag: string = "发起 TTS 请求",
 	speedOverride?: number,
 	signal?: AbortSignal,
+	deliveryHint?: string,
 ): Promise<ArrayBuffer> {
 	let processedText = applyWordReplacements(text);
 
@@ -201,19 +202,23 @@ async function _synthesizeSpeech(
 	const realisticSpeedHint = `语速：${speed}（参考：5=日常对话自然语速约220字/分钟，3=舒缓叙述，7=激动急切；避免过快或过慢，保持自然流畅）`;
 	const volumeHint = `音量：${volume}（1最低，10最高）`;
 	const naturalDeliveryHint = `要求：像真人在日常生活里说话，情感克制内敛，自然真实，避免舞台腔/播音腔/过度戏剧化。`;
+	// 语气情感提示：来自文本中括号内的神态/动作描写（如（轻声地说）），指导朗读情绪但不朗读出来
+	const deliveryHintLine = deliveryHint
+		? `语气与情感：${deliveryHint}（来自原文括号内的神态/动作描写，朗读时请体现相应的语气与情绪，但不要读出括号内容本身）\n`
+		: "";
 
 	if (useVoiceDesign) {
 		const processedPrompt = applyWordReplacements(voiceDesignPrompt!);
 		messages.push({
 			role: "user",
-			content: `${processedPrompt}\n\n${realisticSpeedHint}\n${volumeHint}\n${naturalDeliveryHint}`
+			content: `${processedPrompt}\n\n${deliveryHintLine}${realisticSpeedHint}\n${volumeHint}\n${naturalDeliveryHint}`
 		});
 		messages.push({ role: "assistant", content: processedText.replace(/^\([^)]+\)\s*/, '') });
 	} else {
 		messages.push({ role: "assistant", content: processedText.replace(/^\(([^,，]+)[,，][^)]*\)\s*/, '($1) ') });
 		messages.push({
 			role: "user",
-			content: `${realisticSpeedHint}\n${volumeHint}\n${naturalDeliveryHint}\n照读以下文本，一字不改，包括标点。`,
+			content: `${realisticSpeedHint}\n${volumeHint}\n${naturalDeliveryHint}\n${deliveryHintLine}照读以下文本，一字不改，包括标点。`,
 		});
 	}
 
@@ -293,14 +298,15 @@ async function _synthesizeSpeech(
 	return bytes.buffer;
 }
 
-export async function synthesizeSpeech(
+async function synthesizeSpeech(
 	text: string,
 	config: TTSConfig,
 	voiceDesignPrompt?: string,
 	speedOverride?: number,
 	signal?: AbortSignal,
+	deliveryHint?: string,
 ): Promise<ArrayBuffer> {
-	return _synthesizeSpeech(text, config, config.voice, voiceDesignPrompt, "发起 TTS 请求", speedOverride, signal);
+	return _synthesizeSpeech(text, config, config.voice, voiceDesignPrompt, "发起 TTS 请求", speedOverride, signal, deliveryHint);
 }
 
 export async function synthesizeSpeechWithVoice(
@@ -310,8 +316,9 @@ export async function synthesizeSpeechWithVoice(
 	voiceDesignPrompt?: string,
 	speedOverride?: number,
 	signal?: AbortSignal,
+	deliveryHint?: string,
 ): Promise<ArrayBuffer> {
-	return _synthesizeSpeech(text, config, voice, voiceDesignPrompt, "发起 TTS 请求（角色配音）", speedOverride, signal);
+	return _synthesizeSpeech(text, config, voice, voiceDesignPrompt, "发起 TTS 请求（角色配音）", speedOverride, signal, deliveryHint);
 }
 
 export function playAudio(arrayBuffer: ArrayBuffer, signal?: AbortSignal): Promise<void> {
@@ -389,7 +396,7 @@ export function playAudio(arrayBuffer: ArrayBuffer, signal?: AbortSignal): Promi
  * 本函数提取语速值，并将文本恢复为 (标签)文本 格式
  * @returns { text: 清理后的文本, speed: 语速值（1-10）或 undefined }
  */
-export function parseSpeedFromText(text: string): { text: string; speed?: number } {
+function parseSpeedFromText(text: string): { text: string; speed?: number } {
 	const match = text.match(/^\(([^)]+?)\|(\d+)\)/);
 	if (!match) {
 		return { text };
@@ -403,7 +410,7 @@ export function parseSpeedFromText(text: string): { text: string; speed?: number
 	return { text: cleanedText, speed };
 }
 
-export function splitTextIntoSentences(text: string): string[] {
+function splitTextIntoSentences(text: string): string[] {
 	const sentenceEndings = /([。！？；\n]+)/;
 	const sentences: string[] = [];
 
@@ -836,7 +843,7 @@ export class TTSPlayer {
 	}
 }
 
-export interface ScriptDialogue {
+interface ScriptDialogue {
 	index: number;
 	character: string;
 	text: string;

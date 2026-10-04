@@ -12,7 +12,10 @@
  */
 
 import process from "node:process";
-import { loadSigningConfig, log, runCli, tryRun } from "./lib/core.mjs";
+import { loadSigningConfig } from "./lib/signing-config.mjs";
+import { log } from "./lib/log.mjs";
+import { runCli } from "./lib/cli.mjs";
+import { tryRun } from "./lib/exec.mjs";
 import { buildSecretEntries } from "./lib/secrets.mjs";
 
 function parseArgs(argv) {

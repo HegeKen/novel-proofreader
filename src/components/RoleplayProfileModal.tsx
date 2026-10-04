@@ -1,8 +1,7 @@
 // ============================================================
 // 角色扮演 - 角色个人主页弹窗（参照主流 IM 软件个人名片设计）
 // ============================================================
-import { createPortal } from "react-dom";
-import { Icons } from "./Icons";
+import { Modal, CloseButton } from "./Modal";
 import { getRoleName, getGenderName } from "../utils/characterRoles";
 import type { CharacterInfo } from "../types";
 
@@ -40,97 +39,94 @@ export const RoleplayProfileModal: React.FC<RoleplayProfileModalProps> = ({
 	const hasTags = (character.aliases?.length ?? 0) > 0 || (character.relationTerms?.length ?? 0) > 0;
 	const hasVoice = Boolean(character.voice || character.voiceDesignPrompt || character.dialect);
 
-	return createPortal(
-		<div
-			className={`modal-overlay roleplay-profile-overlay${isMobile ? " mobile" : ""}`}
-			onClick={onClose}
+	return (
+		<Modal
+			open
+			onClose={onClose}
+			title={character.name}
+			hideHeader
+			className={`roleplay-profile${isMobile ? " mobile" : ""}`}
+			overlayClassName={`roleplay-profile-overlay${isMobile ? " mobile" : ""}`}
+			bodyClassName="profile-modal-wrap"
 		>
-			<div
-				className={`roleplay-profile${isMobile ? " mobile" : ""}`}
-				onClick={(e) => e.stopPropagation()}
-			>
-				{/* 顶部渐变区：大头像 + 名字 + 徽章 */}
-				<div className="profile-hero">
-					<button className="profile-close-btn" onClick={onClose} aria-label="关闭">
-						<Icons.x size={16} />
-					</button>
-					<span className={`profile-hero-avatar ${character.gender}`}>
-						<span className="profile-hero-avatar-text">{character.name.charAt(0)}</span>
+			{/* 顶部渐变区：大头像 + 名字 + 徽章 */}
+			<div className="profile-hero">
+				<CloseButton className="profile-close-btn" onClick={onClose} />
+				<span className={`profile-hero-avatar ${character.gender}`}>
+					<span className="profile-hero-avatar-text">{character.name.charAt(0)}</span>
+				</span>
+				<div className="profile-hero-name">{character.name}</div>
+				<div className="profile-hero-badges">
+					<span className={`gender-badge ${character.gender}`}>
+						{getGenderName(character.gender)}
 					</span>
-					<div className="profile-hero-name">{character.name}</div>
-					<div className="profile-hero-badges">
-						<span className={`gender-badge ${character.gender}`}>
-							{getGenderName(character.gender)}
-						</span>
-						<span className="role-badge">{getRoleName(character.role)}</span>
-					</div>
-				</div>
-
-				{/* 资料详情 */}
-				<div className="profile-body">
-					{hasBasic && (
-						<div className="profile-section">
-							<div className="profile-section-title">基本信息</div>
-							<div className="profile-grid">
-								{basicItems.map(
-									(it) =>
-										it.value && <ProfileItem key={it.label} label={it.label} value={it.value} />,
-								)}
-							</div>
-						</div>
-					)}
-
-					{hasTags && (
-						<div className="profile-section">
-							{character.aliases && character.aliases.length > 0 && (
-								<div className="profile-tag-row">
-									<span className="profile-tag-label">别称</span>
-									<div className="tags-list">
-										{character.aliases.map((alias, i) => (
-											<span key={i} className="alias-badge">
-												{alias}
-											</span>
-										))}
-									</div>
-								</div>
-							)}
-							{character.relationTerms && character.relationTerms.length > 0 && (
-								<div className="profile-tag-row">
-									<span className="profile-tag-label">代称</span>
-									<div className="tags-list">
-										{character.relationTerms.map((term, i) => (
-											<span key={i} className="relation-badge">
-												{term}
-											</span>
-										))}
-									</div>
-								</div>
-							)}
-						</div>
-					)}
-
-					{hasVoice && (
-						<div className="profile-section">
-							<div className="profile-section-title">声音</div>
-							<div className="profile-grid">
-								{character.voice && <ProfileItem label="音色" value={character.voice} />}
-								{character.dialect && <ProfileItem label="方言" value={character.dialect} />}
-							</div>
-							{character.voiceDesignPrompt && (
-								<div className="profile-notes">{character.voiceDesignPrompt}</div>
-							)}
-						</div>
-					)}
-
-					{character.notes && (
-						<div className="profile-section">
-							<div className="profile-section-title">角色小传</div>
-							<div className="profile-notes">{character.notes}</div>
-						</div>
-					)}
+					<span className="role-badge">{getRoleName(character.role)}</span>
 				</div>
 			</div>
-		</div>,
-		document.body,
+
+			{/* 资料详情 */}
+			<div className="profile-body">
+				{hasBasic && (
+					<div className="profile-section">
+						<div className="profile-section-title">基本信息</div>
+						<div className="profile-grid">
+							{basicItems.map(
+								(it) =>
+									it.value && <ProfileItem key={it.label} label={it.label} value={it.value} />,
+							)}
+						</div>
+					</div>
+				)}
+
+				{hasTags && (
+					<div className="profile-section">
+						{character.aliases && character.aliases.length > 0 && (
+							<div className="profile-tag-row">
+								<span className="profile-tag-label">别称</span>
+								<div className="tags-list">
+									{character.aliases.map((alias, i) => (
+										<span key={i} className="alias-badge">
+											{alias}
+										</span>
+									))}
+								</div>
+							</div>
+						)}
+						{character.relationTerms && character.relationTerms.length > 0 && (
+							<div className="profile-tag-row">
+								<span className="profile-tag-label">代称</span>
+								<div className="tags-list">
+									{character.relationTerms.map((term, i) => (
+										<span key={i} className="relation-badge">
+											{term}
+										</span>
+									))}
+								</div>
+							</div>
+						)}
+					</div>
+				)}
+
+				{hasVoice && (
+					<div className="profile-section">
+						<div className="profile-section-title">声音</div>
+						<div className="profile-grid">
+							{character.voice && <ProfileItem label="音色" value={character.voice} />}
+							{character.dialect && <ProfileItem label="方言" value={character.dialect} />}
+						</div>
+						{character.voiceDesignPrompt && (
+							<div className="profile-notes">{character.voiceDesignPrompt}</div>
+						)}
+					</div>
+				)}
+
+				{character.notes && (
+					<div className="profile-section">
+						<div className="profile-section-title">角色小传</div>
+						<div className="profile-notes">{character.notes}</div>
+					</div>
+				)}
+			</div>
+		</Modal>
 	);
 };

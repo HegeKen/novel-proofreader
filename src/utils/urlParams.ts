@@ -1,4 +1,4 @@
-export interface URLParams {
+interface URLParams {
 	bookId?: number;
 	chapter?: number;
 	readingMode?: "true" | "false";

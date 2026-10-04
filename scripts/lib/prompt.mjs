@@ -8,7 +8,7 @@
 
 import readline from "node:readline/promises";
 import process from "node:process";
-import { log } from "./core.mjs";
+import { log } from "./log.mjs";
 
 class CancelledError extends Error {
 	constructor() {

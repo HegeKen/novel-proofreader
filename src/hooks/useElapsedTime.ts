@@ -30,10 +30,3 @@ export function useElapsedTime(active: boolean): number {
 
 	return elapsed;
 }
-
-/** 将秒数格式化为 分:秒（如 3:45），不足 1 秒显示 0:00 */
-export function formatElapsedTime(seconds: number): string {
-	const m = Math.floor(seconds / 60);
-	const s = seconds % 60;
-	return `${m}:${String(s).padStart(2, "0")}`;
-}

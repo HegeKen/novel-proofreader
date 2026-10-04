@@ -1,14 +1,13 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from "react";
-import { createPortal } from "react-dom";
 import { useNovelStore } from "../stores/novelStore";
 import { useUIStore } from "../stores/uiStore";
 import { useCharacterStore } from "../stores/characterStore";
 import { useProofreadStore } from "../stores/proofreadStore";
+import { useTtsStore } from "../stores/ttsStore";
 import { useConfigStore } from "../stores/configStore";
-import { useAppMetaStore } from "../stores/appMetaStore";
-import { getNonEmptyParagraphs, isDefaultChapterTitle, getChapterDisplayTitle } from "../utils/chapterSplit";
+import { useReadingProgressStore } from "../stores/readingProgressStore";
+import { getNonEmptyParagraphs, isDefaultChapterTitle, getChapterDisplayTitle, buildParagraphIndexMap, buildOriginalToFilteredMap } from "../utils/chapterSplit";
 import { getGenderName } from "../utils/characterRoles";
-import { buildParagraphIndexMap, buildOriginalToFilteredMap } from "../utils/formatters";
 import { useTTS } from "../hooks/useTTS";
 import { useSearch } from "../hooks/useSearch";
 import { useReadingProgress } from "../hooks/useReadingProgress";
@@ -19,7 +18,9 @@ import type { BridgeParams } from "../utils/aiClient";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
+import { Button } from "./Button";
 import { Select } from "./Select";
+import { Modal, CloseButton } from "./Modal";
 import { PeakHourBanner } from "./PeakHourBanner";
 import { logger } from "../utils/logger";
 import { AutoResizeTextarea } from "./AutoResizeTextarea";
@@ -53,10 +54,10 @@ export function ReaderPanel({
 	const applyAnimation = useProofreadStore((s) => s.applyAnimation);
 	const startLine = useProofreadStore((s) => s.startLine);
 	const setStartLine = useProofreadStore((s) => s.setStartLine);
-	const readingReminderEnabled = useAppMetaStore((s) => s.readingReminderEnabled);
-	const setReadingReminderEnabled = useAppMetaStore((s) => s.setReadingReminderEnabled);
-	const readingReminderMinutes = useAppMetaStore((s) => s.readingReminderMinutes);
-	const setReadingReminderMinutes = useAppMetaStore((s) => s.setReadingReminderMinutes);
+	const readingReminderEnabled = useReadingProgressStore((s) => s.readingReminderEnabled);
+	const setReadingReminderEnabled = useReadingProgressStore((s) => s.setReadingReminderEnabled);
+	const readingReminderMinutes = useReadingProgressStore((s) => s.readingReminderMinutes);
+	const setReadingReminderMinutes = useReadingProgressStore((s) => s.setReadingReminderMinutes);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
 	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
 	const promptConfig = useConfigStore((s) => s.promptConfig);
@@ -66,8 +67,8 @@ export function ReaderPanel({
 	const readingProgress = useReadingProgress();
 	const chapterTitleSuggestion = useChapterTitleSuggestion();
 
-	const setTtsPlaying = useProofreadStore((s) => s.setTtsPlaying);
-	const setTtsHighlightedPara = useProofreadStore((s) => s.setTtsHighlightedPara);
+	const setTtsPlaying = useTtsStore((s) => s.setTtsPlaying);
+	const setTtsHighlightedPara = useTtsStore((s) => s.setTtsHighlightedPara);
 
 	useEffect(() => {
 		setTtsPlaying(tts.ttsPlaying || tts.isStreamTTSPlaying);
@@ -206,7 +207,7 @@ export function ReaderPanel({
 		if (!currentNovelId || prevIndex < 0 || prevIndex >= chapters.length - 1) return;
 		const aiConfig = useAIConfigStore.getState().aiConfig;
 		if (!aiConfig.apiKey || !aiConfig.baseURL) {
-			useAppMetaStore.getState().showToast("请先在设置中配置AI模型", "warning");
+			useUIStore.getState().showToast("请先在设置中配置AI模型", "warning");
 			return;
 		}
 
@@ -254,9 +255,9 @@ export function ReaderPanel({
 			const result = await generateChapterBridge(params, config, undefined, promptConfig.bridge);
 			setBridgeContent(result);
 			setShowBridgePreview(true);
-			useAppMetaStore.getState().showToast(`衔接段落生成完成，${result.length} 字符`, "success");
+			useUIStore.getState().showToast(`衔接段落生成完成，${result.length} 字符`, "success");
 		} catch (err) {
-			useAppMetaStore.getState().showToast("生成衔接段落失败: " + (err instanceof Error ? err.message : String(err)), "error");
+			useUIStore.getState().showToast("生成衔接段落失败: " + (err instanceof Error ? err.message : String(err)), "error");
 		} finally {
 			setIsGeneratingBridge(false);
 		}
@@ -269,7 +270,7 @@ export function ReaderPanel({
 		setBridgeContent("");
 		setShowBridgePreview(false);
 		setBridgingIndex(null);
-		useAppMetaStore.getState().showToast("衔接内容已追加到章节末尾", "success");
+		useUIStore.getState().showToast("衔接内容已追加到章节末尾", "success");
 	}, [bridgingIndex, bridgeContent]);
 
 	// 取消桥接
@@ -606,13 +607,12 @@ export function ReaderPanel({
 						</label>
 					</div>
 				)}
-				<button
-					className={isMobile ? "btn-mobile" : "btn"}
+				<Button
 					onClick={() => setShowSearch(true)}
+					icon={<Icons.search size={18} />}
 				>
-					<Icons.search size={18} />
-					{!isMobile && <span>搜索</span>}
-				</button>
+					搜索
+				</Button>
 			</div>
 			<div className="reader-progress-bar">
 				<div 
@@ -1547,18 +1547,7 @@ export function ReaderPanel({
 								<Icons.search size={18} />
 								<span>搜索</span>
 							</div>
-							<button className="close-btn" onClick={closeSearch}>
-								<svg
-									width="16"
-									height="16"
-									viewBox="0 0 16 16"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="2"
-								>
-									<path d="M3 3L13 13M13 3L3 13" />
-								</svg>
-							</button>
+							<CloseButton onClick={closeSearch} />
 						</div>
 						<div className="search-input-row">
 							<div className="search-input-wrapper">
@@ -1631,85 +1620,45 @@ export function ReaderPanel({
 			)}
 
 			{/* 阅读时长提醒弹窗 */}
-			{showReadingReminder && (
-				<div className="modal-overlay" onClick={() => setShowReadingReminder(false)}>
-					<div className="config-modal" onClick={(e) => e.stopPropagation()}>
-						<div className="config-header">
-							<div className="config-title">
-								<span className="title-icon"><Icons.eye size={16} /></span>
-								<span>温馨提醒</span>
-							</div>
-							<button className="close-btn" onClick={() => setShowReadingReminder(false)}>
-								<svg
-									width="16"
-									height="16"
-									viewBox="0 0 16 16"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="2"
-								>
-									<path d="M3 3L13 13M13 3L3 13" />
-								</svg>
-							</button>
-						</div>
-						<div className="config-body">
-							<div className="config-section">
-								<p className="modal-description" style={{ textAlign: "center", fontSize: "14px", margin: "16px 0" }}>
-									您已阅读 {Math.floor(readingTimeElapsed / 60000)} 分钟，请注意休息，保护眼睛！
-								</p>
-							</div>
-						</div>
-						<div className="character-actions-fab-wrapper">
-							<button className="btn" onClick={() => {
-								setShowReadingReminder(false);
-								setReadingMode(false);
-							}}>
-								<Icons.x size={18} />
-								<span>退出阅读模式</span>
-							</button>
-							<button className="btn" onClick={() => setShowReadingReminder(false)}>
-								<Icons.eye size={18} />
-								<span>继续阅读</span>
-							</button>
-						</div>
-					</div>
+			<Modal open={showReadingReminder} onClose={() => setShowReadingReminder(false)} title="温馨提醒" icon={<Icons.eye size={16} />}>
+				<div className="config-section">
+					<p className="modal-description" style={{ textAlign: "center", fontSize: "14px", margin: "16px 0" }}>
+						您已阅读 {Math.floor(readingTimeElapsed / 60000)} 分钟，请注意休息，保护眼睛！
+					</p>
 				</div>
-			)}
+				<div className="character-actions-fab-wrapper">
+					<button className="btn" onClick={() => {
+						setShowReadingReminder(false);
+						setReadingMode(false);
+					}}>
+						<Icons.x size={18} />
+						<span>退出阅读模式</span>
+					</button>
+					<button className="btn" onClick={() => setShowReadingReminder(false)}>
+						<Icons.eye size={18} />
+						<span>继续阅读</span>
+					</button>
+				</div>
+			</Modal>
 
 			{/* AI章节衔接预览弹窗 */}
-			{showBridgePreview && bridgeContent && createPortal(
-				<div className="chapter-list-overlay" onClick={handleCancelBridge}>
-					<div className="config-modal bridge-preview-modal" onClick={(e) => e.stopPropagation()}>
-						<div className="config-header">
-							<div className="config-title">
-								<Icons.combine size={18} />
-								<span>章节衔接预览</span>
-							</div>
-							<button className="close-btn" onClick={handleCancelBridge}>
-								<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-									<path d="M3 3L13 13M13 3L3 13" />
-								</svg>
-							</button>
-						</div>
-						<div className="bridge-preview-content">
-							<p className="bridge-preview-hint">
-								将衔接段落追加到第 {(bridgingIndex ?? 0) + 1} 章末尾
-							</p>
-							<div className="bridge-preview-text">{bridgeContent}</div>
-						</div>
-						<div className="config-actions">
-							<button className="btn btn-cancel" onClick={handleCancelBridge}>
-								取消
-							</button>
-							<button className="btn" onClick={handleApplyBridge}>
-								<Icons.combine size={16} />
-								<span>追加到本章</span>
-							</button>
-						</div>
-					</div>
-				</div>,
-				document.body,
-			)}
+			<Modal open={!!(showBridgePreview && bridgeContent)} onClose={handleCancelBridge} title="章节衔接预览" icon={<Icons.combine size={18} />} className="config-modal bridge-preview-modal" portal overlayClassName="chapter-list-overlay">
+				<div className="bridge-preview-content">
+					<p className="bridge-preview-hint">
+						将衔接段落追加到第 {(bridgingIndex ?? 0) + 1} 章末尾
+					</p>
+					<div className="bridge-preview-text">{bridgeContent}</div>
+				</div>
+				<div className="config-actions">
+					<button className="btn btn-cancel" onClick={handleCancelBridge}>
+						取消
+					</button>
+					<button className="btn" onClick={handleApplyBridge}>
+						<Icons.combine size={16} />
+						<span>追加到本章</span>
+					</button>
+				</div>
+			</Modal>
 
 		</div>
 	);

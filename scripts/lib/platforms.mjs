@@ -9,16 +9,9 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-	PROJECT_ROOT,
-	base64EncodeFile,
-	capture,
-	ensureDir,
-	relativeToRoot,
-	resolveFromRoot,
-	tryRun,
-	writeFileSecure,
-} from "./core.mjs";
+import { PROJECT_ROOT, relativeToRoot, resolveFromRoot } from "./paths.mjs";
+import { base64EncodeFile } from "./crypto.mjs";
+import { capture, ensureDir, tryRun, writeFileSecure } from "./exec.mjs";
 
 // ---------------------------------------------------------------------------
 // CI Secret 名称（唯一事实来源，向导 / 校验 / 文档 / workflow 都引用它）

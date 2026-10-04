@@ -13,18 +13,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { PROJECT_ROOT, relativeToRoot } from "./lib/paths.mjs";
+import { log } from "./lib/log.mjs";
+import { runCli } from "./lib/cli.mjs";
+import { computeConfigKey } from "./lib/crypto.mjs";
 import {
-	PROJECT_ROOT,
 	collectConfigIssues,
-	computeConfigKey,
 	loadSigningConfig,
-	log,
-	relativeToRoot,
-	resolveSourceDateEpoch,
-	runCli,
 	signingConfigExists,
 	writeSigningEnv,
-} from "./lib/core.mjs";
+} from "./lib/signing-config.mjs";
+import { resolveSourceDateEpoch } from "./lib/build-env.mjs";
 import {
 	SECRETS,
 	androidKeystoreExists,

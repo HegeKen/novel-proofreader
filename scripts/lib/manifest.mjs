@@ -11,7 +11,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { sha256, sha256File, canonicalJson, tryRun } from "./core.mjs";
+import { canonicalJson, sha256, sha256File } from "./crypto.mjs";
+import { tryRun } from "./exec.mjs";
 import { findBuildTools, verifyApk, verifyJarSignature } from "./apk.mjs";
 
 export const MANIFEST_VERSION = 1;
@@ -35,6 +36,14 @@ export function isArtifactLike(name) {
 	const lower = name.toLowerCase();
 	if (lower.endsWith(".tar.gz")) return true;
 	return ARTIFACT_EXTENSIONS.has(path.extname(lower));
+}
+
+/**
+ * AGP 只有在「没有签名配置」时才会产出 `*-unsigned.apk` / `*-unsigned.aab`，
+ * 因此这个后缀是"签名补丁没生效"的硬信号，绝不能把它当成正常产物。
+ */
+export function isUnsignedAndroidArtifact(filePath) {
+	return /-unsigned\.(apk|aab)$/i.test(filePath);
 }
 
 /** 递归收集产物文件（跳过目录型 .app 的内部文件，整体作为一个产物）。 */

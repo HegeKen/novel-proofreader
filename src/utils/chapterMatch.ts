@@ -16,7 +16,7 @@ const unitMap: Record<string, number> = {
 };
 
 /** 中文数字转阿拉伯数字字符串；含非法字符时返回原串 */
-export function chineseToArabic(str: string): string {
+function chineseToArabic(str: string): string {
 	if (!str) return str;
 
 	let total = 0;
@@ -70,7 +70,7 @@ export function normalizeChapterTitle(title: string): string {
 	return normalized;
 }
 
-export interface ParsedChapterInfo {
+interface ParsedChapterInfo {
 	volumeNum: number;
 	chapterNum: number;
 	volumeName: string;
@@ -248,7 +248,7 @@ export function findMatchedChapter(chapters: Chapter[], chapterStr: string, volu
 	return matchedChapter;
 }
 
-export interface NormalizedEventChapter {
+interface NormalizedEventChapter {
 	/** 拆分后的纯章节名（如"第1章"） */
 	chapter: string;
 	/** 所属卷标题（无卷时为空字符串） */

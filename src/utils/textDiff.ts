@@ -3,10 +3,10 @@
 // ============================================================
 
 /** diff 片段类型 */
-export type DiffType = "equal" | "added" | "removed" | "modified" | "placeholder";
+type DiffType = "equal" | "added" | "removed" | "modified" | "placeholder";
 
 /** 单个 diff 片段 */
-export interface DiffPart {
+interface DiffPart {
 	type: DiffType;
 	text: string;
 }
@@ -349,7 +349,7 @@ export function diffLinesFine(text1: string, text2: string): DiffLine[] {
 }
 
 /** diff 统计信息 */
-export interface DiffStats {
+interface DiffStats {
 	added: number; // 新增字符数
 	removed: number; // 删除字符数
 	modifiedLines: number; // 修改行数

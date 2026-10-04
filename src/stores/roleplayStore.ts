@@ -4,9 +4,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { RoleplayMessage, RoleplaySession } from "../types";
-import { generateId, filterRecordByKeys } from "../utils/id";
+import { generateId } from "../utils/id";
+import { filterRecordByKeys } from "../utils/record";
 
-export interface RoleplayState {
+interface RoleplayState {
 	/** 每部小说的会话列表（key 为 novelId） */
 	sessions: Record<string, RoleplaySession[]>;
 	/** 每部小说当前激活的会话 ID（key 为 novelId） */
@@ -14,7 +15,8 @@ export interface RoleplayState {
 
 	createSession: (
 		novelId: string,
-		session: Pick<RoleplaySession, "characterId" | "chapterIndex" | "title" | "userCharacterId">,
+		session: Pick<RoleplaySession, "characterId" | "chapterIndex" | "title" | "userCharacterId"> &
+			Partial<Pick<RoleplaySession, "presentCharacterIds">>,
 	) => RoleplaySession;
 	deleteSession: (novelId: string, sessionId: string) => void;
 	addMessage: (
@@ -32,7 +34,7 @@ export interface RoleplayState {
 	updateSession: (
 		novelId: string,
 		sessionId: string,
-		updates: Partial<Pick<RoleplaySession, "characterId" | "chapterIndex" | "title" | "userCharacterId">>,
+		updates: Partial<Pick<RoleplaySession, "characterId" | "chapterIndex" | "title" | "userCharacterId" | "presentCharacterIds">>,
 	) => void;
 	getSessions: (novelId: string) => RoleplaySession[];
 	getSession: (novelId: string, sessionId: string) => RoleplaySession | null;
@@ -50,6 +52,10 @@ export const useRoleplayStore = create<RoleplayState>()(
 			createSession: (novelId, session) => {
 				const newSession: RoleplaySession = {
 					...session,
+					// 缺省仅主角色在场（群聊创建时由调用方传入完整在场列表）
+					presentCharacterIds: session.presentCharacterIds?.length
+						? session.presentCharacterIds
+						: [session.characterId],
 					id: generateId("rp"),
 					novelId,
 					messages: [],
@@ -182,6 +188,28 @@ export const useRoleplayStore = create<RoleplayState>()(
 		}),
 		{
 			name: "novel-proofreader-roleplay",
+			// v1：会话新增 presentCharacterIds（群聊在场角色列表），旧数据从历史消息扫描重建
+			version: 1,
+			migrate: (persisted, version) => {
+				const state = persisted as {
+					sessions?: Record<string, RoleplaySession[]>;
+					activeSessionId?: Record<string, string | null>;
+				};
+				if (version < 1 && state.sessions) {
+					for (const list of Object.values(state.sessions)) {
+						for (const s of list) {
+							if (!Array.isArray(s.presentCharacterIds) || s.presentCharacterIds.length === 0) {
+								const ids = new Set<string>([s.characterId]);
+								for (const m of s.messages ?? []) {
+									if (m.role === "assistant" && m.characterId) ids.add(m.characterId);
+								}
+								s.presentCharacterIds = [...ids];
+							}
+						}
+					}
+				}
+				return state;
+			},
 			partialize: (state) => ({
 				sessions: state.sessions,
 				activeSessionId: state.activeSessionId,

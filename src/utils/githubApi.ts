@@ -35,7 +35,7 @@ export const CORS_PROXIES: MirrorSource[] = [
 	{ name: "代理 2", url: "https://corsproxy.io/?", description: "corsproxy.io CORS 代理（⚠️ 第三方代理，可能看到你的请求内容）" },
 ];
 
-export function getMirrorUrls(originalUrl: string): string[] {
+function getMirrorUrls(originalUrl: string): string[] {
 	const urls: string[] = [originalUrl];
 	for (const mirror of GITHUB_MIRRORS) {
 		if (!mirror.url) continue;
@@ -67,7 +67,7 @@ export function getMirrorUrl(originalUrl: string, mirror: MirrorSource): string 
 }
 
 /** 为任意完整 URL 生成 CORS 代理 URL */
-export function getCorsProxyUrl(originalUrl: string, proxy: MirrorSource): string {
+function getCorsProxyUrl(originalUrl: string, proxy: MirrorSource): string {
 	if (!proxy.url) return originalUrl;
 	return `${proxy.url}${encodeURIComponent(originalUrl)}`;
 }
@@ -78,7 +78,7 @@ export function getCorsProxyUrl(originalUrl: string, proxy: MirrorSource): strin
  * 2. 如果失败，依次尝试其他 CORS 代理
  * 3. 全部失败则抛出错误
  */
-export async function fetchApiWithFallback(
+async function fetchApiWithFallback(
 	url: string,
 	selectedProxy?: MirrorSource,
 ): Promise<Response> {
@@ -203,12 +203,6 @@ export async function fetchAllReleases(
 	}
 }
 
-export function formatFileSize(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`;
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-	return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
 export function getAllAssetsByPlatform(assets: GitHubRelease["assets"], platform: "macos" | "windows" | "linux" | "android"): typeof assets {
 	const platformPatterns: Record<string, string[]> = {
 		macos: ["macos", "darwin", "mac", ".dmg", ".pkg"],
@@ -263,16 +257,4 @@ export function compareVersions(current: string, latest: string): -1 | 0 | 1 {
 	}
 
 	return 0;
-}
-
-/** Web 端版本号（来自 package.json，由 Vite 编译时注入） */
-export const WEB_VERSION: string = __APP_VERSION__;
-
-export async function getCurrentVersion(): Promise<string> {
-	try {
-		const { getVersion } = await import("@tauri-apps/api/app");
-		return await getVersion();
-	} catch {
-		return WEB_VERSION;
-	}
 }

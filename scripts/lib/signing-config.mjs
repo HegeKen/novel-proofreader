@@ -1,5 +1,6 @@
 /**
- * 发布配置（signing.config.json）核心库。
+ * 签名配置（signing.config.json）的读写、默认值与一致性校验，
+ * 以及 .signing/ 状态目录下 env / dotenv 文件的读写。
  *
  * 设计目标：
  *   1. 同一份 signing.config.json（即同一 configKey）=> 打包产物逐字节一致（可复现）。
@@ -8,203 +9,20 @@
  *      避免"配置改了但版本号没同步"导致的产物漂移。
  */
 
-import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-export const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-export const PROJECT_ROOT = path.resolve(SCRIPT_DIR, "..", "..");
-
-export const SIGNING_CONFIG_PATH = path.join(PROJECT_ROOT, "signing.config.json");
-/** 私钥、keystore、导出的 base64 都放这里，已被 .gitignore 忽略。 */
-export const SIGNING_STATE_DIR = path.join(PROJECT_ROOT, ".signing");
-export const SIGNING_ENV_PATH = path.join(SIGNING_STATE_DIR, "signing.env");
-export const SECRETS_CHECKLIST_PATH = path.join(SIGNING_STATE_DIR, "github-secrets.md");
+import {
+	PROJECT_ROOT,
+	SECRETS_DOTENV_PATH,
+	SIGNING_CONFIG_PATH,
+	SIGNING_ENV_PATH,
+	SIGNING_STATE_DIR,
+	resolveFromRoot,
+} from "./paths.mjs";
+import { computeConfigKey } from "./crypto.mjs";
+import { ensureDir, readJson, shellQuote, writeJson } from "./exec.mjs";
 
 export const SCHEMA_VERSION = 1;
-
-// ---------------------------------------------------------------------------
-// 输出
-// ---------------------------------------------------------------------------
-
-const COLOR_ENABLED = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
-
-const ANSI = {
-	reset: "\u001b[0m",
-	bold: "\u001b[1m",
-	dim: "\u001b[2m",
-	red: "\u001b[31m",
-	green: "\u001b[32m",
-	yellow: "\u001b[33m",
-	blue: "\u001b[34m",
-	cyan: "\u001b[36m",
-};
-
-function paint(color, text) {
-	if (!COLOR_ENABLED) return text;
-	return `${ANSI[color]}${text}${ANSI.reset}`;
-}
-
-export const log = {
-	title: (text) => console.log(`\n${paint("bold", text)}`),
-	step: (text) => console.log(`${paint("cyan", "▸")} ${text}`),
-	info: (text) => console.log(`  ${text}`),
-	dim: (text) => console.log(`  ${paint("dim", text)}`),
-	ok: (text) => console.log(`${paint("green", "✓")} ${text}`),
-	warn: (text) => console.warn(`${paint("yellow", "!")} ${text}`),
-	fail: (text) => console.error(`${paint("red", "✗")} ${text}`),
-	raw: (text) => console.log(text),
-};
-
-/**
- * CLI 入口包装：把异常收敛成「一行错误 + 退出码 1」，而不是甩一坨调用栈。
- * 需要完整堆栈时设 DSH_DEBUG=1。
- */
-export function runCli(main) {
-	Promise.resolve()
-		.then(() => main())
-		.catch((error) => {
-			if (error?.name === "CancelledError") {
-				log.warn("已取消");
-				process.exitCode = 130;
-				return;
-			}
-			log.fail(error?.message ?? String(error));
-			if (process.env.DSH_DEBUG) console.error(error);
-			process.exitCode = 1;
-		});
-}
-
-// ---------------------------------------------------------------------------
-// 规范化 JSON / 指纹
-// ---------------------------------------------------------------------------
-
-/** 递归按 key 排序，保证同一逻辑配置永远序列化成同一串字节。 */
-export function canonicalize(value) {
-	if (value === null || typeof value !== "object") return value;
-	if (Array.isArray(value)) return value.map(canonicalize);
-	const out = {};
-	for (const key of Object.keys(value).sort()) {
-		if (value[key] === undefined) continue;
-		out[key] = canonicalize(value[key]);
-	}
-	return out;
-}
-
-export function canonicalJson(value) {
-	return JSON.stringify(canonicalize(value));
-}
-
-export function sha256(input, encoding = "hex") {
-	return createHash("sha256").update(input).digest(encoding);
-}
-
-export function sha256File(filePath) {
-	return sha256(fs.readFileSync(filePath));
-}
-
-/**
- * 参与指纹计算的字段。
- * configKey 自身不能参与（自引用），$schema 只是编辑器提示，不影响产物。
- */
-export function fingerprintPayload(config) {
-	const { configKey: _configKey, $schema: _schema, ...rest } = config ?? {};
-	return rest;
-}
-
-/** 配置指纹：同 key => 期望产物一致。 */
-export function computeConfigKey(config) {
-	return `sha256:${sha256(canonicalJson(fingerprintPayload(config)))}`;
-}
-
-/** 工具链指纹：工具链不同时产物本来就允许不同，用它来区分"真漂移"和"环境差异"。 */
-export function detectToolchain(root = PROJECT_ROOT) {
-	const rustc = tryRun("rustc", ["--version"], { cwd: root })?.trim() ?? "unknown";
-	const cargo = tryRun("cargo", ["--version"], { cwd: root })?.trim() ?? "unknown";
-	const pnpm = tryRun("pnpm", ["--version"], { cwd: root })?.trim() ?? "unknown";
-	const java = tryRun("java", ["-version"], { cwd: root, allowStderr: true })?.trim().split("\n")[0] ?? "unknown";
-	const toolchain = {
-		rustc,
-		cargo,
-		pnpm,
-		java,
-		node: process.version,
-		platform: process.platform,
-		arch: process.arch,
-	};
-	toolchain.key = `sha256:${sha256(canonicalJson(toolchain))}`;
-	return toolchain;
-}
-
-// ---------------------------------------------------------------------------
-// 进程执行
-// ---------------------------------------------------------------------------
-
-export function tryRun(command, args = [], options = {}) {
-	try {
-		const result = spawnSync(command, args, {
-			cwd: options.cwd ?? PROJECT_ROOT,
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", options.allowStderr ? "pipe" : "ignore"],
-			shell: false,
-			...(options.env ? { env: options.env } : {}),
-		});
-		if (result.error || result.status !== 0) return null;
-		const stdout = result.stdout ?? "";
-		const stderr = result.stderr ?? "";
-		return options.allowStderr ? `${stdout}${stderr}` : stdout;
-	} catch {
-		return null;
-	}
-}
-
-export function commandExists(command) {
-	return Boolean(tryRun(command, ["--version"])) || Boolean(tryRun("which", [command]));
-}
-
-/** 前台执行，继承 stdio；失败即抛错。 */
-export function run(command, args = [], options = {}) {
-	log.dim(`$ ${[command, ...args].join(" ")}`);
-	const result = spawnSync(command, args, {
-		cwd: options.cwd ?? PROJECT_ROOT,
-		stdio: "inherit",
-		shell: false,
-		...(options.env ? { env: options.env } : {}),
-	});
-	if (result.error) throw new Error(`执行失败: ${command} (${result.error.message})`);
-	if (result.status !== 0) throw new Error(`命令退出码 ${result.status}: ${[command, ...args].join(" ")}`);
-}
-
-/** 静默执行并返回 stdout；失败即抛错。 */
-export function capture(command, args = [], options = {}) {
-	const result = spawnSync(command, args, {
-		cwd: options.cwd ?? PROJECT_ROOT,
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "pipe"],
-		shell: false,
-		...(options.env ? { env: options.env } : {}),
-	});
-	if (result.error) throw new Error(`执行失败: ${command} (${result.error.message})`);
-	if (result.status !== 0) {
-		throw new Error(`命令退出码 ${result.status}: ${command} ${args.join(" ")}\n${result.stderr ?? ""}`);
-	}
-	return result.stdout ?? "";
-}
-
-// ---------------------------------------------------------------------------
-// 配置读写
-// ---------------------------------------------------------------------------
-
-export function readJson(filePath) {
-	return JSON.parse(fs.readFileSync(filePath, "utf8"));
-}
-
-export function writeJson(filePath, value) {
-	fs.mkdirSync(path.dirname(filePath), { recursive: true });
-	fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
 
 export function signingConfigExists() {
 	return fs.existsSync(SIGNING_CONFIG_PATH);
@@ -481,54 +299,8 @@ export function collectConfigIssues(config) {
 }
 
 // ---------------------------------------------------------------------------
-// 可复现构建辅助
+// .signing/ 状态文件读写
 // ---------------------------------------------------------------------------
-
-export function gitInfo(root = PROJECT_ROOT) {
-	const commit = tryRun("git", ["rev-parse", "HEAD"], { cwd: root })?.trim() ?? null;
-	const commitEpoch = tryRun("git", ["log", "-1", "--format=%ct"], { cwd: root })?.trim() ?? null;
-	const status = tryRun("git", ["status", "--porcelain"], { cwd: root }) ?? "";
-	const tags = tryRun("git", ["tag", "--points-at", "HEAD"], { cwd: root })?.trim() ?? "";
-	return {
-		commit,
-		commitEpoch: commitEpoch ? Number(commitEpoch) : null,
-		dirty: status.trim().length > 0,
-		tags: tags ? tags.split("\n") : [],
-	};
-}
-
-/**
- * SOURCE_DATE_EPOCH：可复现构建的事实标准，构建工具链会用它替代"当前时间"。
- * 默认取 HEAD 的提交时间，保证同一 commit 永远得到同一时间戳。
- */
-export function resolveSourceDateEpoch(config, root = PROJECT_ROOT) {
-	const mode = config?.reproducibility?.sourceDateEpoch ?? "commit";
-	if (typeof mode === "number") return Math.floor(mode);
-	if (mode === "zero") return 0;
-	const epoch = gitInfo(root).commitEpoch;
-	return epoch ?? 0;
-}
-
-export function resolveFromRoot(relativeOrAbsolute, root = PROJECT_ROOT) {
-	return path.isAbsolute(relativeOrAbsolute) ? relativeOrAbsolute : path.join(root, relativeOrAbsolute);
-}
-
-export function relativeToRoot(target, root = PROJECT_ROOT) {
-	return path.relative(root, target).split(path.sep).join("/");
-}
-
-/**
- * AGP 只有在「没有签名配置」时才会产出 `*-unsigned.apk` / `*-unsigned.aab`，
- * 因此这个后缀是"签名补丁没生效"的硬信号，绝不能把它当成正常产物。
- */
-export function isUnsignedAndroidArtifact(filePath) {
-	return /-unsigned\.(apk|aab)$/i.test(filePath);
-}
-
-export function ensureDir(dirPath) {
-	fs.mkdirSync(dirPath, { recursive: true });
-	return dirPath;
-}
 
 /** 写入 .signing/signing.env，供本地 shell `source` 使用。 */
 export function writeSigningEnv(vars) {
@@ -547,8 +319,6 @@ export function writeSigningEnv(vars) {
 	fs.chmodSync(filePath, 0o600);
 	return filePath;
 }
-
-export const SECRETS_DOTENV_PATH = path.join(SIGNING_STATE_DIR, "github-secrets.env");
 
 /**
  * 生成 gh 可直接消费的 dotenv 文件（`gh secret set -f <file>`）。
@@ -589,19 +359,4 @@ export function readSigningEnv() {
 		parsed[match[1]] = value;
 	}
 	return parsed;
-}
-
-export function shellQuote(value) {
-	return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-export function base64EncodeFile(filePath) {
-	return fs.readFileSync(filePath).toString("base64");
-}
-
-export function writeFileSecure(filePath, contents) {
-	ensureDir(path.dirname(filePath));
-	fs.writeFileSync(filePath, contents, "utf8");
-	fs.chmodSync(filePath, 0o600);
-	return filePath;
 }

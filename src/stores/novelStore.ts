@@ -13,7 +13,7 @@ interface ScriptResult {
 	segments: { chapterTitle: string; content: string; originalText: string }[];
 }
 
-export interface NovelState {
+interface NovelState {
 	novels: Novel[];
 	currentNovelId: string | null;
 	chapters: Chapter[];
@@ -45,6 +45,9 @@ export interface NovelState {
 		errors: Array<{ oldText: string; newText: string; startIndex: number; endIndex: number }>,
 	) => number;
 	replaceLine: (chapterId: number, lineIndex: number, newLine: string) => void;
+
+	/** 全书批量替换（词典替换词应用），返回替换总次数 */
+	replaceAllInChapters: (replacements: Array<{ from: string; to: string }>) => number;
 
 	/** 合并两个相邻段落（客户端直接拼接，无需 AI 返回合并文本） */
 	mergeParagraphs: (
@@ -322,6 +325,29 @@ export const useNovelStore = create<NovelState>()(
 					return { chapters, novels };
 				});
 				saveCurrentNovel(get());
+			},
+
+			replaceAllInChapters: (replacements) => {
+				let count = 0;
+				set((state) => {
+					const chapters = state.chapters.map((ch) => {
+						let content = ch.content;
+						for (const { from, to } of replacements) {
+							if (!from || from === to) continue;
+							const parts = content.split(from);
+							if (parts.length > 1) {
+								count += parts.length - 1;
+								content = parts.join(to);
+							}
+						}
+						return content === ch.content ? ch : { ...ch, content };
+					});
+					const novels = syncNovelsFromChapters(chapters, state.novels, state.currentNovelId);
+					return { chapters, novels };
+				});
+				if (count > 0) saveCurrentNovel(get());
+				logger.info('[novelStore]', `全书批量替换完成: 替换 ${count} 处`);
+				return count;
 			},
 
 			mergeParagraphs: (chapterId, firstParagraphIndex, secondParagraphIndex) => {
