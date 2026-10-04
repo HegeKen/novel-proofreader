@@ -240,6 +240,10 @@ function main() {
 
 	// 3) Android 签名材料
 	if (config.android?.enabled !== false) {
+		// 只有本次构建确实要还原 Android 材料（Android 流水线）时，
+		// keystore 缺失才在 strict 下硬失败；桌面构建（--restore-android 未开启）
+		// 不消费 Android 签名，缺失仅告警，避免 macOS/Windows/Linux job 被误杀
+		const androidRequired = RESTORE_ANDROID;
 		const restored = RESTORE_ANDROID && restoreAndroidFromCi(config);
 		if (RESTORE_ANDROID) {
 			check("从 CI Secret 还原 keystore", restored.restored ? "ok" : "fail", restored.reason);
@@ -251,7 +255,7 @@ function main() {
 		} else {
 			check(
 				"Android keystore 存在",
-				STRICT ? "fail" : "warn",
+				STRICT && androidRequired ? "fail" : "warn",
 				`缺失 ${relativeToRoot(keystorePath)}，release 产物将无法签名。运行 pnpm run setup:signing 生成或导入`,
 			);
 		}
@@ -273,7 +277,7 @@ function main() {
 		} else {
 			check(
 				"keystore.properties 存在",
-				STRICT ? "fail" : "warn",
+				STRICT && androidRequired ? "fail" : "warn",
 				`缺失 ${relativeToRoot(propertiesPath)}，运行 pnpm run setup:signing 生成`,
 			);
 		}
