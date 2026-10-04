@@ -216,7 +216,10 @@ jobs:
           compression-level: 0
 
   # ========== 内置模型推理版本（--features local-llm） ==========
-  # 仅桌面端构建；Android 端 llama.cpp 交叉编译复杂，暂不启用
+  # 仅桌面端构建；Android 端 llama.cpp 交叉编译复杂，暂不启用。
+  # Windows ARM64 同样不启用：llama.cpp 的 CMake 明确拒绝 MSVC 编译 ARM
+  # （"MSVC is not supported for ARM, use clang"），clang-cl 交叉工具链
+  # 在 CI 上不稳定；该架构由常规 build job 覆盖（无内置模型）。
   build-local-llm:
     strategy:
       fail-fast: false
@@ -228,8 +231,6 @@ jobs:
             target: x86_64-apple-darwin
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-          - platform: windows-latest
-            target: aarch64-pc-windows-msvc
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
 
