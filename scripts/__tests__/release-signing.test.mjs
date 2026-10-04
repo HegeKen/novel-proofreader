@@ -35,6 +35,7 @@ import {
 	collectSigningIdentity,
 	compareManifests,
 	computeIdentityKey,
+	groupIdentityKeysByPlatform,
 	hashDirectory,
 	comparableProjection,
 	isUnsignedAndroidArtifact,
@@ -433,6 +434,43 @@ describe('产物清单与可复现性判定', () => {
 			{ identityKey: computeIdentityKey(config, collectSigningIdentity(config, { androidCertSha256: 'ee' })) },
 		)
 		expect(compareManifests(a, b).verdict).toBe('key-changed')
+	})
+
+	it('merge 分组校验：跨平台 identityKey 不同允许合并，同平台不同拒绝', () => {
+		const androidKey = computeIdentityKey(config, collectSigningIdentity(config, { androidCertSha256: 'ff' }))
+		const desktopKey = computeIdentityKey(config, collectSigningIdentity(config, { androidCertSha256: null }))
+		const mk = (platform, identityKey, name) => ({
+			configKey: config.configKey,
+			identityKey,
+			artifacts: [{ name, platform, sha256: 'h', signature: { signed: false } }],
+		})
+
+		// 三个 Android ABI 同 key + 各桌面平台无 Android 证书指纹 → 跨平台不同但合法
+		const groups = groupIdentityKeysByPlatform([
+			mk('android', androidKey, 'a-arm64.apk'),
+			mk('android', androidKey, 'a-armv7.apk'),
+			mk('android', androidKey, 'a-x86_64.apk'),
+			mk('macos', desktopKey, 'Proof Reader.app'),
+			mk('windows', desktopKey, 'x64-setup.exe'),
+			mk('linux', desktopKey, 'x64.AppImage'),
+		])
+		expect(groups.android).toBe(androidKey)
+		expect(groups.macos).toBe(desktopKey)
+		expect(groups.windows).toBe(desktopKey)
+		expect(groups.linux).toBe(desktopKey)
+
+		// 同平台出现不同 key（如某个 ABI 误用了另一份 keystore）→ 拒绝
+		expect(() =>
+			groupIdentityKeysByPlatform([
+				mk('android', androidKey, 'a-arm64.apk'),
+				mk('android', 'sha256:other', 'a-armv7.apk'),
+			]),
+		).toThrow(/平台 android 的清单 identityKey 不一致/)
+
+		// 无平台信息的清单归入 unknown 组，同组仍需一致
+		expect(() =>
+			groupIdentityKeysByPlatform([{ configKey: config.configKey, identityKey: 'sha256:x', artifacts: [] }]),
+		).not.toThrow()
 	})
 
 	it('工具链不同时判定为 toolchain-changed', () => {

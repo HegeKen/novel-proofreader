@@ -241,7 +241,6 @@ runs:
     - name: 导出可复现构建环境变量
       shell: bash
       env:
-        DSH_REQUIRE_SIGNING: ${{ inputs.require-signing }}
         # 显式覆盖值由调用方从 secrets 映射进 job env（见各 workflow）
         DSH_ALLOW_UNSIGNED_INPUT: ${{ env.DSH_ALLOW_UNSIGNED }}
       run: |

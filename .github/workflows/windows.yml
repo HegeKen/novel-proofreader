@@ -33,7 +33,7 @@ jobs:
       AZURE_CODE_SIGNING_CERTIFICATE_PROFILE: ${{ secrets.AZURE_CODE_SIGNING_CERTIFICATE_PROFILE }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      # 非 tag 构建允许未签名产物（可在 Secrets 中显式覆盖）；tag 发布时 action 强制 false
+      # 未配置有效签名 key 时允许 unsigned 产物（可在 Secrets 中设 false 强制签名）
       DSH_ALLOW_UNSIGNED: ${{ secrets.DSH_ALLOW_UNSIGNED || 'true' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -120,7 +120,7 @@ jobs:
       AZURE_CODE_SIGNING_CERTIFICATE_PROFILE: ${{ secrets.AZURE_CODE_SIGNING_CERTIFICATE_PROFILE }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      # 非 tag 构建允许未签名产物（可在 Secrets 中显式覆盖）；tag 发布时 action 强制 false
+      # 未配置有效签名 key 时允许 unsigned 产物（可在 Secrets 中设 false 强制签名）
       DSH_ALLOW_UNSIGNED: ${{ secrets.DSH_ALLOW_UNSIGNED || 'true' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

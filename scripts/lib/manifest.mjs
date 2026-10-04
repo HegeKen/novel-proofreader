@@ -238,6 +238,33 @@ export function computeIdentityKey(config, signingIdentity) {
 	return `sha256:${sha256(canonicalJson({ configKey: config.configKey, signingIdentity }))}`;
 }
 
+/**
+ * 按平台分组校验多份清单的 identityKey，返回 platform → identityKey 映射。
+ *
+ * 跨平台的签名材料彼此独立（Android keystore / Apple 证书 / Windows 证书），
+ * 且非对应平台的 CI job 不会还原该平台材料（如桌面 job 读不到 Android 证书指纹），
+ * 所以跨平台 identityKey 必然不同；但同一平台的多份清单（如三个 Android ABI）
+ * 必须来自同一套签名 key，否则拒绝合并。
+ *
+ * 平台取自每份清单 artifacts 的 platform；混合或缺失平台的清单归入 "unknown" 组。
+ */
+export function groupIdentityKeysByPlatform(manifests) {
+	const groups = new Map();
+	manifests.forEach((manifest, index) => {
+		const platforms = [...new Set((manifest.artifacts ?? []).map((a) => a.platform).filter(Boolean))];
+		const group = platforms.length === 1 ? platforms[0] : "unknown";
+		const existing = groups.get(group);
+		if (existing && existing.identityKey !== manifest.identityKey) {
+			throw new Error(
+				`平台 ${group} 的清单 identityKey 不一致（同平台产物必须使用同一套签名 key）: ` +
+					`#${existing.index} ${existing.identityKey} vs #${index} ${manifest.identityKey}`,
+			);
+		}
+		if (!existing) groups.set(group, { identityKey: manifest.identityKey, index });
+	});
+	return Object.fromEntries([...groups.entries()].map(([group, v]) => [group, v.identityKey]));
+}
+
 export function buildManifest({
 	config,
 	artifactPaths,

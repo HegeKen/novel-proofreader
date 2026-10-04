@@ -35,6 +35,7 @@ import {
 	collectSigningIdentity,
 	formatComparison,
 	compareManifests,
+	groupIdentityKeysByPlatform,
 } from "./lib/manifest.mjs";
 
 function parseArgs(argv) {
@@ -159,10 +160,12 @@ function merge(options) {
 				`清单 configKey 不一致，拒绝合并:\n  ${inputs[0]}: ${first.configKey}\n  ${manifest.source?.commit}: ${manifest.configKey}`,
 			);
 		}
-		if (manifest.identityKey !== first.identityKey) {
-			throw new Error(`清单 identityKey 不一致（不同签名 key 的产物不可合并）: ${manifest.identityKey}`);
-		}
 	}
+
+	// identityKey 按平台分组校验：不同平台使用彼此独立的签名材料
+	// （Android keystore / Apple 证书 / Windows 证书），跨平台 identityKey
+	// 不可直接比较；但同一平台的多份清单（如三个 Android ABI）必须同 key。
+	const identityKeysByPlatform = groupIdentityKeysByPlatform(manifests);
 
 	const byName = new Map();
 	for (const manifest of manifests) {
@@ -181,13 +184,18 @@ function merge(options) {
 		sourceDateEpoch: Math.min(...manifests.map((manifest) => manifest.sourceDateEpoch ?? 0)),
 		artifacts: [...byName.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
 		mergedFrom: inputs.map((input) => relativeToRoot(input)),
+		// 各平台使用独立签名材料，按平台记录 identityKey 便于追溯；
+		// 顶层 identityKey 保留首份清单的值（向后兼容）。
+		identityKeysByPlatform,
 	};
 
 	const outPath = options.out ? path.resolve(options.out) : path.join(PROJECT_ROOT, "release-manifest.json");
 	fs.writeFileSync(outPath, `${JSON.stringify(merged, null, 2)}\n`, "utf8");
 	log.ok(`已合并 ${manifests.length} 份清单、${merged.artifacts.length} 个产物 -> ${relativeToRoot(outPath)}`);
 	log.info(`configKey   : ${merged.configKey}`);
-	log.info(`identityKey : ${merged.identityKey}`);
+	for (const [group, key] of Object.entries(identityKeysByPlatform)) {
+		log.info(`identityKey : [${group}] ${key}`);
+	}
 	return outPath;
 }
 
