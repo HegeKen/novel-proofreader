@@ -338,6 +338,9 @@ export function LocalModelSettings() {
 							</div>
 						</div>
 
+					{/* 引擎就绪后才显示详细配置；未启用时仅保留上方提示 */}
+					{builtin.engineReady && (
+					<>
 					{/* 日志静默开关 */}
 					<div className="form-field">
 						<label>日志设置</label>
@@ -524,7 +527,7 @@ export function LocalModelSettings() {
 									</button>
 									{builtin.modelsDir && (
 										<button
-											className="btn btn-secondary"
+											className="btn"
 											onClick={handleOpenModelsDir}
 											title="在文件管理器中打开模型存储目录"
 										>
@@ -596,6 +599,8 @@ export function LocalModelSettings() {
 									</div>
 								</div>
 							)}
+						</>
+						)}
 						</>
 				)}
 		</div>

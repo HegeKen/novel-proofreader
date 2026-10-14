@@ -2,21 +2,14 @@ import { useState } from "react";
 import { useConfigStore } from "../../stores/configStore";
 import { Icons } from "../Icons";
 import { Select } from "../Select";
-import { WordReplacementModal } from "../WordReplacementModal";
 
-interface Props {
-	onOpenWordReplacement?: () => void;
-}
-
-export function TTSConfigSection({ onOpenWordReplacement }: Props) {
+export function TTSConfigSection() {
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
 	const updateTTSConfig = useConfigStore((s) => s.updateTTSConfig);
 	const [showApiKey, setShowApiKey] = useState(false);
-	const [showWordReplacementModal, setShowWordReplacementModal] = useState(false);
 
 	return (
-		<>
-			<div className="config-section">
+		<div className="config-section">
 				<div className="section-label"><Icons.volume size={14} />语音朗读 (TTS)</div>
 				<p className="section-hint">使用 Xiaomi MiMo TTS API 将文本转换为语音。</p>
 				<form onSubmit={(e) => e.preventDefault()}>
@@ -83,25 +76,6 @@ export function TTSConfigSection({ onOpenWordReplacement }: Props) {
 					获取 MiMo API Key →
 				</a>
 				<div className="divider"></div>
-				<div className="section-label"><Icons.punctuation size={14} />敏感词替换</div>
-				<p className="section-hint section-hint-tight">
-					在请求 TTS 大模型前，会将文本中的敏感词替换为指定词组，用于规避敏感词拒绝生成的问题。
-				</p>
-				<button
-					type="button"
-					className="btn btn-secondary"
-					onClick={() => {
-						if (onOpenWordReplacement) {
-							onOpenWordReplacement();
-						} else {
-							setShowWordReplacementModal(true);
-						}
-					}}
-				>
-					<Icons.edit size={14} />
-					<span>管理替换规则</span>
-				</button>
-				<div className="divider"></div>
 				<div className="section-label"><Icons.cache size={14} />音频缓存设置</div>
 				<div className="toggle-item">
 					<label className="toggle-label">
@@ -128,9 +102,5 @@ export function TTSConfigSection({ onOpenWordReplacement }: Props) {
 					</div>
 				)}
 			</div>
-			{!onOpenWordReplacement && (
-				<WordReplacementModal open={showWordReplacementModal} onClose={() => setShowWordReplacementModal(false)} />
-			)}
-		</>
 	);
 }

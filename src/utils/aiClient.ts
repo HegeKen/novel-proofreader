@@ -2862,6 +2862,12 @@ export async function generateNovelEvents(
   const allEventsFromChunks: NovelEventsResult["events"] = [];
   const failedBatches: number[] = [];
 
+  // 多轮对话历史：system 提示 + 各批次的 user/assistant 消息交替累积。
+  // 保持前缀一致以命中上下文硬盘缓存（DeepSeek 等按前缀匹配缓存）
+  const conversationHistory: ChatMessage[] = [
+    { role: "system", content: NOVEL_EVENTS_SYSTEM_PROMPT },
+  ];
+
   for (let i = 0; i < chunks.length; i++) {
     const existingEventsContext = existingEvents && existingEvents.length > 0
       ? `
@@ -2882,13 +2888,14 @@ ${existingEvents.map((evt, idx) => `${idx + 1}. [时间顺序:${evt.timeOrder}][
 
 ${chunks[i]}`;
 
-    const messages: ChatMessage[] = [
-      { role: "system", content: NOVEL_EVENTS_SYSTEM_PROMPT },
-      { role: "user", content: userPrompt },
-    ];
+    // 追加当前批次的 user 消息到对话历史
+    conversationHistory.push({ role: "user", content: userPrompt });
 
     try {
-      const response = await sendChatCompletion(messages, configForCall);
+      const response = await sendChatCompletion(conversationHistory, configForCall);
+
+      // 将 AI 回复追加到对话历史，供下一批次作为上下文
+      conversationHistory.push({ role: "assistant", content: response });
 
       let result: NovelEventsResult | null = null;
       try {
@@ -2917,6 +2924,8 @@ ${chunks[i]}`;
     } catch (err) {
       failedBatches.push(i + 1);
       logger.warn(`[NovelEvents] 批次 ${i + 1} 分析失败:`, err);
+      // 请求失败时移除刚追加的 user 消息，保持历史一致性
+      conversationHistory.pop();
     } finally {
       onProgress?.(i + 1, chunks.length, "analyze");
     }

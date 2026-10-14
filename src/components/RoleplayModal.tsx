@@ -105,8 +105,9 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 	const createSession = useRoleplayStore((s) => s.createSession);
 	const deleteSession = useRoleplayStore((s) => s.deleteSession);
 	const addMessage = useRoleplayStore((s) => s.addMessage);
-	const updateMessage = useRoleplayStore((s) => s.updateMessage);
-	const truncateMessagesAfter = useRoleplayStore((s) => s.truncateMessagesAfter);
+	const editMessageBranch = useRoleplayStore((s) => s.editMessageBranch);
+	const regenerateBranch = useRoleplayStore((s) => s.regenerateBranch);
+	const switchBranch = useRoleplayStore((s) => s.switchBranch);
 	const setActiveSession = useRoleplayStore((s) => s.setActiveSession);
 	const updateSession = useRoleplayStore((s) => s.updateSession);
 
@@ -135,8 +136,11 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 	// 正在编辑的用户消息 ID + 编辑中的文本
 	const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
 	const [editText, setEditText] = useState("");
-	// 正在查看"修改前"版本的用户消息 ID（null = 显示当前/修改后版本）
-	const [viewingOriginalMsgId, setViewingOriginalMsgId] = useState<string | null>(null);
+	// 分支预览面板
+	const [showBranchPreview, setShowBranchPreview] = useState(false);
+	// 聊天设置下拉
+	const [showChatMenu, setShowChatMenu] = useState(false);
+	const chatMenuRef = useRef<HTMLDivElement>(null);
 	const abortRef = useRef<AbortController | null>(null);
 	const ttsAbortRef = useRef<AbortController | null>(null);
 	const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -169,7 +173,19 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		};
 	}, []);
 
-	// 进入会话 / 切换会话 / 新消息 / 打开聊天视图 / 切换修改前后分支时滚动到底部
+	// 聊天设置下拉：点击外部关闭
+	useEffect(() => {
+		if (!showChatMenu) return;
+		const handleClickOutside = (e: MouseEvent) => {
+			if (chatMenuRef.current && !chatMenuRef.current.contains(e.target as Node)) {
+				setShowChatMenu(false);
+			}
+		};
+		document.addEventListener("mousedown", handleClickOutside);
+		return () => document.removeEventListener("mousedown", handleClickOutside);
+	}, [showChatMenu]);
+
+	// 进入会话 / 切换会话 / 新消息 / 打开聊天视图 / 切换分支时滚动到底部
 	useEffect(() => {
 		const container = messagesContainerRef.current;
 		if (!container) return;
@@ -177,7 +193,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		requestAnimationFrame(() => {
 			container.scrollTop = container.scrollHeight;
 		});
-	}, [activeSession?.id, activeSession?.messages.length, isSending, mobileView, viewingOriginalMsgId]);
+	}, [activeSession?.id, activeSession?.messages.length, isSending, mobileView]);
 
 	const activeCharacter = useMemo(
 		() => characters.find((c) => c.id === activeSession?.characterId) ?? null,
@@ -187,6 +203,20 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 	const sortedSessions = useMemo(
 		() => [...sessions].sort((a, b) => b.updatedAt - a.updatedAt),
 		[sessions],
+	);
+
+	/** 分支点列表：当前会话中所有产生过多分支的用户消息（用于分支预览面板） */
+	const branchPoints = useMemo(() => {
+		if (!activeSession) return [];
+		return activeSession.messages.filter(
+			(m) => m.role === "user" && (m.branches?.length ?? 0) > 1,
+		);
+	}, [activeSession]);
+
+	/** 分支统计：总分支数 = 所有分支点上的分支数量之和（用于面板顶部统计） */
+	const totalBranchCount = useMemo(
+		() => branchPoints.reduce((sum, m) => sum + (m.branches?.length ?? 0), 0),
+		[branchPoints],
 	);
 
 	/** 角色选择器：点击卡片切换选中态（保持选择顺序，首个为主角色） */
@@ -248,6 +278,23 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		setMobileView("sessions");
 	}, [activeSession, novelId, deleteSession]);
 
+	/** 重新开始：以当前会话的角色、故事进度开启新会话 */
+	const handleRestartSession = useCallback(() => {
+		if (!activeSession) return;
+		const newSession = createSession(novelId, {
+			characterId: activeSession.characterId,
+			userCharacterId: activeSession.userCharacterId,
+			presentCharacterIds: activeSession.presentCharacterIds?.length
+				? activeSession.presentCharacterIds
+				: [activeSession.characterId],
+			chapterIndex: activeSession.chapterIndex,
+			title: activeSession.title,
+		});
+		setActiveSession(novelId, newSession.id);
+		setUnspokenCharacters([]);
+		useUIStore.getState().showToast("已重新开始新对话", "success");
+	}, [activeSession, novelId, createSession, setActiveSession]);
+
 	/**
 	 * 发送一次多角色请求并返回解析后的发言段（失败返回 null）。
 	 * 供首轮请求、补齐轮次与"未回应角色补发言"复用。
@@ -286,10 +333,10 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 			userCharacter,
 		}, promptConfig.roleplayMulti);
 		// 历史消息 = contextMessages 去掉最后一条（最后一条即本次输入）+ 附加上下文，保留最近 20 条；
-		// 多角色场景下给 AI 标出每条 assistant 消息来自哪个角色，避免串戏
+		// 多角色场景下给 AI 标出每条 assistant 消息来自哪个角色，避免串戏。
+		// 携带完整历史以保持请求前缀一致，命中上下文硬盘缓存（DeepSeek 等按前缀匹配缓存）
 		const baseHistory: RoleplayMessage[] = [...contextMessages.slice(0, -1), ...(extraHistory ?? [])];
 		const history: ChatMessage[] = baseHistory
-			.slice(-20)
 			.map((m) => {
 				if (m.role === "assistant" && m.characterId) {
 					const c = characters.find((ch) => ch.id === m.characterId);
@@ -471,18 +518,18 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		}
 	}, [aiConfig, characters, novelId, addMessage, updateSession, doRequest]);
 
-	/** 单独让某位未回应的角色补发言（点击"未回应"占位条触发） */
-	const handleAskCharacterSpeak = useCallback(async (target: CharacterInfo) => {
+	/** 让某位角色单独生成一条发言（邀请入场 / 未回应补发言共用）。
+	 *  始终携带完整历史消息以保持前缀一致，命中上下文硬盘缓存 */
+	const requestSingleCharacterSpeak = useCallback(async (target: CharacterInfo, prompt: string) => {
 		const session = activeSession;
 		if (!session || isSending) return;
 		if (!aiConfig.apiKey || !aiConfig.baseURL) return;
 		setIsSending(true);
-		setUnspokenCharacters((prev) => prev.filter((c) => c.id !== target.id));
 		const abort = new AbortController();
 		abortRef.current = abort;
 		try {
 			// doRequest 会把 contextMessages 最后一条视为本次输入不计入历史，
-			// 这里追加一条占位消息，让全部历史都进入上下文
+			// 这里追加一条占位消息，让全部历史都进入上下文（保持前缀一致以命中缓存）
 			const contextMessages: RoleplayMessage[] = [
 				...session.messages,
 				{ id: "pending", role: "user", content: "", timestamp: Date.now() },
@@ -490,7 +537,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 			const result = await doRequest(
 				session,
 				contextMessages,
-				`请仅以「${target.name}」的身份回应当前对话：输出一条该角色的发言（以说出口的实质台词为主，可带少量括号描写）。不要输出其他角色的发言。`,
+				prompt,
 				[target],
 				abort.signal,
 			);
@@ -509,7 +556,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 			}
 		} catch (err) {
 			if (err instanceof Error && err.name !== "AbortError") {
-				logger.errorGeneric("[Roleplay]", "补发言失败", err);
+				logger.errorGeneric("[Roleplay]", "角色发言生成失败", err);
 				useUIStore.getState().showToast(
 					"获取回复失败: " + (err instanceof Error ? err.message : String(err)),
 					"error",
@@ -520,6 +567,15 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 			abortRef.current = null;
 		}
 	}, [activeSession, isSending, aiConfig, doRequest, characters, novelId, addMessage]);
+
+	/** 单独让某位未回应的角色补发言（点击"未回应"占位条触发） */
+	const handleAskCharacterSpeak = useCallback(async (target: CharacterInfo) => {
+		setUnspokenCharacters((prev) => prev.filter((c) => c.id !== target.id));
+		await requestSingleCharacterSpeak(
+			target,
+			`请仅以「${target.name}」的身份回应当前对话：输出一条该角色的发言（以说出口的实质台词为主，可带少量括号描写）。不要输出其他角色的发言。`,
+		);
+	}, [requestSingleCharacterSpeak]);
 
 	/** 发送消息并请求 AI 回复 */
 	const handleSend = useCallback(async () => {
@@ -557,7 +613,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		setEditText("");
 	}, []);
 
-	/** 保存编辑：更新消息 → 截断其后回复 → 仅以该消息之前的历史 + 修改后的内容重新请求 AI */
+	/** 保存编辑：创建新分支（新内容 + 空回复链），并以该消息之前的历史 + 新内容重新请求 AI */
 	const handleSaveEdit = useCallback(async () => {
 		const session = activeSession;
 		if (!session || !editingMsgId) return;
@@ -571,17 +627,21 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		if (msgIndex < 0) return;
 		const originalMsg = session.messages[msgIndex];
 		if (originalMsg.content === newText) {
-			// 内容未变化：直接退出编辑，不触发重新生成
+			// 内容未变化：不产生新分支，原地截断后续回复链并重新生成一次
 			setEditingMsgId(null);
+			setEditText("");
+			regenerateBranch(novelId, session.id, editingMsgId, false);
+			const latest = useRoleplayStore.getState().getSession(novelId, session.id);
+			if (latest) {
+				const historyBefore = latest.messages.slice(0, latest.messages.length - 1);
+				await requestReply(latest, [...historyBefore, originalMsg], newText);
+			}
 			return;
 		}
 
-		// 1. 更新消息内容（store 内部会记录 originalContent）
-		updateMessage(novelId, session.id, editingMsgId, newText);
-		// 2. 截断该消息之后的所有消息，并把旧回复链保存到 originalReplies（查看修改前可回放）
-		truncateMessagesAfter(novelId, session.id, editingMsgId, true);
-		// 3. 以"该消息之前的历史 + 修改后的消息"重新请求 AI
-		//    从 store 读取最新消息（updateMessage/truncateMessagesAfter 已同步写入）
+		// 1. 创建新分支：当前分支归档，消息内容替换为新内容并截断后续
+		editMessageBranch(novelId, session.id, editingMsgId, newText);
+		// 2. 以"该消息之前的历史 + 修改后的消息"重新请求 AI
 		const latest = useRoleplayStore.getState().getSession(novelId, session.id);
 		if (latest) {
 			const historyBefore = latest.messages.slice(0, latest.messages.length - 1); // 该输入之前
@@ -589,14 +649,15 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		}
 		setEditingMsgId(null);
 		setEditText("");
-	}, [activeSession, editingMsgId, editText, novelId, updateMessage, truncateMessagesAfter, requestReply]);
+	}, [activeSession, editingMsgId, editText, novelId, editMessageBranch, requestReply]);
 
-	/** 切换用户消息的显示版本（修改后 ↔ 修改前） */
-	const handleToggleMessageVersion = useCallback((msg: RoleplayMessage) => {
-		setViewingOriginalMsgId((prev) => (prev === msg.id ? null : msg.id));
-	}, []);
+	/** 切换用户消息的激活分支 */
+	const handleSwitchBranch = useCallback((msg: RoleplayMessage, branchIndex: number) => {
+		if (!activeSession) return;
+		switchBranch(novelId, activeSession.id, msg.id, branchIndex);
+	}, [activeSession, novelId, switchBranch]);
 
-	/** 重新生成当前轮次回复：截断最后一条用户消息之后的回复，以"该消息之前的历史 + 该消息"重新请求 AI */
+	/** 重新生成当前轮次回复：创建新分支（内容不变 + 空回复链），重新请求 AI */
 	const handleRegenerate = useCallback(async (msg: RoleplayMessage) => {
 		const session = activeSession;
 		if (!session || isSending) return;
@@ -607,15 +668,15 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		// 该消息必须是会话最后一条用户消息（其后是待替换的回复）
 		const lastUserIdx = session.messages.findIndex((m) => m.id === msg.id);
 		if (lastUserIdx < 0 || session.messages[lastUserIdx].role !== "user") return;
-		// 截断该消息之后的所有回复（重新生成不改变输入，无需保留旧回复链）
-		truncateMessagesAfter(novelId, session.id, msg.id, false);
+		// 创建新分支：当前分支回复链归档，截断后续消息
+		regenerateBranch(novelId, session.id, msg.id);
 		// 以"该消息之前的历史 + 该消息"重新请求 AI
 		const latest = useRoleplayStore.getState().getSession(novelId, session.id);
 		if (latest) {
 			const historyBefore = latest.messages.slice(0, latest.messages.length - 1);
 			await requestReply(latest, [...historyBefore, msg], msg.content);
 		}
-	}, [activeSession, isSending, aiConfig, novelId, truncateMessagesAfter, requestReply]);
+	}, [activeSession, isSending, aiConfig, novelId, regenerateBranch, requestReply]);
 
 	/** 停止生成 */
 	const handleStop = useCallback(() => {
@@ -702,6 +763,20 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 			.filter((c): c is CharacterInfo => !!c);
 	}, [activeSession, characters]);
 
+	/** 工具栏展示的在场角色（含用户扮演角色，用于左侧下拉） */
+	const toolbarPresentCharacters = useMemo(() => {
+		if (!activeSession) return [];
+		const list = [...presentCharactersOfSession];
+		// 用户扮演的角色插入到最前面
+		if (activeSession.userCharacterId) {
+			const userChar = characters.find((c) => c.id === activeSession.userCharacterId);
+			if (userChar) {
+				list.unshift(userChar);
+			}
+		}
+		return list;
+	}, [activeSession, presentCharactersOfSession, characters]);
+
 	/** 在场角色栏：让某位在场角色离场（主角色不可移除） */
 	const handleDismissCharacter = useCallback(
 		(target: CharacterInfo) => {
@@ -717,9 +792,9 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		[activeSession, presentCharactersOfSession, novelId, updateSession],
 	);
 
-	/** 在场角色栏：邀请不在场角色加入（下一轮起参与发言） */
+	/** 邀请不在场角色加入：加入在场列表后立即基于最近两条对话生成一条入场发言 */
 	const handleInviteCharacter = useCallback(
-		(id: string) => {
+		async (id: string) => {
 			if (!activeSession || !id) return;
 			// 用户扮演的角色不由 AI 发言，不加入在场列表
 			if (id === activeSession.userCharacterId) return;
@@ -728,8 +803,17 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 			updateSession(novelId, activeSession.id, {
 				presentCharacterIds: [...current, id],
 			});
+			setShowChatMenu(false);
+			// 生成初始发言：新角色刚入场，基于最近两条对话自然开口
+			const target = characters.find((c) => c.id === id);
+			if (!target || isSending) return;
+			if (!aiConfig.apiKey || !aiConfig.baseURL) return;
+			await requestSingleCharacterSpeak(
+				target,
+				`「${target.name}」刚刚来到对话现场。请仅以「${target.name}」的身份，根据上述最近的对话输出一条自然的入场发言（说出口的实质台词为主，可带少量括号描写表现入场时的神态/动作）。不要输出其他角色的发言。`,
+			);
 		},
-		[activeSession, presentCharactersOfSession, novelId, updateSession],
+		[activeSession, presentCharactersOfSession, novelId, updateSession, characters, isSending, aiConfig, requestSingleCharacterSpeak],
 	);
 
 	const chatHeader = activeSession && activeCharacter && (
@@ -840,48 +924,109 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 	const chatContent = activeSession ? (
 		<>
 			{isMobile ? mobileChatHeader : chatHeader}
-			{/* 在场角色栏：显示当前在场角色，可移除/邀请（主角色不可移除） */}
-			<div className="roleplay-presence-bar">
-				<span className="roleplay-presence-label">在场</span>
-				{presentCharactersOfSession.map((c) => (
-					<span
-						key={c.id}
-						className="roleplay-presence-chip"
-						onClick={() => setProfileCharacter(c)}
-						title="查看个人主页"
-					>
-						{c.name}
-						{c.id !== activeSession.characterId && (
-							<button
-								className="roleplay-presence-remove"
-								onClick={(e) => {
-									e.stopPropagation();
-									handleDismissCharacter(c);
+			{/* 聊天工具栏：左侧在场角色选择器，右侧功能按钮组 */}
+			{(() => {
+				// 默认显示第一个在场角色（含用户扮演角色）
+				const displayCharacter = toolbarPresentCharacters[0];
+				// 可邀请的角色（未在场且非用户扮演）
+				const invitableCharacters = characters.filter(
+					(c) =>
+						!presentCharactersOfSession.some((p) => p.id === c.id) &&
+						c.id !== activeSession.userCharacterId,
+				);
+				return (
+					<div className="roleplay-toolbar">
+						{/* 左侧：在场角色下拉 */}
+						<div className="roleplay-toolbar-left">
+							<Select
+								value={displayCharacter?.id ?? ""}
+								onChange={(id) => {
+									const target = characters.find((c) => c.id === id);
+									if (target) setProfileCharacter(target);
 								}}
-								title={`让「${c.name}」离场`}
+								options={toolbarPresentCharacters.map((c) => ({
+									value: c.id,
+									label: c.id === activeSession.userCharacterId
+										? `${c.name} · 我`
+										: `${c.name}${c.role ? ` · ${getRoleName(c.role)}` : ""}`,
+								}))}
+							/>
+						</div>
+						{/* 右侧：重新开始 / 分支预览 / 聊天设置 */}
+						<div className="roleplay-toolbar-actions">
+							<button
+								className="roleplay-toolbar-btn"
+								onClick={handleRestartSession}
+								title="重新开始：以当前角色与故事进度开启新对话"
 							>
-								<Icons.x size={11} />
+								<Icons.refreshCw size={16} />
 							</button>
-						)}
-					</span>
-				))}
-				<div className="roleplay-presence-invite">
-					<Select
-						value=""
-						onChange={handleInviteCharacter}
-						options={[
-							{ value: "", label: "邀请角色…" },
-							...characters
-								.filter(
-									(c) =>
-										!presentCharactersOfSession.some((p) => p.id === c.id) &&
-										c.id !== activeSession.userCharacterId,
-								)
-								.map((c) => ({ value: c.id, label: c.name })),
-						]}
-					/>
-				</div>
-			</div>
+							<button
+								className="roleplay-toolbar-btn"
+								onClick={() => setShowBranchPreview(true)}
+								title="分支预览"
+							>
+								<Icons.gitFork size={16} />
+							</button>
+							<div className="roleplay-toolbar-menu-wrapper" ref={chatMenuRef}>
+								<button
+									className="roleplay-toolbar-btn"
+									onClick={() => setShowChatMenu(!showChatMenu)}
+									title="聊天设置"
+								>
+									<Icons.moreHorizontal size={16} />
+								</button>
+								{showChatMenu && (
+									<div className="roleplay-toolbar-menu">
+										{/* 邀请角色子菜单 */}
+										{invitableCharacters.length > 0 && (
+											<div className="roleplay-toolbar-menu-section">
+												<div className="roleplay-toolbar-menu-label">邀请角色</div>
+												{invitableCharacters.map((c) => (
+													<button
+														key={c.id}
+														className="roleplay-toolbar-menu-item"
+														onClick={() => void handleInviteCharacter(c.id)}
+													>
+														<Icons.userRoundPlus size={14} />
+														<span>{c.name}</span>
+													</button>
+												))}
+											</div>
+										)}
+										{/* 在场角色管理（移除） */}
+										{presentCharactersOfSession.filter((c) => c.id !== activeSession.characterId).length > 0 && (
+											<div className="roleplay-toolbar-menu-section">
+												<div className="roleplay-toolbar-menu-label">在场角色</div>
+												{presentCharactersOfSession
+													.filter((c) => c.id !== activeSession.characterId)
+													.map((c) => (
+														<button
+															key={c.id}
+															className="roleplay-toolbar-menu-item"
+															onClick={() => handleDismissCharacter(c)}
+														>
+															<Icons.x size={14} />
+															<span>让「{c.name}」离场</span>
+														</button>
+													))}
+											</div>
+										)}
+										<div className="roleplay-toolbar-menu-divider" />
+										<button
+											className="roleplay-toolbar-menu-item roleplay-toolbar-menu-danger"
+											onClick={handleDeleteActiveSession}
+										>
+											<Icons.trash2 size={14} />
+											<span>删除聊天</span>
+										</button>
+									</div>
+								)}
+							</div>
+						</div>
+					</div>
+				);
+			})()}
 			<div className="roleplay-messages" ref={messagesContainerRef}>
 				{activeSession.messages.length === 0 && (
 					<div className="roleplay-empty">
@@ -890,26 +1035,9 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 						<p className="roleplay-empty-hint">试试问问他 / 她此刻的想法</p>
 					</div>
 				)}
-				{/* 构建显示的消息列表：
-				    查看修改前版本时，整条会话流切换为该输入之前的全部历史 + 修改前输入 + 修改前回复链；
-				    否则显示当前（修改后）的完整消息流。实现"修改前/修改后"两个完整分支的切换。 */}
-				{(() => {
-					const viewOriginalMsg = viewingOriginalMsgId
-						? activeSession.messages.find((m) => m.id === viewingOriginalMsgId)
-						: null;
-					const displayMessages =
-						viewOriginalMsg?.originalReplies && viewOriginalMsg.originalReplies.length > 0
-							? (() => {
-									const idx = activeSession.messages.findIndex((m) => m.id === viewOriginalMsg.id);
-									const before = idx > 0 ? activeSession.messages.slice(0, idx) : [];
-									const originalInput: RoleplayMessage = {
-										...viewOriginalMsg,
-										content: viewOriginalMsg.originalContent ?? viewOriginalMsg.content,
-									};
-									return [...before, originalInput, ...viewOriginalMsg.originalReplies!];
-								})()
-							: activeSession.messages;
-					return displayMessages.map((msg, msgIdx) => {
+				{/* 消息列表：用户消息编辑/重新生成会在该消息上产生分支（branches 数组），
+				    分支条 ‹ n/N › 用于在分支间切换，切换时整条后续回复链随分支一起切换 */}
+				{activeSession.messages.map((msg, msgIdx) => {
 					const isUser = msg.role === "user";
 					// 用户消息头像：选定的扮演角色；旁观者显示局外人默认头像
 					// AI 消息头像：消息对应的角色
@@ -923,16 +1051,14 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 						? ` speaker-${speaker.gender}`
 						: "";
 					// 同一轮（同 turnId）的连续 assistant 发言紧凑分组显示
-					const prevMsg = msgIdx > 0 ? displayMessages[msgIdx - 1] : null;
+					const prevMsg = msgIdx > 0 ? activeSession.messages[msgIdx - 1] : null;
 					const sameTurn = !isUser && !!msg.turnId && prevMsg?.turnId === msg.turnId;
-					// 该消息是否为正在编辑/正在查看修改前的消息
+					// 该消息是否正在编辑
 					const isEditing = isUser && editingMsgId === msg.id;
-					// 被编辑过的用户消息：有 originalContent 表示修改过
-					const isEdited = isUser && !!msg.originalContent;
-					// 是否正处于"查看修改前"分支（viewingOriginalMsgId 指向的这条输入）
-					const showingOriginal = viewingOriginalMsgId === msg.id;
-					// 当前展示的文本：分支显示时该输入已是 originalContent（由 displayMessages 构造）
-					const displayContent = msg.content;
+					// 分支信息：branches 数组包含所有版本（含当前激活分支）
+					const branchCount = msg.branches?.length ?? 0;
+					const hasBranches = isUser && branchCount > 1;
+					const activeBranchIdx = msg.activeBranch ?? 0;
 					// 是否为会话最后一条用户消息（重新生成按钮只对该消息显示）
 					const isLastUserMsg = isUser &&
 						activeSession.messages[activeSession.messages.length - 1]?.id === msg.id;
@@ -961,18 +1087,28 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 								<span className="roleplay-msg-name">
 									{speaker?.name ?? (isUser ? "局外人" : "角色")}
 								</span>
-								{isUser && isEdited && !isEditing && (
-									<button
-										className="roleplay-msg-edit-toggle"
-										onClick={() => handleToggleMessageVersion(msg)}
-										title={showingOriginal ? "显示修改后" : "显示修改前"}
-									>
-										{showingOriginal ? (
-											<><Icons.chevronRight size={12} />修改后</>
-										) : (
-											<><Icons.chevronLeft size={12} />修改前</>
-										)}
-									</button>
+								{hasBranches && !isEditing && (
+									<span className="roleplay-branch-bar">
+										<button
+											className="roleplay-branch-btn"
+											disabled={activeBranchIdx <= 0}
+											onClick={() => handleSwitchBranch(msg, activeBranchIdx - 1)}
+											title="上一个分支"
+										>
+											<Icons.chevronLeft size={12} />
+										</button>
+										<span className="roleplay-branch-label">
+											{activeBranchIdx + 1} / {branchCount}
+										</span>
+										<button
+											className="roleplay-branch-btn"
+											disabled={activeBranchIdx >= branchCount - 1}
+											onClick={() => handleSwitchBranch(msg, activeBranchIdx + 1)}
+											title="下一个分支"
+										>
+											<Icons.chevronRight size={12} />
+										</button>
+									</span>
 								)}
 								{isUser && !isEditing && (
 									<button
@@ -1018,13 +1154,13 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 									/>
 									<div className="roleplay-edit-actions">
 										<button
-											className="btn btn-secondary"
+											className="btn"
 											onClick={handleCancelEdit}
 										>
 											取消
 										</button>
 										<button
-											className="btn btn-primary"
+											className="btn"
 											onClick={() => void handleSaveEdit()}
 											disabled={!editText.trim()}
 										>
@@ -1034,10 +1170,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 								</div>
 							) : (
 								<div className="roleplay-msg-bubble">
-									{renderRoleplayText(displayContent)}
-									{showingOriginal && (
-										<span className="roleplay-msg-original-tag">修改前</span>
-									)}
+									{renderRoleplayText(msg.content)}
 								</div>
 							)}
 								<span className="roleplay-msg-time">
@@ -1046,8 +1179,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 							</div>
 						</div>
 					);
-				});
-				})()}
+				})}
 				{/* 未回应占位条：补齐后仍未发言的在场角色，点击单独补发言 */}
 				{!isSending && unspokenCharacters.length > 0 && (
 					<div className="roleplay-unspoken-bar">
@@ -1097,13 +1229,13 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 				/>
 				<div className="roleplay-input-actions">
 					{isSending ? (
-						<button className="btn btn-secondary" onClick={handleStop}>
+						<button className="btn" onClick={handleStop}>
 							<Icons.x size={16} />
 							<span>停止</span>
 						</button>
 					) : (
 						<button
-							className="btn btn-primary"
+							className="btn"
 							onClick={handleSend}
 							disabled={!input.trim()}
 						>
@@ -1115,6 +1247,87 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 		</div>
 		</>
 	) : null;
+
+	// 分支预览弹窗（通过 portal 渲染到 body，桌面/移动端通用）
+	const branchPreviewModal = showBranchPreview && activeSession && (
+		<div className={`modal-overlay roleplay-branch-overlay${isMobile ? " mobile" : ""}`} onClick={() => setShowBranchPreview(false)}>
+			<div className="config-modal roleplay-branch-modal" onClick={(e) => e.stopPropagation()}>
+				<div className="config-header">
+					<span className="config-title">
+						<Icons.gitFork size={16} />
+						分支预览
+					</span>
+					<button className="close-btn" onClick={() => setShowBranchPreview(false)}>
+						<Icons.x size={16} />
+					</button>
+				</div>
+				<div className="config-body">
+					{/* 统计卡片 */}
+					<div className="roleplay-branch-stats">
+						<div className="roleplay-branch-stat">
+							<span className="roleplay-branch-stat-value">{activeSession.messages.length}</span>
+							<span className="roleplay-branch-stat-label">总消息</span>
+						</div>
+						<div className="roleplay-branch-stat">
+							<span className="roleplay-branch-stat-value">{activeSession.messages.filter((m) => m.role === "user").length}</span>
+							<span className="roleplay-branch-stat-label">我的发言</span>
+						</div>
+						<div className="roleplay-branch-stat">
+							<span className="roleplay-branch-stat-value">{totalBranchCount}</span>
+							<span className="roleplay-branch-stat-label">分支数</span>
+						</div>
+					</div>
+					{/* 分支点列表 */}
+					{branchPoints.length === 0 ? (
+						<div className="roleplay-branch-empty">
+							<Icons.gitFork size={24} />
+							<p>暂无分支</p>
+							<p className="roleplay-branch-empty-hint">编辑或重新生成消息后，将在此处看到分支</p>
+						</div>
+					) : (
+						branchPoints.map((msg) => (
+							<div key={msg.id} className="roleplay-branch-point">
+								<div className="roleplay-branch-point-header">
+									<span className="roleplay-branch-point-title">
+										分支点 · {formatDateTime(msg.timestamp)}
+									</span>
+									<span className="roleplay-branch-point-badge">
+										{msg.branches?.length ?? 0} 个分支
+									</span>
+								</div>
+								<div className="roleplay-branch-point-branches">
+									{(msg.branches ?? []).map((branch, idx) => {
+										const isActive = (msg.activeBranch ?? 0) === idx;
+										return (
+											<button
+												key={idx}
+												className={`roleplay-branch-item${isActive ? " active" : ""}`}
+												onClick={() => {
+													handleSwitchBranch(msg, idx);
+													setShowBranchPreview(false);
+												}}
+											>
+												<span className="roleplay-branch-item-index">{idx + 1}</span>
+												<span className="roleplay-branch-item-content">
+													{branch.content || "（空）"}
+												</span>
+												<span className="roleplay-branch-item-meta">
+													{branch.replies.length} 条回复
+												</span>
+												{isActive && (
+													<span className="roleplay-branch-item-current">当前</span>
+												)}
+											</button>
+										);
+									})}
+								</div>
+							</div>
+						))
+					)}
+				</div>
+			</div>
+		</div>
+	);
 
 	// 角色个人主页弹窗（通过 portal 渲染到 body，桌面/移动端通用）
 	const profileModal = profileCharacter && (
@@ -1162,7 +1375,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 														选择一个角色，开始沉浸式对话
 													</p>
 													<button
-														className="btn btn-primary"
+														className="btn"
 														onClick={() => setMobileView("picker")}
 														disabled={characters.length === 0}
 													>
@@ -1302,6 +1515,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 					document.body,
 				)}
 			{profileModal}
+			{branchPreviewModal}
 		</>
 	);
 	}
@@ -1325,7 +1539,11 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 									</button>
 									<div className="roleplay-session-list">
 										{sortedSessions.length === 0 && (
-											<div className="roleplay-session-empty">暂无会话</div>
+											<div className="roleplay-session-empty">
+												<Icons.messageSquare size={24} />
+												<p>暂无会话</p>
+												<p>点击上方「新建会话」开始</p>
+											</div>
 										)}
 										{sortedSessions.map((s) => {
 											const char = characters.find((c) => c.id === s.characterId);
@@ -1424,7 +1642,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 										<div className="roleplay-empty">
 											<Icons.messageSquare size={40} />
 											<p>选择或创建一个会话，与角色对话</p>
-											<button className="btn btn-primary" onClick={() => setShowCharacterPicker(true)}>
+											<button className="btn" onClick={() => setShowCharacterPicker(true)}>
 												<Icons.plus size={16} />
 												<span>新建会话</span>
 											</button>
@@ -1437,6 +1655,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 					document.body,
 				)}
 			{profileModal}
+			{branchPreviewModal}
 		</>
 	);
 };

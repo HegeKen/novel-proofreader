@@ -36,10 +36,9 @@ jobs:
             target: armv7-linux-androideabi
             android: true
             android_arch: armv7
-          - platform: ubuntu-22.04
-            target: x86_64-linux-android
-            android: true
-            android_arch: x86_64
+          # x86_64 仅供模拟器使用，真机不会安装；发布产物不再包含该架构的
+          # APK/AAB，避免每个版本多出 ~15MB 的无用包。需要模拟器包时本地
+          # 执行 pnpm tauri android build --target x86_64 即可。
 
     runs-on: ${{ matrix.platform }}
 
@@ -170,7 +169,9 @@ jobs:
           cd src-tauri
           # 使用 lockfile 中固定的 tauri CLI（pnpm tauri），而不是 cargo install 到的最新版，
           # 否则 CLI 版本漂移会直接改变打包结果。
-          pnpm tauri android build --target ${{ matrix.android_arch }}
+          # --split-per-abi：只传 --target 时 AGP 仍装配 universal 风味，产品路径与文件名
+          # 都是 app-universal-release.apk，两个架构会产出同名（内容不同）的包。
+          pnpm tauri android build --target ${{ matrix.android_arch }} --split-per-abi
         env:
           TAURI_ANDROID_MIN_SDK_VERSION: 24
 
@@ -340,6 +341,10 @@ jobs:
     needs: [build, build-local-llm]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    env:
+      # 与 build 任务保持一致：未配置有效签名 key 时允许 unsigned 产物发布
+      # （在 Secrets 中设 DSH_ALLOW_UNSIGNED=false 可强制要求签名）
+      DSH_ALLOW_UNSIGNED: ${{ secrets.DSH_ALLOW_UNSIGNED || 'true' }}
 
     steps:
       - uses: actions/checkout@v7

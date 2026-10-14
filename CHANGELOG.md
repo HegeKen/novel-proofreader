@@ -1,5 +1,69 @@
 # Proof Reader Changelog
 
+## v0.17.0 (2026-10-14)
+
+### ✨ 功能更新
+
+**EPUB 导出升级**
+- 正文前新增目录页 `toc.xhtml`，章节跳转更直观
+- 支持附加附录内容：角色信息、大事记、角色关系，导出时从 `characterStore` 自动采集
+
+**角色扮演·消息分支**
+- 编辑或重新生成消息不再覆盖原文，改为创建独立分支，原对话链完整保留
+- 消息气泡显示 `‹ n/N ›` 切换器，切换分支时整条后续回复链随之切换
+- 新增「分支预览」弹窗，展示总消息数、我的发言数与全部分支点
+- 取代原先的「修改前 / 修改后」两态切换
+
+**角色扮演工具栏重构**
+- 在场角色改为左侧下拉菜单，右侧新增「重新开始新对话」「分支预览」「聊天设置」
+- 「聊天设置」内集中管理邀请 / 移除角色与删除聊天
+- 邀请角色入场时立即生成一条入场发言，衔接更自然
+
+**变体字 / 繁体字检查支持勾选**
+- `CJKVariantsModal` 新增复选框与全选，可逐条挑选要替换的条目
+- 主操作按钮变为「替换选中 (N 处)」，扫描入口移至底部
+
+**移动端 Header 改版**
+- 收纳为「搜索 / 主题 / 设置 / 更多菜单」，更多菜单内含导出小说、导出 EPUB、保存、缓存、角色扮演
+
+**错误边界**
+- `ErrorBoundary` 从内联样式改为结构化错误页（图标 + 标题 + 重试按钮），风格与全局设计系统统一
+
+### 🐛 Bug 修复
+
+- 修复本地模型设置页在引擎未就绪时仍展示详细配置项的问题
+- 修复下拉选择器（`Select`）无法正常关闭的问题：改用 `pointerdown` 触发，并支持点击触发按钮切换开合
+
+### ♻️ 优化
+
+- **按钮体系统一**：`Button.tsx` 移除 `primary` 变体，全站 `btn-primary` 统一为 `.btn`，消除主 / 次按钮样式冗余
+- 统一空状态与列表结构：空状态图标由 48px 缩至 24px，多处列表头布局归一
+- ConfigModal 中「管理替换规则」入口移至底部操作栏，与其它设置项入口对齐
+- **AI 请求缓存友好**：角色扮演与大事件生成不再截断历史对话（原 `slice(-20)` / 单轮 messages），改为累积完整上下文，命中大模型前缀缓存，降低重复计费
+
+### 🛠️ 工程与工具链
+
+**包体积优化**
+- Rust `[profile.release]` 启用 `opt-level="s"`、`lto="thin"`、`codegen-units=1`、`strip=true`，桌面可执行文件体积下降约 30%
+- Android 启用 R8 资源压缩（`isShrinkResources = true`），并同步更新补丁模板避免 CI 重新生成配置时被覆盖
+- `public/icons` 图标瘦身（favicon 264KB → 17KB、icon 310KB → 29KB）
+- Android 通用包默认排除 x86 / x86_64 模拟器专用 ABI，仅保留 arm64-v8a 与 armeabi-v7a，通用包体积由约 57MB 降至约 24MB
+
+**Android 打包管线修正**
+- 明确 `tauri android build --target` 只决定包内容，不影响产物路径：AGP 默认装配 `universal` 风味，仅传 `--target aarch64` 时产物仍落在 `apk/universal/release/app-universal-release.apk`
+- CI 与 `build:release` 脚本统一追加 `--split-per-abi`，改用按架构命名的风味，路径与文件名同架构对应
+- `rename-android-artifacts.mjs` 新增 `resolveArchFromPackage`，从包内实际 `lib/<abi>/` 目录（AAB 为 `base/lib/<abi>/`）推导架构后缀，避免两个架构产出同名文件
+- `RustPlugin.kt` 中 universal 默认 ABI 移除 x86 / x86_64
+- `build.yml` 移除 x86_64 构建任务，release job 补充 `DSH_ALLOW_UNSIGNED`
+- 修复 `build-release.mjs` 默认架构值 `arm64` 被 CLI 拒绝的问题，改为 `aarch64`（取值同 `tauri android build --target`）
+
+**其它**
+- 版本一致性：`package.json`、`tauri.conf.json`、`Cargo.toml`、`signing.config.json`、`Cargo.lock` 统一为 `0.17.0`
+- `.gitignore` 新增 `graphify-out`
+- 更新 `README.md` 构建章节与 `docs/RELEASE_SIGNING.md` 产物命名说明，补充 Android 签名测试用例
+
+---
+
 ## v0.16.0 (2026-10-03)
 
 ### ✨ 功能更新

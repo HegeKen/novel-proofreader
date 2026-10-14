@@ -175,7 +175,7 @@ function EventEditFormContent({
 					<Icons.x size={14} />
 					<span>取消</span>
 				</button>
-				<button className="btn btn-primary" onClick={onSave}>
+				<button className="btn" onClick={onSave}>
 					<Icons.saveIcon size={14} />
 					<span>保存</span>
 				</button>
@@ -864,7 +864,7 @@ ${eventsJson}`;
 						<span>新增</span>
 					</button>
 					<button
-						className={`btn ${sortMode === 'time' ? 'btn-primary' : ''}`}
+						className={`btn ${sortMode === 'time' ? 'active' : ''}`}
 						onClick={() => setSortMode(sortMode === 'chapter' ? 'time' : 'chapter')}
 						disabled={editingId !== null || sortedEvents.length === 0}
 						title={sortMode === 'chapter' ? "切换为按事件发生时间排序" : "切换为按章节顺序排序"}
@@ -1011,7 +1011,7 @@ ${eventsJson}`;
 									)}
 								</button>
 								<button
-									className="btn btn-primary"
+									className="btn"
 									onClick={handleCompleteChapters}
 									disabled={selectedChapterIds.size === 0 || isGenerating}
 								>
@@ -1044,82 +1044,84 @@ ${eventsJson}`;
 						)}
 						{sortedEvents.map((evt, idx) => (
 							<div key={evt.id}>
-								<div className="event-item">
-									<div className="event-item-order">{idx + 1}</div>
-									<div className="event-item-body">
-										<div className="event-item-title">{evt.title}</div>
-										<div className="event-item-meta">
-											{evt.chapter && (
-												<span className="event-item-chapter">
-													{(() => {
-														// 优先使用拆分的 volume 字段（卷·章），否则回退旧格式
-														if (evt.volume) {
-															return `${evt.volume}·${evt.chapter}`;
-														}
-														if (evt.chapter.includes("·")) {
-															return evt.chapter;
-														}
-														const volume = getVolumeForChapter(evt.chapter);
-														return volume 
-															? `${volume}·${evt.chapter}`
-															: evt.chapter;
-													})()}
-												</span>
+									<div className="event-item">
+										<div className="event-item-header">
+											<div className="event-item-order">{idx + 1}</div>
+											<div className="event-item-title">{evt.title}</div>
+											<div className="event-item-actions">
+												<button
+													className="action-btn edit"
+													title="编辑"
+													onClick={() => handleEdit(evt)}
+													disabled={editingId !== null}
+												>
+													<Icons.edit size={16} />
+												</button>
+												<button
+													className="action-btn delete"
+													title="删除"
+													onClick={() => setShowDeleteConfirm(evt.id)}
+													disabled={editingId !== null}
+												>
+													<Icons.trash2 size={16} />
+												</button>
+											</div>
+										</div>
+										<div className="event-item-body">
+											<div className="event-item-meta">
+												{evt.chapter && (
+													<span className="event-item-chapter">
+														{(() => {
+															// 优先使用拆分的 volume 字段（卷·章），否则回退旧格式
+															if (evt.volume) {
+																return `${evt.volume}·${evt.chapter}`;
+															}
+															if (evt.chapter.includes("·")) {
+																return evt.chapter;
+															}
+															const volume = getVolumeForChapter(evt.chapter);
+															return volume 
+																? `${volume}·${evt.chapter}`
+																: evt.chapter;
+														})()}
+													</span>
+												)}
+												{evt.timeInfo && (
+													<span className="event-item-time-info">{evt.timeInfo}</span>
+												)}
+											</div>
+											{evt.description && (
+												<div className="event-item-desc">{evt.description}</div>
 											)}
-											{evt.timeInfo && (
-												<span className="event-item-time-info">{evt.timeInfo}</span>
+											{evt.involvedCharacterIds.length > 0 && (
+												<div className="event-item-characters">
+													{evt.involvedCharacterIds.map((cid) => {
+														const ch = characters.find((c) => c.id === cid);
+														return ch ? (
+															<span key={cid} className="event-item-character-tag">
+																{ch.name}
+															</span>
+														) : null;
+													})}
+												</div>
 											)}
 										</div>
-										{evt.description && (
-											<div className="event-item-desc">{evt.description}</div>
-										)}
-										{evt.involvedCharacterIds.length > 0 && (
-											<div className="event-item-characters">
-												{evt.involvedCharacterIds.map((cid) => {
-													const ch = characters.find((c) => c.id === cid);
-													return ch ? (
-														<span key={cid} className="event-item-character-tag">
-															{ch.name}
-														</span>
-													) : null;
-												})}
-											</div>
-										)}
-									</div>
-									<div className="event-item-actions">
-										<button
-											className="event-item-btn"
-											title="编辑"
-											onClick={() => handleEdit(evt)}
-											disabled={editingId !== null}
-										>
-											<Icons.edit size={14} />
-										</button>
-										<button
-											className="event-item-btn event-item-btn-danger"
-											title="删除"
-											onClick={() => setShowDeleteConfirm(evt.id)}
-											disabled={editingId !== null}
-										>
-											<Icons.trash2 size={14} />
-										</button>
-									</div>
 
-									{/* 删除确认 */}
-									{showDeleteConfirm === evt.id && (
-										<div className="event-delete-confirm">
-											<span>确定删除「{evt.title}」？</span>
-											<div className="event-delete-confirm-actions">
-												<button className="btn btn-sm" onClick={() => setShowDeleteConfirm(null)}>
-													取消
-												</button>
-												<button className="btn btn-sm btn-danger" onClick={() => handleDelete(evt.id)}>
-													删除
-												</button>
+										{/* 删除确认 */}
+										{showDeleteConfirm === evt.id && (
+											<div className="event-delete-confirm">
+												<span>确定删除「{evt.title}」？</span>
+												<div className="event-delete-confirm-actions">
+													<button className="btn btn-sm" onClick={() => setShowDeleteConfirm(null)}>
+														取消
+													</button>
+													<button className="btn btn-sm btn-danger" onClick={() => handleDelete(evt.id)}>
+														删除
+													</button>
+												</div>
 											</div>
-										</div>
-									)}
-								</div>
+										)}
+									</div>
 								{/* 编辑表单 - 在对应事件下方内联显示 */}
 								{editingId === evt.id && (
 									<div ref={editFormRef} className="event-edit-form">

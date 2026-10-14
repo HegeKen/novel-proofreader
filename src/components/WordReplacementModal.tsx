@@ -113,7 +113,7 @@ export function WordReplacementModal({ open, onClose }: Props) {
 						<div className="word-replacement-list">
 							{replacements.length === 0 ? (
 								<EmptyState
-									icon={<Icons.punctuation size={48} className="empty-icon" />}
+									icon={<Icons.punctuation size={24} />}
 									message="暂无替换规则"
 									hint="添加敏感词替换规则，避免 TTS 生成被拒绝"
 								/>

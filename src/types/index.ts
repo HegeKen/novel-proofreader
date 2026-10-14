@@ -377,6 +377,15 @@ export type RelationType =
 	| "stranger" // 陌生人
 	| "other"; // 其他
 
+/** 角色扮演消息的一个分支版本（编辑/重新生成产生） */
+export interface RoleplayBranch {
+	/** 用户输入内容（assistant 分支与对应用户输入相同） */
+	content: string;
+	/** 该分支下 AI 的回复链 */
+	replies: RoleplayMessage[];
+	createdAt: number;
+}
+
 /** 角色扮演消息 */
 export interface RoleplayMessage {
 	id: string;
@@ -390,6 +399,10 @@ export interface RoleplayMessage {
 	originalContent?: string;
 	/** 用户消息被编辑前，其输入对应的后续回复链（编辑保存时保留旧回复，用于查看修改前的完整对话） */
 	originalReplies?: RoleplayMessage[];
+	/** 分支列表：包含当前激活分支在内的所有版本（按创建顺序） */
+	branches?: RoleplayBranch[];
+	/** 当前激活分支索引（指向 branches） */
+	activeBranch?: number;
 	/** 群聊轮次标识：同一次 AI 请求生成的多条发言共享一个 turnId（用于 UI 轮次分组） */
 	turnId?: string;
 	/** 发言在本轮中的顺序（0-based，按 AI 实际输出顺序记录，不重排） */

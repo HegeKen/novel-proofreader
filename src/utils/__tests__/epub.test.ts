@@ -22,10 +22,13 @@ describe("epub", () => {
 		expect(files["OEBPS/nav.xhtml"]).toBeDefined();
 		expect(files["OEBPS/ch001.xhtml"]).toBeDefined();
 		expect(files["OEBPS/ch002.xhtml"]).toBeDefined();
-		// OPF 包含书名与两个 spine 条目
+		// OPF 包含书名与三个 spine 条目（目录页 + 两个章节）
 		const opf = strFromU8(files["OEBPS/content.opf"]);
 		expect(opf).toContain("<dc:title>测试小说</dc:title>");
-		expect(opf.match(/<itemref /g)?.length).toBe(2);
+		expect(opf.match(/<itemref /g)?.length).toBe(3);
+		// 目录页面存在且为第一个 spine 条目
+		expect(files["OEBPS/toc.xhtml"]).toBeDefined();
+		expect(opf).toContain('<item id="toc" href="toc.xhtml"');
 	});
 
 	it("生成后可解析回原文（往返一致）", () => {

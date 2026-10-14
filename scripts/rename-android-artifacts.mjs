@@ -8,7 +8,11 @@
  *      这里改为递归查找 release 目录，不再依赖层级。
  *   2. 一次构建可能同时产出「按 ABI 拆分」与 `universal` 两种 APK。旧写法把它们统统
  *      重命名成同一个名字，会互相覆盖丢产物。这里用 AGP 的 ABI 目录名做后缀，天然不冲突。
- *   3. AGP **只在没有签名配置时**才产出 `-unsigned` 文件。一旦发现，说明签名补丁没生效，
+ *   3. 仅传 `--target aarch64` 时 AGP 仍装配 `universal` 风味，路径里也就写着 universal，
+ *      但包里其实只编译了 arm64 的 `.so`。如果只按路径命名，aarch64 与 armv7 两个构建会
+ *      产出同名的 `-universal.apk`（内容不同、名字相同）。因此这里以「包内 lib/<abi> 的
+ *      实际架构」为准，路径名只作兜底。
+ *   4. AGP **只在没有签名配置时**才产出 `-unsigned` 文件。一旦发现，说明签名补丁没生效，
  *      必须失败而不是把未签名产物发出去。
  *
  * 用法:
@@ -26,6 +30,7 @@ import { readJson } from './lib/exec.mjs';
 import { sha256File } from './lib/crypto.mjs';
 import { loadSigningConfig } from './lib/signing-config.mjs';
 import { isUnsignedAndroidArtifact } from './lib/manifest.mjs';
+import { listZipEntries } from './lib/apk.mjs';
 
 function parseArgs(argv) {
 	const options = { arch: 'universal', appName: null, dryRun: false, allowUnsigned: null };
@@ -60,6 +65,36 @@ export function resolveAbiSlug(file) {
 	const bundle = normalized.match(/\/bundle\/([^/]+?)Release\//);
 	if (bundle) return bundle[1];
 	return null;
+}
+
+/** 包内 ABI 目录名 -> 产物后缀（取值与 `tauri android build --target` 对齐）。 */
+const ABI_LABELS = {
+	'arm64-v8a': 'arm64',
+	'armeabi-v7a': 'armv7',
+	x86: 'x86',
+	x86_64: 'x86_64',
+};
+
+/**
+ * 以包内实际打包的 .so 架构决定产物后缀：APK 为 `lib/<abi>/`，AAB 为 `base/lib/<abi>/`。
+ * 多架构并存 -> `universal`；读不出任何架构 -> null，由调用方回落到路径名或 `--arch`。
+ */
+export function resolveArchFromPackage(file) {
+	let entries;
+	try {
+		entries = listZipEntries(file);
+	} catch {
+		return null;
+	}
+	const abis = new Set();
+	for (const entry of entries) {
+		const match = entry.name.match(/(?:^|\/)lib\/([^/]+)\/[^/]+\.so$/i);
+		if (match) abis.add(match[1].toLowerCase());
+	}
+	if (abis.size === 0) return null;
+	if (abis.size > 1) return 'universal';
+	const [abi] = abis;
+	return ABI_LABELS[abi] ?? abi;
 }
 
 function findReleaseArtifacts() {
@@ -98,7 +133,9 @@ function main() {
 	const signable = [...apks, ...aabs].filter((file) => !isUnsignedAndroidArtifact(file));
 	const staged = signable.map((file) => {
 		const extension = path.extname(file);
-		const slug = resolveAbiSlug(file) ?? options.arch;
+		// 包内容优先：`--target aarch64` 时 AGP 仍装配 universal 风味，路径写着 universal
+		// 却只打包了 arm64，只按路径命名会让不同架构产出同名文件
+		const slug = resolveArchFromPackage(file) ?? resolveAbiSlug(file) ?? options.arch;
 		return { from: file, to: path.join(path.dirname(file), `${appName}-v${version}-${slug}${extension}`) };
 	});
 

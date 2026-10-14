@@ -11,7 +11,7 @@
 
 /* Shared properties for all button-like elements - single source of truth */
 :where(
-	.btn, .btn-primary, .btn-danger, .btn-small, .btn-large, .btn-mobile,
+	.btn, .btn-danger, .btn-small, .btn-large, .btn-mobile,
 	.btn-import-novel, .novel-item-btn, .btn-hide-proofread,
 	.reader-bar-btn ,
 	.tts-playback-btn, .tts-toggle-btn, .image-upload-btn, .image-remove-btn,
@@ -447,6 +447,22 @@ select {
 	display: flex;
 	align-items: center;
 	gap: 10px}
+
+/* ── Header 工具栏按钮：图标在上、文字在下的竖排布局 ──
+   仅桌面/平板生效；移动端 .btn-mobile 保持圆形纯图标样式。
+   min-width 与按钮高度（约 48px）一致，避免短文字按钮过窄 */
+.app-header .btn:not(.btn-mobile) {
+	flex-direction: column;
+	gap: 3px;
+	padding: 6px 12px;
+	font-size: var(--fs-xs);
+	line-height: 1.2;
+	white-space: nowrap;
+	min-width: 48px}
+
+.app-header .btn:not(.btn-mobile) svg {
+	width: 20px;
+	height: 20px}
 
 /* ── Liquid Glass Buttons ── */
 /* 使用统一的 .btn 基础样式 */
@@ -3582,10 +3598,10 @@ color: var(--text-primary)}
 	opacity: 0.7}
 
 .empty-state-icon {
-	font-size: var(--fs-7xl);
-	margin-bottom: 16px;
-	opacity: 0.6;
-	filter: grayscale(0.3)}
+	display: inline-flex;
+	margin-bottom: 12px;
+	opacity: 0.5;
+	color: var(--text-muted)}
 
 .empty-state-message {
 	font-size: var(--fs-md);
@@ -3738,6 +3754,18 @@ color: var(--text-primary)}
 .cjk-variants-table-row:nth-child(even) {
 	background: var(--glass-bg)}
 
+.col-check {
+	width: 36px;
+	display: flex;
+	align-items: center;
+	justify-content: center}
+
+.col-check input[type="checkbox"] {
+	width: 16px;
+	height: 16px;
+	cursor: pointer;
+	accent-color: var(--accent)}
+
 .col-variant { width: 80px }
 .col-codepoint { width: 100px }
 .col-standard { width: 80px }
@@ -3777,29 +3805,8 @@ color: var(--text-primary)}
 	padding: 12px 20px;
 	border-top: 1px solid var(--glass-border)}
 
-.cjk-variants-modal .btn-primary {
-	background: var(--accent);
-	color: #fff;
-	border: none;
-	padding: 8px 16px;
-	border-radius: 10px;
-	font-size: var(--fs-base);
-	font-weight: 500;
-	cursor: pointer;
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	transition: opacity 0.2s}
-
-.cjk-variants-modal .btn-primary:hover:not(:disabled) {
-	opacity: 0.85}
-
-.cjk-variants-modal .btn-primary:disabled {
-	opacity: 0.5;
-	cursor: not-allowed}
-
-.cjk-variants-modal .empty-icon {
-	opacity: 0.3}
+.cjk-variants-empty svg {
+	opacity: 0.5}
 
 /* 变体字检查弹窗 end */
 
@@ -4011,25 +4018,6 @@ color: var(--text-primary)}
 	justify-content: center;
 	gap: 8px}
 
-.detect-characters-modal .modal-footer .btn-primary {
-	background: var(--accent-gradient);
-	color: white;
-	border: none;
-	box-shadow: 0 4px 14px var(--accent-dim)}
-
-.detect-characters-modal .modal-footer .btn-primary:hover:not(:disabled) {
-	transform: translateY(-2px);
-	box-shadow: 0 6px 20px var(--accent-dim);
-	filter: brightness(1.05)}
-
-.detect-characters-modal .modal-footer .btn-primary:active:not(:disabled) {
-	transform: translateY(0)}
-
-.detect-characters-modal .modal-footer .btn-primary:disabled {
-	opacity: 0.5;
-	cursor: not-allowed;
-	filter: grayscale(30%)}
-
 .detect-characters-modal .modal-footer .btn-secondary {
 	background: var(--bg-overlay);
 	color: var(--text-primary);
@@ -4225,20 +4213,6 @@ color: var(--text-primary)}
 	align-items: center;
 	justify-content: center;
 	gap: 8px}
-
-.merge-characters-modal .config-footer .btn-primary {
-	background: var(--accent-gradient);
-	color: white;
-	border: none;
-	box-shadow: 0 4px 14px var(--accent-dim)}
-
-.merge-characters-modal .config-footer .btn-primary:hover:not(:disabled) {
-	transform: translateY(-2px);
-	box-shadow: 0 6px 20px var(--accent-dim);
-	filter: brightness(1.05)}
-
-.merge-characters-modal .config-footer .btn-primary:active:not(:disabled) {
-	transform: translateY(0)}
 
 .merge-characters-modal .config-footer .btn-secondary {
 	background: var(--bg-overlay);
@@ -5105,6 +5079,11 @@ color: var(--text-primary)}
 	overflow-y: auto;
 	padding: 0}
 
+/* 排序切换按钮的激活态 */
+.novel-event-modal .btn.active {
+	border-color: var(--accent);
+	color: var(--accent)}
+
 /* AI 生成进度条 */
 .generation-progress {
 	padding: 12px 16px;
@@ -5396,16 +5375,28 @@ color: var(--text-primary)}
 	margin-top: 8px;
 	font-size: var(--fs-base)}
 
-/* 大事记列表项 */
+/* 大事记列表项 — 卡片式设计，参照角色卡片 */
 .event-item {
 	position: relative;
 	display: flex;
-	gap: 12px;
-	padding: 10px 0;
-	border-bottom: 1px solid var(--glass-border)}
+	flex-direction: column;
+	gap: 8px;
+	background: var(--bg-raised);
+	border: 1px solid var(--glass-border);
+	border-radius: var(--r-lg);
+	padding: 16px;
+	margin-bottom: 12px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+	transition: all 0.3s var(--ease-bounce)}
 
-.event-item:last-child {
-	border-bottom: none}
+.event-item:hover {
+	background: var(--bg-highlight);
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12)}
+
+.event-item-header {
+	display: flex;
+	align-items: center;
+	gap: 10px}
 
 .event-item-order {
 	width: 24px;
@@ -5420,9 +5411,17 @@ color: var(--text-primary)}
 	justify-content: center;
 	flex-shrink: 0}
 
-.event-item-body {
+.event-item-header .event-item-title {
 	flex: 1;
 	min-width: 0}
+
+.event-item-body {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+	/* 与标题对齐：序号圆点 24px + 间距 10px */
+	padding-left: 34px}
 
 .event-item-title {
 	font-size: var(--fs-md);
@@ -5432,7 +5431,6 @@ color: var(--text-primary)}
 .event-item-meta {
 	display: flex;
 	gap: 8px;
-	margin-top: 4px;
 	flex-wrap: wrap}
 
 .event-item-chapter {
@@ -5461,7 +5459,6 @@ color: var(--text-primary)}
 .event-item-desc {
 	font-size: var(--fs-sm);
 	color: var(--text-secondary);
-	margin-top: 4px;
 	line-height: 1.5;
 	white-space: pre-wrap;
 	word-break: break-word}
@@ -5469,8 +5466,7 @@ color: var(--text-primary)}
 .event-item-characters {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 4px;
-	margin-top: 6px}
+	gap: 4px}
 
 .event-item-character-tag {
 	font-size: var(--fs-xs);
@@ -5480,33 +5476,19 @@ color: var(--text-primary)}
 	color: var(--accent);
 	border: 1px solid var(--glass-border)}
 
+/* 事件操作按钮：横排在标题行右侧，复用通用 action-btn 尺寸 */
 .event-item-actions {
 	display: flex;
-	flex-direction: column;
-	gap: 4px;
+	flex-direction: row;
+	gap: 6px;
 	flex-shrink: 0}
 
-.event-item-btn {
-	width: 28px;
-	height: 28px;
-	border: none;
-	border-radius: var(--r-sm);
-	background: var(--bg-overlay);
-	color: var(--text-secondary);
-	cursor: pointer;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	transition: all var(--duration) var(--ease)}
+.event-item-actions .action-btn {
+	width: 36px;
+	height: 36px;
+	border-radius: 10px}
 
-.event-item-btn:hover:not(:disabled) {
-	background: var(--accent);
-	color: white}
-
-.event-item-btn-danger:hover:not(:disabled) {
-	background: var(--danger)}
-
-.event-item-btn:disabled {
+.event-item-actions .action-btn:disabled {
 	opacity: 0.4;
 	cursor: not-allowed}
 
@@ -5858,11 +5840,13 @@ color: var(--text-primary)}
 
 .character-actions-fab-wrapper .action-btn {
 	display: flex;
+	flex-direction: column;
 	align-items: center;
-	gap: 8px;
-	padding: 10px 18px;
+	gap: 3px;
+	padding: 6px 14px;
 	border-radius: var(--r-lg);
-	font-size: var(--fs-md);
+	font-size: var(--fs-xs);
+	line-height: 1.2;
 	font-weight: 500;
 	background: var(--glass-bg);
 	color: var(--text-primary);
@@ -5881,28 +5865,28 @@ color: var(--text-primary)}
 .character-actions-fab-wrapper .action-btn svg {
 	flex-shrink: 0;
 	display: block;
-	width: 18px;
-	height: 18px}
+	width: 20px;
+	height: 20px}
 
 .character-actions-fab-wrapper .action-btn.primary {
 	background: linear-gradient(135deg, var(--accent), var(--accent-hover));
 	color: white;
-	border: none;
-	box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.3)}
+	border: none}
 
 .character-actions-fab-wrapper .action-btn.primary:hover {
 	background: linear-gradient(135deg, var(--accent-hover), var(--accent));
-	transform: translateY(-1px);
-	box-shadow: 0 6px 16px rgba(var(--accent-rgb), 0.4)}
+	transform: translateY(-1px)}
 
 /* character-actions-fab-wrapper 中的 btn 样式 */
 .character-actions-fab-wrapper .btn {
 	display: flex;
+	flex-direction: column;
 	align-items: center;
-	gap: 8px;
-	padding: 10px 18px;
+	gap: 3px;
+	padding: 6px 14px;
 	border-radius: var(--r-lg);
-	font-size: var(--fs-md);
+	font-size: var(--fs-xs);
+	line-height: 1.2;
 	font-weight: 500;
 	background: var(--glass-bg);
 	color: var(--text-primary);
@@ -5921,8 +5905,26 @@ color: var(--text-primary)}
 .character-actions-fab-wrapper .btn svg {
 	flex-shrink: 0;
 	display: block;
-	width: 18px;
-	height: 18px}
+	width: 20px;
+	height: 20px}
+
+/* ── 弹窗页脚 / 表单操作按钮：图标在上、文字在下（与头部、悬浮操作条一致） ── */
+.config-footer .btn,
+.modal-footer .btn,
+.character-card.editing .btn {
+	flex-direction: column;
+	gap: 3px;
+	padding: 6px 14px;
+	font-size: var(--fs-xs);
+	line-height: 1.2;
+	white-space: nowrap;
+	justify-content: center}
+
+.config-footer .btn svg,
+.modal-footer .btn svg,
+.character-card.editing .btn svg {
+	width: 20px;
+	height: 20px}
 
 .graph-scale-display {
 	display: flex;
@@ -5937,15 +5939,13 @@ color: var(--text-primary)}
 	border-radius: var(--r-md);
 }
 
-.character-actions-fab-wrapper .btn.primary,
-.character-actions-fab-wrapper .btn.btn-primary {
+.character-actions-fab-wrapper .btn.primary {
 	background: linear-gradient(135deg, var(--accent), var(--accent-hover));
 	color: white;
 	border: none;
 	box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.3)}
 
-.character-actions-fab-wrapper .btn.primary:hover,
-.character-actions-fab-wrapper .btn.btn-primary:hover {
+.character-actions-fab-wrapper .btn.primary:hover {
 	background: linear-gradient(135deg, var(--accent-hover), var(--accent));
 	transform: translateY(-1px);
 	box-shadow: 0 6px 16px rgba(var(--accent-rgb), 0.4)}
@@ -5992,28 +5992,6 @@ color: var(--text-primary)}
 	cursor: not-allowed;
 	color: var(--text-secondary);
 }
-
-/* 添加角色按钮 - 桌面端样式 */
-.action-btn.add-character {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 10px 18px;
-	border-radius: var(--r-lg);
-	font-size: var(--fs-md);
-	font-weight: 500;
-	background: linear-gradient(135deg, var(--accent), var(--accent-hover));
-	color: white;
-	border: none;
-	box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.4);
-	transition: all var(--duration) var(--ease);
-	width: auto;
-	height: auto}
-
-.action-btn.add-character:hover {
-	background: linear-gradient(135deg, var(--accent-hover), var(--accent));
-	transform: translateY(-1px);
-	box-shadow: 0 6px 24px rgba(var(--accent-rgb), 0.5)}
 
 /* 通用 action-btn 样式 */
 .action-btn {
@@ -6235,6 +6213,55 @@ color: var(--text-primary)}
 		border-color: var(--accent);
 		transform: scale(1.08);
 		box-shadow: var(--shadow-md), 0 0 0 1px var(--accent)}
+
+	/* ── 移动端 header「更多」下拉菜单 ── */
+	.header-more-wrapper {
+		position: relative;
+		display: flex;
+		align-items: center}
+
+	.header-menu-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: calc(var(--z-dropdown) - 1)}
+
+	.header-more-menu {
+		position: absolute;
+		top: calc(100% + 8px);
+		right: 0;
+		z-index: var(--z-dropdown);
+		min-width: 160px;
+		background: var(--bg-raised);
+		border: 1px solid var(--glass-border);
+		border-radius: var(--r-md);
+		box-shadow: var(--shadow-lg);
+		padding: 6px;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		backdrop-filter: blur(20px);
+		-webkit-backdrop-filter: blur(20px)}
+
+	.header-more-item {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 10px 12px;
+		border: none;
+		background: transparent;
+		border-radius: var(--r-sm);
+		font-size: var(--fs-sm);
+		color: var(--text-primary);
+		cursor: pointer;
+		text-align: left;
+		transition: background var(--duration) var(--ease)}
+
+	.header-more-item:hover {
+		background: var(--bg-hover)}
+
+	.header-more-item svg {
+		flex-shrink: 0;
+		color: var(--text-secondary)}
 
 	.home-page .btn-mobile {
 		width: 32px;
@@ -7061,6 +7088,27 @@ color: var(--text-primary)}
 	padding: 18px 22px;
 	overflow-y: auto;
 	flex: 1}
+
+/* 弹窗外层内容容器去内边距：让标签栏/底栏贴近 modal 边框（与小说设置一致） */
+.config-body-flush {
+	padding: 0;
+	overflow: hidden;
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-height: 0}
+
+.config-body-flush .config-tabs {
+	flex-shrink: 0}
+
+.config-body-flush .config-body {
+	min-height: 0}
+
+/* flush 容器下的变体字弹窗子区域 */
+.config-body-flush .cjk-variants-tabs,
+.config-body-flush .cjk-variants-footer,
+.config-body-flush .config-footer {
+	flex-shrink: 0}
 
 .config-body.dragging {
 	overflow: hidden}
@@ -10648,20 +10696,13 @@ color: var(--text-primary)}
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
+	gap: 8px;
 	padding: 60px 20px;
-	text-align: center}
+	text-align: center;
+	color: var(--text-muted)}
 
-.empty-icon {
-	width: 80px;
-	height: 80px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	background: var(--bg-surface);
-	border-radius: 50%;
-	color: var(--text-muted);
-	margin-bottom: 16px;
-	opacity: 0.3	}
+.relationship-graph-empty svg {
+	opacity: 0.5}
 
 .empty-desc {
 	font-size: var(--fs-base);
@@ -11526,20 +11567,6 @@ color: var(--text-primary)}
 .diff-modal .spin {
 	animation: spin 1s linear infinite}
 
-.diff-modal .btn-primary {
-	background: var(--accent, var(--accent));
-	color: #fff;
-	border: none;
-	padding: 8px 18px;
-	font-size: var(--fs-md)}
-
-.diff-modal .btn-primary:hover:not(:disabled) {
-	opacity: 0.9}
-
-.diff-modal .btn-primary:disabled {
-	opacity: 0.5;
-	cursor: not-allowed}
-
 .diff-modal .btn-secondary {
 	background: var(--bg-secondary, #f0f0f0);
 	color: var(--text-primary);
@@ -11556,11 +11583,6 @@ color: var(--text-primary)}
 	cursor: not-allowed}
 
 /* 当前激活的对比模式按钮高亮 */
-.diff-modal .btn-primary.active {
-	background: var(--accent, var(--accent));
-	color: #fff;
-	box-shadow: 0 0 0 2px var(--accent, var(--accent)) inset}
-
 .diff-modal .btn-secondary.active {
 	background: var(--accent, var(--accent));
 	color: #fff;
@@ -11613,7 +11635,7 @@ color: var(--text-primary)}
 	margin: 14px;
 	padding: 10px 14px;
 	border-radius: var(--r-md);
-	background: var(--accent);
+	background: linear-gradient(135deg, var(--accent), var(--accent-hover));
 	border: none;
 	color: white;
 	font-size: var(--fs-base);
@@ -11650,8 +11672,8 @@ color: var(--text-primary)}
 	padding: 10px 12px;
 	margin-bottom: 6px;
 	border-radius: var(--r-md);
-	border: 1px solid transparent;
-	background: var(--bg-surface);
+	border: 1px solid var(--glass-border);
+	background: var(--bg-raised);
 	cursor: pointer;
 	transition: all var(--duration) var(--ease)}
 
@@ -11767,7 +11789,7 @@ color: var(--text-primary)}
 	padding: 14px;
 	border-radius: var(--r-md);
 	border: 1px solid var(--glass-border);
-	background: var(--bg-surface);
+	background: var(--bg-raised);
 	text-align: left;
 	cursor: pointer;
 	position: relative;
@@ -11930,16 +11952,16 @@ color: var(--text-primary)}
 .roleplay-identity-select .custom-select {
 	min-width: 120px}
 
-/* 角色选择视图：我的身份 */
+/* 角色选择视图：我的身份 / 故事进度 */
 .roleplay-picker-identity {
 	display: flex;
 	align-items: center;
 	gap: 10px;
 	margin-bottom: 16px;
 	padding: 10px 12px;
-	border-radius: var(--r-sm);
+	border-radius: var(--r-md);
 	border: 1px solid var(--glass-border);
-	background: var(--bg-surface)}
+	background: var(--bg-raised)}
 
 .roleplay-picker-identity-label {
 	font-size: var(--fs-base);
@@ -11975,59 +11997,106 @@ color: var(--text-primary)}
 .roleplay-msg.same-turn {
 	margin-top: -8px}
 
-/* 在场角色栏 */
-.roleplay-presence-bar {
+/* ── 聊天工具栏（标题栏下方） ── */
+.roleplay-toolbar {
 	display: flex;
 	align-items: center;
-	flex-wrap: wrap;
-	gap: 6px;
+	justify-content: space-between;
+	gap: 8px;
 	padding: 6px 16px;
 	border-bottom: 1px solid var(--glass-border);
 	background: var(--glass-bg);
 	flex-shrink: 0}
 
-.roleplay-presence-label {
-	font-size: var(--fs-xs);
-	color: var(--text-muted);
-	flex-shrink: 0}
+.roleplay-toolbar-left {
+	min-width: 0;
+	flex: 1}
 
-.roleplay-presence-chip {
-	display: inline-flex;
+.roleplay-toolbar-left .select-trigger {
+	height: 28px;
+	padding: 0 8px;
+	font-size: var(--fs-sm)}
+
+.roleplay-toolbar-actions {
+	display: flex;
 	align-items: center;
 	gap: 4px;
-	padding: 2px 10px;
-	border-radius: var(--r-full);
-	border: 1px solid var(--glass-border);
-	background: var(--bg-surface);
-	font-size: var(--fs-xs);
-	color: var(--text-primary);
-	cursor: pointer;
-	transition: all var(--duration) var(--ease)}
+	flex-shrink: 0}
 
-.roleplay-presence-chip:hover {
-	border-color: var(--accent);
-	background: var(--accent-dim)}
-
-.roleplay-presence-remove {
+.roleplay-toolbar-btn {
+	width: 28px;
+	height: 28px;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 16px;
-	height: 16px;
-	border-radius: var(--r-full);
-	border: none;
-	background: transparent;
+	border: 1px solid var(--glass-border);
+	border-radius: var(--r-sm);
+	background: var(--glass-bg);
 	color: var(--text-muted);
 	cursor: pointer;
-	padding: 0;
 	transition: all var(--duration) var(--ease)}
 
-.roleplay-presence-remove:hover {
-	background: var(--red);
-	color: white}
+.roleplay-toolbar-btn:hover {
+	background: var(--bg-hover);
+	color: var(--accent);
+	border-color: var(--accent)}
 
-.roleplay-presence-invite {
-	margin-left: auto}
+.roleplay-toolbar-menu-wrapper {
+	position: relative}
+
+.roleplay-toolbar-menu {
+	position: absolute;
+	top: calc(100% + 4px);
+	right: 0;
+	min-width: 180px;
+	padding: 6px;
+	border-radius: var(--r-md);
+	background: var(--bg-surface);
+	border: 1px solid var(--glass-border);
+	box-shadow: var(--shadow-md);
+	z-index: 50;
+	display: flex;
+	flex-direction: column;
+	gap: 4px}
+
+.roleplay-toolbar-menu-section {
+	display: flex;
+	flex-direction: column;
+	gap: 2px}
+
+.roleplay-toolbar-menu-label {
+	padding: 4px 8px;
+	font-size: var(--fs-xs);
+	color: var(--text-muted);
+	font-weight: 500}
+
+.roleplay-toolbar-menu-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 8px;
+	border: none;
+	border-radius: var(--r-sm);
+	background: transparent;
+	color: var(--text-primary);
+	font-size: var(--fs-sm);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+	white-space: nowrap}
+
+.roleplay-toolbar-menu-item:hover {
+	background: var(--bg-hover)}
+
+.roleplay-toolbar-menu-danger {
+	color: var(--red)}
+
+.roleplay-toolbar-menu-danger:hover {
+	background: var(--red-dim)}
+
+.roleplay-toolbar-menu-divider {
+	height: 1px;
+	background: var(--border);
+	margin: 2px 0}
 
 /* 未回应占位条（点击单独补发言） */
 .roleplay-unspoken-bar {
@@ -12157,9 +12226,8 @@ color: var(--text-primary)}
 	background: var(--bg-hover);
 	color: var(--accent)}
 
-/* 用户消息编辑按钮与版本切换 */
+/* 用户消息编辑按钮与重新生成 */
 .roleplay-msg-edit,
-.roleplay-msg-edit-toggle,
 .roleplay-msg-regenerate {
 	display: inline-flex;
 	align-items: center;
@@ -12174,7 +12242,6 @@ color: var(--text-primary)}
 	transition: all var(--duration) var(--ease)}
 
 .roleplay-msg-edit:hover,
-.roleplay-msg-edit-toggle:hover,
 .roleplay-msg-regenerate:hover:not(:disabled) {
 	background: var(--bg-hover);
 	color: var(--accent)}
@@ -12183,18 +12250,192 @@ color: var(--text-primary)}
 	opacity: 0.5;
 	cursor: not-allowed}
 
-.roleplay-msg-edit-toggle {
-	color: var(--accent);
-	border: 1px solid var(--border)}
+/* 分支切换条（‹ n/N ›）：编辑/重新生成产生的多版本间切换 */
+.roleplay-branch-bar {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 1px 4px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--bg-surface)}
 
-.roleplay-msg-bubble .roleplay-msg-original-tag {
-	display: block;
-	margin-top: 6px;
+.roleplay-branch-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	border: none;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.roleplay-branch-btn:hover:not(:disabled) {
+	background: var(--bg-hover);
+	color: var(--accent)}
+
+.roleplay-branch-btn:disabled {
+	opacity: 0.35;
+	cursor: not-allowed}
+
+.roleplay-branch-label {
+	font-size: var(--fs-xs);
+	color: var(--text-secondary);
+	min-width: 28px;
+	text-align: center;
+	font-variant-numeric: tabular-nums}
+
+/* ── 分支预览弹窗 ── */
+/* 分支预览弹窗需要显示在角色扮演 Modal 之上，使用更高的 z-index（参考 roleplay-profile-overlay） */
+.roleplay-branch-overlay {
+	z-index: var(--z-toast);
+	padding: 24px}
+
+.roleplay-branch-overlay.mobile {
+	padding: 0}
+
+.roleplay-branch-modal {
+	width: 560px;
+	max-height: 70vh}
+
+.roleplay-branch-stats {
+	display: flex;
+	gap: var(--sp-4);
+	margin-bottom: var(--sp-6)}
+
+.roleplay-branch-stat {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--sp-1);
+	padding: var(--sp-3) var(--sp-4);
+	background: var(--bg-raised);
+	border: 1px solid var(--glass-border);
+	border-radius: var(--r-md)}
+
+.roleplay-branch-stat-value {
+	font-size: var(--fs-xl);
+	font-weight: 600;
+	color: var(--text-primary);
+	font-variant-numeric: tabular-nums}
+
+.roleplay-branch-stat-label {
+	font-size: var(--fs-xs);
+	color: var(--text-muted)}
+
+.roleplay-branch-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--sp-3);
+	padding: var(--sp-12) var(--sp-6);
+	text-align: center;
+	color: var(--text-muted)}
+
+.roleplay-branch-empty p {
+	margin: 0;
+	font-size: var(--fs-md)}
+
+.roleplay-branch-empty-hint {
+	font-size: var(--fs-sm) !important;
+	color: var(--text-muted)}
+
+.roleplay-branch-point {
+	margin-bottom: var(--sp-4);
+	background: var(--bg-raised);
+	border: 1px solid var(--glass-border);
+	border-radius: var(--r-md);
+	overflow: hidden}
+
+.roleplay-branch-point-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: var(--sp-3) var(--sp-4);
+	background: var(--glass-bg);
+	border-bottom: 1px solid var(--glass-border)}
+
+.roleplay-branch-point-title {
+	font-size: var(--fs-sm);
+	font-weight: 500;
+	color: var(--text-secondary)}
+
+.roleplay-branch-point-badge {
+	padding: 2px 8px;
+	font-size: var(--fs-xs);
+	border-radius: var(--r-full);
+	background: var(--accent-dim);
+	color: var(--accent)}
+
+.roleplay-branch-point-branches {
+	display: flex;
+	flex-direction: column}
+
+.roleplay-branch-item {
+	display: flex;
+	align-items: center;
+	gap: var(--sp-3);
+	padding: var(--sp-3) var(--sp-4);
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	transition: all var(--duration) var(--ease);
+	border-bottom: 1px solid var(--glass-border)}
+
+.roleplay-branch-item:last-child {
+	border-bottom: none}
+
+.roleplay-branch-item:hover {
+	background: var(--bg-hover)}
+
+.roleplay-branch-item.active {
+	background: var(--accent-dim)}
+
+.roleplay-branch-item-index {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	border-radius: var(--r-full);
+	background: var(--glass-bg);
+	border: 1px solid var(--glass-border);
 	font-size: var(--fs-xs);
 	color: var(--text-muted);
-	opacity: 0.8;
-	border-top: 1px dashed var(--border);
-	padding-top: 4px}
+	flex-shrink: 0}
+
+.roleplay-branch-item.active .roleplay-branch-item-index {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: white}
+
+.roleplay-branch-item-content {
+	flex: 1;
+	min-width: 0;
+	font-size: var(--fs-sm);
+	color: var(--text-primary);
+	text-align: left;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis}
+
+.roleplay-branch-item-meta {
+	font-size: var(--fs-xs);
+	color: var(--text-muted);
+	flex-shrink: 0}
+
+.roleplay-branch-item-current {
+	padding: 1px 6px;
+	font-size: var(--fs-xs);
+	border-radius: var(--r-full);
+	background: var(--accent);
+	color: white;
+	flex-shrink: 0}
 
 /* 编辑态气泡 */
 .roleplay-msg-bubble.roleplay-msg-editing {
@@ -12328,12 +12569,14 @@ color: var(--text-primary)}
 	border-top: 1px solid var(--glass-border);
 	background: var(--glass-bg);
 	display: flex;
-	flex-direction: column;
+	flex-direction: row;
+	align-items: flex-end;
 	gap: 8px;
 	flex-shrink: 0}
 
 .roleplay-input {
-	width: 100%;
+	flex: 1;
+	min-width: 0;
 	padding: 10px 12px;
 	border: 2px solid var(--border);
 	border-radius: var(--r-md);
@@ -12357,7 +12600,15 @@ color: var(--text-primary)}
 
 .roleplay-input-actions {
 	display: flex;
-	justify-content: flex-end}
+	align-items: center;
+	flex-shrink: 0}
+
+.roleplay-input-actions .btn {
+	flex-direction: row;
+	gap: 4px;
+	padding: 8px 14px;
+	font-size: var(--fs-sm);
+	min-width: auto}
 
 /* 移动端适配 */
 @media (max-width: 480px) {
@@ -12966,6 +13217,50 @@ color: var(--text-primary)}
 .global-search-empty svg,
 .relationship-graph-empty svg {
 	margin-bottom: var(--sp-3)}
+
+/* ── 错误边界页面 ── */
+.error-boundary {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	height: 100vh;
+	padding: var(--sp-6);
+	text-align: center;
+	background: var(--bg-base)}
+
+.error-boundary-icon {
+	width: 64px;
+	height: 64px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	background: var(--red-dim);
+	color: var(--red);
+	margin-bottom: var(--sp-6)}
+
+.error-boundary-title {
+	margin: 0 0 var(--sp-2) 0;
+	font-size: var(--fs-xl);
+	font-weight: 600;
+	color: var(--text-primary)}
+
+.error-boundary-message {
+	margin: 0 0 var(--sp-8) 0;
+	font-size: var(--fs-sm);
+	color: var(--text-muted);
+	max-width: 480px;
+	line-height: 1.7;
+	word-break: break-word}
+
+.error-boundary-actions {
+	display: flex;
+	gap: var(--sp-4)}
+
+.error-boundary-actions .btn {
+	padding: var(--sp-2) var(--sp-5);
+	font-size: var(--fs-sm)}
 
 /* ── 复选框：全应用统一样式 ──
    批量校对队列里此前没有任何规则命中，深色主题下直接露出白色原生方块。 */

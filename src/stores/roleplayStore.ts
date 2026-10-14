@@ -29,6 +29,13 @@ interface RoleplayState {
 	/** 截断指定消息之后的所有消息（用于编辑后重新生成，保留指定消息及其之前的内容）；
 	 *  若 saveRemoved 为 true，被删除的旧回复链会保存到该消息的 originalReplies（供查看修改前的完整对话） */
 	truncateMessagesAfter: (novelId: string, sessionId: string, messageId: string, saveRemoved?: boolean) => void;
+	/** 编辑用户消息并创建新分支：当前分支状态入档，消息内容替换为新内容并截断后续，激活新分支 */
+	editMessageBranch: (novelId: string, sessionId: string, messageId: string, newContent: string) => void;
+	/** 重新生成当前分支：当前分支回复链入档，截断后续消息，激活新分支（内容不变）。
+	 *  newBranch 为 false 时原地重新生成：不产生新分支，仅截断后续消息（用于编辑后内容未变的场景） */
+	regenerateBranch: (novelId: string, sessionId: string, messageId: string, newBranch?: boolean) => void;
+	/** 切换用户消息的激活分支（连同后续回复链一起切换） */
+	switchBranch: (novelId: string, sessionId: string, messageId: string, branchIndex: number) => void;
 	clearMessages: (novelId: string, sessionId: string) => void;
 	setActiveSession: (novelId: string, sessionId: string | null) => void;
 	updateSession: (
@@ -138,6 +145,120 @@ export const useRoleplayStore = create<RoleplayState>()(
 								);
 							}
 							return { ...s, messages, updatedAt: Date.now() };
+						}),
+					},
+				})),
+
+			/* 将消息的当前分支状态（内容 + 后续回复链）写入 branches[activeBranch] 的内部辅助 */
+			// 说明：messages 列表中该消息之后的所有消息即当前分支的回复链
+			editMessageBranch: (novelId, sessionId, messageId, newContent) =>
+				set((state) => ({
+					sessions: {
+						...state.sessions,
+						[novelId]: (state.sessions[novelId] ?? []).map((s) => {
+							if (s.id !== sessionId) return s;
+							const idx = s.messages.findIndex((m) => m.id === messageId);
+							if (idx < 0) return s;
+							const msg = s.messages[idx];
+							const tail = s.messages.slice(idx + 1);
+							// 既有分支归档当前激活分支，否则先建档原分支
+							const branches = [...(msg.branches ?? [])];
+							const activeIdx = msg.activeBranch ?? 0;
+							const currentSnapshot = {
+								content: msg.content,
+								replies: tail,
+								createdAt: branches[activeIdx]?.createdAt ?? msg.timestamp,
+							};
+							if (branches.length === 0) {
+								branches.push(currentSnapshot);
+							} else {
+								branches[activeIdx] = currentSnapshot;
+							}
+							// 新分支：新内容 + 空回复链（等待 AI 重新生成）
+							branches.push({ content: newContent, replies: [], createdAt: Date.now() });
+							const newMsg = {
+								...msg,
+								content: newContent,
+								branches,
+								activeBranch: branches.length - 1,
+							};
+							return {
+								...s,
+								messages: [...s.messages.slice(0, idx), newMsg],
+								updatedAt: Date.now(),
+							};
+						}),
+					},
+				})),
+
+			regenerateBranch: (novelId, sessionId, messageId, newBranch = true) =>
+				set((state) => ({
+					sessions: {
+						...state.sessions,
+						[novelId]: (state.sessions[novelId] ?? []).map((s) => {
+							if (s.id !== sessionId) return s;
+							const idx = s.messages.findIndex((m) => m.id === messageId);
+							if (idx < 0) return s;
+							// 原地重新生成：不产生新分支，仅截断后续回复链
+							if (!newBranch) {
+								return {
+									...s,
+									messages: s.messages.slice(0, idx + 1),
+									updatedAt: Date.now(),
+								};
+							}
+							const msg = s.messages[idx];
+							const tail = s.messages.slice(idx + 1);
+							const branches = [...(msg.branches ?? [])];
+							const activeIdx = msg.activeBranch ?? 0;
+							const currentSnapshot = {
+								content: msg.content,
+								replies: tail,
+								createdAt: branches[activeIdx]?.createdAt ?? msg.timestamp,
+							};
+							if (branches.length === 0) {
+								branches.push(currentSnapshot);
+							} else {
+								branches[activeIdx] = currentSnapshot;
+							}
+							// 新分支：内容不变 + 空回复链
+							branches.push({ content: msg.content, replies: [], createdAt: Date.now() });
+							const newMsg = { ...msg, branches, activeBranch: branches.length - 1 };
+							return {
+								...s,
+								messages: [...s.messages.slice(0, idx), newMsg],
+								updatedAt: Date.now(),
+							};
+						}),
+					},
+				})),
+
+			switchBranch: (novelId, sessionId, messageId, branchIndex) =>
+				set((state) => ({
+					sessions: {
+						...state.sessions,
+						[novelId]: (state.sessions[novelId] ?? []).map((s) => {
+							if (s.id !== sessionId) return s;
+							const idx = s.messages.findIndex((m) => m.id === messageId);
+							if (idx < 0) return s;
+							const msg = s.messages[idx];
+							const branches = [...(msg.branches ?? [])];
+							if (branchIndex < 0 || branchIndex >= branches.length) return s;
+							const activeIdx = msg.activeBranch ?? 0;
+							if (branchIndex === activeIdx) return s;
+							// 先把当前激活分支的最新状态（含 AI 已生成的回复）归档
+							branches[activeIdx] = {
+								content: msg.content,
+								replies: s.messages.slice(idx + 1),
+								createdAt: branches[activeIdx]?.createdAt ?? msg.timestamp,
+							};
+							const target = branches[branchIndex];
+							const newMsg = { ...msg, content: target.content, branches, activeBranch: branchIndex };
+							return {
+								...s,
+								messages: [...s.messages.slice(0, idx), newMsg, ...target.replies],
+								updatedAt: Date.now(),
+							};
 						}),
 					},
 				})),

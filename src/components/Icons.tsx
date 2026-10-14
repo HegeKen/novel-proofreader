@@ -82,6 +82,8 @@ import {
 	Send,
 	Wallet,
 	ArrowDownUp,
+	GitFork,
+	MoreHorizontal,
 } from "lucide-react";
 
 export const Icons = {
@@ -175,4 +177,6 @@ export const Icons = {
 	send: Send,
 	wallet: Wallet,
 	arrowDownUp: ArrowDownUp,
+	gitFork: GitFork,
+	moreHorizontal: MoreHorizontal,
 };

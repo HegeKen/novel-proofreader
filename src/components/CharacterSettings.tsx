@@ -462,26 +462,18 @@ interface WorldbuildingSectionProps {
 	novelId: string;
 	// 外部状态
 	editMode: boolean;
-	wbIsAnalyzing: boolean;
 	analyzeError: string | null;
-	elapsed: number;
 	form: NovelWorldbuilding;
 	// 外部处理函数
-	onEditModeChange: (editMode: boolean) => void;
 	onFormChange: (form: NovelWorldbuilding) => void;
-	onAnalyze: () => void;
 }
 
 function WorldbuildingSection({
 	novelId,
 	editMode,
-	wbIsAnalyzing,
 	analyzeError,
-	elapsed,
 	form,
-	onEditModeChange,
 	onFormChange,
-	onAnalyze,
 }: WorldbuildingSectionProps) {
 	const getWorldbuilding = useCharacterStore((s) => s.getWorldbuilding);
 	const wb = useMemo(() => getWorldbuilding(novelId), [getWorldbuilding, novelId]);
@@ -501,22 +493,10 @@ function WorldbuildingSection({
 
 	if (!hasContent && !editMode) {
 		return (
-			<div className="text-center py-12">
-				<div className="w-16 h-16 mx-auto mb-4 bg-neutral-700 rounded-full flex items-center justify-center">
-					<Icons.globe size={32} className="text-neutral-500" />
-				</div>
-				<p className="text-neutral-400 text-lg mb-2">暂无世界观设定</p>
-				<p className="text-neutral-500 text-sm mb-4">使用 AI 分析角色时将自动生成世界观，或单独分析</p>
-				<div className="flex flex-col items-center gap-3">
-					<button className="btn" onClick={onAnalyze} disabled={wbIsAnalyzing}>
-						{wbIsAnalyzing ? <Icons.loader2 size={14} className="animate-spin" /> : <Icons.sparkle size={14} />}
-						{wbIsAnalyzing ? `AI 分析中... ${formatElapsedTime(elapsed)}` : "AI 分析世界观"}
-					</button>
-					<button className="btn" onClick={() => onEditModeChange(true)}>
-						<Icons.plus size={14} />
-						手动添加
-					</button>
-				</div>
+			<div className="event-list-empty">
+				<Icons.globe size={24} />
+				<p>暂无世界观设定</p>
+				<p>使用下方「AI 分析」自动生成世界观，或点击「编辑」手动填写</p>
 				{analyzeError && (
 					<p className="text-red-400 text-sm mt-4">{analyzeError}</p>
 				)}
@@ -2547,24 +2527,18 @@ ${JSON.stringify(existingInfo, null, 2)}
 					<WorldbuildingSection
 						novelId={novelId}
 						editMode={wbEditMode}
-						wbIsAnalyzing={wbIsAnalyzing}
 						analyzeError={wbAnalyzeError}
-						elapsed={wbAnalyzeElapsed}
 						form={wbForm}
-						onEditModeChange={setWbEditMode}
 						onFormChange={setWbForm}
-						onAnalyze={handleWbAnalyze}
 					/>
 				)}
 
 				{/* 空状态 */}
 				{characters.length === 0 && !showAddForm && (
-						<div className="text-center py-12">
-							<div className="w-16 h-16 mx-auto mb-4 bg-neutral-700 rounded-full flex items-center justify-center">
-								<Icons.user size={32} className="text-neutral-500" />
-							</div>
-							<p className="text-neutral-400 text-lg mb-2">还没有添加角色</p>
-							<p className="text-neutral-500 text-sm">点击上方按钮添加第一个角色</p>
+						<div className="event-list-empty">
+							<Icons.user size={24} />
+							<p>还没有添加角色</p>
+							<p>点击下方「添加」创建第一个角色</p>
 						</div>
 					)}
 				</div>
@@ -2573,7 +2547,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 				{activeTab === "list" && !showAddForm && (
 					<div className="character-actions-fab-wrapper">
 						<button
-							className="action-btn add-character"
+							className="action-btn character-action"
 							onClick={() => setShowAddForm(true)}
 							title="添加角色"
 						>
@@ -3082,6 +3056,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 									className="btn"
 									onClick={() => setShowAnalyzeModal(false)}
 								>
+									<Icons.close size={16} />
 									关闭
 								</button>
 								<button

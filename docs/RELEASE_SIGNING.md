@@ -169,8 +169,14 @@ composite action 会在 `init` 之后重新贴上补丁。
 - `scripts/build-release.mjs`（归一化 APK 之前）
 
 另外，AGP 的输出路径会随版本变化（`apk/<abi>/release/` 与 `apk/release/` 都存在过），
-所以产物名整理不再写死层级，而是递归查找 `release` 目录；并用 AGP 的 ABI 目录名做后缀，
-避免「按 ABI 拆分」与 `universal` 两种 APK 被重命名成同一个名字而互相覆盖。
+所以产物名整理不再写死层级，而是递归查找 `release` 目录；后缀以**包内实际打包的 ABI** 为准
+（`lib/<abi>/`；AAB 为 `base/lib/<abi>/`），避免「按 ABI 拆分」与 `universal` 两种 APK 被
+重命名成同一个名字而互相覆盖。
+
+之所以不只看路径：`pnpm tauri android build --target aarch64` 只决定编译哪个架构，AGP 仍会
+装配 `universal` 风味，产物路径写着 `apk/universal/release/app-universal-release.apk`，此时
+aarch64 与 armv7 两个构建会产出**同名但内容不同**的包。CI 与 `build:release` 因此都显式传
+`--split-per-abi`，同时产物名也按包内 ABI 兜底（`-arm64` / `-armv7` / 多架构时 `-universal`）。
 
 ---
 

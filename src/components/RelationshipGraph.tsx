@@ -1242,11 +1242,9 @@ ${relInfo.length > 0 ? JSON.stringify(relInfo, null, 2) : "暂无关系"}
 	if (characters.length === 0) {
 		return (
 			<div className="relationship-graph-empty">
-				<div className="empty-icon">
-					<Icons.user size={48} />
-				</div>
-				<p className="empty-title">暂无角色</p>
-				<p className="empty-desc">请先添加角色，再建立人物关系</p>
+				<Icons.user size={24} />
+				<p>暂无角色</p>
+				<p>请先添加角色，再建立人物关系</p>
 			</div>
 		);
 	}

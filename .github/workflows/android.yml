@@ -106,7 +106,8 @@ jobs:
           set -euo pipefail
           cd src-tauri
           # 用 lockfile 固定的 tauri CLI，避免 CLI 版本漂移影响打包结果
-          pnpm tauri android build --target ${{ matrix.android_arch }}
+          # --split-per-abi：避免只传 --target 时两个架构都产出同名的 -universal 包
+          pnpm tauri android build --target ${{ matrix.android_arch }} --split-per-abi
         env:
           TAURI_ANDROID_MIN_SDK_VERSION: 24
 

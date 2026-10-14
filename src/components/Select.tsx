@@ -64,7 +64,7 @@ export function Select({
   }, [isOpen]);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: PointerEvent) => {
       const target = event.target as Node;
       if (
         containerRef.current &&
@@ -75,8 +75,8 @@ export function Select({
         setIsOpen(false);
       }
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("pointerdown", handleClickOutside);
+    return () => document.removeEventListener("pointerdown", handleClickOutside);
   }, []);
 
   useEffect(() => {
@@ -94,9 +94,9 @@ export function Select({
     }
   }, [isOpen, updateDropdownPosition]);
 
-  const handleOpen = useCallback(() => {
+  const handleToggle = useCallback(() => {
     if (!disabled) {
-      setIsOpen(true);
+      setIsOpen((prev) => !prev);
     }
   }, [disabled]);
 
@@ -106,7 +106,7 @@ export function Select({
         ref={triggerRef}
         type="button"
         className="custom-select-trigger"
-        onClick={handleOpen}
+        onClick={handleToggle}
         disabled={disabled}
       >
         <span>{selectedOption?.label || placeholder}</span>

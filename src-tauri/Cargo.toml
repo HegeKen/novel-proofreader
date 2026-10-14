@@ -1,6 +1,6 @@
 [package]
 name = "proofreader"
-version = "0.16.0"
+version = "0.17.0"
 edition = "2021"
 
 [lib]
@@ -33,3 +33,16 @@ llama-cpp-2 = { version = "0.1", features = ["metal"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
 # 系统信息（内存/磁盘检测）
 libc = "0.2"
+
+# 发布产物体积优化：默认 release 配置（opt-level=3 / lto=false / codegen-units=16 /
+# 保留符号）会让 Android 各 ABI 的 .so 达到 ~14MB、桌面可执行文件 ~14MB。
+# 体积优先配置可显著减小安装包，代价是发布构建耗时增加。
+[profile.release]
+# 以体积优先（"s"），而非默认的极致速度（3）
+opt-level = "s"
+# 跨 crate 内联，消除大量重复泛型实例化
+lto = "thin"
+# 单个 codegen unit 让 LTO 覆盖全量代码
+codegen-units = 1
+# 剥离符号表（Android 侧 AGP 也会剥离，此处主要惠及桌面产物）
+strip = true

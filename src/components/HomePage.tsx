@@ -346,7 +346,7 @@ export function HomePage({ onStart }: HomePageProps) {
 							<Icons.book size={20} />
 							<span>立即体验网页版 V{WEB_VERSION}</span>
 						</button>
-						<button className="btn btn-outline" onClick={() => setShowDiffModal(true)}>
+						<button className="btn" onClick={() => setShowDiffModal(true)}>
 							<Icons.compare size={20} />
 							<span>文本对比</span>
 						</button>
@@ -513,7 +513,7 @@ export function HomePage({ onStart }: HomePageProps) {
 				) : (
 					<div className="config-section">
 						<EmptyState
-							icon={<Icons.download size={48} className="empty-icon" />}
+							icon={<Icons.download size={24} />}
 							message="暂无可用下载"
 						/>
 					</div>

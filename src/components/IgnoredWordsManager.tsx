@@ -259,7 +259,7 @@ export function IgnoredWordsManager({ onClose }: IgnoredWordsManagerProps) {
 					) : (
 						<div className="config-section">
 							<EmptyState
-								icon={<Icons.search size={48} className="empty-icon" />}
+								icon={<Icons.search size={24} />}
 								message="词典为空"
 								hint="添加忽略词让 AI 校对跳过它们，或添加替换词一键修正全文"
 							/>

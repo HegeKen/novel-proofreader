@@ -29,6 +29,9 @@ import { Icons } from "./components/Icons";
 import { logger } from "./utils/logger";
 import { audioCache } from "./utils/ttsService";
 import { useConfigStore } from "./stores/configStore";
+import { useCharacterStore } from "./stores/characterStore";
+import type { CharacterInfo, NovelEvent } from "./types";
+import { getRoleName, RELATION_TYPE_OPTIONS } from "./utils/characterRoles";
 import { useMobile } from "./hooks/useMobile";
 import { ConfirmModal } from "./components/config/ConfirmModal";
 import { FirstRunGuideModal } from "./components/FirstRunGuideModal";
@@ -85,6 +88,8 @@ export default function App() {
 	const hideToast = useUIStore((s) => s.hideToast);
 	const [configOpen, setConfigOpen] = useState(false);
 	const [showCJKVariantModal, setShowCJKVariantModal] = useState(false);
+	// 移动端 header「更多」菜单开合状态
+	const [showMobileHeaderMenu, setShowMobileHeaderMenu] = useState(false);
 	const [showLocalGuide, setShowLocalGuide] = useState(false);
 	const localGuideShown = useLocalModelStore((s) => s.localGuideShown);
 	const markLocalGuideShown = useLocalModelStore((s) => s.markLocalGuideShown);
@@ -401,7 +406,47 @@ export default function App() {
 			content: ch.content,
 		}));
 		const epubChapters = chapters.length > 0 ? chapters : [{ title: novel.name, content: novel.fullText }];
-		const data = buildEpub(novel.name, epubChapters);
+		// 构建附录：角色信息 + 大事记
+		const charState = useCharacterStore.getState();
+		const rawCharacters = charState.novelCharacters[novel.id] ?? [];
+		const rawEvents = charState.novelEvents[novel.id] ?? [];
+		const rawRelationships = charState.characterRelationships[novel.id] ?? [];
+		const appendix = {
+			characters: rawCharacters.map((c: CharacterInfo) => ({
+				name: c.name,
+				gender: c.gender === "male" ? "男" : c.gender === "female" ? "女" : "其他",
+				role: c.role ? getRoleName(c.role) : undefined,
+				age: c.age,
+				identity: c.identity,
+				personality: c.personality,
+				appearance: c.appearance,
+				background: c.background,
+				notes: c.notes,
+			})),
+			events: rawEvents.map((e: NovelEvent) => ({
+				title: e.title,
+				description: e.description,
+				timeInfo: e.timeInfo,
+				chapter: e.chapter,
+				volume: e.volume,
+			})),
+			relationships: rawRelationships.map((r) => {
+				const source = rawCharacters.find((c) => c.id === r.sourceId);
+				const target = rawCharacters.find((c) => c.id === r.targetId);
+				const relationLabels = (r.relationType ?? []).map(
+					(type) => RELATION_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type,
+				);
+				return {
+					sourceName: source?.name ?? "未知角色",
+					targetName: target?.name ?? "未知角色",
+					relationTypes: r.customRelationType ? [...relationLabels, r.customRelationType] : relationLabels,
+					sourceNicknames: r.sourceNickname,
+					targetNicknames: r.targetNickname,
+				};
+			}),
+		};
+
+		const data = buildEpub(novel.name, epubChapters, appendix);
 		const result = await exportBinaryToFile(data, `${novel.name}.epub`, "EPUB Files", "epub");
 		if (result === "success") {
 			useUIStore.getState().showToast("EPUB 已导出", "success");
@@ -586,42 +631,72 @@ export default function App() {
 						)}
 				</div>
 				<div className="header-right">
-					{isMobile && currentNovelId && (
-						<Button
-							onClick={handleExportNovel}
-							title="导出整本小说"
-							aria-label="导出整本小说"
-							icon={<Icons.download size={18} />}
-						/>
+					{isMobile && currentNovelId ? (
+						<>
+							<GlobalSearch />
+							<Button
+								onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+								title={theme === "dark" ? "切换到亮色模式" : "切换到深色模式"}
+								aria-label={theme === "dark" ? "切换到亮色模式" : "切换到深色模式"}
+								icon={theme === "dark" ? <Icons.sun size={18} /> : <Icons.moon size={18} />}
+							>
+								{theme === "dark" ? "切换到亮色" : "切换到深色"}
+							</Button>
+							<Button onClick={() => setConfigOpen(true)} aria-label="设置" icon={<Icons.bolt size={18} />}>
+								设置
+							</Button>
+							{/* 更多菜单：收纳低频操作 */}
+							<div className="header-more-wrapper">
+								<Button
+									onClick={() => setShowMobileHeaderMenu((v) => !v)}
+									aria-label="更多操作"
+									icon={<Icons.moreHorizontal size={18} />}
+								/>
+								{showMobileHeaderMenu && (
+									<>
+										<div className="header-menu-backdrop" onClick={() => setShowMobileHeaderMenu(false)} />
+										<div className="header-more-menu">
+											<button className="header-more-item" onClick={() => { handleExportNovel(); setShowMobileHeaderMenu(false); }}>
+												<Icons.download size={16} />
+												<span>导出整本小说</span>
+											</button>
+											<button className="header-more-item" onClick={() => { handleExportEpub(); setShowMobileHeaderMenu(false); }}>
+												<Icons.book size={16} />
+												<span>导出 EPUB</span>
+											</button>
+											<button className="header-more-item" onClick={() => { handleSaveToOriginal(); setShowMobileHeaderMenu(false); }}>
+												<Icons.fileOutput size={16} />
+												<span>保存到原文件</span>
+											</button>
+											<button className="header-more-item" onClick={() => { handleSaveCache(); setShowMobileHeaderMenu(false); }}>
+												<Icons.cache size={16} />
+												<span>保存缓存</span>
+											</button>
+											<button className="header-more-item" onClick={() => { setShowRoleplay(true); setShowMobileHeaderMenu(false); }}>
+												<Icons.messageSquare size={16} />
+												<span>角色扮演</span>
+											</button>
+										</div>
+									</>
+								)}
+							</div>
+						</>
+					) : (
+						<>
+							<Button
+								onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+								title={theme === "dark" ? "切换到亮色模式" : "切换到深色模式"}
+								aria-label={theme === "dark" ? "切换到亮色模式" : "切换到深色模式"}
+								icon={theme === "dark" ? <Icons.sun size={18} /> : <Icons.moon size={18} />}
+							>
+								{theme === "dark" ? "切换到亮色" : "切换到深色"}
+							</Button>
+							<GlobalSearch />
+							<Button onClick={() => setConfigOpen(true)} aria-label="设置" icon={<Icons.bolt size={18} />}>
+								设置
+							</Button>
+						</>
 					)}
-					{isMobile && currentNovelId && (
-						<Button
-							onClick={handleSaveCache}
-							title="保存缓存"
-							aria-label="保存缓存"
-							icon={<Icons.cache size={18} />}
-						/>
-					)}
-					{isMobile && currentNovelId && (
-						<Button
-							onClick={handleSaveToOriginal}
-							title="保存到原文件"
-							aria-label="保存到原文件"
-							icon={<Icons.fileOutput size={18} />}
-						/>
-					)}
-					<Button
-						onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-						title={theme === "dark" ? "切换到亮色模式" : "切换到深色模式"}
-						aria-label={theme === "dark" ? "切换到亮色模式" : "切换到深色模式"}
-						icon={theme === "dark" ? <Icons.sun size={18} /> : <Icons.moon size={18} />}
-					>
-						{theme === "dark" ? "切换到亮色" : "切换到深色"}
-					</Button>
-					<GlobalSearch />
-					<Button onClick={() => setConfigOpen(true)} aria-label="设置" icon={<Icons.bolt size={18} />}>
-						设置
-					</Button>
 				</div>
 			</header>
 

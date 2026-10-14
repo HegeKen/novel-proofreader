@@ -49,3 +49,4 @@ src-tauri/target/x86_64-linux-android
 src-tauri/gen/android/buildSrc/.kotlin/sessions/kotlin-compiler-7218005615267854515.salive
 .pnpm-store/*
 release-manifest-darwin.json
+graphify-out

@@ -6,8 +6,8 @@ import { useNovelStore } from "../stores/novelStore";
 import { useUIStore } from "../stores/uiStore";
 import { Icons } from "./Icons";
 import { Modal } from "./Modal";
-import { scanCJKVariants, normalizeCJKVariants, type CJKVariantEntry } from "../utils/normalizeCJK";
-import { scanTraditionalChars, convertTraditionalToSimplified, type TraditionalEntry } from "../utils/traditionalToSimplified";
+import { scanCJKVariants, type CJKVariantEntry } from "../utils/normalizeCJK";
+import { scanTraditionalChars, type TraditionalEntry } from "../utils/traditionalToSimplified";
 import { splitChapters } from "../utils/chapterSplit";
 import { logger } from "../utils/logger";
 
@@ -27,12 +27,20 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 	const [replacing, setReplacing] = useState(false);
 	const [variantEntries, setVariantEntries] = useState<CJKVariantEntry[]>([]);
 	const [tradEntries, setTradEntries] = useState<TraditionalEntry[]>([]);
+	/** 勾选要替换的异常字（key 为变体/繁体字符） */
+	const [selected, setSelected] = useState<Set<string>>(new Set());
 
 	const currentNovel = useMemo(() => novels.find(n => n.id === currentNovelId), [novels, currentNovelId]);
 
 	const isVariantTab = tab === "variant";
 	const entries = isVariantTab ? variantEntries : tradEntries;
 	const totalCount = useMemo(() => entries.reduce((sum, e) => sum + e.count, 0), [entries]);
+	/** 勾选项的总出现次数 */
+	const selectedTotal = useMemo(
+		() => entries.filter((e) => selected.has(e.variant)).reduce((sum, e) => sum + e.count, 0),
+		[entries, selected],
+	);
+	const allSelected = entries.length > 0 && selected.size === entries.length;
 	const blockLabels: Record<string, string> = {
 		"kangxi": "康熙部首",
 		"cjk-supplement": "CJK 部首补充",
@@ -45,17 +53,34 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 		setTab(next);
 		setScanning(false);
 		setReplacing(false);
+		setSelected(new Set());
 	}, [tab]);
+
+	/** 勾选 / 取消勾选单个异常字 */
+	const toggleEntry = useCallback((variant: string) => {
+		setSelected((prev) => {
+			const next = new Set(prev);
+			if (next.has(variant)) next.delete(variant); else next.add(variant);
+			return next;
+		});
+	}, []);
+
+	/** 全选 / 全不选 */
+	const toggleAll = useCallback(() => {
+		setSelected((prev) => (prev.size === entries.length ? new Set() : new Set(entries.map((e) => e.variant))));
+	}, [entries]);
 
 	const handleScan = useCallback(() => {
 		if (!currentNovel) return;
 		setScanning(true);
+		setSelected(new Set());
 		if (isVariantTab) setVariantEntries([]); else setTradEntries([]);
 		setTimeout(() => {
 			// 从 original fullText 扫描（章节内容已在加载时被标准化，原始文本保留在 novel.fullText 中）
 			if (isVariantTab) {
 				const result = scanCJKVariants(currentNovel.fullText);
 				setVariantEntries(result);
+				setSelected(new Set(result.map((e) => e.variant)));
 				setScanning(false);
 				if (result.length === 0) {
 					useUIStore.getState().showToast("未发现变体字", "success");
@@ -63,6 +88,7 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 			} else {
 				const result = scanTraditionalChars(currentNovel.fullText);
 				setTradEntries(result);
+				setSelected(new Set(result.map((e) => e.variant)));
 				setScanning(false);
 				if (result.length === 0) {
 					useUIStore.getState().showToast("未发现繁体字", "success");
@@ -101,13 +127,17 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 		}, 50);
 	}, [currentNovel, setChapters, totalCount, isVariantTab, onClose]);
 
-	const handleReplaceVariants = useCallback(() => {
-		handleApplyTransform(normalizeCJKVariants, '[CJKVariantsModal]', `已替换 ${totalCount} 处变体字`);
-	}, [handleApplyTransform, totalCount]);
-
-	const handleConvertTraditional = useCallback(() => {
-		handleApplyTransform(convertTraditionalToSimplified, '[TraditionalConvert]', `已转换 ${totalCount} 处繁体字`);
-	}, [handleApplyTransform, totalCount]);
+	const handleReplaceSelected = useCallback(() => {
+		// 仅替换勾选的异常字：构建「异常字 → 目标字」映射，逐字替换
+		const replaceMap = new Map<string, string>();
+		for (const e of entries) {
+			if (selected.has(e.variant)) replaceMap.set(e.variant, e.standard);
+		}
+		const transform = (text: string) =>
+			Array.from(text, (ch) => replaceMap.get(ch) ?? ch).join("");
+		const label = isVariantTab ? "变体字" : "繁体字";
+		handleApplyTransform(transform, isVariantTab ? '[CJKVariantsModal]' : '[TraditionalConvert]', `已替换 ${selectedTotal} 处${label}`);
+	}, [entries, selected, isVariantTab, selectedTotal, handleApplyTransform]);
 
 	if (!open) return null;
 
@@ -118,6 +148,7 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 			title="变体字 & 繁体字检查"
 			icon={<Icons.search size={16} />}
 			className="cjk-variants-modal"
+			bodyClassName="config-body-flush"
 		>
 			<div className="cjk-variants-tabs">
 				<button
@@ -138,21 +169,13 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 			<div className="cjk-variants-body">
 					{entries.length === 0 && !scanning && (
 						<div className="cjk-variants-empty">
-							<Icons.search size={48} className="empty-icon" />
+							<Icons.search size={24} />
 							{isVariantTab ? (
-								<p>点击"开始扫描"检查整本小说中的康熙变体字及半角字母/数字/符号</p>
+								<p>点击下方"开始扫描"检查整本小说中的康熙变体字及半角字母/数字/符号</p>
 							) : (
-								<p>点击"开始扫描"检查整本小说中的繁体字，可一键转换为简体</p>
+								<p>点击下方"开始扫描"检查整本小说中的繁体字，可勾选后转换为简体</p>
 							)}
 							{!currentNovel && <p className="text-muted">请先导入小说</p>}
-							<button
-								className="btn"
-								onClick={handleScan}
-								disabled={!currentNovel}
-							>
-								<Icons.search size={16} />
-								开始扫描
-							</button>
 						</div>
 					)}
 
@@ -176,6 +199,14 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 							</div>
 							<div className="cjk-variants-table">
 								<div className="cjk-variants-table-header">
+									<label className="col-check">
+										<input
+											type="checkbox"
+											checked={allSelected}
+											onChange={toggleAll}
+											aria-label="全选"
+										/>
+									</label>
 									<span className="col-variant">{isVariantTab ? "变体字" : "繁体字"}</span>
 									<span className="col-codepoint">码点</span>
 									<span className="col-standard">{isVariantTab ? "标准字" : "简体字"}</span>
@@ -184,6 +215,13 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 								</div>
 								{entries.map((entry, idx) => (
 									<div key={idx} className="cjk-variants-table-row">
+										<label className="col-check">
+											<input
+												type="checkbox"
+												checked={selected.has(entry.variant)}
+												onChange={() => toggleEntry(entry.variant)}
+											/>
+										</label>
 										<span className="col-variant variant-char">{entry.variant}</span>
 										<span className="col-codepoint code">{entry.codePoint}</span>
 										<span className="col-standard standard-char">{entry.standard}</span>
@@ -200,27 +238,30 @@ export function CJKVariantsModal({ open, onClose }: Props) {
 					)}
 				</div>
 
-				{entries.length > 0 && !scanning && (
-					<div className="config-footer">
-						<button className="btn" onClick={handleScan} disabled={scanning}>
-							<Icons.refreshCw size={16} />
-							重新扫描
-						</button>
-						<button
-							className="btn"
-							onClick={isVariantTab ? handleReplaceVariants : handleConvertTraditional}
-							disabled={replacing}
-						>
-							{replacing ? (
-								<><Icons.loader2 size={16} className="spin" /> 处理中...</>
-							) : isVariantTab ? (
-								<><Icons.checkCircle size={16} /> 一键替换全部 ({totalCount} 处)</>
+				<div className="config-footer">
+						<button className="btn" onClick={handleScan} disabled={!currentNovel || scanning || replacing}>
+							{scanning ? (
+								<><Icons.loader2 size={16} className="spin" /> 扫描中...</>
+							) : entries.length > 0 ? (
+								<><Icons.refreshCw size={16} /> 重新扫描</>
 							) : (
-								<><Icons.checkCircle size={16} /> 一键转为简体 ({totalCount} 处)</>
+								<><Icons.search size={16} /> 开始扫描</>
 							)}
 						</button>
+						{entries.length > 0 && !scanning && (
+							<button
+								className="btn"
+								onClick={handleReplaceSelected}
+								disabled={replacing || selected.size === 0}
+							>
+								{replacing ? (
+									<><Icons.loader2 size={16} className="spin" /> 处理中...</>
+								) : (
+									<><Icons.checkCircle size={16} /> {isVariantTab ? `替换选中 (${selectedTotal} 处)` : `转为简体 (${selectedTotal} 处)`}</>
+								)}
+							</button>
+						)}
 					</div>
-				)}
 		</Modal>
 	);
 }

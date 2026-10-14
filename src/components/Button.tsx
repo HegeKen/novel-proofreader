@@ -6,7 +6,7 @@ import { useMobile } from "../hooks/useMobile";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 	/** 按钮变体 */
-	variant?: "default" | "primary" | "secondary" | "outline" | "danger";
+	variant?: "default" | "secondary" | "outline" | "danger";
 	/** 按钮图标（移动端始终显示） */
 	icon?: ReactNode;
 	/** 是否强制隐藏文字（覆盖移动端默认行为） */
@@ -29,15 +29,13 @@ export function Button({
 	const shouldHideText = hideText ?? (isMobile && !showText);
 
 	const variantClass =
-		variant === "primary"
-			? "btn-primary"
-			: variant === "secondary"
-				? "btn-secondary"
-				: variant === "outline"
-					? "btn-outline"
-					: variant === "danger"
-						? "btn-danger"
-						: "";
+		variant === "secondary"
+			? "btn-secondary"
+			: variant === "outline"
+				? "btn-outline"
+				: variant === "danger"
+					? "btn-danger"
+					: "";
 
 	const mobileClass = isMobile ? "btn-mobile" : "";
 	const combinedClass = ["btn", variantClass, mobileClass, className]

@@ -134,7 +134,7 @@ function ConfigModalContent({
 	}, []);
 
 	return (
-		<Modal open onClose={onClose} title="APP 设置" icon={<Icons.settings size={16} />}>
+		<Modal open onClose={onClose} title="APP 设置" icon={<Icons.settings size={16} />} bodyClassName="config-body-flush">
 			<div className="config-tabs">
 					{([ ["ai", "AI 模型", Icons.brain], ["proofread", "校对引擎", Icons.bolt], ["tts", "语音朗读", Icons.volume], ["data", "数据管理", Icons.server], ["dev", "开发者工具", Icons.settings]] as const).map(([tab, label, Icon]) => (
 						<button key={tab} className={`tab-btn ${activeTab === tab ? "active" : ""}`} onClick={() => setActiveTab(tab)}>
@@ -252,7 +252,7 @@ function ConfigModalContent({
 					)}
 					{activeTab === "tts" && (
 						<>
-							<TTSConfigSection onOpenWordReplacement={() => setShowWordReplacementModal(true)} />
+							<TTSConfigSection />
 							<WordReplacementModal open={showWordReplacementModal} onClose={() => setShowWordReplacementModal(false)} />
 						</>
 					)}
@@ -278,7 +278,7 @@ function ConfigModalContent({
 									<div className="logs-container">
 										{logs.length === 0 ? (
 											<div className="empty-logs">
-												<Icons.punctuation size={48} className="empty-icon" />
+												<Icons.punctuation size={24} />
 												<p>暂无日志记录</p>
 											</div>
 										) : (
@@ -333,7 +333,7 @@ function ConfigModalContent({
 						<span>关闭</span>
 					</button>
 					{(activeTab === "ai" || activeTab === "proofread" || activeTab === "tts" || activeTab === "dev") && (
-						<button className="btn btn-primary" onClick={() => {
+						<button className="btn" onClick={() => {
 							onSave(config);
 							onSavePrompt(promptState);
 						}}>
@@ -345,6 +345,12 @@ function ConfigModalContent({
 						<button className="btn" onClick={() => setPromptState(PROMPT_DEFAULTS)}>
 							<Icons.reset size={18} />
 							<span>恢复默认 Prompt</span>
+						</button>
+					)}
+					{activeTab === "tts" && (
+						<button className="btn" onClick={() => setShowWordReplacementModal(true)}>
+							<Icons.edit size={18} />
+							<span>管理替换规则</span>
 						</button>
 					)}
 					{activeTab === "dev" && config.enableLogging && logs.length > 0 && (

@@ -196,7 +196,7 @@ export function GlobalSearch() {
 				<div className="global-search-results">
 					{searchResults.length === 0 ? (
 						<div className="global-search-empty">
-							<Icons.search size={48} />
+							<Icons.search size={24} />
 							<span>{searchQuery ? "未找到匹配结果" : "输入关键词开始搜索"}</span>
 						</div>
 					) : (

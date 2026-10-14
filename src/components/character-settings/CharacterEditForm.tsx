@@ -311,7 +311,7 @@ export function CharacterEditForm({
 				</div>
 				<div className="flex gap-2 pt-2">
 					<button
-						className="btn btn-primary"
+						className="btn"
 						onClick={onEnhanceCharacter}
 						disabled={isEnhancingCharacter || !editForm.name}
 					>

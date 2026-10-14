@@ -42,7 +42,7 @@ import {
 } from '../lib/manifest.mjs'
 import { normalizeZipTimestamps, findEocdOffset, listZipEntries, verifyJarSignature } from '../lib/apk.mjs'
 import { buildDname, detectKeystoreType, escapeRdnValue, randomPassword } from '../lib/platforms.mjs'
-import { resolveAbiSlug } from '../rename-android-artifacts.mjs'
+import { resolveAbiSlug, resolveArchFromPackage } from '../rename-android-artifacts.mjs'
 import { buildSecretEntries } from '../lib/secrets.mjs'
 
 // ---------------------------------------------------------------------------
@@ -563,6 +563,34 @@ describe('Android 产物路径与未签名守卫', () => {
 		).toBe('universal')
 		// 老版 AGP 没有 ABI 分层，此时没有 slug 可用，调用方会回落到 --arch
 		expect(resolveAbiSlug('/x/gen/android/app/build/outputs/apk/release/app-release.apk')).toBeNull()
+	})
+
+	it('以包内实际 ABI 决定产物后缀（避免不同架构产出同名文件）', () => {
+		const dir = tempDir()
+		// `--target aarch64` 时路径写着 universal，但包里只有 arm64 的 .so
+		const apk = path.join(dir, 'app-universal-release.apk')
+		fs.writeFileSync(apk, makeZip([{ name: 'lib/arm64-v8a/libproofreader_lib.so', data: 'x' }]))
+		expect(resolveArchFromPackage(apk)).toBe('arm64')
+
+		// AAB 的库位于 base/lib/<abi>/
+		const aab = path.join(dir, 'app-universal-release.aab')
+		fs.writeFileSync(aab, makeZip([{ name: 'base/lib/armeabi-v7a/libproofreader_lib.so', data: 'x' }]))
+		expect(resolveArchFromPackage(aab)).toBe('armv7')
+
+		const multi = path.join(dir, 'multi.apk')
+		fs.writeFileSync(
+			multi,
+			makeZip([
+				{ name: 'lib/arm64-v8a/libproofreader_lib.so', data: 'x' },
+				{ name: 'lib/armeabi-v7a/libproofreader_lib.so', data: 'x' },
+			]),
+		)
+		expect(resolveArchFromPackage(multi)).toBe('universal')
+
+		// 读不出 ABI 时返回 null，交由调用方回落到路径名 / --arch
+		const plain = path.join(dir, 'plain.apk')
+		fs.writeFileSync(plain, makeZip([{ name: 'AndroidManifest.xml', data: 'x' }]))
+		expect(resolveArchFromPackage(plain)).toBeNull()
 	})
 
 	it('识别 -unsigned 产物（签名补丁未生效的硬信号）', () => {

@@ -118,6 +118,8 @@ android {
             if (dshKeystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.findByName("release")
             }
+            // R8 资源压缩：剔除未被引用的 res 资源（依赖 isMinifyEnabled = true）
+            isShrinkResources = true
         }
     }
     // 依赖元数据块含构建期生成的哈希，是 APK/AAB 不可复现的主要来源之一

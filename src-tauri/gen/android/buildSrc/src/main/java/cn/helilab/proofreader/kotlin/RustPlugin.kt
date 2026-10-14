@@ -18,7 +18,11 @@ open class RustPlugin : Plugin<Project> {
         config = extensions.create("rust", Config::class.java)
 
         val defaultAbiList = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64");
-        val abiList = (findProperty("abiList") as? String)?.split(',') ?: defaultAbiList
+        // universal 风味默认只打包真机 ABI：x86/x86_64 仅供模拟器使用，
+        // 却会占用近一半 APK 体积（每个 .so 十余 MB）。
+        // 需要模拟器包时显式传 -PabiList=x86_64 或直接选用对应单架构风味。
+        val deviceAbiList = listOf("arm64-v8a", "armeabi-v7a");
+        val abiList = (findProperty("abiList") as? String)?.split(',') ?: deviceAbiList
 
         val defaultArchList = listOf("arm64", "arm", "x86", "x86_64");
         val archList = (findProperty("archList") as? String)?.split(',') ?: defaultArchList

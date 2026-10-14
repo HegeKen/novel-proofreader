@@ -13,7 +13,7 @@
  * 用法:
  *   pnpm run build:release                       # 当前平台桌面构建
  *   pnpm run build:release -- --target=aarch64-apple-darwin
- *   pnpm run build:release -- --android --android-arch=arm64
+ *   pnpm run build:release -- --android --android-arch=aarch64
  *   pnpm run build:release -- --skip-build       # 只对已有产物生成清单
  *   pnpm run build:release -- --compare-with=baseline.json
  */
@@ -50,7 +50,7 @@ function parseArgs(argv) {
 	const options = {
 		target: null,
 		android: false,
-		androidArch: "arm64",
+		androidArch: "aarch64",
 		skipBuild: false,
 		allowUnsigned: false,
 		out: null,
@@ -157,7 +157,9 @@ function runAndroidBuild({ config, options, env }) {
 	if (!properties) {
 		log.warn(`未找到 keystore 属性文件，Android release 产物将未签名`);
 	}
-	const args = ["android", "build", "--target", options.androidArch];
+	// --split-per-abi：只传 --target 时 AGP 仍装配 universal 风味，不同架构会产出
+	// 同名（内容不同）的 app-universal-release.apk；加该参数后落到 apk/<abi>/release/
+	const args = ["android", "build", "--target", options.androidArch, "--split-per-abi"];
 	run(tauriBin, args, { env });
 	void config;
 }
@@ -265,7 +267,7 @@ function main() {
 
   --target=<triple>        桌面目标三元组（如 aarch64-apple-darwin）
   --android                构建 Android
-  --android-arch=<arch>    arm64 | armv7 | x86_64 | universal（默认 arm64）
+  --android-arch=<arch>    aarch64 | armv7 | i686 | x86_64（默认 aarch64，取值同 tauri android build --target）
   --skip-build             跳过打包，只用已有产物生成清单
   --no-normalize           跳过 APK 时间戳归一化
   --allow-unsigned         允许产物未签名

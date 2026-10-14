@@ -361,13 +361,56 @@ pnpm tauri dev
 
 ### 构建发布版
 
+#### 桌面端：默认只构建当前操作系统
+
+`pnpm tauri build` 的 `--target` 缺省值为宿主平台，因此只能产出当前系统的安装包：
+
+| 当前系统 | 产物（`src-tauri/target/release/bundle/`） |
+|---------|------------------------------------------|
+| macOS | `macos/*.app`、`dmg/*.dmg` |
+| Windows | `msi/*.msi`、`nsis/*.exe` |
+| Linux | `deb/*.deb`、`appimage/*.AppImage` |
+
 ```bash
-pnpm tauri build              # 桌面端（默认不含本地 LLM 推理）
-pnpm tauri build -- --features local-llm   # 启用内置模型推理（需 cmake）
-pnpm tauri android build      # Android 端
+pnpm tauri build                             # 当前平台桌面端（默认不含本地 LLM 推理）
+pnpm tauri build -- --features local-llm     # 当前平台 + 内置模型推理（需 cmake）
+
+# 需要其他平台/架构时显式指定三元组（须已安装对应 rust target 与交叉工具链）
+pnpm tauri build --target aarch64-apple-darwin     # macOS Apple Silicon
+pnpm tauri build --target x86_64-apple-darwin      # macOS Intel
+pnpm tauri build --target x86_64-pc-windows-msvc   # Windows x64
+pnpm tauri build --target x86_64-unknown-linux-gnu # Linux x64
+pnpm tauri build --target universal-apple-darwin   # macOS 通用包（需同时装 arm64 与 x86_64 target）
 ```
 
-构建产物位于 `src-tauri/target/release/bundle/`。
+#### Android 端：`--target` 决定打进包里的 ABI
+
+`--target` 只接受 `aarch64 | armv7 | i686 | x86_64`（**不是** `arm64` / `universal`），它决定本次编译并打包哪些架构的 `.so`：
+
+```bash
+pnpm tauri android build --target aarch64   # 真机 arm64（arm64-v8a）
+pnpm tauri android build --target armv7     # 真机 32 位 arm（armeabi-v7a）
+pnpm tauri android build --target x86_64    # 仅模拟器，真机不会安装
+pnpm tauri android build                    # 省略 --target 时编译全部默认架构（最慢，不推荐）
+```
+
+注意 `--target` 只影响**包内容**，不影响产物路径：AGP 默认装配 `universal` 风味，因此即使只编译了 arm64，
+产物也仍落在 `apk/universal/release/app-universal-release.apk`（文件名中的 `universal` 只是风味名）。
+若要让路径与文件名同架构对应，再加 `--split-per-abi`，改用按架构命名的风味：
+
+```bash
+pnpm tauri android build --target aarch64 --split-per-abi
+# → apk/arm64/release/app-arm64-release.apk（armv7 对应 apk/arm/release/）
+```
+
+- **发布推荐按 ABI 分别构建**：`.so` 是 APK 体积的主要来源（arm64 约 8.5 MB、armv7 约 5.6 MB），
+  多架构打进同一个包会成倍增大体积。实测：仅 arm64 的 APK ≈ 11 MB / AAB ≈ 7 MB；
+  同时含 arm64-v8a + armeabi-v7a 的 universal 包 APK ≈ 16.6 MB。
+- universal 风味的默认 ABI 列表只保留真机 ABI（`arm64-v8a` + `armeabi-v7a`），`x86` / `x86_64` 仅供模拟器，已移出默认列表。
+- Android 产物位置：`src-tauri/gen/android/app/build/outputs/` 下的 `apk/<风味>/release/` 与 `bundle/<风味>Release/`。
+
+正式发版（签名 + 逐字节可复现）请改用下方「发布签名与可复现打包」中的 `pnpm run build:release`，
+该脚本与 CI 都已固定加上 `--split-per-abi`，产物会落到 `apk/<abi>/release/` 并按实际架构命名。
 
 ### 测试
 
@@ -405,8 +448,8 @@ pnpm run secrets:status
 gh secret set -f .signing/github-secrets.env   # 向导已汇总成 dotenv
 bash scripts/ci/push-secrets.sh                # 等价的兜底脚本
 
-# 5. 可复现构建 + 生成产物清单
-pnpm run build:release -- --android --android-arch=arm64
+# 5. 可复现构建 + 生成产物清单（Android 架构取值同 --target：aarch64 / armv7 / x86_64）
+pnpm run build:release -- --android --android-arch=aarch64
 
 # 6. 跨机器/跨次比对产物是否逐字节一致
 pnpm run verify:reproducible -- --expected=a.json --actual=b.json

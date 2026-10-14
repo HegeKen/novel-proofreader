@@ -180,7 +180,7 @@ export function AIContinuation() {
 							<Icons.x size={14} />
 							<span>取消</span>
 						</button>
-						<button className="btn btn-primary" onClick={handleApply}>
+						<button className="btn" onClick={handleApply}>
 							<Icons.saveIcon size={14} />
 							<span>确认追加</span>
 						</button>

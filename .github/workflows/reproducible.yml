@@ -116,7 +116,7 @@ jobs:
         run: |
           set -euo pipefail
           cd src-tauri
-          pnpm tauri android build --target aarch64
+          pnpm tauri android build --target aarch64 --split-per-abi
         env:
           TAURI_ANDROID_MIN_SDK_VERSION: 24
 
