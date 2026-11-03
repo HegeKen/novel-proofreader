@@ -28,7 +28,8 @@ import { AutoResizeTextarea } from "./AutoResizeTextarea";
 export function ReaderPanel({
 	showReadingModeToggle = false,
 	isMobile = false,
-}: { showReadingModeToggle?: boolean; isMobile?: boolean } = {}) {
+	onOpenEmotionSettings,
+}: { showReadingModeToggle?: boolean; isMobile?: boolean; onOpenEmotionSettings?: () => void } = {}) {
 	const chapters = useNovelStore((s) => s.chapters);
 	const currentChapterIndex = useNovelStore((s) => s.currentChapterIndex);
 	const currentNovelId = useNovelStore((s) => s.currentNovelId);
@@ -1210,23 +1211,40 @@ export function ReaderPanel({
 							<div className="glass-panel-body">
 								<div className="tts-setting-item">
 									<label>音色</label>
-									<Select
-										value={ttsConfig.voice}
-										onChange={(value) => updateTTSConfig({ voice: value })}
-										options={[
-											{ value: "冰糖", label: "冰糖" },
-											{ value: "茉莉", label: "茉莉" },
-											{ value: "苏打", label: "苏打" },
-											{ value: "白桦", label: "白桦" },
-											{ value: "Mia", label: "Mia" },
-											{ value: "Chloe", label: "Chloe" },
-											{ value: "Milo", label: "Milo" },
-											{ value: "Dean", label: "Dean" }
-										]}
-									/>
+									{ttsConfig.provider === "local" ? (
+										<span className="local-tts-hint" style={{ marginTop: 0 }}>
+											{ttsConfig.localEngine === "qwen3-voicedesign"
+												? "音色由「设置 → TTS → 音色描述」决定"
+												: "音色由「设置 → TTS → 参考音频」决定"}
+										</span>
+									) : ttsConfig.provider === "external" ? (
+										<span className="local-tts-hint" style={{ marginTop: 0 }}>
+											音色由外部 TTS 服务配置决定
+										</span>
+									) : (
+										<Select
+											value={ttsConfig.voice}
+											onChange={(value) => updateTTSConfig({ voice: value })}
+											options={[
+												{ value: "冰糖", label: "冰糖" },
+												{ value: "茉莉", label: "茉莉" },
+												{ value: "苏打", label: "苏打" },
+												{ value: "白桦", label: "白桦" },
+												{ value: "Mia", label: "Mia" },
+												{ value: "Chloe", label: "Chloe" },
+												{ value: "Milo", label: "Milo" },
+												{ value: "Dean", label: "Dean" }
+											]}
+										/>
+									)}
 								</div>
 								<div className="tts-setting-item">
-									<label>语速 <span className="label-hint">（5=日常对话，3=舒缓，7=激动）</span></label>
+									<label>
+										语速{" "}
+										<span className="label-hint">
+											{ttsConfig.provider === "local" ? "（5=原速，本地以播放倍率实现）" : "（5=日常对话，3=舒缓，7=激动）"}
+										</span>
+									</label>
 									<div className="tts-slider-group">
 										<input
 											type="range"
@@ -1249,6 +1267,24 @@ export function ReaderPanel({
 											onChange={(e) => updateTTSConfig({ volume: parseInt(e.target.value) })}
 										/>
 										<span className="tts-value">{ttsConfig.volume}</span>
+									</div>
+								</div>
+								<div className="tts-setting-item">
+									<label>情感分析</label>
+									<div className="tts-emotion-row">
+										<span className="local-tts-hint" style={{ marginTop: 0 }}>
+											{ttsConfig.localEmotionEnabled ? "本地离线模型（无需 API Key）" : "AI 大模型"}
+										</span>
+										<button
+											type="button"
+											className="tts-emotion-config-btn"
+											onClick={() => {
+												setShowTTSPanel(false);
+												onOpenEmotionSettings?.();
+											}}
+										>
+											配置
+										</button>
 									</div>
 								</div>
 							</div>
@@ -1348,7 +1384,7 @@ export function ReaderPanel({
 							className={`reader-bar-btn  ${batchTTSPreparing ? "preparing" : ""} ${isBatchTTSWaitingForStart ? "waiting-selection" : ""}`}
 							onClick={handleEnterBatchTTSSelectionMode}
 							disabled={batchTTSPreparing}
-							title={isBatchTTSWaitingForStart ? "取消选择段落" : "整段朗读：从所选段落至章节结束，一次性AI分析角色与情感后逐段朗读"}
+							title={isBatchTTSWaitingForStart ? "取消选择段落" : "整段朗读：从所选段落至章节结束，一次性分析角色与情感后逐段朗读"}
 						>
 							{batchTTSPreparing ? (
 								<>

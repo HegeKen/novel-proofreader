@@ -1,0 +1,7 @@
+packages:
+  - "."
+
+# pnpm 10+ 的 overrides 配置位置（package.json 的 pnpm.overrides 已不再读取）
+# 修复 GHSA-* minimatch <11.0.1 的 glob 放大 DoS（仅开发依赖链）
+overrides:
+  minimatch@<11.0.1: 11.0.1

@@ -40,6 +40,24 @@ pub fn update_tts_notification(_title: String, _is_playing: bool) -> Result<(), 
     }
 }
 
+/// 打开 macOS「隐私与安全性 → 完全磁盘访问权限」设置面板
+/// 注意：macOS 不允许应用自动授予该权限，只能引导用户手动开启。
+#[command]
+pub fn macos_open_full_disk_access_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+            .spawn()
+            .map_err(|e| format!("打开系统设置失败: {}", e))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("仅 macOS 支持完全磁盘访问权限设置".to_string())
+    }
+}
+
 #[command]
 pub async fn start_proofread_service(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "android")]

@@ -40,6 +40,7 @@ import { getCurrentVersion } from "./utils/version";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const ConfigModal = lazy(() => import("./components/ConfigModal").then(m => ({ default: m.ConfigModal })));
+type ConfigTab = import("./components/ConfigModal").ConfigTab;
 const CharacterSettings = lazy(() => import("./components/CharacterSettings").then(m => ({ default: m.CharacterSettings })));
 const RoleplayModal = lazy(() => import("./components/RoleplayModal").then(m => ({ default: m.RoleplayModal })));
 const HomePage = lazy(() => import("./components/HomePage").then(m => ({ default: m.HomePage })));
@@ -87,6 +88,11 @@ export default function App() {
 	const toastMessages = useUIStore((s) => s.toastMessages);
 	const hideToast = useUIStore((s) => s.hideToast);
 	const [configOpen, setConfigOpen] = useState(false);
+	const [configTab, setConfigTab] = useState<ConfigTab>("ai");
+	const openConfig = useCallback((tab: ConfigTab = "ai") => {
+		setConfigTab(tab);
+		setConfigOpen(true);
+	}, []);
 	const [showCJKVariantModal, setShowCJKVariantModal] = useState(false);
 	// 移动端 header「更多」菜单开合状态
 	const [showMobileHeaderMenu, setShowMobileHeaderMenu] = useState(false);
@@ -642,7 +648,7 @@ export default function App() {
 							>
 								{theme === "dark" ? "切换到亮色" : "切换到深色"}
 							</Button>
-							<Button onClick={() => setConfigOpen(true)} aria-label="设置" icon={<Icons.bolt size={18} />}>
+							<Button onClick={() => openConfig()} aria-label="设置" icon={<Icons.bolt size={18} />}>
 								设置
 							</Button>
 							{/* 更多菜单：收纳低频操作 */}
@@ -692,7 +698,7 @@ export default function App() {
 								{theme === "dark" ? "切换到亮色" : "切换到深色"}
 							</Button>
 							<GlobalSearch />
-							<Button onClick={() => setConfigOpen(true)} aria-label="设置" icon={<Icons.bolt size={18} />}>
+							<Button onClick={() => openConfig()} aria-label="设置" icon={<Icons.bolt size={18} />}>
 								设置
 							</Button>
 						</>
@@ -724,7 +730,7 @@ export default function App() {
 					{isMobile && mobileTab === "reader" && (
 						<div className="mobile-reader-proofread">
 							<div className="mobile-reader-section">
-								<ReaderPanel showReadingModeToggle={true} isMobile={isMobile} />
+								<ReaderPanel showReadingModeToggle={true} isMobile={isMobile} onOpenEmotionSettings={() => openConfig("emotion")} />
 							</div>
 
 							{!readingMode && (
@@ -736,7 +742,7 @@ export default function App() {
 							)}
 						</div>
 					)}
-					{!isMobile && <ReaderPanel showReadingModeToggle={true} isMobile={isMobile} />}
+					{!isMobile && <ReaderPanel showReadingModeToggle={true} isMobile={isMobile} onOpenEmotionSettings={() => openConfig("emotion")} />}
 				</main>
 
 				<aside
@@ -833,13 +839,13 @@ export default function App() {
 			<Suspense fallback={null}>
 				{/* key 随开关变化重挂载，崩溃后重新打开可自愈；fallback=null 避免弹窗崩溃导致整页白屏 */}
 				<ErrorBoundary key={String(configOpen)} fallback={null}>
-					<ConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
+					<ConfigModal open={configOpen} initialTab={configTab} onClose={() => setConfigOpen(false)} />
 				</ErrorBoundary>
 			</Suspense>
 			<FirstRunGuideModal
 				open={showLocalGuide}
 				onClose={handleCloseLocalGuide}
-				onOpenConfig={() => setConfigOpen(true)}
+				onOpenConfig={() => openConfig("ai")}
 			/>
 			<CJKVariantsModal
 				open={showCJKVariantModal}

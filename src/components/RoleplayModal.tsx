@@ -14,6 +14,7 @@ import type { ChatMessage, MultiRoleplaySegment } from "../utils/aiClient";
 import { matchCharacterByName, detectPresenceIntent } from "../utils/roleplayPresence";
 import { generateId } from "../utils/id";
 import { synthesizeSpeechWithVoice, playAudio } from "../utils/ttsService";
+import { externalVoiceForGender } from "../utils/ttsVoice";
 import { Icons } from "./Icons";
 import { Modal } from "./Modal";
 import { CharacterAvatar } from "./CharacterAvatar";
@@ -74,7 +75,12 @@ function extractRoleplayStateHints(text: string): string | undefined {
 const VALID_TTS_VOICES = new Set(["mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean"]);
 
 /** 推荐音色：角色指定了有效音色则优先使用；否则按性别推荐；局外人/性别未知用兜底 */
-function recommendVoice(character: CharacterInfo | null | undefined, fallback: string): string {
+function recommendVoice(
+	character: CharacterInfo | null | undefined,
+	fallback: string,
+	config: import("../types").TTSConfig,
+): string {
+	if (config.provider === "external") return externalVoiceForGender(config, character?.gender);
 	if (character?.voice && VALID_TTS_VOICES.has(character.voice)) return character.voice;
 	if (character) {
 		if (character.gender === "male") return "苏打";
@@ -687,7 +693,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 	/** 播放 / 停止角色消息语音 */
 	const handlePlayMessage = useCallback(
 		async (msg: RoleplayMessage) => {
-			if (!ttsConfig.apiKey) {
+			if (ttsConfig.provider === "cloud" && !ttsConfig.apiKey) {
 				useUIStore.getState().showToast("请先在设置中配置 TTS API Key", "warning");
 				return;
 			}
@@ -703,7 +709,7 @@ export const RoleplayModal: React.FC<RoleplayModalProps> = ({ novelId, novelName
 						? characters.find((c) => c.id === activeSession.userCharacterId) ?? null
 						: null
 					: characters.find((c) => c.id === msg.characterId) ?? null;
-			const voice = recommendVoice(character, ttsConfig.voice);
+			const voice = recommendVoice(character, ttsConfig.voice, ttsConfig);
 			const voiceDesignPrompt = character?.voiceDesignPrompt
 				? character.dialect
 					? `${character.voiceDesignPrompt}，说${character.dialect}`

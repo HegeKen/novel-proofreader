@@ -192,15 +192,27 @@ export const useLocalModelStore = create<LocalModelStore>()(
 		const base = normalizeLocalEndpoint(endpoint);
 		const authHeaders: Record<string, string> = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
 
-		// 依次尝试：Ollama 原生 → OpenAI 兼容 → LM Studio 新版 REST API
-		// 解析器：Ollama 返回 { models: [{name}] }，OpenAI/LM Studio 返回 { data: [{id}] }
+		// 依次尝试：
+		//   LM Studio 新版 REST /api/v1/models → { models: [{ key, display_name }] }
+		//   OpenAI 兼容 /v1/models → { data: [{ id }] }
+		//   LM Studio 旧版 /api/v0/models → { data: [{ id }] }
 		const sources: { path: string; parse: (data: unknown) => string[] }[] = [
+			{
+				path: "/api/v1/models",
+				parse: (data) => {
+					const models =
+						(data as { models?: Array<{ key?: string; display_name?: string }> }).models || [];
+					return models
+						.map((m) => m.key || m.display_name || "")
+						.filter((id) => id.length > 0);
+				},
+			},
 			{
 				path: "/v1/models",
 				parse: (data) => ((data as { data?: { id: string }[] }).data || []).map((m) => m.id),
 			},
 			{
-				path: "/api/v1/models",
+				path: "/api/v0/models",
 				parse: (data) => ((data as { data?: { id: string }[] }).data || []).map((m) => m.id),
 			},
 		];
@@ -213,7 +225,8 @@ export const useLocalModelStore = create<LocalModelStore>()(
 				});
 				if (resp.ok) {
 					const data = await resp.json();
-					const models = parse(data);
+					const models = Array.from(new Set(parse(data)));
+					if (models.length === 0) continue;
 					set({ state: { ...get().state, availableModels: models } });
 					return models;
 				}

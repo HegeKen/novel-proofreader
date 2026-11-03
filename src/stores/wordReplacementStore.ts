@@ -22,9 +22,12 @@ export const useWordReplacementStore = create<WordReplacementState>()(
 			replacements: [],
 
 			addReplacement: (original, replacement) => {
+				const from = original.trim();
+				const to = replacement.trim();
+				if (!from || !to) return;
 				const id = generateId("replacement", 6);
 				set((state) => ({
-					replacements: [...state.replacements, { id, original, replacement }],
+					replacements: [...state.replacements, { id, original: from, replacement: to }],
 				}));
 			},
 
@@ -37,7 +40,7 @@ export const useWordReplacementStore = create<WordReplacementState>()(
 			updateReplacement: (id, original, replacement) => {
 				set((state) => ({
 					replacements: state.replacements.map((r) =>
-						r.id === id ? { ...r, original, replacement } : r
+						r.id === id ? { ...r, original: original.trim(), replacement: replacement.trim() } : r
 					),
 				}));
 			},
@@ -48,6 +51,19 @@ export const useWordReplacementStore = create<WordReplacementState>()(
 		}),
 		{
 			name: "novel-proofreader-word-replacement",
+			// 迁移旧数据：去掉历史规则中误带的前后空格
+			merge: (persisted, current) => {
+				const saved = (persisted ?? {}) as Partial<WordReplacementState>;
+				return {
+					...current,
+					...saved,
+					replacements: (saved.replacements ?? []).map((r) => ({
+						...r,
+						original: r.original.trim(),
+						replacement: r.replacement.trim(),
+					})),
+				};
+			},
 		}
 	)
 );

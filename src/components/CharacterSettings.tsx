@@ -27,6 +27,7 @@ import type { RelationshipGraphHandle, RelationshipGraphAIState } from "./Relati
 import { CharacterCard } from "./character-settings/CharacterCard";
 import { CharacterEditForm } from "./character-settings/CharacterEditForm";
 import { synthesizeSpeechWithVoice } from "../utils/ttsService";
+import { externalVoiceForGender } from "../utils/ttsVoice";
 import { useElapsedTime } from "../hooks/useElapsedTime";
 import { formatElapsedTime } from "../utils/formatters";
 import { AutoResizeTextarea } from "./AutoResizeTextarea";
@@ -2189,7 +2190,9 @@ ${JSON.stringify(existingInfo, null, 2)}
 		
 		try {
 			// 确定使用的音色
-			const voice = character.voice || ttsConfig.voice || "冰糖";
+			const voice = ttsConfig.provider === "external"
+				? externalVoiceForGender(ttsConfig, character.gender)
+				: character.voice || ttsConfig.voice || "冰糖";
 			// 构建播放文本：角色名 + 备注
 			const playText = `${character.name}。${character.notes}`;
 			
@@ -2204,7 +2207,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 			}
 			
 			// 播放音频
-			const blob = new Blob([audioBuffer], { type: "audio/mp3" });
+			const blob = new Blob([audioBuffer]);
 			const url = URL.createObjectURL(blob);
 			const audio = new Audio();
 			audioRef.current = audio;

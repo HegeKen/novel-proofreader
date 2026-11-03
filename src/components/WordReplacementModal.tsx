@@ -184,7 +184,7 @@ export function WordReplacementModal({ open, onClose }: Props) {
 						<div className="section-label"><Icons.sparkle size={14} />使用说明</div>
 						<ul className="word-replacement-tips">
 							<li>在请求 TTS 大模型前，系统会自动将文本中的敏感词替换为指定词组</li>
-							<li>替换规则按添加顺序依次执行</li>
+							<li>替换规则按添加顺序依次执行，词组前后的空格会自动忽略</li>
 							<li>支持中英文词组替换</li>
 						</ul>
 					</div>

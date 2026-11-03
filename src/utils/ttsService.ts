@@ -1,8 +1,9 @@
 import type { TTSConfig } from "../types";
 import { logger } from "./logger";
 import { useAppMetaStore } from "../stores/appMetaStore";
-import { applyWordReplacements } from "./textReplace";
+import { applyWordReplacements, getWordReplacementFingerprint } from "./textReplace";
 import { Queue } from "./concurrent";
+import { localPlaybackRate, synthesizeExternalSpeech, synthesizeLocalSpeech } from "./localTts";
 
 // 有效的 MiMo 语音列表
 const VALID_VOICES = ["mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean"];
@@ -48,7 +49,16 @@ class AudioCacheManager {
 
 	generateKey(text: string, config: TTSConfig, voice?: string, voiceDesignPrompt?: string): string {
 		const effectiveVoice = voice || config.voice || "";
-		return `${text}:${effectiveVoice}:${config.speed}:${config.volume}:${voiceDesignPrompt || ""}:dialect:${config.dialect || ""}`;
+		// 本地模型：音色由参考音频决定，且模型/语言变化后缓存不可复用
+		const localKey = config.provider === "local"
+			? (config.localEngine === "qwen3-voicedesign"
+				? `:local:vd:${config.voiceDesignModelPath}:${config.voiceDesignCodecPath}:${config.voiceDesignInstruct}`
+				: `:local:base:${config.localModelPath}:${config.localSpeakerRefPath}:${config.localLanguage}`)
+			: config.provider === "external"
+				? `:external:${config.externalTtsBaseUrl}:${config.externalTtsModel}:${config.externalTtsVoice}:${config.externalTtsMaleVoice}:${config.externalTtsFemaleVoice}:${config.externalTtsEmotionTags}:${config.externalTtsInstructions}:${config.externalTtsLanguage}`
+				: "";
+		const replaceKey = getWordReplacementFingerprint();
+		return `${text}:${effectiveVoice}:${config.speed}:${config.volume}:${voiceDesignPrompt || ""}:dialect:${config.dialect || ""}:replace:${replaceKey}${localKey}`;
 	}
 
 	get(key: string, config: TTSConfig): ArrayBuffer | undefined {
@@ -153,6 +163,18 @@ interface MiMoTTSResponse {
 	};
 }
 
+/** 去掉本地 TTS 不需要的表演标签，例如开头连续的 (轻声)（粤语|语速3） */
+function stripLocalTtsTags(text: string): string {
+	let result = text.trim();
+	const leadingTag = /^[（(][^）)]{0,60}[）)]\s*/;
+	for (let i = 0; i < 3; i++) {
+		const next = result.replace(leadingTag, "");
+		if (next === result) break;
+		result = next;
+	}
+	return result.trim();
+}
+
 async function _synthesizeSpeech(
 	text: string,
 	config: TTSConfig,
@@ -164,6 +186,33 @@ async function _synthesizeSpeech(
 	deliveryHint?: string,
 ): Promise<ArrayBuffer> {
 	let processedText = applyWordReplacements(text);
+
+	// 本地 Qwen3-TTS：只朗读正文，去掉开头的（情绪/方言/语速）表演标签；
+	// 音色由参考音频控制，方言标签对 Base 模型无效。
+	if (config.provider === "local") {
+		const localText = stripLocalTtsTags(processedText);
+		if (!localText) {
+			throw new Error("待朗读文本为空");
+		}
+		logger.tts(logTag, {
+			provider: "local",
+			engine: config.localEngine,
+			text: localText.slice(0, 50) + "...",
+		});
+		return synthesizeLocalSpeech(localText, config, signal, voiceDesignPrompt, { skipWordReplacements: true });
+	}
+
+	if (config.provider === "external") {
+		const externalText = stripLocalTtsTags(processedText);
+		if (!externalText) {
+			throw new Error("待朗读文本为空");
+		}
+		logger.tts(logTag, { provider: "external", text: externalText.slice(0, 50) + "..." });
+		return synthesizeExternalSpeech(externalText, config, signal, voiceDesignPrompt, {
+			skipWordReplacements: true,
+			voice,
+		});
+	}
 
 	if (config.dialect && !processedText.startsWith('(')) {
 		processedText = `(${config.dialect})${processedText}`;
@@ -298,7 +347,7 @@ async function _synthesizeSpeech(
 	return bytes.buffer;
 }
 
-async function synthesizeSpeech(
+export async function synthesizeSpeech(
 	text: string,
 	config: TTSConfig,
 	voiceDesignPrompt?: string,
@@ -306,7 +355,11 @@ async function synthesizeSpeech(
 	signal?: AbortSignal,
 	deliveryHint?: string,
 ): Promise<ArrayBuffer> {
-	return _synthesizeSpeech(text, config, config.voice, voiceDesignPrompt, "发起 TTS 请求", speedOverride, signal, deliveryHint);
+	// 外部服务没有 MiMo 音色概念，普通朗读使用默认/旁白音色
+	const voice = config.provider === "external"
+		? (config.externalTtsVoice || config.externalTtsMaleVoice || "长乐")
+		: config.voice;
+	return _synthesizeSpeech(text, config, voice, voiceDesignPrompt, "发起 TTS 请求", speedOverride, signal, deliveryHint);
 }
 
 export async function synthesizeSpeechWithVoice(
@@ -321,16 +374,44 @@ export async function synthesizeSpeechWithVoice(
 	return _synthesizeSpeech(text, config, voice, voiceDesignPrompt, "发起 TTS 请求（角色配音）", speedOverride, signal, deliveryHint);
 }
 
-export function playAudio(arrayBuffer: ArrayBuffer, signal?: AbortSignal): Promise<void> {
+export interface AudioPlayOptions {
+	/** 播放倍率（本地 TTS 用倍率实现语速，1 = 原始速度） */
+	playbackRate?: number;
+	/** 音量 0-1 */
+	volume?: number;
+}
+
+/** 根据文件头识别音频格式（MiMo 返回 mp3，本地 llama-server 返回 wav） */
+function detectAudioMime(arrayBuffer: ArrayBuffer): string {
+	if (arrayBuffer.byteLength < 4) return "audio/mpeg";
+	const h = new Uint8Array(arrayBuffer, 0, 4);
+	if (h[0] === 0x52 && h[1] === 0x49 && h[2] === 0x46 && h[3] === 0x46) return "audio/wav";
+	if (h[0] === 0x4f && h[1] === 0x67 && h[2] === 0x67 && h[3] === 0x53) return "audio/ogg";
+	if (h[0] === 0x66 && h[1] === 0x4c && h[2] === 0x61 && h[3] === 0x43) return "audio/flac";
+	return "audio/mpeg";
+}
+
+export function playAudio(
+	arrayBuffer: ArrayBuffer,
+	signal?: AbortSignal,
+	options?: AudioPlayOptions,
+): Promise<void> {
 	return new Promise((resolve, reject) => {
 		if (signal?.aborted) {
 			reject(new DOMException("Aborted", "AbortError"));
 			return;
 		}
 
-		const blob = new Blob([arrayBuffer], { type: "audio/mp3" });
+		const blob = new Blob([arrayBuffer], { type: detectAudioMime(arrayBuffer) });
 		const url = URL.createObjectURL(blob);
 		const audio = new Audio();
+		if (options?.playbackRate !== undefined) {
+			audio.playbackRate = Math.min(4, Math.max(0.25, options.playbackRate));
+			(audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = true;
+		}
+		if (options?.volume !== undefined) {
+			audio.volume = Math.min(1, Math.max(0, options.volume));
+		}
 		let cleaned = false;
 
 		const cleanup = () => {
@@ -703,6 +784,15 @@ export class TTSPlayer {
 		return -1;
 	}
 
+	/** 本地模型用播放倍率/音量实现设置里的语速和音量 */
+	private playbackOptions(): AudioPlayOptions | undefined {
+		if (this.config.provider === "cloud") return undefined;
+		return {
+			playbackRate: localPlaybackRate(this.config.speed),
+			volume: Math.min(1, Math.max(0.05, this.config.volume / 10)),
+		};
+	}
+
 	/**
 	 * 播放单句。返回 true 表示正常完成（播放循环应前进到下一句），
 	 * 返回 false 表示被取消/跳过（播放循环不应自增 currentIndex）。
@@ -779,7 +869,7 @@ export class TTSPlayer {
 					return false;
 				}
 
-				await playAudio(audioBuffer, this.abortController?.signal);
+				await playAudio(audioBuffer, this.abortController?.signal, this.playbackOptions());
 
 				if (cancelled || !this.isPlaying || this.abortController?.signal.aborted) {
 					logger.tts("句子播放被取消或停止（音频播放后）", { index, cancelled, isPlaying: this.isPlaying });
@@ -1228,7 +1318,7 @@ export class ScriptTTSPlayer {
 
 				try {
 					logger.tts("播放队列音频", { index: this.currentIndex, character: currentDialogue.character, bufferSize: audioBuffer.byteLength });
-					await playAudio(audioBuffer, signal);
+					await playAudio(audioBuffer, signal, this.playbackOptions());
 					this.currentIndex++;
 				} catch (error) {
 					logger.errorGeneric("播放音频失败", { index: this.currentIndex, error });
@@ -1261,7 +1351,7 @@ export class ScriptTTSPlayer {
 
 			try {
 				logger.tts("播放队列音频", { index: this.currentIndex, character: currentDialogue.character, bufferSize: audioBuffer.byteLength });
-				await playAudio(audioBuffer, signal);
+				await playAudio(audioBuffer, signal, this.playbackOptions());
 				
 				if (!this.isPlaying || this.isPaused || signal.aborted) break;
 
@@ -1296,6 +1386,15 @@ export class ScriptTTSPlayer {
 			this.isPlaying = false;
 			this.onComplete?.();
 		}
+	}
+
+	/** 本地模型用播放倍率/音量实现设置里的语速和音量 */
+	private playbackOptions(): AudioPlayOptions | undefined {
+		if (this.config.provider === "cloud") return undefined;
+		return {
+			playbackRate: localPlaybackRate(this.config.speed),
+			volume: Math.min(1, Math.max(0.05, this.config.volume / 10)),
+		};
 	}
 
 	/**
@@ -1367,7 +1466,7 @@ export class ScriptTTSPlayer {
 					return false;
 				}
 
-				await playAudio(audioBuffer, signal);
+				await playAudio(audioBuffer, signal, this.playbackOptions());
 
 				if (cancelled || !this.isPlaying || signal.aborted) {
 					logger.tts("对话播放被取消或停止（音频播放后）", { index, cancelled, isPlaying: this.isPlaying });

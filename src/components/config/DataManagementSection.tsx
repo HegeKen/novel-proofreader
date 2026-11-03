@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useNovelStore } from "../../stores/novelStore";
 import { useCharacterStore } from "../../stores/characterStore";
 import { useRoleplayStore } from "../../stores/roleplayStore";
+import { useUIStore } from "../../stores/uiStore";
+import { isMacOSPlatform, openFullDiskAccessSettings } from "../../utils/systemPermissions";
 import { Icons } from "../Icons";
 import { ConfirmModal } from "./ConfirmModal";
 
@@ -18,6 +20,18 @@ export function DataManagementSection() {
 	const totalCharacters = Object.values(novelCharacters).reduce((acc, chars) => acc + chars.length, 0);
 	const novelListTotalCharacters = novels.reduce((acc, novel) => acc + (novelCharacters[novel.id]?.length ?? 0), 0);
 	const hasStatsMismatch = totalCharacters !== novelListTotalCharacters;
+
+	const showToast = useUIStore((s) => s.showToast);
+	const isMacOS = isMacOSPlatform();
+
+	const handleOpenFullDiskAccess = async () => {
+		try {
+			await openFullDiskAccessSettings();
+			showToast("请在系统设置中把 Proof Reader 添加到「完全磁盘访问权限」", "info", 6000);
+		} catch (err) {
+			showToast(err instanceof Error ? err.message : String(err), "error");
+		}
+	};
 
 	const [confirmModal, setConfirmModal] = useState<{
 		show: boolean;
@@ -155,6 +169,30 @@ export function DataManagementSection() {
 								</div>
 							);
 						})}
+					</div>
+				</div>
+			)}
+
+			{/* macOS 完全磁盘访问权限 */}
+			{isMacOS && (
+				<div className="data-action-card" style={{ marginBottom: 16 }}>
+					<div className="action-header">
+						<div className="action-icon"><Icons.laptop size={20} /></div>
+						<div className="action-title">
+							<span className="action-label">macOS 完全磁盘访问权限</span>
+							<span className="action-desc">
+								macOS 不允许应用自动申请或自动授予「完全磁盘访问权限」。
+								若需要读取下载、桌面等目录中的模型文件，请打开系统设置，点击「+」手动添加 Proof Reader 并开启开关。
+							</span>
+						</div>
+					</div>
+					<div className="action-footer">
+						<span className="action-warning">
+							模型已放在应用数据目录时无需此权限；应用更新后如权限失效，需要重新添加。
+						</span>
+						<button className="btn" onClick={handleOpenFullDiskAccess}>
+							<Icons.import size={14} />打开系统设置
+						</button>
 					</div>
 				</div>
 			)}

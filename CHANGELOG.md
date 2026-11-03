@@ -1,5 +1,86 @@
 # Proof Reader Changelog
 
+## 未发布
+
+### ✨ 功能更新
+
+**本地情感分析（离线朗读标注）**
+- 集成 `liudev/roberta-multilabel-28-3-classes`：中文 RoBERTa 多标签模型，覆盖 28 种细粒度情绪 + 3 种情感基调
+- 新增 Rust 侧 candle 推理模块 `emotion.rs`：直接加载 safetensors 并在 CPU 上运行 BERT，无需 Python / ONNX Runtime
+- 新增「设置 → 情感分析」独立标签页与模型下载（约 390MB，支持 HuggingFace 镜像回退）、状态查询、测试分析与释放内存
+- 阅读模式「语音设置」面板新增「情感分析」入口，可直接跳转到对应设置页
+- 支持「导入本地模型」：选择包含 config.json / tokenizer.json / model.safetensors 的本地目录，校验后复制到应用模型目录，解决 HuggingFace / hf-mirror 下载失败时无法使用的问题
+- 「测试分析」支持自定义输入：可直接输入/粘贴段落并填写可选上文，测试本地情感模型的实时判断结果
+- 测试结果新增「标注后文本」预览：按情感朗读的真实流程输出 `(情绪,语调)` 标签、逐段说话人/情绪/语速，并可一键复制
+- 测试结果同时展示「敏感词替换后」文本，便于确认 TTS 请求阶段实际使用的正文；未命中规则时明确提示
+- 开启后，阅读模式的逐段朗读与整段朗读改为本地情感分析：按引号切分旁白/对话、结合角色名与说话动词识别说话人，并映射为情绪/语调/语速标签
+- 本地分析自动使用当前段落前两段作为上文，与模型训练时的双句输入保持一致；无上文时传空字符串
+- 采用模型作者推荐的高查准率阈值，低置信度回退「平静」，避免过度演绎
+- 本地情感分析不依赖 AI API Key；配合本地 TTS 引擎可完全断网、零成本生成语音
+
+### 🔐 依赖与安全
+
+- 更新前端依赖：Vite 8.3.5、Vitest 5.0.5、jsdom 30.1.3、React 19.3.1、Tauri JS API/CLI 2.12.4、ESLint 10.14.0 等
+- 更新 Rust 依赖（`cargo update`），桌面与 Android 目标均重新通过编译检查
+- `pnpm audit` 清零：升级 vite / jsdom(undici) / eslint(zod) / postcss(source-map-js) 相关依赖，并通过 `pnpm-workspace.yaml` 的 override 将 `minimatch` 提升到 11.0.1，修复 glob 放大 DoS
+- 新增 README 平台与构建版本支持矩阵，说明正常版 / LLM cmake 版在各平台的能力差异
+- 修复 Android x86_64 / Windows x64 构建失败：`candle-core 0.11.1` 的 x86 量化内核在非 `unsafe` 块调用 `__cpuid_count`；通过 `src-tauri/vendor/candle-core` 本地补丁 + `[patch.crates-io]` 修复
+- 修复 Android 端本地情感模型加载失败：兼容 `bert.` / `roberta.` / `model.` / 无前缀权重，pooler 与分类头同步适配；失败时输出模型键名诊断
+- 下载/导入情感模型时校验 safetensors 头、必需键与文件长度，提前拦截不完整或错误文件
+
+## v0.18.0 (2026-11-03)
+
+### ✨ 功能更新
+
+**本地 TTS 引擎体系**
+- 新增「本地 Base」引擎：常驻 `llama-server` 加载主 GGUF + `mmproj`，逐句调用 `/tts` 离线合成，无需 API Key
+- 新增「本地 VoiceDesign」引擎：常驻 CrispASR，支持自然语言音色描述，无需参考音频
+- 新增「外部本地 TTS 服务」引擎：兼容任意 OpenAI 风格 `POST /v1/audio/speech` 服务
+- 三种引擎可在「设置 → 语音朗读 (TTS) → 本地引擎」中切换，切换时自动释放另一套服务的内存
+- 本地合成支持播放倍率语速、音量控制、WAV/MP3/OGG 自动识别与逐句缓存
+
+**音色与情感**
+- Base 引擎支持参考音频克隆音色；未提供参考音频时自动生成并缓存默认音色，避免逐句换声
+- VoiceDesign 支持角色卡「音色设计描述」，情感朗读/剧本/角色扮演时优先使用角色自己的描述
+- 外部服务支持按角色性别自动分配男/女音色（默认长乐/白芷，可自定义）
+- 外部服务支持情感标签透传：`<laugh>`、`<sigh>`、`<chuckle>`、`<cough>`、`<sniffle>`、`<groan>`、`<yawn>`、`<gasp>`
+- 支持将 `[叹气]`、`（轻笑）` 等括号提示转换为对应情感标签
+- 外部服务设置新增「试听文本」与「替换后实际发送」预览
+
+**模型与运行时管理**
+- 支持自动检测应用模型目录中的主模型、`mmproj`、VoiceDesign talker/codec
+- 支持自动下载缺失的 `mmproj`、VoiceDesign talker/codec
+- 支持自动安装 llama.cpp `llama-server` 与 CrispASR 运行时
+- 本地 TTS 不再自动扫描 `~/Downloads`，模型统一从应用数据目录读取，避免 macOS 反复请求下载目录权限
+- LM Studio 模型列表支持 `/api/v1/models` 的 `models[].key` 结构，模型下拉框可正常填充；保留 `/v1/models`、`/api/v0/models` 回退
+
+### 🐛 Bug 修复
+
+- 修复本地 TTS / 外部 TTS 在设置页试听等直接调用路径未执行敏感词替换的问题
+- 敏感词替换统一到所有 TTS 合成入口，并避免重复替换
+- 敏感词规则前后误带空格导致正文不匹配的问题；录入、读取和使用时自动 `trim`，并迁移旧规则
+- 音频缓存键加入敏感词规则指纹，规则变化后自动失效，避免继续播放旧规则音频
+- 修复外部 TTS 服务缺少 CORS 头时 WebView 报 `Load failed` 的问题；外部请求改由 Rust `reqwest` 代发
+- 修复 `ScriptPanel`、`RoleplayModal` 在本地/外部模式仍检查 MiMo API Key 的问题
+- 修复播放器把本地 WAV 固定按 MP3 类型播放的问题
+- 修复 LM Studio 扫描/模型列表解析与旧版 TTS 配置缺少新字段时的迁移问题
+
+### ♻️ 优化
+
+- 大模型文件迁移到应用数据目录（硬链接，不额外占用磁盘），应用不再需要下载目录权限
+- 本地 TTS 服务加载失败时展示服务日志尾部，便于排查
+- 本地服务启动失败、进程退出、退出应用时统一清理子进程
+- 设置页对模型、codec、运行时的检测状态与缺失项给出明确提示
+- 「数据管理」新增 macOS 完全磁盘访问权限引导：一键打开系统设置，说明手动添加方式与权限失效场景
+
+### 🛠️ 工程与工具链
+
+- 新增 `local_tts.rs`、`voice_design.rs`、`external_tts.rs` 后端模块
+- 新增 `localTts.ts`、`ttsVoice.ts`、`LocalTTSConfigSection.tsx`、`VoiceDesignTTSConfigSection.tsx`、`ExternalTTSConfigSection.tsx`
+- 新增本地/外部 TTS 单元测试、敏感词替换测试、音色分配测试、LM Studio 模型列表测试
+- 前端测试：297 个通过；Rust 单测：11 个通过，本地/外部 TTS 端到端测试通过
+- 版本号提升至 `0.18.0`
+
 ## v0.17.0 (2026-10-14)
 
 ### ✨ 功能更新

@@ -1,17 +1,19 @@
 # 小说 AI 排版与查错工具
 
-基于 Tauri 2 + React + TypeScript 的桌面端与移动端小说排版与查错应用。支持导入 TXT / EPUB 小说文件，通过云端 AI、本地服务（Ollama / LM Studio / vLLM）或内置模型（Rust 原生 llama.cpp 推理）自动检测错别字、排版问题和病句，并提供一键采纳修改。同时支持小说角色分析、关系图谱可视化、剧本转换、TTS 情感朗读等丰富功能。
+基于 Tauri 2 + React + TypeScript 的桌面端与移动端小说排版与查错应用。支持导入 TXT / EPUB 小说文件，通过云端 AI、本地服务（Ollama / LM Studio / vLLM）或内置模型（Rust 原生 llama.cpp 推理，需 LLM cmake 版）自动检测错别字、排版问题和病句，并提供一键采纳修改。同时支持小说角色分析、关系图谱可视化、剧本转换、TTS 情感朗读等丰富功能。
 
 ## ✨ 亮点特性
 
 - 🔍 **AI 智能校对** — 基于大模型检测错别字、排版问题和病句，支持段落/章节两种校对模式
-- 🤖 **本地大模型集成** — 支持三种推理来源：云端 API、本地外部服务（Ollama / LM Studio / vLLM）、内置模型（Rust 原生 llama.cpp 推理）
-- 🧠 **内置中文纠错模型** — 预置 `chinese-text-correction-1.5b`（Q4_K_M 量化，约 1.1 GB），无网也能运行校对，支持导入自定义 `.gguf` 模型
+- 🤖 **本地大模型集成** — 支持三种推理来源：云端 API、本地外部服务（Ollama / LM Studio / vLLM）、内置模型（Rust 原生 llama.cpp 推理，需 LLM cmake 版）
+- 🧠 **内置中文纠错模型** — 预置 `chinese-text-correction-1.5b`（Q4_K_M 量化，约 1.1 GB），无网也能运行校对，支持导入自定义 `.gguf` 模型（需 LLM cmake 版）
 - 📖 **纯阅读模式** — 沉浸式阅读体验，支持调节字体、背景、行间距、首行缩进、自定义背景图
 - 👥 **角色分析 & 关系图谱** — AI 自动分析整本小说，提取角色人物小传和关系图谱，支持可视化拖拽展示
 - 🎭 **AI 角色扮演** — 与小说角色沉浸式对话，自动注入角色设定、人际关系、世界观与剧情位置，支持多会话管理
 - 🎬 **剧本转换** — 一键将小说段落转换为剧本格式，支持自定义改编指令
 - 🎙️ **TTS 情感朗读** — AI 自动为对话添加情感/音色标注，支持流式边生成边播放，含角色音色设计
+- 🔊 **本地模型朗读** — 支持内置本地引擎（参考音频克隆 / 文字描述音色）与外部 OpenAI 兼容 TTS 服务
+- 🧠 **本地情感分析（离线）** — 内置中文 RoBERTa 多标签情感模型，逐段判断 28 种情绪与 3 种情感基调，可替代 AI 完成朗读标注，无需 API Key
 - 📚 **分卷支持** — 自动识别「第X卷」等分卷结构，支持折叠/展开导航
 - 🏠 **主页 & 版本检测** — 启动页展示更新日志，自动检测新版本，支持 GitHub 镜像源多平台下载
 - 📱 **多端支持** — Windows / macOS / Linux 桌面端 + Android 移动端
@@ -27,6 +29,31 @@
 - 🗂️ **数据管理** — 独立的「数据管理」Tab，支持单独处理每本小说的关联数据（角色、关系、世界观），保留清除所有数据功能
 - 🔄 **重新断章** — 章节列表头部一键重新识别章节标题并分割小说，解决特殊格式章节识别问题
 - 🚀 **首次启动引导** — 新用户首次打开自动弹出三选一快速上手：配置云端 API / 连接 Ollama / 下载内置模型
+
+## 📦 平台与构建版本支持矩阵
+
+> **本地情感分析入口：设置 → 情感分析**（独立标签页）。阅读模式下打开「语音设置」→「情感分析 → 配置」也可直接跳转。
+>
+> 「正常版」= 默认发布构建（`pnpm tauri build`）；「LLM cmake 版」= 额外启用 Rust 原生 llama.cpp 推理（`pnpm tauri build -- --features local-llm`，编译需要 cmake 与 C++ 工具链）。
+
+| 平台 | 构建 | 云端大模型 | 外部本地服务<sup>4</sup><br/>Ollama/LM Studio | 内置 llama.cpp<br/>本地 GGUF | 本地 TTS<sup>2</sup><br/>Base / VoiceDesign | 外部 TTS<br/>OpenAI 兼容 | 本地情感分析<br/>RoBERTa |
+|---|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| macOS<br/>Apple Silicon / Intel | 正常版 | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| macOS<br/>Apple Silicon / Intel | LLM cmake 版 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Windows x64 | 正常版 | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| Windows x64 | LLM cmake 版 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Windows ARM64 | 正常版 | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| Windows ARM64 | LLM cmake 版 | ⚪ 未发布<sup>1</sup> | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ |
+| Linux x64 | 正常版 | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| Linux x64 | LLM cmake 版 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Android<br/>arm64 / armv7 | 正常版 | ✅ | ✅<sup>4</sup> | ❌ | ❌<sup>2</sup> | ✅ | ✅<sup>3</sup> |
+
+<sup>1</sup> 官方 tag 发布流程（`.github/workflows/build.yml`）不构建 Windows ARM64 的 LLM 版：llama.cpp 的 CMake 明确拒绝 MSVC 编译 ARM；手动触发的 `windows.yml` 提供了该组合的构建入口，但稳定性由 clang-cl 工具链决定。
+<sup>2</sup> 本地 TTS 依赖应用外部下载的 `llama-server` / `crispasr` 运行时，Android 端无可用运行时，调用会直接提示使用桌面版。Windows ARM64 的 Base 引擎使用 llama.cpp arm64 运行时；VoiceDesign 的 CrispASR 目前只有 x86_64 包，依赖系统模拟。
+<sup>3</sup> 本地情感分析使用纯 Rust `candle` CPU 推理，Android 构建已通过交叉编译检查，但尚未在实机验证；模型约 390MB，低端设备推理可能较慢。
+<sup>4</sup> 外部本地服务由 WebView 直接发起请求，应用 CSP 仅放行 localhost / 127.0.0.1 / [::1] 与 HTTPS。桌面端可连接本机 Ollama / LM Studio；Android 上 `127.0.0.1` 指向手机自身，连接电脑上的服务需使用 HTTPS 反向代理或局域网 HTTPS 地址（局域网明文 HTTP 会被 CSP 拦截）。
+
+> 说明：云端大模型覆盖校对、角色分析、关系图谱、剧本转换、角色扮演等所有 AI 功能；LLM cmake 版额外提供「内置模型（Rust 原生推理）」来源，正常版在设置中仍可见该入口，但引擎会返回「当前构建未启用本地推理引擎」。
 
 ## 功能特性
 
@@ -112,7 +139,13 @@
 - 导出为 TXT 剧本文件
 
 ### 🎙️ TTS 情感朗读
+- **本地模型朗读（Base）**：支持 Qwen3-TTS-12Hz-1.7B-Base GGUF（需配套 `mmproj`），由常驻 `llama-server` 的 `/tts` 接口离线合成，无需 API Key
+- **本地音色设计（VoiceDesign）**：支持内置 VoiceDesign 引擎，按自然语言音色描述合成；角色设置中的「音色设计描述」会在情感朗读时按角色传入
+- **外部 TTS 服务**：可连接任意 OpenAI 兼容的本地/局域网 `/v1/audio/speech` 服务，支持透传模型名、音色、instructions 与语言，适合使用应用未内置解码器的自定义模型
+- **参考音频音色克隆**：可指定 3–10 秒参考音频固定音色；未指定时首次朗读会自动生成并缓存一段默认参考音色，避免逐句随机换声
+- **自动安装运行时**：可自动下载 llama.cpp nightly 的 `llama-server`，也支持 Homebrew / 手动指定路径
 - **AI 情感/音色标注**：自动为对话添加情感（开心、悲伤、愤怒等）和音色标签，提升 TTS 表现力
+- **本地情感分析（离线）**：可切换为内置中文 RoBERTa 多标签情感模型，完全在本地判断情绪、切分旁白/对话并建议语速，不依赖 AI API Key
 - **音色设计模型支持**：支持自定义音色设计，优化语音差异化体验
 - **角色音色设计**：AI 根据角色人物小传自动生成音色设计描述，包含地域特征、方言特征等信息
 - **流式播放**：支持边生成边播放，音频队列机制实现平滑的连续播放体验
@@ -120,6 +153,82 @@
 - **播放控制**：支持播放中断和恢复
 - **情感朗读模式**：在阅读区点击任意段落开始朗读，实时同步朗读状态
 - **敏感词替换**：TTS 请求前自动执行文本替换，规避敏感词导致的语音合成失败问题
+
+#### 本地情感分析（RoBERTa，离线）
+
+如果希望朗读标注完全离线、零调用成本，可在「设置 → 情感分析」打开「使用本地情感模型（离线）」，并下载约 390MB 的模型文件。
+
+- 模型：[liudev/roberta-multilabel-28-3-classes](https://huggingface.co/liudev/roberta-multilabel-28-3-classes)，中文 RoBERTa（BERT 架构，102M 参数），输出 28 种细粒度情绪 + 3 种情感基调（positive / negative / neutral）。
+- 推理：由 Rust 侧使用 [candle](https://github.com/huggingface/candle) 直接加载 safetensors 并在 CPU 上推理，不依赖 Python、ONNX Runtime 或任何云端服务。
+- 上下文：与模型训练方式一致，自动把当前段落的前两段作为上文一起输入（双句输入）。
+- 后处理：按引号切分旁白/对话，结合已配置角色名与「说/道/问/答/喊」等动词猜测说话人，再用模型概率映射为中文情绪、语调与语速。
+- 文件位置：模型保存在应用模型目录的 `emotion-roberta-28-3-classes/` 下（`config.json`、`tokenizer.json`、`model.safetensors`）。也可以手动把这三个文件放进去，应用会自动识别。
+- 兼容性：加载器兼容 `bert.` / `roberta.` / `model.` / 无前缀的 safetensors 权重；导入和下载时会校验 safetensors 头、必需键（embeddings / classifier）与文件完整性，提前拦截不完整或错误的文件。
+- 阈值：采用模型作者推荐的逐标签高查准率阈值；所有情绪都低于阈值时回退为「平静」，避免朗读过度演绎。
+- 测试：设置页的「测试分析」支持输入任意段落，并可填写上文（可选），实时查看 31 维情感概率、耗时、**带 `(情绪,语调)` 标注的完整文本**，以及**应用敏感词替换后的文本**（即 TTS 请求阶段实际使用的正文），支持逐段查看说话人/情绪/语速并一键复制。
+
+##### 手动导入模型（网络下载失败时）
+
+应用内下载走 HuggingFace，失败时会自动尝试 `hf-mirror.com`；如果两者都不可达，可以手动下载后导入：
+
+1. 新建一个目录（例如 `~/Downloads/roberta-emotion`）。
+2. 下载以下 3 个文件并放入该目录，保持文件名不变：
+   - [`config.json`](https://huggingface.co/liudev/roberta-multilabel-28-3-classes/resolve/main/config.json)
+   - [`tokenizer.json`](https://huggingface.co/liudev/roberta-multilabel-28-3-classes/resolve/main/tokenizer.json)
+   - [`model.safetensors`](https://huggingface.co/liudev/roberta-multilabel-28-3-classes/resolve/main/model.safetensors)（约 390MB）
+3. 打开「设置 → 情感分析」，点击 **「导入本地模型」**，选择该目录。
+4. 应用会校验文件并复制到应用模型目录（约需 390MB 空闲空间）；导入完成后即可离线使用，源目录可以删除。
+
+> 也可以直接用 `hf download liudev/roberta-multilabel-28-3-classes --local-dir ~/Downloads/roberta-emotion` 下载全部文件，再在应用中选择该目录。镜像站可用 `HF_ENDPOINT=https://hf-mirror.com`。
+>
+> 本地模型只做段落级情绪判断，说话人识别依赖轻量规则；多人混排的复杂段落不如大模型准确。追求最佳效果时可随时关闭该开关，回退到 AI 情感分析。
+>
+> 模型权重不在安装包内，首次使用时从 HuggingFace 下载；模型版权与许可归原作者所有，请遵守模型仓库的说明。
+
+#### 本地模型朗读（Qwen3-TTS GGUF）
+
+1. 下载主模型 `Qwen3-TTS-12Hz-1.7B-Base-*.gguf`（推荐 Q8_0）与配套的 `mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf`。主模型可放在任意目录（如 `~/Downloads`），本应用会自动探测；缺少 mmproj 时可在设置页一键下载（约 440MB）。
+2. 准备 `llama-server`：macOS 可执行 `brew install llama.cpp`，或在设置页点击「自动安装 llama-server」，也可手动指定可执行文件路径。
+3. 打开「设置 → 语音朗读 (TTS) → 语音引擎」，选择「本地 Qwen3-TTS」。应用会自动填入检测到的模型、mmproj 与运行时路径。
+4. 可选：选择 3–10 秒清晰人声作为参考音频以克隆音色；留空时首次朗读会自动生成并缓存默认参考音色。
+5. 点击「试听」验证；在阅读模式点朗读按钮即可使用本地模型逐句朗读。
+
+> 说明：Base 引擎依赖 llama.cpp 的 `POST /tts` 接口（llama.cpp b11960+，0.8.0 已包含）。首次加载约 2.3GB 模型需要 10–30 秒，首次朗读还会自动生成参考音色（另需约 10 秒），之后服务常驻、逐句合成；应用退出时会自动结束后台 `llama-server`。
+
+#### 本地音色设计（VoiceDesign + CrispASR）
+
+1. 在 TTS 设置的「本地引擎」中选择「Qwen3-TTS VoiceDesign」。
+2. 准备两个 GGUF（来自 [cstr/qwen3-tts-1.7b-voicedesign-GGUF](https://huggingface.co/cstr/qwen3-tts-1.7b-voicedesign-GGUF) 与 [cstr/qwen3-tts-tokenizer-12hz-GGUF](https://huggingface.co/cstr/qwen3-tts-tokenizer-12hz-GGUF)）：
+   - talker：`qwen3-tts-12hz-1.7b-voicedesign-f16.gguf`（3.6GB）或 `...-q8_0.gguf`（1.9GB）
+   - tokenizer/codec：`qwen3-tts-tokenizer-12hz.gguf`（约 340MB，建议保持 F16）
+   设置页可自动下载 Q8_0 talker 与 codec，也可以手动选择已下载文件。
+3. 准备 [CrispASR](https://github.com/CrispStrobe/CrispASR) 运行时（v0.8.49+）：设置页可自动下载 macOS/Linux/Windows 版本，或手动指定 `crispasr` 路径。
+4. 在「音色描述」中填写自然语言，例如：
+   `温柔、清澈的年轻女性声音，语速舒缓，适合小说叙述。`
+   也可以点预设按钮快速填入。
+5. 点击「试听」，或在阅读模式直接朗读。首次加载约 4GB 模型需要一些时间，之后常驻。
+
+> VoiceDesign 不需要参考音频，也不需要 `mmproj`；它使用 CrispASR 的 `POST /v1/audio/speech` 接口，请求体中的 `instructions` 即音色描述。CrispASR 默认会给合成音频加入 AI 生成水印；请在使用/分发合成音频时遵守当地关于 AI 生成内容的披露要求。
+
+#### 外部 TTS 服务（OpenAI 兼容）
+
+如果你的模型需要专用运行器/解码器，可在应用外启动一个提供 `POST /v1/audio/speech` 的服务，然后在「设置 → 语音朗读 (TTS) → 语音引擎」选择「外部本地 TTS 服务」：
+
+1. 填写服务地址，例如 `http://127.0.0.1:5005/v1`（应用会自动拼接 `/audio/speech`）。
+2. 按需填写 API Key、模型名、默认/旁白音色、男性角色音色、女性角色音色、`instructions` 音色描述与合成语言。
+3. 情感朗读时会根据角色设置中的性别自动选择男/女音色；普通朗读使用默认/旁白音色。
+4. 可开启「透传情感标签」：正文中的 `<laugh>`、`<sigh>`、`<chuckle>`、`<cough>`、`<sniffle>`、`<groan>`、`<yawn>`、`<gasp>` 会原样交给服务；常见的 `[叹气]`、`（轻笑）` 等括号提示会自动转换为对应标签。关闭后会移除尖括号标签。
+5. 点击「测试并试听」验证；阅读模式、角色扮演、角色预览与剧本朗读都会逐句调用该服务。
+
+> 该模式不包含任何模型特定的推理或解码代码，只负责 HTTP 请求与播放。服务端需要自行处理文本、音色和音频解码。
+>
+> 注意：LM Studio 等本地运行时只提供 `/v1/completions` 文本接口，本身不支持音频服务；需要在其前面再加一个独立的音频解码/合成服务，由该服务暴露 `/v1/audio/speech`，本应用再连接这个服务。
+
+#### macOS 完全磁盘访问权限
+
+macOS 不允许应用自动申请或自动授予「完全磁盘访问权限」。如需从下载、桌面等受保护目录直接读取模型，可在「设置 → 数据管理 → macOS 完全磁盘访问权限」点击「打开系统设置」，在「隐私与安全性 → 完全磁盘访问权限」中点击「+」添加 `Proof Reader` 并开启开关。
+
+> 模型已放入应用数据目录时无需该权限。应用更新后如签名变化导致权限失效，需要重新添加。
 
 ### 🚫 敏感词替换系统
 - 支持管理敏感词替换规则，规避 TTS 大模型敏感词拒绝生成的问题
@@ -250,6 +359,10 @@ novel-proofreader/
 │   │       ├── PromptSettingsSection.tsx   # 自定义 Prompt 配置
 │   │       ├── ProofreadSettingsSection.tsx # 校对设置
 │   │       ├── TTSConfigSection.tsx  # TTS 语音配置
+│   │       ├── LocalTTSConfigSection.tsx # 本地 Qwen3-TTS 配置
+│   │       ├── VoiceDesignTTSConfigSection.tsx # VoiceDesign 配置
+│   │       ├── ExternalTTSConfigSection.tsx # 外部 OpenAI 兼容 TTS 配置
+│   │       ├── LocalEmotionConfigSection.tsx # 本地情感分析模型配置
 │   │       └── ConfirmModal.tsx      # 确认弹窗
 │   ├── hooks/
 │   │   ├── useAICheck.ts             # AI 校对逻辑（断点续校、批量操作）
@@ -283,6 +396,7 @@ novel-proofreader/
 │   │   ├── epub.ts                   # EPUB 解析与生成
 │   │   ├── fileExport.ts             # 文件导出 & 角色检测工具
 │   │   ├── ttsService.ts             # TTS 语音合成 & 音频队列
+│   │   ├── localTts.ts               # 本地 TTS 服务调用（llama-server / CrispASR）
 │   │   ├── githubApi.ts              # GitHub Release API & 镜像源下载
 │   │   ├── logger.ts                 # 可开关的日志系统
 │   │   ├── secureStorage.ts          # 安全存储工具（AES-GCM）
@@ -305,6 +419,10 @@ novel-proofreader/
 │   │   ├── typeGuards.ts             # 类型守卫
 │   │   ├── characterRoles.ts         # 角色类型中文映射
 │   │   ├── id.ts                     # ID 生成
+│   │   ├── emotionAnalysis.ts        # 情感标签映射 / 引号切分 / 说话人规则
+│   │   ├── localEmotion.ts           # 本地情感模型调用（Rust 命令）
+│   │   ├── localEmotionAnalysis.ts   # 离线段落情感分析
+│   │   ├── localTts.ts               # 本地 TTS 调用
 │   │   └── urlParams.ts              # URL 参数解析
 │   ├── App.css                       # 全局样式（CSS Variables + 组件样式）
 │   ├── App.tsx                       # Tauri 入口组件（路由/全局布局）
@@ -315,9 +433,13 @@ novel-proofreader/
 │   ├── tauri.conf.json
 │   ├── icons/                        # 各平台应用图标
 │   ├── capabilities/                 # 权限配置
+│   ├── vendor/candle-core/           # candle 0.11.1 本地补丁（x86 unsafe 修复）
 │   └── src/
 │       ├── lib.rs                    # Tauri 插件注册与应用入口
 │       ├── commands.rs               # Tauri 命令（TTS、校对、LLM 等）
+│       ├── local_tts.rs              # 本地 Qwen3-TTS Base 服务管理与合成
+│       ├── emotion.rs                # 本地情感分析（candle RoBERTa 推理）
+│       ├── voice_design.rs            # VoiceDesign（CrispASR）服务管理与合成
 │       ├── main.rs                   # 桌面端入口
 │       └── llm/                      # 本地 LLM 推理模块
 │           ├── mod.rs                # 模块入口

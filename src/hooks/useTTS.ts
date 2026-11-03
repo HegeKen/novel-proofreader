@@ -5,7 +5,6 @@ import { useCharacterStore } from "../stores/characterStore";
 import { useAIConfigStore } from "../stores/aiConfigStore";
 import { useUIStore } from "../stores/uiStore";
 import { getNonEmptyParagraphs } from "../utils/chapterSplit";
-import { applyWordReplacements } from "../utils/textReplace";
 import { TTSPlayer, ScriptTTSPlayer, type TTSSentence } from "../utils/ttsService";
 import {
 	sendChatCompletion,
@@ -20,6 +19,10 @@ import {
 } from "../utils/aiClient";
 import { logger } from "../utils/logger";
 import { startTtsService, stopTtsService, updateTtsNotification } from "../utils/androidService";
+import { ensureLocalTtsServer, ensureVoiceDesignServer, isTauriRuntime } from "../utils/localTts";
+import { analyzeParagraphLocally } from "../utils/localEmotionAnalysis";
+import { isLocalEmotionReady } from "../utils/localEmotion";
+import { externalVoiceForGender } from "../utils/ttsVoice";
 
 export function useTTS() {
 	const chapters = useNovelStore((s) => s.chapters);
@@ -28,6 +31,17 @@ export function useTTS() {
 	const getCharacters = useCharacterStore((s) => s.getCharacters);
 	const getEvents = useCharacterStore((s) => s.getEvents);
 	const ttsConfig = useConfigStore((s) => s.ttsConfig);
+	// 本地朗读不依赖 MiMo API Key；云端朗读仍需配置
+	const hasTtsCredentials = ttsConfig.provider !== "cloud" || !!ttsConfig.apiKey;
+	// 本地情感分析开启后，段落情绪标注不再依赖 AI API Key
+	const localEmotionEnabled = ttsConfig.localEmotionEnabled === true;
+	const ttsCredentialHint = ttsConfig.provider === "cloud"
+		? localEmotionEnabled
+			? "TTS API Key"
+			: "AI 与 TTS API Key"
+		: localEmotionEnabled
+			? "本地情感模型（设置 → 语音朗读 → 情感分析）"
+			: "AI 模型";
 	const promptConfig = useConfigStore((s) => s.promptConfig);
 	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 
@@ -38,6 +52,33 @@ export function useTTS() {
 		const provider = detectProvider(aiConfig.baseURL);
 		return useAIConfigStore.getState().getApiKeyForProvider(provider);
 	}, [aiConfig.apiKey, aiConfig.baseURL]);
+
+	/** 是否具备情感分析能力：本地模型 或 AI API Key */
+	const hasEmotionAnalyzer = localEmotionEnabled || !!getEffectiveAiApiKey();
+
+	/** 开始朗读前确认情感分析可用（本地模式检查模型是否已下载） */
+	const ensureEmotionAnalyzerReady = useCallback(async (): Promise<boolean> => {
+		if (localEmotionEnabled) {
+			const ready = await isLocalEmotionReady();
+			if (!ready) {
+				useUIStore.getState().showToast(
+					"本地情感模型未下载：请前往「设置 → 语音朗读 → 情感分析」下载模型",
+					"warning",
+					7000,
+				);
+			}
+			return ready;
+		}
+		if (!getEffectiveAiApiKey()) {
+			useUIStore.getState().showToast(
+				"请先在设置中配置 AI 模型，或在「语音朗读 → 情感分析」启用本地离线模型",
+				"warning",
+				7000,
+			);
+			return false;
+		}
+		return true;
+	}, [localEmotionEnabled, getEffectiveAiApiKey, ttsCredentialHint]);
 
 	const [ttsPlaying, setTtsPlaying] = useState(false);
 	const [ttsHighlightedPara, setTtsHighlightedPara] = useState(-1);
@@ -57,6 +98,7 @@ export function useTTS() {
 	const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const totalDurationRef = useRef(0);
 	const isStreamActiveRef = useRef(false); // 同步标记：情感朗读是否仍在运行，用于阻断异步循环
+	const localWarmToastRef = useRef(false); // 本地模型加载提示只弹一次
 	const streamElapsedRef = useRef(0); // 流式/整段朗读已播放时长（秒），暂停期间不累计
 
 	// 计算文本的预计朗读时长（秒）
@@ -165,14 +207,21 @@ export function useTTS() {
 	}, [chapter]);
 
 	const getVoiceForCharacter = useCallback((characterName: string): string => {
-		if (!currentNovelId) return ttsConfig.voice || "冰糖";
+		if (!currentNovelId) {
+			return ttsConfig.provider === "external"
+				? externalVoiceForGender(ttsConfig)
+				: ttsConfig.voice || "冰糖";
+		}
 		const characters = getCharacters(currentNovelId);
 		let matched = characters.find((c) => c.name.toLowerCase() === characterName.toLowerCase());
 		if (!matched) {
 			matched = characters.find((c) => c.aliases?.some(alias => alias.toLowerCase() === characterName.toLowerCase()));
 		}
+		if (ttsConfig.provider === "external") {
+			return externalVoiceForGender(ttsConfig, matched?.gender);
+		}
 		return matched?.voice || ttsConfig.voice || "冰糖";
-	}, [currentNovelId, getCharacters, ttsConfig.voice]);
+	}, [currentNovelId, getCharacters, ttsConfig]);
 
 	const getVoiceDesignPromptForCharacter = useCallback((characterName: string): string | undefined => {
 		if (!currentNovelId) return undefined;
@@ -223,10 +272,6 @@ export function useTTS() {
 		paraText: string,
 		allParagraphs: string[]
 	): Promise<ParagraphEmotionResult | null> => {
-		const effectiveKey = getEffectiveAiApiKey();
-		if (!effectiveKey) return null;
-		const contextBefore = paraIndex > 0 ? allParagraphs[paraIndex - 1] : '';
-		const contextAfter = paraIndex < allParagraphs.length - 1 ? allParagraphs[paraIndex + 1] : '';
 		const configuredCharacters = currentNovelId ? getCharacters(currentNovelId).map(c => ({
 			name: c.name,
 			aliases: c.aliases || [],
@@ -235,6 +280,17 @@ export function useTTS() {
 			relationTerms: c.relationTerms || [],
 			dialect: c.dialect,
 		})) : [];
+
+		// 本地情感分析：完全离线，不依赖 AI Key；用前两段作为上文（与模型训练时的双句输入一致）
+		if (localEmotionEnabled) {
+			const contextBefore = allParagraphs.slice(Math.max(0, paraIndex - 2), paraIndex).join("\n");
+			return analyzeParagraphLocally(paraText, contextBefore, configuredCharacters);
+		}
+
+		const effectiveKey = getEffectiveAiApiKey();
+		if (!effectiveKey) return null;
+		const contextBefore = paraIndex > 0 ? allParagraphs[paraIndex - 1] : '';
+		const contextAfter = paraIndex < allParagraphs.length - 1 ? allParagraphs[paraIndex + 1] : '';
 
 		const currentChapter = chapters[currentChapterIndex];
 		const chapterTitle = currentChapter?.title || '';
@@ -269,20 +325,15 @@ export function useTTS() {
 		} catch {
 			return null;
 		}
-	}, [aiConfig, getEffectiveAiApiKey, currentNovelId, getCharacters, promptConfig.readingModeTts, getEvents, chapters, currentChapterIndex]);
+	}, [aiConfig, getEffectiveAiApiKey, localEmotionEnabled, currentNovelId, getCharacters, promptConfig.readingModeTts, getEvents, chapters, currentChapterIndex]);
 
 	/** 一次性分析从 startPara 至章节结束的所有段落（对话角色判断 + 情感分析），返回 段落索引 → 分析结果 */
 	const analyzeBatchParagraphEmotion = useCallback(async (
 		startPara: number,
-		allParagraphs: string[]
+		allParagraphs: string[],
+		shouldCancel?: () => boolean,
 	): Promise<Map<number, ParagraphEmotionResult>> => {
-		const effectiveKey = getEffectiveAiApiKey();
 		const emptyResult = new Map<number, ParagraphEmotionResult>();
-		if (!effectiveKey) return emptyResult;
-
-		const targetParagraphs = allParagraphs.slice(startPara);
-		if (targetParagraphs.length === 0) return emptyResult;
-
 		const configuredCharacters = currentNovelId ? getCharacters(currentNovelId).map(c => ({
 			name: c.name,
 			aliases: c.aliases || [],
@@ -291,6 +342,25 @@ export function useTTS() {
 			relationTerms: c.relationTerms || [],
 			dialect: c.dialect,
 		})) : [];
+
+		// 本地情感分析：逐段离线推理（单段约 0.2–0.5 秒），复用前两段作为上文
+		if (localEmotionEnabled) {
+			const localResults = new Map<number, ParagraphEmotionResult>();
+			for (let i = startPara; i < allParagraphs.length; i++) {
+				if (shouldCancel?.()) break;
+				const context = allParagraphs.slice(Math.max(0, i - 2), i).join("\n");
+				const result = await analyzeParagraphLocally(allParagraphs[i], context, configuredCharacters);
+				if (result?.segments?.length) localResults.set(i, result);
+			}
+			logger.tts(`本地情感分析完成：${localResults.size} 个段落（起始段 ${startPara}）`);
+			return localResults;
+		}
+
+		const effectiveKey = getEffectiveAiApiKey();
+		if (!effectiveKey) return emptyResult;
+
+		const targetParagraphs = allParagraphs.slice(startPara);
+		if (targetParagraphs.length === 0) return emptyResult;
 
 		const currentChapter = chapters[currentChapterIndex];
 		const chapterTitle = currentChapter?.title || '';
@@ -330,7 +400,31 @@ export function useTTS() {
 			logger.tts("批量情感分析失败", { error: err instanceof Error ? err.message : String(err) });
 			return emptyResult;
 		}
-	}, [aiConfig, getEffectiveAiApiKey, currentNovelId, getCharacters, promptConfig.readingModeTtsBatch, getEvents, chapters, currentChapterIndex]);
+	}, [aiConfig, getEffectiveAiApiKey, localEmotionEnabled, currentNovelId, getCharacters, promptConfig.readingModeTtsBatch, getEvents, chapters, currentChapterIndex]);
+
+	/** 本地朗读：提前拉起常驻服务，避免第一句静默等待模型加载 */
+	const warmUpLocalTts = useCallback(() => {
+		if (ttsConfig.provider !== "local" || !isTauriRuntime()) return;
+		if (!localWarmToastRef.current) {
+			localWarmToastRef.current = true;
+			useUIStore.getState().showToast("正在加载本地朗读模型并准备音色（首次约 20–40 秒）…", "info", 6000);
+		}
+		const ensureServer = ttsConfig.localEngine === "qwen3-voicedesign"
+			? ensureVoiceDesignServer
+			: ensureLocalTtsServer;
+		ensureServer(ttsConfig)
+			.then((info) => {
+				logger.tts("[LocalTTS] 本地朗读服务已就绪", { port: info.port });
+				if (info.started_secs === 0) {
+					useUIStore.getState().showToast("本地朗读模型已就绪", "success", 2500);
+				}
+			})
+			.catch((err) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				logger.warn("[LocalTTS] 本地朗读服务启动失败", msg);
+				useUIStore.getState().showToast(`本地朗读模型加载失败：${msg}`, "error", 8000);
+			});
+	}, [ttsConfig]);
 
 	const handleTTSToggle = useCallback(() => {
 		if (ttsPlaying) {
@@ -355,6 +449,7 @@ export function useTTS() {
 				setEnhancedTTSPreparing(false);
 				setBatchTTSPreparing(false);
 			}
+			warmUpLocalTts();
 			if (!ttsPlayerRef.current) {
 				ttsPlayerRef.current = new TTSPlayer(ttsConfig);
 				ttsPlayerRef.current.setOnUpdate((sentences) => {
@@ -384,7 +479,7 @@ export function useTTS() {
 				startTtsService().catch(() => {});
 			}
 		}
-	}, [ttsPlaying, ttsConfig, paragraphs, isStreamTTSWaitingForStart, isBatchTTSWaitingForStart, isStreamTTSPlaying]);
+	}, [ttsPlaying, ttsConfig, paragraphs, isStreamTTSWaitingForStart, isBatchTTSWaitingForStart, isStreamTTSPlaying, warmUpLocalTts]);
 
 	const handleTTSPrev = useCallback(() => {
 		if (ttsPlayerRef.current) ttsPlayerRef.current.skipToPrev();
@@ -412,6 +507,7 @@ export function useTTS() {
 	}, []);
 
 	const startTTSFromParagraph = useCallback((startParaIndex: number) => {
+		warmUpLocalTts();
 		if (!ttsPlayerRef.current) {
 			ttsPlayerRef.current = new TTSPlayer(ttsConfig);
 			ttsPlayerRef.current.setOnUpdate((sentences) => {
@@ -425,25 +521,25 @@ export function useTTS() {
 		ttsPlayerRef.current.play();
 		setTtsPlaying(true);
 		startTtsService().catch(() => {});
-	}, [ttsConfig, paragraphs]);
+	}, [ttsConfig, paragraphs, warmUpLocalTts]);
 
 	const handleEnterStreamTTSSelectionMode = useCallback(() => {
 		if (isStreamTTSWaitingForStart) { setIsStreamTTSWaitingForStart(false); return; }
-		if (!ttsConfig.apiKey || !getEffectiveAiApiKey() || !chapter) {
-			useUIStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用情感朗读", "warning");
+		if (!hasTtsCredentials || !hasEmotionAnalyzer || !chapter) {
+			useUIStore.getState().showToast(`请先在设置中配置 ${ttsCredentialHint} 后使用情感朗读`, "warning");
 			return;
 		}
 		if (ttsPlayerRef.current) { ttsPlayerRef.current.stop(); ttsPlayerRef.current = null; setTtsPlaying(false); setTtsHighlightedPara(-1); }
 		if (scriptTTSRef.current) { scriptTTSRef.current.stop(); scriptTTSRef.current = null; setIsStreamTTSPlaying(false); setEnhancedTTSPreparing(false); }
 		isStreamActiveRef.current = false;
 		setIsStreamTTSWaitingForStart(true);
-	}, [isStreamTTSWaitingForStart, ttsConfig.apiKey, getEffectiveAiApiKey, chapter]);
+	}, [isStreamTTSWaitingForStart, hasTtsCredentials, hasEmotionAnalyzer, ttsCredentialHint, chapter]);
 
 	/** 进入整段朗读选择模式：等待用户点击起始段落 */
 	const handleEnterBatchTTSSelectionMode = useCallback(() => {
 		if (isBatchTTSWaitingForStart) { setIsBatchTTSWaitingForStart(false); return; }
-		if (!ttsConfig.apiKey || !getEffectiveAiApiKey() || !chapter) {
-			useUIStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用整段朗读", "warning");
+		if (!hasTtsCredentials || !hasEmotionAnalyzer || !chapter) {
+			useUIStore.getState().showToast(`请先在设置中配置 ${ttsCredentialHint} 后使用整段朗读`, "warning");
 			return;
 		}
 		if (ttsPlayerRef.current) { ttsPlayerRef.current.stop(); ttsPlayerRef.current = null; setTtsPlaying(false); setTtsHighlightedPara(-1); }
@@ -452,17 +548,18 @@ export function useTTS() {
 		setIsStreamTTSWaitingForStart(false);
 		setBatchTTSPreparing(false);
 		setIsBatchTTSWaitingForStart(true);
-	}, [isBatchTTSWaitingForStart, ttsConfig.apiKey, getEffectiveAiApiKey, chapter]);
+	}, [isBatchTTSWaitingForStart, hasTtsCredentials, hasEmotionAnalyzer, ttsCredentialHint, chapter]);
 
 	/**
 	 * 整段朗读：从所选段落至章节结束，一次性发送给 AI 大模型做对话角色判断与情感分析，
 	 * 得到回复后再逐段发起 TTS 请求播放。
 	 */
 	const handleBatchEnhancedChapterTTS = useCallback(async (startFromParagraph?: number) => {
-		if (!ttsConfig.apiKey || !getEffectiveAiApiKey() || !chapter) {
-			useUIStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用整段朗读", "warning");
+		if (!hasTtsCredentials || !hasEmotionAnalyzer || !chapter) {
+			useUIStore.getState().showToast(`请先在设置中配置 ${ttsCredentialHint} 后使用整段朗读`, "warning");
 			return;
 		}
+		if (!(await ensureEmotionAnalyzerReady())) return;
 		if (ttsPlayerRef.current && ttsPlaying) { ttsPlayerRef.current.pause(); setTtsPlaying(false); setTtsHighlightedPara(-1); }
 		if (scriptTTSRef.current) { scriptTTSRef.current.stop(); scriptTTSRef.current = null; }
 
@@ -518,14 +615,23 @@ export function useTTS() {
 
 			// ── 第一步：一次性发送整段（所选段落至章节结束）给 AI 做角色判断 + 情感分析 ──
 			useUIStore.getState().showToast(`正在分析第 ${startPara + 1} 段至章节末尾...`, "info", 6000);
-			const batchResults = await analyzeBatchParagraphEmotion(startPara, allParagraphs);
+			const batchResults = await analyzeBatchParagraphEmotion(
+				startPara,
+				allParagraphs,
+				() => !isStreamActiveRef.current,
+			);
 			if (!isStreamActiveRef.current) {
 				scriptTTS.stop();
 				scriptTTSRef.current = null;
 				return;
 			}
 			if (batchResults.size === 0) {
-				useUIStore.getState().showToast("整段情感分析失败，请检查 AI 配置后重试", "error");
+				useUIStore.getState().showToast(
+					localEmotionEnabled
+						? "本地情感分析失败，请确认情感模型已下载后重试"
+						: "整段情感分析失败，请检查 AI 配置后重试",
+					"error",
+				);
 				isStreamActiveRef.current = false;
 				setIsStreamTTSPlaying(false);
 				setBatchTTSPreparing(false);
@@ -553,9 +659,7 @@ export function useTTS() {
 						if (!isStreamActiveRef.current) break;
 						const actualSpeaker = segment.speaker === '旁白' ? narratorName : segment.speaker;
 						if (!characterVoices[actualSpeaker]) characterVoices[actualSpeaker] = getVoiceForCharacter(actualSpeaker);
-						// 敏感词替换后再附加方言/情绪标签，确保发给 TTS 的文本不含敏感词
-						const replacedText = applyWordReplacements(segment.text);
-						const dialectText = applyDialectLabel(actualSpeaker, replacedText);
+						const dialectText = applyDialectLabel(actualSpeaker, segment.text);
 						await scriptTTS.addDialogueStream(actualSpeaker, dialectText, i, getVoiceDesignPromptForCharacter(actualSpeaker), segment.speed);
 					}
 					result.characters.forEach(c => allCharacters.add(c));
@@ -565,9 +669,7 @@ export function useTTS() {
 					newCache.set(emotionCacheKey(i), result);
 				} else {
 					if (!characterVoices[narratorName]) characterVoices[narratorName] = getVoiceForCharacter(narratorName);
-					// 旁白回退同样先做敏感词替换
-					const replacedText = applyWordReplacements(allParagraphs[i]);
-					const dialectText = applyDialectLabel(narratorName, replacedText);
+					const dialectText = applyDialectLabel(narratorName, allParagraphs[i]);
 					await scriptTTS.addDialogueStream(narratorName, dialectText, i);
 				}
 			}
@@ -598,13 +700,14 @@ export function useTTS() {
 			setBatchTTSPreparing(false);
 			scriptTTSRef.current = null;
 		}
-	}, [chapter, ttsConfig, getEffectiveAiApiKey, ttsPlaying, getVoiceForCharacter, paragraphEmotionCache, analyzeBatchParagraphEmotion, getCharacters, currentNovelId, getVoiceDesignPromptForCharacter, applyDialectLabel]);
+	}, [chapter, ttsConfig, hasTtsCredentials, ttsCredentialHint, localEmotionEnabled, ensureEmotionAnalyzerReady, ttsPlaying, getVoiceForCharacter, paragraphEmotionCache, analyzeBatchParagraphEmotion, getCharacters, currentNovelId, getVoiceDesignPromptForCharacter, applyDialectLabel]);
 
 	const handleEnhancedChapterTTS = useCallback(async (startFromParagraph?: number) => {
-		if (!ttsConfig.apiKey || !getEffectiveAiApiKey() || !chapter) {
-			useUIStore.getState().showToast("请先在设置中配置 AI 与 TTS API Key 后使用情感朗读", "warning");
+		if (!hasTtsCredentials || !hasEmotionAnalyzer || !chapter) {
+			useUIStore.getState().showToast(`请先在设置中配置 ${ttsCredentialHint} 后使用情感朗读`, "warning");
 			return;
 		}
+		if (!(await ensureEmotionAnalyzerReady())) return;
 		if (ttsPlayerRef.current && ttsPlaying) { ttsPlayerRef.current.pause(); setTtsPlaying(false); setTtsHighlightedPara(-1); }
 		if (scriptTTSRef.current) { scriptTTSRef.current.stop(); scriptTTSRef.current = null; }
 
@@ -722,7 +825,7 @@ export function useTTS() {
 			setEnhancedTTSPreparing(false);
 			scriptTTSRef.current = null;
 		}
-	}, [chapter, ttsConfig, getEffectiveAiApiKey, ttsPlaying, getVoiceForCharacter, paragraphEmotionCache, analyzeParagraphEmotion, getCharacters, currentNovelId, getVoiceDesignPromptForCharacter, applyDialectLabel]);
+	}, [chapter, ttsConfig, hasTtsCredentials, ttsCredentialHint, localEmotionEnabled, ensureEmotionAnalyzerReady, ttsPlaying, getVoiceForCharacter, paragraphEmotionCache, analyzeParagraphEmotion, getCharacters, currentNovelId, getVoiceDesignPromptForCharacter, applyDialectLabel]);
 
 	// 更新通知栏标题（章节变化时）
 	useEffect(() => {

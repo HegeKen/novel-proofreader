@@ -9,6 +9,7 @@ import { BalanceSection } from "./config/BalanceSection";
 import { APIUsageSection } from "./config/APIUsageSection";
 import { ProofreadSettingsSection } from "./config/ProofreadSettingsSection";
 import { TTSConfigSection } from "./config/TTSConfigSection";
+import { LocalEmotionConfigSection } from "./config/LocalEmotionConfigSection";
 import { DataManagementSection } from "./config/DataManagementSection";
 import { PromptSettingsSection } from "./config/PromptSettingsSection";
 import { LocalModelSettings } from "./LocalModelSettings";
@@ -53,9 +54,13 @@ interface ConfigState {
 	apiFormat: ApiFormat;
 }
 
+export type ConfigTab = "ai" | "proofread" | "tts" | "emotion" | "data" | "dev";
+
 interface Props {
 	open: boolean;
 	onClose: () => void;
+	/** 打开时默认展示的标签页 */
+	initialTab?: ConfigTab;
 }
 
 function ConfigModalContent({
@@ -65,6 +70,7 @@ function ConfigModalContent({
 	onClose,
 	promptConfig,
 	onSavePrompt,
+	initialTab = "ai",
 }: {
 	initialConfig: ConfigState;
 	apiKeyMap: Partial<Record<AIProvider, string>>;
@@ -72,6 +78,7 @@ function ConfigModalContent({
 	onClose: () => void;
 	promptConfig: PromptConfig;
 	onSavePrompt: (config: PromptConfig) => void;
+	initialTab?: ConfigTab;
 }) {
 	const [config, setConfig] = useState<ConfigState>(initialConfig);
 	const localModelConfig = useAIConfigStore((s) => s.localModelConfig);
@@ -88,7 +95,7 @@ function ConfigModalContent({
 		}
 	}, [setLocalModelConfig, updateProofreadConfig]);
 	const [showApiKey, setShowApiKey] = useState(false);
-	const [activeTab, setActiveTab] = useState<"ai" | "proofread" | "tts" | "data" | "dev">("ai");
+	const [activeTab, setActiveTab] = useState<ConfigTab>(initialTab);
 	const [logRefresh, setLogRefresh] = useState(0);
 	const [showWordReplacementModal, setShowWordReplacementModal] = useState(false);
 	const [promptState, setPromptState] = useState<PromptConfig>(promptConfig);
@@ -136,7 +143,7 @@ function ConfigModalContent({
 	return (
 		<Modal open onClose={onClose} title="APP 设置" icon={<Icons.settings size={16} />} bodyClassName="config-body-flush">
 			<div className="config-tabs">
-					{([ ["ai", "AI 模型", Icons.brain], ["proofread", "校对引擎", Icons.bolt], ["tts", "语音朗读", Icons.volume], ["data", "数据管理", Icons.server], ["dev", "开发者工具", Icons.settings]] as const).map(([tab, label, Icon]) => (
+					{([ ["ai", "AI 模型", Icons.brain], ["proofread", "校对引擎", Icons.bolt], ["tts", "语音朗读", Icons.volume], ["emotion", "情感分析", Icons.sparkles], ["data", "数据管理", Icons.server], ["dev", "开发者工具", Icons.settings]] as const).map(([tab, label, Icon]) => (
 						<button key={tab} className={`tab-btn ${activeTab === tab ? "active" : ""}`} onClick={() => setActiveTab(tab)}>
 							<Icon size={14} />{label}
 						</button>
@@ -256,6 +263,7 @@ function ConfigModalContent({
 							<WordReplacementModal open={showWordReplacementModal} onClose={() => setShowWordReplacementModal(false)} />
 						</>
 					)}
+					{activeTab === "emotion" && <LocalEmotionConfigSection />}
 					{activeTab === "dev" && (
 						<>
 							<div className="config-section">
@@ -370,7 +378,7 @@ function ConfigModalContent({
 	);
 }
 
-export function ConfigModal({ open, onClose }: Props) {
+export function ConfigModal({ open, onClose, initialTab = "ai" }: Props) {
 	const aiConfig = useAIConfigStore((s) => s.aiConfig);
 	const setAIConfig = useAIConfigStore((s) => s.setAIConfig);
 	const apiKeyMap = useAIConfigStore((s) => s.apiKeyMap);
@@ -409,6 +417,7 @@ export function ConfigModal({ open, onClose }: Props) {
 	return (
 		<ConfigModalContent
 			key={open ? "open" : "closed"}
+			initialTab={initialTab}
 			initialConfig={initialConfig}
 			apiKeyMap={apiKeyMap}
 			onSave={handleSave}

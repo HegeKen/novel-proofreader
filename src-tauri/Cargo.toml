@@ -1,6 +1,6 @@
 [package]
 name = "proofreader"
-version = "0.17.0"
+version = "0.18.0"
 edition = "2021"
 
 [lib]
@@ -30,13 +30,41 @@ sha2 = "0.10"
 llama-cpp-2 = { version = "0.1", features = ["metal"], optional = true }
 # HTTP 客户端（模型下载，流式）
 # 使用 rustls 替代 native-tls，避免 Android 交叉编译时找不到 OpenSSL
-reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "json"] }
 # 系统信息（内存/磁盘检测）
 libc = "0.2"
+# 本地 TTS：将 llama-server /tts 返回的 WAV 编码为 base64 回传前端
+base64 = "0.22"
+# 本地情感分析：纯 Rust 加载 RoBERTa safetensors 并做 CPU 推理（离线）
+# 0.11.1 的 x86 量化内核在非 unsafe 块调用 __cpuid_count，导致 Windows x64 /
+# Android x86_64 构建失败；使用下方 [patch.crates-io] 的本地修复版。
+candle-core = "=0.11.1"
+candle-nn = "=0.11.1"
+candle-transformers = "=0.11.1"
+tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
 
 # 发布产物体积优化：默认 release 配置（opt-level=3 / lto=false / codegen-units=16 /
 # 保留符号）会让 Android 各 ABI 的 .so 达到 ~14MB、桌面可执行文件 ~14MB。
 # 体积优先配置可显著减小安装包，代价是发布构建耗时增加。
+# 开发模式下也开启 candle 的优化，避免本地情感分析在 `tauri dev` 中过慢
+[profile.dev.package.candle-core]
+opt-level = 3
+
+[profile.dev.package.candle-nn]
+opt-level = 3
+
+[profile.dev.package.candle-transformers]
+opt-level = 3
+
+[profile.dev.package.gemm]
+opt-level = 3
+
+[profile.dev.package.gemm-common]
+opt-level = 3
+
+[profile.dev.package.gemm-f32]
+opt-level = 3
+
 [profile.release]
 # 以体积优先（"s"），而非默认的极致速度（3）
 opt-level = "s"
@@ -46,3 +74,8 @@ lto = "thin"
 codegen-units = 1
 # 剥离符号表（Android 侧 AGP 也会剥离，此处主要惠及桌面产物）
 strip = true
+
+# candle-core 0.11.1 的 repack_x86.rs 缺少 unsafe 块（上游 bug）；
+# 本地补丁仅修复该行，待上游修复后可移除。
+[patch.crates-io]
+candle-core = { path = "vendor/candle-core" }

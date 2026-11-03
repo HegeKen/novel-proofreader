@@ -12,6 +12,7 @@ import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { Select } from "./Select";
 import { ScriptTTSPlayer, parseScriptContent } from "../utils/ttsService";
+import { externalVoiceForGender } from "../utils/ttsVoice";
 import { scriptToPlainText, parseScriptBlocks, parseScriptJSON, scriptJSONToBlocks, convertNonDialogueToNarrator, repairScriptContent } from "../utils/scriptMarkdown";
 import type { ScriptBlock, DialogueBlock } from "../utils/scriptMarkdown";
 import { ScriptRenderer } from "./ScriptRenderer";
@@ -77,7 +78,11 @@ function ScriptPanelContent({
 
 	// 根据角色信息获取音色
 	const getVoiceForCharacter = useCallback((characterName: string): string => {
-		if (!currentNovelId) return ttsConfig.voice || "冰糖";
+		if (!currentNovelId) {
+			return ttsConfig.provider === "external"
+				? externalVoiceForGender(ttsConfig)
+				: ttsConfig.voice || "冰糖";
+		}
 
 		const characters = getCharacters(currentNovelId);
 		let matchedCharacter: CharacterInfo | undefined;
@@ -98,6 +103,9 @@ function ScriptPanelContent({
 		}
 
 		if (matchedCharacter) {
+			if (ttsConfig.provider === "external") {
+				return externalVoiceForGender(ttsConfig, matchedCharacter.gender);
+			}
 			// 如果角色指定了音色，使用指定的
 			if (matchedCharacter.voice) {
 				return matchedCharacter.voice;
@@ -114,7 +122,9 @@ function ScriptPanelContent({
 			}
 		}
 
-		return ttsConfig.voice || "冰糖";
+		return ttsConfig.provider === "external"
+			? externalVoiceForGender(ttsConfig)
+			: ttsConfig.voice || "冰糖";
 	}, [currentNovelId, getCharacters, ttsConfig]);
 
 	useEffect(() => {
@@ -186,7 +196,7 @@ function ScriptPanelContent({
 
 	// 剧本情感朗读（直接利用剧本结构，无需AI分析）
 	const handleEmotionTTS = useCallback(async (startDialogueIndex: number = 0) => {
-		if (!ttsConfig.apiKey) {
+		if (ttsConfig.provider === "cloud" && !ttsConfig.apiKey) {
 			setError("请先在设置中配置 TTS API Key");
 			return;
 		}
@@ -313,7 +323,7 @@ function ScriptPanelContent({
 	}, [handleEmotionTTS, ttsPlaying]);
 
 	const handleScriptTTS = useCallback(async () => {
-		if (!ttsConfig.apiKey) {
+		if (ttsConfig.provider === "cloud" && !ttsConfig.apiKey) {
 			setError("请先在设置中配置 TTS API Key");
 			return;
 		}

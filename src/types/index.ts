@@ -46,9 +46,19 @@ export interface AIConfig {
 /** 错误类型 */
 type ErrorType = "typo" | "format" | "grammar" | "punctuation" | "variant" | "network";
 
+/** TTS 语音引擎：cloud = 小米 MiMo API，local = 本地内置模型，external = 外部 OpenAI 兼容 TTS 服务 */
+export type TTSProvider = "cloud" | "local" | "external";
+
+/** 本地 TTS 后端：base = llama.cpp（参考音频克隆），voicedesign = CrispASR（文字音色描述） */
+export type LocalTTSEngine = "qwen3-base" | "qwen3-voicedesign";
+
 /** TTS 语音朗读配置 */
 export interface TTSConfig {
 	enabled: boolean;
+	/** 语音引擎（默认 cloud，兼容旧配置） */
+	provider: TTSProvider;
+	/** 本地引擎（provider 为 local 时生效） */
+	localEngine: LocalTTSEngine;
 	voice: string;
 	speed: number;
 	volume: number;
@@ -58,6 +68,49 @@ export interface TTSConfig {
 	audioCacheEnabled: boolean;
 	audioCachePersistent: boolean;
 	dialect: string;
+	// ── 本地 Qwen3-TTS 配置 ──
+	/** 主模型路径（Qwen3-TTS-12Hz-1.7B-Base-*.gguf） */
+	localModelPath: string;
+	/** 配套 mmproj 路径（必需） */
+	localMmprojPath: string;
+	/** llama-server 可执行文件路径（留空自动检测） */
+	localBinaryPath: string;
+	/** 音色参考音频路径（wav/mp3，可留空） */
+	localSpeakerRefPath: string;
+	/** 合成语言（zh/en/ja/ko/de/fr/ru/pt/es/it） */
+	localLanguage: string;
+	/** GPU 加速层数（-1 = 全部） */
+	localGpuLayers: number;
+	/** 使用本地情感分析模型（离线；替代 AI 做段落情感/语调标注） */
+	localEmotionEnabled?: boolean;
+	// ── 本地 VoiceDesign（CrispASR）──
+	/** VoiceDesign talker GGUF 路径 */
+	voiceDesignModelPath: string;
+	/** 配套 tokenizer/codec GGUF 路径 */
+	voiceDesignCodecPath: string;
+	/** crispasr 可执行文件路径（留空自动检测） */
+	voiceDesignBinaryPath: string;
+	/** 音色描述（自然语言，VoiceDesign 必填） */
+	voiceDesignInstruct: string;
+	// ── 外部 OpenAI 兼容 TTS 服务 ──
+	/** 服务根地址，例如 http://127.0.0.1:5005/v1 */
+	externalTtsBaseUrl: string;
+	/** 服务 API Key（可选） */
+	externalTtsApiKey: string;
+	/** 模型名（可选，透传给服务） */
+	externalTtsModel: string;
+	/** 默认/旁白音色（透传给服务） */
+	externalTtsVoice: string;
+	/** 男性角色音色 */
+	externalTtsMaleVoice: string;
+	/** 女性角色音色 */
+	externalTtsFemaleVoice: string;
+	/** 是否透传 <laugh> 等情感标签（关闭时移除） */
+	externalTtsEmotionTags: boolean;
+	/** 音色/风格描述（可选，透传为 instructions） */
+	externalTtsInstructions: string;
+	/** 合成语言 */
+	externalTtsLanguage: string;
 }
 
 /** 校对引擎配置 */

@@ -1,5 +1,9 @@
 mod commands;
+mod emotion;
+mod external_tts;
 mod llm;
+mod local_tts;
+mod voice_design;
 
 #[cfg(target_os = "android")]
 use tauri::plugin::{Builder, TauriPlugin};
@@ -41,6 +45,7 @@ pub fn run() {
             commands::update_tts_notification,
             commands::start_proofread_service,
             commands::stop_proofread_service,
+            commands::macos_open_full_disk_access_settings,
             // 本地 LLM 命令
             commands::llm::llm_get_status,
             commands::llm::llm_load_model,
@@ -54,7 +59,36 @@ pub fn run() {
             commands::llm::llm_scan_models,
             commands::llm::llm_import_model,
             commands::llm::llm_debug_log,
+            // 本地 TTS（Qwen3-TTS GGUF）命令
+            local_tts::tts_local_status,
+            local_tts::tts_local_start_server,
+            local_tts::tts_local_stop_server,
+            local_tts::tts_local_synthesize,
+            local_tts::tts_local_download_mmproj,
+            local_tts::tts_local_install_runtime,
+            // 本地 TTS：Qwen3-TTS VoiceDesign（CrispASR）命令
+            voice_design::tts_voice_design_status,
+            voice_design::tts_voice_design_start_server,
+            voice_design::tts_voice_design_stop_server,
+            voice_design::tts_voice_design_synthesize,
+            voice_design::tts_voice_design_download_model,
+            voice_design::tts_voice_design_install_runtime,
+            // 外部 OpenAI 兼容 TTS（Rust 侧请求，绕过 WebView CORS）
+            external_tts::tts_external_synthesize,
+            // 本地情感分析（RoBERTa 多标签，离线）
+            emotion::emotion_local_status,
+            emotion::emotion_local_download,
+            emotion::emotion_local_import_dir,
+            emotion::emotion_local_analyze,
+            emotion::emotion_local_unload,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            // 应用退出时结束 llama-server 子进程，避免残留占用内存/端口
+            if let tauri::RunEvent::Exit = event {
+                local_tts::shutdown();
+                voice_design::shutdown();
+            }
+        });
 }

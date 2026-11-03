@@ -13,10 +13,22 @@ export function applyWordReplacements(text: string): string {
 	let result = text;
 
 	for (const { original, replacement } of replacements) {
-		if (original && replacement && original !== replacement) {
-			result = result.split(original).join(replacement);
+		// 容忍用户录入时误带的前后空格
+		const from = original.trim();
+		const to = replacement.trim();
+		if (from && to && from !== to) {
+			result = result.split(from).join(to);
 		}
 	}
 
 	return result;
+}
+
+/** 当前替换规则指纹：规则变化时使 TTS 音频缓存失效 */
+export function getWordReplacementFingerprint(): string {
+	return useWordReplacementStore
+		.getState()
+		.replacements
+		.map((r) => `${r.original.trim()}\u0001${r.replacement.trim()}`)
+		.join("\u0002");
 }
