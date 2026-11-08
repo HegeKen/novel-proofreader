@@ -174,8 +174,15 @@ export function parseEpub(buffer: ArrayBuffer): ParsedEpub {
  * @param chapters 章节列表（title 为章节标题，content 为正文，段落以换行分隔）
  * @param appendix 附录数据（角色信息、大事记等），会附加到文档最后
  */
-export function buildEpub(title: string, chapters: EpubChapter[], appendix?: EpubAppendix): Uint8Array {
+export function buildEpub(
+	title: string,
+	chapters: EpubChapter[],
+	appendix?: EpubAppendix,
+	language: "zh" | "en" = "zh",
+): Uint8Array {
 	const uid = `novel-proofreader-${Date.now()}`;
+	// 书内语言标记：影响 Kindle/Apple Books 的断词、连字与朗读发音
+	const lang = language === "en" ? "en" : "zh";
 	const chapterFiles: Record<string, Uint8Array> = {};
 	const navItems: string[] = [];
 	const manifestItems: string[] = [];
@@ -193,7 +200,7 @@ export function buildEpub(title: string, chapters: EpubChapter[], appendix?: Epu
 			.join("\n");
 		chapterFiles[`OEBPS/${fileName}`] = strToU8(`<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${lang}">
 <head>
   <title>${escapeXml(ch.title)}</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
@@ -229,7 +236,7 @@ ${paras}
 			.join("\n");
 		chapterFiles[`OEBPS/${fileName}`] = strToU8(`<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${lang}">
 <head>
   <title>角色信息</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
@@ -260,7 +267,7 @@ ${items}
 			.join("\n");
 		chapterFiles[`OEBPS/${fileName}`] = strToU8(`<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${lang}">
 <head>
   <title>小说大事记</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
@@ -297,7 +304,7 @@ ${items}
 			.join("\n");
 		chapterFiles[`OEBPS/${fileName}`] = strToU8(`<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${lang}">
 <head>
   <title>角色关系</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
@@ -316,7 +323,7 @@ ${items}
 	// 生成正文目录页面（toc.xhtml），放在正文之前
 	const tocContent = `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="${lang}">
 <head>
   <title>目录</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
@@ -340,10 +347,15 @@ ${tocLinks.join("\n")}
     <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
   </rootfiles>
 </container>`),
-		"OEBPS/style.css": strToU8("body { line-height: 1.8; margin: 1em; }\nh1 { text-align: center; font-size: 1.3em; }"),
+		"OEBPS/style.css": strToU8(
+			language === "en"
+				? // 英文排版：段间距代替首行缩进，行高略紧
+					"body { line-height: 1.6; margin: 1em; }\nh1 { text-align: center; font-size: 1.3em; margin: 1.5em 0 1.2em; }\np { margin: 0 0 0.8em; }"
+				: "body { line-height: 1.8; margin: 1em; }\nh1 { text-align: center; font-size: 1.3em; }",
+		),
 		"OEBPS/nav.xhtml": strToU8(`<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="zh">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="${lang}">
 <head>
   <title>目录</title>
 </head>
@@ -361,7 +373,7 @@ ${navItems.join("\n")}
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="uid">${escapeXml(uid)}</dc:identifier>
     <dc:title>${escapeXml(title)}</dc:title>
-    <dc:language>zh</dc:language>
+    <dc:language>${lang}</dc:language>
     <meta property="dcterms:modified">${new Date().toISOString().replace(/\.\d+Z$/, "Z")}</meta>
   </metadata>
   <manifest>

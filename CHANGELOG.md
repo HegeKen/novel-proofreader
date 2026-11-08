@@ -1,8 +1,24 @@
 # Proof Reader Changelog
 
-## 未发布
+## v0.19.0 (2026-11-08)
 
 ### ✨ 功能更新
+
+**英文小说支持**
+- 导入时自动检测小说语言（中文 / 英文）并记录到小说数据，校对、朗读、EPUB 导出均按语言切换
+- 新增英文 txt 预处理：清理行首 `¡¡¡¡` 等电子书缩进标记，按版面宽度硬折行的文本自动重排为「一行一段」（EPUB 来源不重排）
+- 英文章节识别升级：支持 `CHAPTER ONE`、`Chapter 1: Title`、`- CHAPTER ONE -`、`Prologue` / `Epilogue` 等形态，兼容 OCR 拆字与大小写混乱；自动丢弃只有标题的目录页条目；无标题时回退 `Chapter N`
+- 非 UTF-8 文本按 CJK 占比区分 GBK 中文与 Windows-1252 西文，避免英文电子书被解码成乱码
+- EPUB 导出按小说语言写入 `xml:lang`，改善 Kindle / Apple Books 的断词、连字与朗读发音
+- AI 校对：英文小说自动使用英文系统 prompt（单段 / 章节 / 双段 / 本地模型）；用户自定义 prompt 时仍尊重自定义配置
+- 本地情感分析：英文段落新增 `said Harry` / `Harry said` 等说话人识别规则
+
+**AI 角色分析加速**
+- 开始分析时先发送「小说名 + 作者」，让模型自评是否认识该作品；命中则直接生成角色与关系，跳过全文分批分析，显著节省 token
+- 严格判定门槛：同名作品、译名不确定、模糊印象一律返回未知，禁止编造角色、关系与章节出处
+- 未命中或请求失败时自动回退原有全文分析流程，用户无感知
+- 角色字段输出语言跟随小说语言（中文 / 英文），枚举值保持统一的英文枚举
+- 命中已知知识时，完成通知、Toast 与确认弹窗会标注来源，提示建议抽查
 
 **本地情感分析（离线朗读标注）**
 - 集成 `liudev/roberta-multilabel-28-3-classes`：中文 RoBERTa 多标签模型，覆盖 28 种细粒度情绪 + 3 种情感基调
@@ -18,15 +34,27 @@
 - 采用模型作者推荐的高查准率阈值，低置信度回退「平静」，避免过度演绎
 - 本地情感分析不依赖 AI API Key；配合本地 TTS 引擎可完全断网、零成本生成语音
 
+### 🐛 Bug 修复
+
+- 修复本地 VoiceDesign 朗读中个别句子音频生成失败后播放队列卡死、后续音频被当作过期项丢弃的问题；失败句会自动重试一次并跳过，不再中断整段朗读
+- 切换章节 / 停止朗读导致的中止不再误报为「生成音频失败」，并在日志中补充真实错误信息
+
 ### 🔐 依赖与安全
 
-- 更新前端依赖：Vite 8.3.5、Vitest 5.0.5、jsdom 30.1.3、React 19.3.1、Tauri JS API/CLI 2.12.4、ESLint 10.14.0 等
+- 更新前端依赖：Vite 8.3.6、Vitest 5.1.0、jsdom 31.0.0、lucide-react 1.70.0、Tailwind CSS 4.3.5（含 `@tailwindcss/vite`）、Zustand 5.1.0、`@vitejs/plugin-react` 6.2.1 等
 - 更新 Rust 依赖（`cargo update`），桌面与 Android 目标均重新通过编译检查
 - `pnpm audit` 清零：升级 vite / jsdom(undici) / eslint(zod) / postcss(source-map-js) 相关依赖，并通过 `pnpm-workspace.yaml` 的 override 将 `minimatch` 提升到 11.0.1，修复 glob 放大 DoS
 - 新增 README 平台与构建版本支持矩阵，说明正常版 / LLM cmake 版在各平台的能力差异
 - 修复 Android x86_64 / Windows x64 构建失败：`candle-core 0.11.1` 的 x86 量化内核在非 `unsafe` 块调用 `__cpuid_count`；通过 `src-tauri/vendor/candle-core` 本地补丁 + `[patch.crates-io]` 修复
 - 修复 Android 端本地情感模型加载失败：兼容 `bert.` / `roberta.` / `model.` / 无前缀权重，pooler 与分类头同步适配；失败时输出模型键名诊断
 - 下载/导入情感模型时校验 safetensors 头、必需键与文件长度，提前拦截不完整或错误文件
+
+### 🛠️ 工程与工具链
+
+- 新增 `src/utils/language.ts`：小说语言检测、英文缩进符清理与软换行重排
+- 新增语言、英文章节识别、编码区分与 AI 角色识别的单元测试
+- 前端测试：339 个通过
+- 版本号提升至 `0.19.0`
 
 ## v0.18.0 (2026-11-03)
 

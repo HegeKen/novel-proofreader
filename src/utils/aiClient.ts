@@ -1048,9 +1048,16 @@ ${ANOMALY_PROMPT_TEXT}`;
 export function buildProofreadSystemPrompt(
 	basePrompt: string,
 	ignoredWords?: string[],
+	language: "zh" | "en" = "zh",
 ): string {
 	if (!ignoredWords || ignoredWords.length === 0) {
 		return basePrompt;
+	}
+	if (language === "en") {
+		return (
+			basePrompt +
+			`\n\n[STRICT] The following names/terms are never errors even if they look misspelled or ungrammatical: ${ignoredWords.join(", ")}`
+		);
 	}
 	return basePrompt + `\n\n【强制约束】以下词语无论是否错误，都绝对不能出现在find字段中（这些是人名/地名/专有名词/特殊术语）：${ignoredWords.join('、')}`;
 }
@@ -1059,13 +1066,17 @@ export function buildProofreadSystemPrompt(
 export function buildProofreadUserPrompt(
 	text: string,
 	ignoredWords?: string[],
+	language: "zh" | "en" = "zh",
 ): string {
 	// 预处理：标准化 CJK 变体字，减少 AI 校对误报
 	const normalized = normalizeCJKVariants(text);
-	let prompt = `请检查以下文本：\n\n${normalized}`;
+	let prompt = language === "en" ? `Please proofread the following text:\n\n${normalized}` : `请检查以下文本：\n\n${normalized}`;
 
 	if (ignoredWords && ignoredWords.length > 0) {
-		prompt += `\n\n【强制约束】以下词语在本文中出现时，绝对不能标记为错误（这些是人名、地名、专有名词或特殊术语），即使它们看起来像错别字：\n${ignoredWords.join("、")}\n\n请直接跳过这些词语，不要在返回结果中包含它们。`;
+		prompt +=
+			language === "en"
+				? `\n\n[STRICT] The following names/terms must never be flagged as errors (people, places, invented terms), even if they look like typos:\n${ignoredWords.join(", ")}\n\nSkip them and do not include them in the result.`
+				: `\n\n【强制约束】以下词语在本文中出现时，绝对不能标记为错误（这些是人名、地名、专有名词或特殊术语），即使它们看起来像错别字：\n${ignoredWords.join("、")}\n\n请直接跳过这些词语，不要在返回结果中包含它们。`;
 	}
 
 	return prompt;
@@ -1119,18 +1130,91 @@ export function buildDualParagraphUserPrompt(
 	paragraph1: string,
 	paragraph2: string,
 	ignoredWords?: string[],
+	language: "zh" | "en" = "zh",
 ): string {
 	const normalized1 = normalizeCJKVariants(paragraph1);
 	const normalized2 = normalizeCJKVariants(paragraph2);
 
-	let prompt = `请检查以下两个连续段落，并评估段落分割是否合理：\n\n【第1段】\n${normalized1}\n\n【第2段】\n${normalized2}`;
+	let prompt =
+		language === "en"
+			? `Proofread the following two consecutive paragraphs and judge whether the split is reasonable:\n\n[Paragraph 1]\n${normalized1}\n\n[Paragraph 2]\n${normalized2}`
+			: `请检查以下两个连续段落，并评估段落分割是否合理：\n\n【第1段】\n${normalized1}\n\n【第2段】\n${normalized2}`;
 
 	if (ignoredWords && ignoredWords.length > 0) {
-		prompt += `\n\n【强制约束】以下词语在本文中出现时，绝对不能标记为错误（这些是人名、地名、专有名词或特殊术语），即使它们看起来像错别字：\n${ignoredWords.join("、")}\n\n请直接跳过这些词语，不要在返回结果中包含它们。`;
+		prompt +=
+			language === "en"
+				? `\n\n[STRICT] The following names/terms must never be flagged as errors (people, places, invented terms), even if they look like typos:\n${ignoredWords.join(", ")}\n\nSkip them and do not include them in the result.`
+				: `\n\n【强制约束】以下词语在本文中出现时，绝对不能标记为错误（这些是人名、地名、专有名词或特殊术语），即使它们看起来像错别字：\n${ignoredWords.join("、")}\n\n请直接跳过这些词语，不要在返回结果中包含它们。`;
 	}
 
 	return prompt;
 }
+
+// ============================================================
+// 英文校对 Prompt
+// 输出 JSON 字段与中文版保持一致，便于复用同一套解析与合并逻辑
+// ============================================================
+
+/** 英文校对系统 prompt（段落级） */
+export const EN_PROOFREAD_SYSTEM_PROMPT = `You are a fiction copy editor. Return a JSON array; each error has: line (1-based), find (exact contiguous snippet from the source, 10-40 characters including at least 3 characters of context on each side), replace (corrected snippet), type (typo/format/punctuation/grammar/variant), reason (under 6 English words).
+
+Check:
+- typo: wrong spelling, missing or duplicated letters, OCR noise
+- grammar: article/preposition misuse, tense, subject-verb agreement, pronoun case, plural forms
+- punctuation: mismatched or missing quotes, wrong apostrophes, comma splices, dash/hyphen misuse
+- format: stray or doubled spaces, broken line breaks
+- variant: inconsistent British/American spelling of the same word in this text (e.g. colour/color)
+
+Rules:
+- find must be copied exactly from the source and appear once on that line
+- do not overlap finds on the same line; never span lines
+- keep names, places, invented terms, dialect, slang and stylistic choices unchanged
+- only fix unambiguous errors; skip anything that could be the author's deliberate style
+- return [] when there are no errors, and output only the JSON array without markdown or commentary
+
+Example: [{"line":3,"find":"he walked pass the door","replace":"he walked past the door","type":"grammar","reason":"wrong preposition"}]`;
+
+export const EN_PROOFREAD_SYSTEM_PROMPT_CHAPTER = `You are a fiction copy editor. Proofread a JSON object of the chapter (key = line number, value = paragraph text). Check every line for typo/format/punctuation/grammar/variant errors. Return a JSON array; fields: lineNumber (the same string key as the input), column (1-based character index on that line), find (exact contiguous snippet, 8-40 characters including at least 3 characters of context on each side), replace (corrected snippet), type (typo/format/punctuation/grammar/variant), reason (under 6 English words). Constraints: lineNumber must exist in the input; column is counted character by character including spaces and punctuation; find must be copied exactly; never span lines; return [] when there is no error; output only the JSON array without markdown. Do not rewrite style, dialect, slang or names.`;
+
+export const EN_PROOFREAD_SYSTEM_PROMPT_DUAL = `You are a fiction copy editor. You will receive two consecutive paragraphs (paragraph 1 and paragraph 2).
+
+## Primary task: proofread both paragraphs
+Check each paragraph for spelling, grammar, punctuation and spacing errors. Detection must be complete for both paragraphs.
+
+## Secondary task: judge the paragraph split
+- A paragraph that is very short, is not dialogue, and continues the same idea -> suggest merging
+- A sentence forcibly cut into two paragraphs -> suggest merging
+- Two paragraphs forming one semantic unit (e.g. continuous dialogue or one description) -> suggest merging
+- Balanced lengths and independent meaning -> keep the split
+
+Output JSON only (no markdown):
+{
+  "errors": [
+    {
+      "line": 1,
+      "find": "exact contiguous snippet, 10-40 characters incl. 3+ context chars",
+      "replace": "corrected snippet",
+      "type": "typo|format|punctuation|grammar|variant",
+      "reason": "under 6 English words"
+    }
+  ],
+  "merge_suggestion": {
+    "should_merge": true,
+    "reason": "why merge or not, under 12 English words"
+  }
+}
+
+Notes:
+- errors[].line is 1 for paragraph 1 and 2 for paragraph 2
+- return errors from both paragraphs even if only one has problems
+- find must be copied exactly and be unique; finds on the same paragraph must not overlap
+- when nothing is wrong, return "errors": [] and still return merge_suggestion
+- do not rewrite style, dialect, slang or names`;
+
+/** 英文校对系统 prompt（本地小模型简化版） */
+export const EN_LOCAL_PROOFREAD_SYSTEM_PROMPT = `You are a copy editor. Correct only spelling, punctuation and grammar errors in the text. Do not rewrite correct content. Output strict JSON, no markdown and no explanation:
+{"errors":[{"start":startIndex,"end":endIndex,"type":"typo|punctuation|grammar","original":"original text","corrected":"corrected text","note":"reason"}],"needMerge":false}
+If there are no errors output: {"errors":[],"needMerge":false}`;
 
 // ============================================================
 // 本地小模型（1.5B-7B）专用简化 Prompt
@@ -2201,6 +2285,107 @@ export const CHARACTER_ANALYSIS_SYSTEM_PROMPT = `你是小说角色分析专家�
 - 遇到不确定的信息，对应字段留空字符串或空数组
 - 遇到不确定的关系，可以标记为other但提供描述`;
 
+/** 角色已知知识系统提示词 — 仅凭书名/作者判断模型是否认识该作品，认识则直接产出角色档案 */
+export function buildCharacterKnowledgeSystemPrompt(language: "zh" | "en" = "zh"): string {
+	const outputLanguage = language === "en"
+		? "所有描述性文本字段必须使用英文（角色名保留作品原名）；gender、role、relationType 等枚举值保持下方给定的英文枚举。"
+		: "所有描述性文本字段必须使用简体中文；gender、role、relationType 等枚举值保持下方给定的英文枚举。";
+
+	return `你是小说角色分析专家。用户只提供小说名称（可能附带作者）。请先用你自身的知识判断是否认识这部作品，再决定是否输出角色信息。
+
+## 判断规则（必须严格遵守）
+- 只有当你确信这是真实存在的作品，且能准确说出其中主要角色的姓名时，才返回 "known": true
+- 同名作品很多：作者不符、译名不确定、信息模糊时，返回 "known": false
+- 只有模糊印象、无法确定细节、需要靠推测补全时，一律返回 "known": false
+- 绝对不要为了完成任务而编造角色、关系、世界观或章节出处
+
+## 输出语言
+${outputLanguage}
+
+## 输出格式
+请返回以下 JSON（纯 JSON，无 markdown）：
+{
+  "known": true,
+  "confidence": 0.0,
+  "characters": [
+    {
+      "name": "角色名称",
+      "aliases": ["别名1"],
+      "gender": "male/female/other",
+      "age": "年龄描述（不确定则为空字符串）",
+      "role": "protagonist/heroine/antagonist/supportingMale/supportingFemale/mentor/rival/loveInterest/family/friend/npc",
+      "appearance": "外貌特征描述",
+      "identity": "身份职业",
+      "socialStatus": "社会地位",
+      "personality": "核心性格特质",
+      "background": "出身背景",
+      "characterArc": "角色弧光描述",
+      "description": "人物完整小传（100-300字）",
+      "appearances": [],
+      "voiceDesignPrompt": "音色设计描述",
+      "majorEvents": "角色关键经历与大事件总结"
+    }
+  ],
+  "relationships": [
+    {
+      "sourceName": "角色A名称",
+      "targetName": "角色B名称",
+      "relationType": "couple/father-son/father-daughter/mother-son/mother-daughter/brother/sister/brother-sister/lover/friend/rival/master-disciple/employer-employee/colleague/stranger/other",
+      "customRelationType": "自定义关系描述（relationType 为 other 时填写）",
+      "sourceNickname": ["角色A对B的称呼"],
+      "targetNickname": ["角色B对A的称呼"],
+      "description": "关系简要描述"
+    }
+  ],
+  "worldbuilding": {
+    "worldType": "世界背景类型",
+    "eraDescription": "时代背景",
+    "geography": "地理环境",
+    "socialStructure": "社会结构",
+    "powerSystem": "力量体系（无则为空字符串）",
+    "civilization": "文明文化",
+    "history": "历史背景",
+    "coreSettings": "核心设定",
+    "description": "世界观概述（100-300字）"
+  }
+}
+
+当 "known": false 时：characters 和 relationships 必须为空数组，worldbuilding 所有字段必须为空字符串，且不要输出任何关于该书的推测内容。
+
+## 角色分类标准
+- protagonist: 男主/男主角
+- heroine: 女主/女主角
+- antagonist: 反派/敌对角色
+- supportingMale: 男配角
+- supportingFemale: 女配角
+- mentor: 导师/师父
+- rival: 竞争对手/对手
+- loveInterest: 爱慕对象/暧昧对象
+- family: 家人/亲属
+- friend: 朋友/好友
+- npc: 其他次要角色
+
+## 关系类型说明
+- couple: 夫妻/恋人关系
+- father-son/father-daughter: 父子/父女
+- mother-son/mother-daughter: 母子/母女
+- brother/sister/brother-sister: 兄弟/姐妹/兄妹/姐弟
+- lover: 恋人/情人（暧昧或恋爱中）
+- friend: 朋友/好友
+- rival: 竞争对手
+- master-disciple: 师徒
+- employer-employee: 上下级关系
+- colleague: 同事/同僚
+- stranger: 陌生人
+- other: 其他（需填写 customRelationType）
+
+## 约束
+- 输出必须是有效的 JSON
+- 只输出你确实记得的角色，宁缺毋滥
+- 不确定的字段留空字符串或空数组，不要编造
+- appearances 无需填写具体章节（未读原文时不可能准确），保持空数组即可`;
+}
+
 /** 关系图谱布局系统提示词 - 用于 AI 绘制角色节点位置（以主角与反派为两大中心，向四周散开） */
 export const RELATIONSHIP_GRAPH_LAYOUT_SYSTEM_PROMPT = `你是一位小说角色关系图谱布局专家。请以【主角】和【反派】为两大中心，让其余角色围绕这两大中心向四周散开，为每个角色设计最佳的节点位置坐标，使关系图谱清晰、美观、便于观看。
 
@@ -2224,7 +2409,7 @@ export const RELATIONSHIP_GRAPH_LAYOUT_SYSTEM_PROMPT = `你是一位小说角色
 必须为【每一个】角色都输出一个坐标，不要遗漏，也不要输出不存在的角色。`;
 
 /** 角色分析结果类型 */
-interface CharacterAnalysisResult {
+export interface CharacterAnalysisResult {
 	characters: Array<{
 		id?: string;
 		name: string;
@@ -2265,6 +2450,75 @@ interface CharacterAnalysisResult {
 		history: string;
 		coreSettings: string;
 		description: string;
+	};
+}
+
+/** 按书名识别角色的结果（known 为 false 时角色/关系为空） */
+export interface CharacterKnowledgeResult extends CharacterAnalysisResult {
+	known: boolean;
+	confidence: number;
+}
+
+/**
+ * 仅凭小说名称（可附作者）询问模型是否认识该作品：
+ * 认识则直接返回角色档案，避免把整本小说分批发给大模型；
+ * 不认识或失败时返回 known=false，由调用方回退到全文分析。
+ */
+export async function analyzeCharactersFromKnowledge(
+	novelName: string,
+	config: AIConfig,
+	options: { author?: string; language?: "zh" | "en"; signal?: AbortSignal } = {},
+): Promise<CharacterKnowledgeResult> {
+	const name = novelName.trim();
+	if (!name) {
+		return { known: false, confidence: 0, characters: [], relationships: [] };
+	}
+
+	const language = options.language ?? "zh";
+	const author = options.author?.trim();
+	const messages: ChatMessage[] = [
+		{ role: "system", content: buildCharacterKnowledgeSystemPrompt(language) },
+		{
+			role: "user",
+			content: `小说名称：${name}${author ? `\n作者：${author}` : ""}\n\n请判断你是否认识这部小说，并按约定的 JSON 格式输出。`,
+		},
+	];
+
+	const response = await sendChatCompletion(messages, config, options.signal);
+	const parsed = parseCharacterAnalysisResponse(response) as Partial<CharacterKnowledgeResult> | null;
+
+	if (!parsed) {
+		logger.info(`[CharacterKnowledge] 「${name}」响应无法解析，按未知处理`);
+		return { known: false, confidence: 0, characters: [], relationships: [] };
+	}
+
+	const confidence = typeof parsed.confidence === "number" ? parsed.confidence : 0;
+	const names = new Set<string>();
+	const characters = (parsed.characters ?? []).filter((char) => {
+		const charName = typeof char?.name === "string" ? char.name.trim() : "";
+		if (!charName || names.has(charName.toLowerCase())) return false;
+		names.add(charName.toLowerCase());
+		return true;
+	}).map((char) => ({
+		...char,
+		name: char.name.trim(),
+		aliases: Array.isArray(char.aliases) ? char.aliases : [],
+		appearances: Array.isArray(char.appearances) ? char.appearances : [],
+		gender: char.gender === "male" || char.gender === "female" ? char.gender : "other" as const,
+	}));
+
+	if (parsed.known !== true || characters.length === 0) {
+		logger.info(`[CharacterKnowledge] 「${name}」模型不认识或未返回角色，回退全文分析`);
+		return { known: false, confidence, characters: [], relationships: [] };
+	}
+
+	logger.info(`[CharacterKnowledge] 「${name}」命中模型已知知识：${characters.length} 个角色，置信度 ${confidence}`);
+	return {
+		known: true,
+		confidence,
+		characters,
+		relationships: parsed.relationships ?? [],
+		worldbuilding: parsed.worldbuilding,
 	};
 }
 

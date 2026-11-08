@@ -10,6 +10,7 @@ import { createCharacterTemplate } from "../utils/characterConfigStorage";
 import { loadNovelText, saveNovelText, deleteNovelText, getNovelStorageKey } from "../utils/novelStorage";
 import { splitChapters } from "../utils/chapterSplit";
 import { decodeTextBuffer } from "../utils/decodeText";
+import { prepareNovelText } from "../utils/language";
 import { parseEpub } from "../utils/epub";
 import { logger } from "../utils/logger";
 import { formatTextSize, formatDateTime } from "../utils/formatters";
@@ -72,10 +73,14 @@ export function NovelList({
 				text = decodeTextBuffer(buffer);
 				novelName = file.name.replace(/\.txt$/i, "");
 			}
+			// 统一换行符、检测语言，并对英文 txt 清理缩进符/重排软换行
+			const prepared = prepareNovelText(text, { reflow: !isEpub });
+			text = prepared.text;
 			const novel: Novel = {
 				id: `novel-${Date.now()}`,
 				name: novelName,
 				fullText: text,
+				language: prepared.language,
 				importedAt: Date.now(),
 				chapters: [], // 添加空的章节数组以满足类型定义
 			};

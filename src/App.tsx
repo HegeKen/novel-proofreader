@@ -19,6 +19,7 @@ import { useAIConfigStore } from "./stores/aiConfigStore";
 import { useProofreadMetaStore } from "./stores/proofreadMetaStore";
 import { splitChapters, chaptersNeedResplit, getChapterDisplayTitle } from "./utils/chapterSplit";
 import { decodeTextBuffer } from "./utils/decodeText";
+import { prepareNovelText } from "./utils/language";
 import { exportToFile, exportBinaryToFile, loadNovelsFromStorage, loadNovelContent, saveNovelToStorage, ensureTxtFilename, exportAllData } from "./utils/fileExport";
 import { parseEpub, buildEpub } from "./utils/epub";
 import { loadNovelText, saveNovelText, getNovelStorageKey, listNovelKeys } from "./utils/novelStorage";
@@ -387,7 +388,8 @@ export default function App() {
 
 			const buffer = await file.arrayBuffer();
 			let text: string;
-			if (file.name.toLowerCase().endsWith(".epub")) {
+			const isEpub = file.name.toLowerCase().endsWith(".epub");
+			if (isEpub) {
 				try {
 					text = parseEpub(buffer).text;
 				} catch (err) {
@@ -398,7 +400,8 @@ export default function App() {
 			} else {
 				text = decodeTextBuffer(buffer);
 			}
-			const chapters = splitChapters(text);
+			const prepared = prepareNovelText(text, { reflow: !isEpub });
+			const chapters = splitChapters(prepared.text);
 			setChapters(chapters);
 		};
 		input.click();
@@ -408,7 +411,7 @@ export default function App() {
 		const novel = novels.find((n) => n.id === currentNovelId);
 		if (!novel) return;
 		const chapters = splitChapters(novel.fullText).map((ch, i) => ({
-			title: getChapterDisplayTitle(ch, i),
+			title: getChapterDisplayTitle(ch, i, novel.language),
 			content: ch.content,
 		}));
 		const epubChapters = chapters.length > 0 ? chapters : [{ title: novel.name, content: novel.fullText }];
@@ -452,7 +455,7 @@ export default function App() {
 			}),
 		};
 
-		const data = buildEpub(novel.name, epubChapters, appendix);
+		const data = buildEpub(novel.name, epubChapters, appendix, novel.language);
 		const result = await exportBinaryToFile(data, `${novel.name}.epub`, "EPUB Files", "epub");
 		if (result === "success") {
 			useUIStore.getState().showToast("EPUB 已导出", "success");

@@ -9,6 +9,8 @@ export interface Novel {
 	name: string;
 	author?: string; // 添加可选的作者字段
 	fullText: string;
+	/** 自动检测的小说语言（zh 中文 / en 英文），缺省按中文处理 */
+	language?: "zh" | "en";
 	importedAt: number; // timestamp
 	lastCacheSaveTime?: number; // 最后缓存保存时间
 	chapters: Array<{

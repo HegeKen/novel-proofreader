@@ -55,6 +55,15 @@ describe("epub", () => {
 		expect(parsed.text).toContain("A < B，B > C。");
 	});
 
+	it("英文导出写入 en 语言标记与英文段落样式", () => {
+		const data = buildEpub("Test Book", [{ title: "Chapter One", content: "He said hello.\nShe waved back." }], undefined, "en");
+		const files = unzipSync(data);
+		expect(strFromU8(files["OEBPS/content.opf"])).toContain("<dc:language>en</dc:language>");
+		expect(strFromU8(files["OEBPS/ch001.xhtml"])).toContain('xml:lang="en"');
+		expect(strFromU8(files["OEBPS/nav.xhtml"])).toContain('xml:lang="en"');
+		expect(strFromU8(files["OEBPS/style.css"])).toContain("margin: 0 0 0.8em");
+	});
+
 	it("无任何 XHTML 正文时抛出异常", () => {
 		// 构造一个只有元数据、没有正文文件的 EPUB
 		const data = zipSync({

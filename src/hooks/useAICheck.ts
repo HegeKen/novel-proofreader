@@ -17,6 +17,10 @@ import {
 	PROOFREAD_SYSTEM_PROMPT_CHAPTER,
 	PROOFREAD_SYSTEM_PROMPT_DUAL,
 	LOCAL_PROOFREAD_SYSTEM_PROMPT,
+	EN_PROOFREAD_SYSTEM_PROMPT,
+	EN_PROOFREAD_SYSTEM_PROMPT_CHAPTER,
+	EN_PROOFREAD_SYSTEM_PROMPT_DUAL,
+	EN_LOCAL_PROOFREAD_SYSTEM_PROMPT,
 	buildProofreadUserPrompt,
 	buildProofreadSystemPrompt,
 	buildDualParagraphUserPrompt,
@@ -57,22 +61,45 @@ const getMaxConcurrentBatches = (enableParallel: boolean, configuredMax: number)
  */
 let sharedAbortRef: AbortController | null = null;
 
+/** 读取当前小说的语言（缺省按中文处理） */
+function resolveNovelLanguage(novelId?: string | null): "zh" | "en" {
+	const id = novelId ?? useNovelStore.getState().currentNovelId;
+	const novel = useNovelStore.getState().novels.find((n) => n.id === id);
+	return novel?.language === "en" ? "en" : "zh";
+}
+
+/**
+ * 按语言选择系统 prompt。
+ * 用户把 prompt 改成与中文默认值不同时视为自定义，此时两种语言都尊重用户配置；
+ * 否则英文小说自动切换到英文默认 prompt。
+ */
+function pickSystemPrompt(
+	language: "zh" | "en",
+	customPrompt: string | undefined,
+	zhDefault: string,
+	enDefault: string,
+): string {
+	if (language === "en" && (!customPrompt || customPrompt === zhDefault)) return enDefault;
+	return customPrompt || zhDefault;
+}
+
 /** 构建单段落校对请求消息（本地小模型使用简化版 Prompt，提高指令遵循稳定性） */
 function buildSingleParagraphMessages(
 	text: string,
 	ignoredWords: string[],
 	localModelConfig: LocalModelConfig,
 	promptConfig: Pick<PromptConfig, "proofread">,
+	language: "zh" | "en" = "zh",
 ): ChatMessage[] {
 	const useLocalPrompt = isLocalModel(localModelConfig);
 	const basePrompt = useLocalPrompt
-		? LOCAL_PROOFREAD_SYSTEM_PROMPT
-		: promptConfig.proofread || PROOFREAD_SYSTEM_PROMPT;
+		? (language === "en" ? EN_LOCAL_PROOFREAD_SYSTEM_PROMPT : LOCAL_PROOFREAD_SYSTEM_PROMPT)
+		: pickSystemPrompt(language, promptConfig.proofread, PROOFREAD_SYSTEM_PROMPT, EN_PROOFREAD_SYSTEM_PROMPT);
 	return [
-		{ role: "system", content: buildProofreadSystemPrompt(basePrompt, ignoredWords) },
+		{ role: "system", content: buildProofreadSystemPrompt(basePrompt, ignoredWords, language) },
 		{
 			role: "user",
-			content: buildProofreadUserPrompt(text, ignoredWords),
+			content: buildProofreadUserPrompt(text, ignoredWords, language),
 		},
 	];
 }
@@ -98,6 +125,7 @@ interface ProofreadRunOptions {
 async function runChapterCheck(opts: ProofreadRunOptions): Promise<void> {
 	const {
 		chapter,
+		currentNovelId,
 		aiConfig,
 		localModelConfig,
 		promptConfig,
@@ -105,6 +133,7 @@ async function runChapterCheck(opts: ProofreadRunOptions): Promise<void> {
 		controller,
 		maxConcurrent,
 	} = opts;
+	const language = resolveNovelLanguage(currentNovelId);
 	const chapterId = chapter.id;
 	const { setResults, updateParagraphResult } = useProofreadStore.getState();
 
@@ -180,7 +209,7 @@ async function runChapterCheck(opts: ProofreadRunOptions): Promise<void> {
 				for (const lineIdxStr of Object.keys(textByLine)) {
 					const lineIdx = parseInt(lineIdxStr, 10);
 					const item = paragraphs[lineIdx];
-					const messages = buildSingleParagraphMessages(item, ignoredWords, localModelConfig, promptConfig);
+					const messages = buildSingleParagraphMessages(item, ignoredWords, localModelConfig, promptConfig, language);
 					const reply = await sendChatCompletionAuto(messages, aiConfig, localModelConfig, controller.signal);
 					errorsByLine[lineIdx] = resolveProofreadReply(reply, {
 						chapterId,
@@ -204,10 +233,18 @@ async function runChapterCheck(opts: ProofreadRunOptions): Promise<void> {
 			logger.proofread(`发送请求给大模型: textByLine 行号列表=[${Object.keys(textByLine).join(', ')}], 字符总数=${JSON.stringify(textByLine).length}`);
 
 			const messages = [
-				{ role: "system" as const, content: promptConfig.proofreadChapter || PROOFREAD_SYSTEM_PROMPT_CHAPTER },
+				{
+					role: "system" as const,
+					content: pickSystemPrompt(
+						language,
+						promptConfig.proofreadChapter,
+						PROOFREAD_SYSTEM_PROMPT_CHAPTER,
+						EN_PROOFREAD_SYSTEM_PROMPT_CHAPTER,
+					),
+				},
 				{
 					role: "user" as const,
-					content: buildProofreadUserPrompt(JSON.stringify(textByLine), ignoredWords),
+					content: buildProofreadUserPrompt(JSON.stringify(textByLine), ignoredWords, language),
 				},
 			];
 
@@ -284,6 +321,7 @@ async function runParagraphCheck(opts: ProofreadRunOptions): Promise<void> {
 		onLineChecking,
 	} = opts;
 	const chapterId = chapter.id;
+	const language = resolveNovelLanguage(currentNovelId);
 	const { setResults, updateParagraphResult } = useProofreadStore.getState();
 	const { saveProofreadProgress } = useProofreadMetaStore.getState();
 
@@ -351,7 +389,7 @@ async function runParagraphCheck(opts: ProofreadRunOptions): Promise<void> {
 			const relevantIgnoredWords = ignoredWords.filter(word => word && item.includes(word));
 			logger.proofread(`段落包含的 ignoredWords: ${relevantIgnoredWords.length}/${ignoredWords.length} - ${relevantIgnoredWords.join('、')}`);
 
-			const messages = buildSingleParagraphMessages(item, relevantIgnoredWords, localModelConfig, promptConfig);
+			const messages = buildSingleParagraphMessages(item, relevantIgnoredWords, localModelConfig, promptConfig, language);
 
 			const reply = await sendChatCompletionAuto(messages, aiConfig, localModelConfig, controller.signal);
 
@@ -449,11 +487,13 @@ async function runParagraphCheck(opts: ProofreadRunOptions): Promise<void> {
 				word => word && (item1.includes(word) || item2.includes(word))
 			);
 
+			const language = resolveNovelLanguage();
 			const systemPrompt = buildProofreadSystemPrompt(
-				promptConfig.dualProofread || PROOFREAD_SYSTEM_PROMPT_DUAL,
+				pickSystemPrompt(language, promptConfig.dualProofread, PROOFREAD_SYSTEM_PROMPT_DUAL, EN_PROOFREAD_SYSTEM_PROMPT_DUAL),
 				combinedIgnoredWords,
+				language,
 			);
-			const userPrompt = buildDualParagraphUserPrompt(item1, item2, combinedIgnoredWords);
+			const userPrompt = buildDualParagraphUserPrompt(item1, item2, combinedIgnoredWords, language);
 
 			const messages = [
 				{ role: "system" as const, content: systemPrompt },
@@ -755,7 +795,7 @@ export function useAICheck() {
 				const relevantIgnoredWords = ignoredWords.filter(word => word && lineText.includes(word));
 				logger.proofread(`段落包含的 ignoredWords: ${relevantIgnoredWords.length}/${ignoredWords.length} - ${relevantIgnoredWords.join('、')}`);
 
-				const messages = buildSingleParagraphMessages(lineText, relevantIgnoredWords, localModelConfig, promptConfig);
+				const messages = buildSingleParagraphMessages(lineText, relevantIgnoredWords, localModelConfig, promptConfig, resolveNovelLanguage());
 
 				// 传入共享 signal，使其可被切章/取消/卸载中断
 				const reply = await sendChatCompletionAuto(messages, aiConfig, localModelConfig, sharedAbortRef?.signal);

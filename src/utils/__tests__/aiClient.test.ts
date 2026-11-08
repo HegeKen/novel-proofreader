@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { repairTruncatedJson, extractJSON, normalizeErrors, parseMultiRoleplayResponse, hasSubstantiveContent, isBracketOnlyContent, parseBatchParagraphEmotionResult } from '../aiClient'
-import { isLocalModel, getEffectiveBaseURL, sendChatCompletionAuto, normalizeLocalEndpoint } from '../aiClient'
+import { isLocalModel, getEffectiveBaseURL, sendChatCompletionAuto, normalizeLocalEndpoint, analyzeCharactersFromKnowledge, buildCharacterKnowledgeSystemPrompt } from '../aiClient'
 import type { AIConfig, LocalModelConfig } from '../../types'
 
 describe('repairTruncatedJson', () => {
@@ -448,5 +448,95 @@ describe('sendChatCompletionAuto - 模型来源路由', () => {
 		await expect(
 			sendChatCompletionAuto(messages, cloudConfig, makeLocal({ modelSource: 'local-builtin' }), controller.signal),
 		).rejects.toThrow('请求已取消')
+	})
+})
+
+describe('buildCharacterKnowledgeSystemPrompt - 输出语言', () => {
+	it('中文语言要求正文使用简体中文', () => {
+		const prompt = buildCharacterKnowledgeSystemPrompt('zh')
+		expect(prompt).toContain('所有描述性文本字段必须使用简体中文')
+		expect(prompt).not.toContain('所有描述性文本字段必须使用英文')
+	})
+
+	it('英文语言要求正文使用英文', () => {
+		const prompt = buildCharacterKnowledgeSystemPrompt('en')
+		expect(prompt).toContain('所有描述性文本字段必须使用英文')
+	})
+})
+
+describe('analyzeCharactersFromKnowledge - 按书名识别', () => {
+	const config: AIConfig = {
+		baseURL: 'https://api.deepseek.com/v1',
+		apiKey: 'test-key',
+		model: 'deepseek-chat',
+		customHeaders: {},
+		maxCharsPerRequest: 2000,
+		enableLogging: false,
+		apiFormat: 'openai',
+	}
+
+	it('小说名为空时直接返回未知，不发起请求', async () => {
+		const fetchMock = vi.fn()
+		vi.stubGlobal('fetch', fetchMock)
+		try {
+			const result = await analyzeCharactersFromKnowledge('   ', config)
+			expect(result.known).toBe(false)
+			expect(result.characters).toEqual([])
+			expect(fetchMock).not.toHaveBeenCalled()
+		} finally {
+			vi.unstubAllGlobals()
+		}
+	})
+
+	it('模型认识作品时返回角色与关系', async () => {
+		const reply = JSON.stringify({
+			known: true,
+			confidence: 0.9,
+			characters: [
+				{ name: '林晚', aliases: ['晚晚'], gender: 'female', role: 'heroine', description: '女主角' },
+				{ name: '林晚', aliases: [], gender: 'female', role: 'heroine', description: '重复角色' },
+				{ name: '  ', description: '空名角色' },
+			],
+			relationships: [{ sourceName: '林晚', targetName: '阿九', relationType: 'friend', description: '好友' }],
+		})
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({ choices: [{ message: { content: reply } }] }),
+		})
+		vi.stubGlobal('fetch', fetchMock)
+		try {
+			const result = await analyzeCharactersFromKnowledge('某某小说', config, { language: 'en' })
+			expect(result.known).toBe(true)
+			expect(result.confidence).toBe(0.9)
+			expect(result.characters).toHaveLength(1)
+			expect(result.characters[0].aliases).toEqual(['晚晚'])
+			expect(result.relationships).toHaveLength(1)
+			const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
+			expect(body.messages[0].content).toContain('所有描述性文本字段必须使用英文')
+		} finally {
+			vi.unstubAllGlobals()
+		}
+	})
+
+	it('模型不认识时返回 known=false 且清空角色', async () => {
+		const reply = JSON.stringify({
+			known: false,
+			confidence: 0.2,
+			characters: [{ name: '猜测角色', description: '不应保留' }],
+			relationships: [],
+		})
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({ choices: [{ message: { content: reply } }] }),
+		})
+		vi.stubGlobal('fetch', fetchMock)
+		try {
+			const result = await analyzeCharactersFromKnowledge('不存在的小说', config)
+			expect(result.known).toBe(false)
+			expect(result.characters).toEqual([])
+			expect(result.relationships).toEqual([])
+		} finally {
+			vi.unstubAllGlobals()
+		}
 	})
 })

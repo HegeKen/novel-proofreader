@@ -53,4 +53,20 @@ describe("decodeTextBuffer", () => {
 	it("handles empty buffer", () => {
 		expect(decodeTextBuffer(new ArrayBuffer(0))).toBe("");
 	});
+
+	it("decodes Windows-1252 latin text (¡ indent + smart quotes)", () => {
+		// 0xA1 = ¡（行首缩进符），0x93/0x94 = “/”，典型英文电子书编码
+		const bytes = new Uint8Array([
+			0xa1, 0xa1, 0xa1, 0xa1, 0x43, 0x68, 0x61, 0x70, 0x74, 0x65, 0x72, 0x20, 0x4f, 0x6e, 0x65, 0x0a,
+			0x93, 0x48, 0x69, 0x94,
+		]);
+		const result = decodeTextBuffer(toArrayBuffer(bytes));
+		expect(result).toContain("¡¡¡¡Chapter One");
+		expect(result).toContain("“Hi”");
+	});
+
+	it("still decodes GBK Chinese after UTF-8 check fails", () => {
+		const bytes = new Uint8Array([0xd6, 0xd0, 0xce, 0xc4, 0xb2, 0xe2, 0xca, 0xd4]); // 中文测试
+		expect(decodeTextBuffer(toArrayBuffer(bytes))).toBe("中文测试");
+	});
 });

@@ -14,8 +14,8 @@ import { ConfirmModal } from "./config/ConfirmModal";
 import { loadCharacterConfigFromStorage, getCharacterConfigFileName } from "../utils/characterConfigStorage";
 import { detectCharactersFromText } from "../utils/characterDetection";
 import type { DetectedCharacter } from "../utils/characterDetection";
-import { analyzeCharactersInBatches, reanalyzeCharacterBiography, generateVoiceDesign, analyzeWorldbuilding, sendChatCompletion, extractJSON, buildRequestConfig } from "../utils/aiClient";
-import type { ChatMessage } from "../utils/aiClient";
+import { analyzeCharactersInBatches, analyzeCharactersFromKnowledge, reanalyzeCharacterBiography, generateVoiceDesign, analyzeWorldbuilding, sendChatCompletion, extractJSON, buildRequestConfig } from "../utils/aiClient";
+import type { CharacterAnalysisResult, ChatMessage } from "../utils/aiClient";
 import { generateId } from "../utils/id";
 import { normalizeEventChapter } from "../utils/chapterMatch";
 import { NovelEventModal } from "./NovelEventModal";
@@ -732,12 +732,12 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 	// 角色分析弹窗状态
 	const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
 	const [isAnalyzing, setIsAnalyzing] = useState(false);
-	const [analyzeProgress, setAnalyzeProgress] = useState({ current: 0, total: 0, phase: "analyze" as "analyze" | "summarize" });
+	const [analyzeProgress, setAnalyzeProgress] = useState({ current: 0, total: 0, phase: "knowledge" as "knowledge" | "analyze" | "summarize" });
 	const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 	// 全角色分析已耗时（进行中动态更新）
 	const analyzeElapsed = useElapsedTime(isAnalyzing);
 	// 记录上一分析阶段，用于阶段完成时推送系统通知
-	const prevAnalyzePhaseRef = useRef<"analyze" | "summarize" | null>(null);
+	const prevAnalyzePhaseRef = useRef<"knowledge" | "analyze" | "summarize" | null>(null);
 
 	// 导入操作状态
 	const [isImporting, setIsImporting] = useState(false);
@@ -1592,7 +1592,8 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 
 		setIsAnalyzing(true);
 		setAnalyzeError(null);
-		setAnalyzeProgress({ current: 0, total: 0, phase: "analyze" });
+		setAnalyzeProgress({ current: 0, total: 0, phase: "knowledge" });
+		prevAnalyzePhaseRef.current = null;
 
 		const abortController = new AbortController();
 
@@ -1600,27 +1601,60 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 			// 构建AI配置（转换为AIConfig格式）
 			const config = buildRequestConfig(aiConfig);
 
-			const result = await analyzeCharactersInBatches(
-				currentNovel.fullText,
-				config,
-				80000, // 80K字符每批次
-				abortController.signal,
-				(current, total, phase) => {
-					setAnalyzeProgress({ current, total, phase });
-					// 分析阶段完成 → 进入整合阶段时推送系统通知
-					if (prevAnalyzePhaseRef.current === "analyze" && phase === "summarize") {
-						sendTaskNotification("角色分析", "角色信息提取完成，正在整合角色档案…");
-					}
-					prevAnalyzePhaseRef.current = phase;
-				},
-				promptConfig.characterFragmentSummarize,
-			);
+			// 先尝试仅凭书名让模型回忆角色信息：命中则跳过全文分析，大幅节省 token
+			let knowledgeResult: CharacterAnalysisResult | null = null;
+			try {
+				const known = await analyzeCharactersFromKnowledge(currentNovel.name, config, {
+					author: currentNovel.author,
+					language: currentNovel.language ?? "zh",
+					signal: abortController.signal,
+				});
+				if (known.known && known.characters.length > 0) {
+					knowledgeResult = known;
+					logger.proofread("[CharacterSettings] 命中模型已知知识，跳过全文分析:", {
+						charactersCount: known.characters.length,
+						relationshipsCount: known.relationships.length,
+						confidence: known.confidence,
+					});
+				}
+			} catch (err) {
+				// 用户主动取消时直接抛出，其余错误静默回退全文分析
+				if (err instanceof Error && err.message === "分析已取消") throw err;
+				logger.warn("[CharacterSettings] 书名识别失败，回退全文分析:", err);
+			}
+
+			const usedKnowledge = knowledgeResult !== null;
+
+			let result: CharacterAnalysisResult;
+			if (knowledgeResult) {
+				result = knowledgeResult;
+			} else {
+				setAnalyzeProgress({ current: 0, total: 0, phase: "analyze" });
+				result = await analyzeCharactersInBatches(
+					currentNovel.fullText,
+					config,
+					80000, // 80K字符每批次
+					abortController.signal,
+					(current, total, phase) => {
+						setAnalyzeProgress({ current, total, phase });
+						// 分析阶段完成 → 进入整合阶段时推送系统通知
+						if (prevAnalyzePhaseRef.current === "analyze" && phase === "summarize") {
+							sendTaskNotification("角色分析", "角色信息提取完成，正在整合角色档案…");
+						}
+						prevAnalyzePhaseRef.current = phase;
+					},
+					promptConfig.characterFragmentSummarize,
+				);
+			}
 
 			logger.proofread("[CharacterSettings] AI分析完成:", {
 				charactersCount: result.characters.length,
 				relationshipsCount: result.relationships.length,
+				usedKnowledge,
 			});
-			sendTaskNotification("角色分析完成", `提取 ${result.characters.length} 个角色、${result.relationships.length} 组关系`);
+			sendTaskNotification("角色分析完成", usedKnowledge
+				? `根据模型已知知识提取 ${result.characters.length} 个角色、${result.relationships.length} 组关系`
+				: `提取 ${result.characters.length} 个角色、${result.relationships.length} 组关系`);
 
 			// 将分析结果转换为CharacterInfo格式并添加到角色列表
 			const existingNames = new Set(characters.map(c => c.name.toLowerCase()));
@@ -1783,7 +1817,7 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					setConfirmModal({
 						show: true,
 						title: "分析完成",
-						message: `分析完成！\n\n新增 ${newCharactersWithIds.length} 个角色\n导入 ${newRelationships.length} 条关系\n\n有 ${currentSkippedRelationships.length} 条关系因无法匹配角色而被跳过。\n\n是否现在手动整理这些关系？`,
+						message: `分析完成！${usedKnowledge ? "\n（角色信息来自模型已知知识，未经全文校验，建议抽查）" : ""}\n\n新增 ${newCharactersWithIds.length} 个角色\n导入 ${newRelationships.length} 条关系\n\n有 ${currentSkippedRelationships.length} 条关系因无法匹配角色而被跳过。\n\n是否现在手动整理这些关系？`,
 						confirmText: "手动整理",
 						cancelText: "稍后处理",
 						onConfirm: () => {
@@ -1800,7 +1834,11 @@ export function CharacterSettings({ novelId, novelName, onClose }: CharacterSett
 					});
 				});
 			} else {
-				useUIStore.getState().showToast(`分析完成！新增 ${newCharactersWithIds.length} 个角色和 ${newRelationships.length} 条关系`, "success");
+				useUIStore.getState().showToast(
+					`分析完成！新增 ${newCharactersWithIds.length} 个角色和 ${newRelationships.length} 条关系` +
+					(usedKnowledge ? "（来自模型已知知识，建议抽查）" : ""),
+					"success",
+				);
 				setShowAnalyzeModal(false);
 			}
 		} catch (err) {
@@ -2976,32 +3014,42 @@ ${JSON.stringify(existingInfo, null, 2)}
 									<Icons.sparkle size={40} className="analyze-icon animate-pulse" />
 									<div className="analyze-icon-ring"></div>
 								</div>
-								<p className="analyze-title">正在分析小说内容</p>
-								<p className="analyze-subtitle">{analyzeProgress.phase === "analyze" ? "逐段分析角色信息与关系..." : "综合整合角色档案..."}</p>
-								<div className="analyze-progress-bar">
-									<div
-										className="analyze-progress-fill"
-										style={{
-											width: analyzeProgress.total > 0
-												? `${(analyzeProgress.current / analyzeProgress.total) * 100}%`
-												: '0%'
-										}}
-									/>
-								</div>
-								<div className="analyze-progress-info">
-									<span className="analyze-batch">
-										<Icons.list size={14} />
-										{analyzeProgress.phase === "analyze" ? "分析" : "综合"} {analyzeProgress.current} / {analyzeProgress.total}
-									</span>
-									<span className="analyze-percent">
-										{analyzeProgress.total > 0
-											? Math.round((analyzeProgress.current / analyzeProgress.total) * 100)
-											: 0}%
-									</span>
-								</div>
+								<p className="analyze-title">{analyzeProgress.phase === "knowledge" ? "正在识别小说" : "正在分析小说内容"}</p>
+								<p className="analyze-subtitle">
+									{analyzeProgress.phase === "knowledge"
+										? "先根据书名询问模型是否已知角色，不认识再回退全文分析..."
+										: analyzeProgress.phase === "analyze"
+											? "逐段分析角色信息与关系..."
+											: "综合整合角色档案..."}
+								</p>
+								{analyzeProgress.phase !== "knowledge" && (
+									<>
+										<div className="analyze-progress-bar">
+											<div
+												className="analyze-progress-fill"
+												style={{
+													width: analyzeProgress.total > 0
+														? `${(analyzeProgress.current / analyzeProgress.total) * 100}%`
+														: '0%'
+												}}
+											/>
+										</div>
+										<div className="analyze-progress-info">
+											<span className="analyze-batch">
+												<Icons.list size={14} />
+												{analyzeProgress.phase === "analyze" ? "分析" : "综合"} {analyzeProgress.current} / {analyzeProgress.total}
+											</span>
+											<span className="analyze-percent">
+												{analyzeProgress.total > 0
+													? Math.round((analyzeProgress.current / analyzeProgress.total) * 100)
+													: 0}%
+											</span>
+										</div>
+									</>
+								)}
 								<p className="analyze-hint">
 									<Icons.clock size={12} />
-									预计需要几分钟，请勿关闭应用
+									{analyzeProgress.phase === "knowledge" ? "识别结果未知时会自动回退全文分析" : "预计需要几分钟，请勿关闭应用"}
 								</p>
 								<p className="analyze-percent">
 									已耗时 {formatElapsedTime(analyzeElapsed)}
@@ -3010,7 +3058,7 @@ ${JSON.stringify(existingInfo, null, 2)}
 						) : (
 							<div className="analyze-intro">
 								<p className="analyze-lead">
-									AI 将分批分析整本小说，自动提取角色信息、人物小传及关系图谱，支持超大文本。
+									开始后会先根据小说名称让 AI 判断是否已知该作品；已知则直接生成角色档案，未知再自动分批分析整本小说。
 								</p>
 								<div className="analyze-features">
 									<p className="analyze-features-title">

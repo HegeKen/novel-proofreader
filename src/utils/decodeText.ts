@@ -70,8 +70,20 @@ export function decodeTextBuffer(buffer: ArrayBuffer): string {
 		}
 	}
 
-	// ---- 4. 回退 GB18030（GBK 超集）----
-	return new TextDecoder("gb18030").decode(body);
+	// ---- 4. 非 UTF-8 的文本：区分中文 GBK 与西文 Windows-1252 ----
+	// 英文电子书（尤其 OCR 版）常用 cp1252：0xA1 作段落缩进符、0x91-0x94 作弯引号。
+	// 若直接按 GB18030 解码，这些字节会变成乱码汉字，因此先用"解码后 CJK 占比"判别：
+	// 中文 GBK 文本的 CJK 字符占比通常远高于 30%，cp1252 乱码后几乎不含 CJK。
+	const gbDecoded = new TextDecoder("gb18030").decode(body);
+	if (looksLikeChinese(gbDecoded)) return gbDecoded;
+	return new TextDecoder("windows-1252").decode(body);
+}
+
+/** 统计文本中 CJK 字符占比，用于区分 GBK 中文与 Windows-1252 西文 */
+function looksLikeChinese(text: string): boolean {
+	if (text.length === 0) return false;
+	const cjk = (text.match(/[\u3400-\u4DBF\u4E00-\u9FFF]/g) ?? []).length;
+	return cjk / text.length > 0.3;
 }
 
 /** 严格解码 UTF-8；若失败则逐字节降级，最大限度保留可读内容 */

@@ -89,6 +89,12 @@ describe("旁白/对话切分与说话人识别", () => {
 		const characters = [{ name: "李明", aliases: ["小明"] }];
 		expect(detectSpeaker("小明笑道：“当然。”", 5, 10, characters)).toBe("小明");
 	});
+
+	it("识别英文引号前后的说话人", () => {
+		expect(detectSpeaker('"Get out," said Harry.', 0, 9, [])).toBe("Harry");
+		expect(detectSpeaker('Harry said, "Get out."', 12, 21, [])).toBe("Harry");
+		expect(detectSpeaker('"We have to go," Hermione whispered.', 0, 15, [])).toBe("Hermione");
+	});
 });
 
 describe("本地分析结果转换为朗读标注", () => {

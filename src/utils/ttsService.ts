@@ -994,7 +994,8 @@ export class ScriptTTSPlayer {
 	private onComplete?: () => void;
 	private cancelCurrentAudio: (() => void) | null = null;
 	private abortController: AbortController | null = null;
-	private audioQueue = new Queue<{ buffer: ArrayBuffer; dialogueIndex: number }>();
+	// buffer 为 null 表示该句音频生成失败，入队仅用于推进播放队列，避免卡死
+	private audioQueue = new Queue<{ buffer: ArrayBuffer | null; dialogueIndex: number }>();
 	private isProcessingQueue: boolean = false;
 	private isStreamComplete: boolean = false;
 	private resumeResolve?: () => void;
@@ -1257,20 +1258,43 @@ export class ScriptTTSPlayer {
 	 * 生成音频并加入播放队列
 	 */
 	private async generateAndQueueAudio(dialogue: ScriptDialogue): Promise<void> {
-		try {
-			logger.tts("开始生成音频", { index: dialogue.index, character: dialogue.character, voiceDesign: !!dialogue.voiceDesignPrompt, speedHint: dialogue.speed });
-			const { text: cleanText, speed: speedHint } = parseSpeedFromText(dialogue.text);
-			const effectiveSpeed = speedHint ?? dialogue.speed;
-			const audioBuffer = await synthesizeSpeechWithVoice(cleanText, this.config, dialogue.voice, dialogue.voiceDesignPrompt, effectiveSpeed, this.abortController?.signal);
-			
-			this.audioQueue.enqueue({ buffer: audioBuffer, dialogueIndex: dialogue.index });
-			logger.tts("音频生成完成并加入队列", { index: dialogue.index, queueLength: this.audioQueue.size() });
-			
-			if (!this.isProcessingQueue) {
-				this.processAudioQueue();
+		logger.tts("开始生成音频", { index: dialogue.index, character: dialogue.character, voiceDesign: !!dialogue.voiceDesignPrompt, speedHint: dialogue.speed });
+
+		for (let attempt = 0; attempt < 2; attempt++) {
+			try {
+				const { text: cleanText, speed: speedHint } = parseSpeedFromText(dialogue.text);
+				const effectiveSpeed = speedHint ?? dialogue.speed;
+				const audioBuffer = await synthesizeSpeechWithVoice(cleanText, this.config, dialogue.voice, dialogue.voiceDesignPrompt, effectiveSpeed, this.abortController?.signal);
+
+				this.audioQueue.enqueue({ buffer: audioBuffer, dialogueIndex: dialogue.index });
+				logger.tts("音频生成完成并加入队列", { index: dialogue.index, queueLength: this.audioQueue.size() });
+
+				if (!this.isProcessingQueue) {
+					this.processAudioQueue();
+				}
+				return;
+			} catch (error) {
+				// 切章/停止导致的中止属于正常取消，不当作失败
+				if (error instanceof DOMException && error.name === "AbortError") {
+					logger.tts("音频生成被取消", { index: dialogue.index });
+					return;
+				}
+
+				const message = error instanceof Error ? error.message : String(error);
+				if (attempt === 0) {
+					logger.warn("音频生成失败，准备重试", { index: dialogue.index, message });
+					await new Promise((resolve) => setTimeout(resolve, 200));
+					continue;
+				}
+
+				logger.errorGeneric("生成音频失败", { index: dialogue.index, message });
+				// 入队失败占位项，让播放队列跳过该句继续播放，而不是停在此处
+				this.audioQueue.enqueue({ buffer: null, dialogueIndex: dialogue.index });
+				if (!this.isProcessingQueue) {
+					this.processAudioQueue();
+				}
+				return;
 			}
-		} catch (error) {
-			logger.errorGeneric("生成音频失败", { index: dialogue.index, error });
 		}
 	}
 
@@ -1301,13 +1325,30 @@ export class ScriptTTSPlayer {
 				// 队列被 cancelAll（stop/skipTo）唤醒时返回 null，直接结束
 				if (!queueItem) break;
 				const { buffer: audioBuffer, dialogueIndex } = queueItem;
-				
+
+				// 该句音频生成失败（未入队）时，直接推进到当前可用条目，避免队列卡死
+				if (dialogueIndex > this.currentIndex) {
+					logger.warn("跳过未生成音频的对话", { from: this.currentIndex, to: dialogueIndex });
+					this.currentIndex = dialogueIndex;
+				}
 				if (dialogueIndex !== this.currentIndex) {
 					logger.tts("跳过过期音频", { queueDialogueIndex: dialogueIndex, currentIndex: this.currentIndex });
 					continue;
 				}
 				const currentDialogue = this.dialogues[this.currentIndex];
 				if (!currentDialogue) break;
+
+				// 失败占位项：标记完成并前进，不播放
+				if (!audioBuffer) {
+					this.dialogues = this.dialogues.map((d, i) => ({
+						...d,
+						isCompleted: i <= this.currentIndex,
+						isPlaying: false,
+					}));
+					this.currentIndex++;
+					this.notifyUpdate();
+					continue;
+				}
 
 				this.dialogues = this.dialogues.map((d, i) => ({
 					...d,
@@ -1332,7 +1373,12 @@ export class ScriptTTSPlayer {
 			if (!queueItem) break;
 
 			const { buffer: audioBuffer, dialogueIndex } = queueItem;
-			
+
+			// 该句音频生成失败（未入队）时，直接推进到当前可用条目，避免队列卡死
+			if (dialogueIndex > this.currentIndex) {
+				logger.warn("跳过未生成音频的对话", { from: this.currentIndex, to: dialogueIndex });
+				this.currentIndex = dialogueIndex;
+			}
 			// 如果队列中的音频对应的对话索引与当前索引不匹配，跳过这个音频
 			if (dialogueIndex !== this.currentIndex) {
 				logger.tts("跳过过期音频", { queueDialogueIndex: dialogueIndex, currentIndex: this.currentIndex });
@@ -1341,6 +1387,18 @@ export class ScriptTTSPlayer {
 
 			const currentDialogue = this.dialogues[this.currentIndex];
 			if (!currentDialogue) break;
+
+			// 失败占位项：标记完成并前进，不播放
+			if (!audioBuffer) {
+				this.dialogues = this.dialogues.map((d, i) => ({
+					...d,
+					isCompleted: i <= this.currentIndex,
+					isPlaying: false,
+				}));
+				this.currentIndex++;
+				this.notifyUpdate();
+				continue;
+			}
 
 			this.dialogues = this.dialogues.map((d, i) => ({
 				...d,

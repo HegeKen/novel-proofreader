@@ -1,6 +1,56 @@
 import { describe, it, expect } from 'vitest'
 import { splitChapters, splitParagraphs, splitTextChunks, chaptersNeedResplit } from '../chapterSplit'
 
+describe('英文章节识别', () => {
+	it('识别全大写、混合大小写与 OCR 拆字形态', () => {
+		const text = [
+			'¡¡¡¡CHAPTER ONE',
+			'Content one.',
+			'¡¡¡¡CHAPTER TWo',
+			'Content two.',
+			'¡¡¡¡CHAPTER F I v E',
+			'Content five.',
+		].join('\n')
+		expect(splitChapters(text).map((c) => c.title)).toEqual([
+			'CHAPTER ONE',
+			'CHAPTER TWo',
+			'CHAPTER F I v E',
+		])
+	})
+
+	it('不把正文中提及 chapter 的长句当成章节', () => {
+		const text = [
+			'Chapter One',
+			'Real content here.',
+			'chapter sixteen, Ivor Dillonsby claims he had already discovered eight uses of it.',
+		].join('\n')
+		expect(splitChapters(text)).toHaveLength(1)
+	})
+
+	it('丢弃只有标题的目录页条目', () => {
+		const toc = Array.from({ length: 6 }, (_, i) => `Chapter ${i + 1}: Title ${i + 1}`).join('\n')
+		const body = Array.from(
+			{ length: 6 },
+			(_, i) => `Chapter ${i + 1}: Title ${i + 1}\n${'Real content sentence. '.repeat(20)}`,
+		).join('\n')
+		expect(splitChapters(`${toc}\n${body}`)).toHaveLength(6)
+	})
+
+	it('识别破折号包裹与带 OCR 前缀残留的标题', () => {
+		const text = [
+			'- CHAPTER ONE -',
+			'Dudley Demented',
+			'Body text.',
+			'Sirius CHAPTER NINETEEN - THE HORNTAIL',
+			'Body text.',
+		].join('\n')
+		expect(splitChapters(text).map((c) => c.title)).toEqual([
+			'CHAPTER ONE -',
+			'CHAPTER NINETEEN - THE HORNTAIL',
+		])
+	})
+})
+
 describe('splitParagraphs', () => {
 	it('splits text by newlines', () => {
 		expect(splitParagraphs('a\nb\nc')).toEqual(['a', 'b', 'c'])

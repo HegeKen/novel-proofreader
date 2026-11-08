@@ -229,6 +229,58 @@ const SPEECH_ADVERBS = new Set([
 
 const SPEECH_VERB_SET = new Set(SPEECH_VERBS.split("|"));
 
+/** 英文常见说话动词（用于识别 said Harry / Harry said 等结构） */
+const EN_SPEECH_VERBS =
+	"said|asked|replied|answered|whispered|shouted|yelled|cried|muttered|murmured|added|continued|exclaimed|suggested|snapped|laughed|called|warned|begged|demanded|explained|insisted|repeated|sighed|breathed|hissed|growled";
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** 英文：引号前的「Name said,」结构 */
+function findSpeakerBeforeEnglish(prefix: string, characters: EmotionCharacter[]): string | null {
+	const names = characters
+		.filter((c) => c.role !== "narrator")
+		.flatMap((c) => [c.name, ...(c.aliases || [])])
+		.filter(Boolean);
+
+	for (const name of names) {
+		const pattern = new RegExp(
+			`(?:^|[^A-Za-z])${escapeRegExp(name)}\\s+(?:${EN_SPEECH_VERBS})\\s*[,:]?\\s*$`,
+			"i",
+		);
+		if (pattern.test(prefix)) return name;
+	}
+
+	// 通用结构：最多两个首字母大写的词 + 说话动词
+	const match = prefix.match(
+		new RegExp(`([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)?)\\s+(?:${EN_SPEECH_VERBS})\\s*[,:]?\\s*$`),
+	);
+	return match ? match[1] : null;
+}
+
+/** 英文：引号后的 said Harry. / Harry said. */
+function findSpeakerAfterEnglish(suffix: string, characters: EmotionCharacter[]): string | null {
+	const names = characters
+		.filter((c) => c.role !== "narrator")
+		.flatMap((c) => [c.name, ...(c.aliases || [])])
+		.filter(Boolean);
+
+	for (const name of names) {
+		if (new RegExp(`^[^A-Za-z]{0,2}${escapeRegExp(name)}\\b`, "i").test(suffix)) return name;
+	}
+
+	const verbFirst = suffix.match(
+		new RegExp(`^[^A-Za-z]{0,2}(?:${EN_SPEECH_VERBS})\\s+([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)?)`),
+	);
+	if (verbFirst) return verbFirst[1];
+
+	const nameFirst = suffix.match(
+		new RegExp(`^[^A-Za-z]{0,2}([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)?)\\s+(?:${EN_SPEECH_VERBS})`),
+	);
+	return nameFirst ? nameFirst[1] : null;
+}
+
 function isUsableName(name: string): boolean {
 	if (name.length < 2 || name.length > 4) return false;
 	if (PRONOUN_STOPWORDS.has(name) || SPEECH_ADVERBS.has(name)) return false;
@@ -330,12 +382,14 @@ export function detectSpeaker(
 	quoteEnd: number,
 	characters: EmotionCharacter[],
 ): string {
+	// 英文段落（几乎不含 CJK）走英文说话人识别，中文段落保持原逻辑
+	const isEnglishText = (text.match(/[\u4e00-\u9fff]/g) ?? []).length <= 1;
 	const prefix = text.slice(Math.max(0, quoteStart - 48), quoteStart);
-	const before = findSpeakerBefore(prefix, characters);
+	const before = isEnglishText ? findSpeakerBeforeEnglish(prefix, characters) : findSpeakerBefore(prefix, characters);
 	if (before) return before;
 
 	const suffix = text.slice(quoteEnd + 1, quoteEnd + 24);
-	const after = findSpeakerAfter(suffix, characters);
+	const after = isEnglishText ? findSpeakerAfterEnglish(suffix, characters) : findSpeakerAfter(suffix, characters);
 	if (after) return after;
 
 	// 整段只有一个已配置角色（且不是旁白）时，直接归给他/她

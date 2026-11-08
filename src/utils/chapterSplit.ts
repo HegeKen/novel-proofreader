@@ -4,6 +4,7 @@
 import type { Chapter } from "../types";
 import { logger } from "./logger";
 import { normalizeCJKVariants } from "./normalizeCJK";
+import { detectNovelLanguage, stripIndentMarkers } from "./language";
 
 /** 空白字符类（包含半角空格、制表符、全角空格、不间断空格等 CJK 常用空白） */
 const WS = '[ \\t\\u3000\\u00A0]';
@@ -49,10 +50,35 @@ const CHAPTER_PATTERNS = [
 	`(?:^|\\n)\\s*([${CHAPTER_DIGITS}]{2,})${WS_PLUS}([${CHAPTER_SUFFIX}]${WS_OPT}[^\\n]+)?`,
 	// 序章/楔子/番外等
 	`(?:^|\\n)\\s*(序章|序言|前言|引子|楔子|尾声|后记|番外(?:[\\d一二三四五六七八九十０１２３４５６７８９${KANGXI_DIGITS}${ARCHAIC_DIGITS}]+)?(?:${WS_PLUS}[^\\n]+)?|结局(?:${WS_PLUS}[^\\n]+)?)`,
-	// English：Chapter 1 / Ch.1 / Chapter One / Chapter I（含序章类）
-	new RegExp(`(?:^|\\n)\\s*((?:Chapter|Ch\\.?)\\s*(?:\\d+|[IVXLCDM]{1,7}|One|Two|Three|Four|Five|Six|Seven|Eight|Nine|Ten|Eleven|Twelve|Thirteen|Fourteen|Fifteen|Sixteen|Seventeen|Eighteen|Nineteen|Twenty|Thirty|Forty|Fifty|Sixty|Seventy|Eighty|Ninety|Hundred|First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth|Ninth|Tenth)(?:${WS_PLUS}[^\\n]+)?)`, 'gi'),
-	new RegExp(`(?:^|\\n)\\s*(PROLOGUE|EPILOGUE|AFTERWORD(?:${WS_PLUS}[^\\n]+)?)`, 'gi'),
 ].map(p => new RegExp(p, 'g'));
+
+/**
+ * 英文章节标题（大小写不敏感，允许行首缩进符与破折号包裹）：
+ *   CHAPTER ONE / Chapter 1 / CHAPTER\tONE / CHAPTER F I v E /
+ *   - CHAPTER ONE - / Chapter 1: The Other Minister
+ *
+ * 行尾锚定 + 整个标题行长度上限，避免把正文中提及 chapter 的长句
+ * （如 "chapter sixteen, Ivor Dillonsby claims..."）误判为章节。
+ * "Ch." 必须带点，否则 `Ch` 会误匹配 child 等普通单词前缀。
+ */
+/** CHAPTER 关键词：逐字符大小写类，兼容 CHAPTER / Chapter / 混合大小写，且不启用 i 标志 */
+const EN_CHAPTER_WORD = `[Cc][ \\t]*[Hh][ \\t]*[Aa][ \\t]*[Pp][ \\t]*[Tt][ \\t]*[Ee][ \\t]*[Rr]`;
+
+const ENGLISH_CHAPTER_PATTERNS = [
+	new RegExp(
+		`^[ \\t\\u00A1\\-\\u2013\\u2014]*` +
+			// OCR 残留：标题行前可能粘着上一段的末词（如 "Sirius CHAPTER NINETEEN"）
+			`(?:[A-Z][a-z]+[ \\t]+)?` +
+			`((?:[-\\u2013\\u2014][ \\t]*)?(?:${EN_CHAPTER_WORD}|Ch\\.)` +
+			`[ \\t]*(?:\\d+|[IVXLCDM]{1,7}|[A-Za-z][A-Za-z \\t\\u3000\\-]{0,30}?)` +
+			`(?:[ \\t]*[-\\u2013\\u2014:.][ \\t]*[^\\n]{0,70})?[ \\t]*[-\\u2013\\u2014]?[ \\t]*)$`,
+		'gm',
+	),
+	new RegExp(
+		`^[ \\t\\u00A1\\-\\u2013\\u2014]*([Pp][Rr][Oo][Ll][Oo][Gg][Uu][Ee]|[Ee][Pp][Ii][Ll][Oo][Gg][Uu][Ee]|[Aa][Ff][Tt][Ee][Rr][Ww][Oo][Rr][Dd])(?:[ \\t]+[^\\n]{1,60})?[ \\t]*$`,
+		'gm',
+	),
+];
 
 /**
  * 宽松模式章节标记：仅当全文没有任何严格章节标记时启用，
@@ -93,6 +119,9 @@ export function splitChapters(
 ): Chapter[] {
 	// 标准化 CJK 变体字/部首字（如 ⾯→面, ⽜→牛, ⻘→青）
 	fullText = normalizeCJKVariants(fullText);
+	// 剥离行首缩进标记（英文电子书常用 ¡¡¡¡），必须在收集章节前完成，
+	// 否则行首锚定的英文标题正则无法匹配
+	fullText = stripIndentMarkers(fullText);
 	const matches: MatchItem[] = [];
 
 	// 收集所有卷名匹配
@@ -120,6 +149,22 @@ export function splitChapters(
 			}
 			matches.push({
 				title: title,
+				index: m.index,
+				isVolume: false,
+			});
+		}
+	}
+
+	// 英文章节标题：大小写不敏感，单独处理（含 OCR 拆字与目录页标题）
+	for (const pattern of ENGLISH_CHAPTER_PATTERNS) {
+		pattern.lastIndex = 0;
+		let m: RegExpExecArray | null;
+		while ((m = pattern.exec(fullText)) !== null) {
+			const title = trimCJK(m[1]);
+			// "Chapter List" / "Chapter Contents" 是目录页标题，不是章节
+			if (/^Chapter[\s]+(List|Contents|Index)$/i.test(title)) continue;
+			matches.push({
+				title,
 				index: m.index,
 				isVolume: false,
 			});
@@ -162,6 +207,7 @@ export function splitChapters(
 
 	// 如果没有匹配到任何章节，按 chunkSize 强制分割（仅限全文确无任何断章标记的情况）
 	if (sorted.length === 0) {
+		const isEnglish = detectNovelLanguage(fullText) === "en";
 		const chapters: Chapter[] = [];
 		let start = 0;
 		let id = 0;
@@ -179,7 +225,7 @@ export function splitChapters(
 
 			chapters.push({
 				id,
-				title: `第 ${id + 1} 段`,
+				title: isEnglish ? `Part ${id + 1}` : `第 ${id + 1} 段`,
 				startIndex: start,
 				endIndex: end,
 				content: fullText.slice(start, end),
@@ -250,16 +296,19 @@ export function splitChapters(
 		}
 	}
 
+	// 目录页去重：部分英文电子书先列一遍章节标题（目录），正文再从头开始
+	const kept = dropContentsEntries(chapters);
+
 	// 重新编号并修复所有 parentId
-	chapters.forEach((ch, idx) => (ch.id = idx));
-	for (let i = 0; i < chapters.length; i++) {
-		const ch = chapters[i];
+	kept.forEach((ch, idx) => (ch.id = idx));
+	for (let i = 0; i < kept.length; i++) {
+		const ch = kept[i];
 		if (!ch.isVolume) {
 			// 向前查找最近的卷
 			let foundParentId: number | undefined = undefined;
 			for (let j = i - 1; j >= 0; j--) {
-				if (chapters[j].isVolume) {
-					foundParentId = chapters[j].id;
+				if (kept[j].isVolume) {
+					foundParentId = kept[j].id;
 					break;
 				}
 			}
@@ -267,7 +316,7 @@ export function splitChapters(
 		}
 	}
 
-	logger.debug("[splitChapters] 最终章节划分结果:", chapters.map(ch => ({
+	logger.debug("[splitChapters] 最终章节划分结果:", kept.map(ch => ({
 		id: ch.id,
 		title: ch.title,
 		isVolume: ch.isVolume,
@@ -276,7 +325,50 @@ export function splitChapters(
 		endIndex: ch.endIndex
 	})));
 
-	return chapters;
+	return kept;
+}
+
+/** 章节正文长度（去掉首行的章节标题） */
+function chapterBodyLength(chapter: Chapter): number {
+	const lines = chapter.content.split("\n");
+	return lines.slice(1).join("").trim().length;
+}
+
+/**
+ * 丢弃目录页条目。
+ *
+ * 部分英文电子书先列 "Chapter 1: Title / Chapter 2: Title ..." 目录，
+ * 正文再从 Chapter 1 重新开始，导致同一章节被识别两次。
+ * 目录条目的共同特征是【只有标题、没有正文】且连续出现多个；
+ * 连续 ≥5 个"以 Chapter 开头、正文不足 160 字符"的条目才判定为目录，
+ * 避免误删真正的短章（中文短篇合集不会命中"以 Chapter 开头"这一条件）。
+ */
+function dropContentsEntries(chapters: Chapter[]): Chapter[] {
+	const drop = new Set<number>();
+	let runStart = -1;
+	let runLength = 0;
+
+	const flushRun = () => {
+		if (runLength >= 5 && runStart >= 0) {
+			for (let i = runStart; i < runStart + runLength; i++) drop.add(i);
+		}
+		runStart = -1;
+		runLength = 0;
+	};
+
+	chapters.forEach((chapter, index) => {
+		const isEnglishChapter = !chapter.isVolume && /^(?:[-\u2013\u2014]\s*)?Chapter\b/i.test(chapter.title);
+		if (isEnglishChapter && chapterBodyLength(chapter) < 160) {
+			if (runStart < 0) runStart = index;
+			runLength++;
+		} else {
+			flushRun();
+		}
+	});
+	flushRun();
+
+	if (drop.size === 0) return chapters;
+	return chapters.filter((_, index) => !drop.has(index));
 }
 
 /**
@@ -327,14 +419,22 @@ export function getNonEmptyParagraphs(text: string): string[] {
  * 判断章节标题是否为默认生成的"第N章/回"（无自定义标题）
  */
 export function isDefaultChapterTitle(title: string): boolean {
-	return !title || /^第[\d一二三四五六七八九十]+[章回]$/.test(title);
+	return (
+		!title ||
+		/^第[\d一二三四五六七八九十]+[章回]$/.test(title) ||
+		/^(Chapter|Part) \d+$/.test(title)
+	);
 }
 
 /**
- * 获取章节显示标题（无标题时回退为"第N章"）
+ * 获取章节显示标题（无标题时按语言回退为"第N章"或"Chapter N"）
  */
-export function getChapterDisplayTitle(chapter: { title?: string } | undefined, index: number): string {
-	return chapter?.title || `第 ${index + 1} 章`;
+export function getChapterDisplayTitle(
+	chapter: { title?: string } | undefined,
+	index: number,
+	language: "zh" | "en" = "zh",
+): string {
+	return chapter?.title || (language === "en" ? `Chapter ${index + 1}` : `第 ${index + 1} 章`);
 }
 
 /**
