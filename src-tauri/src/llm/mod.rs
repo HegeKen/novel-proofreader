@@ -5,3 +5,4 @@
 pub mod engine;
 pub mod memory;
 pub mod model_manager;
+pub mod service;

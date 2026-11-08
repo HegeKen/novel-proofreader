@@ -21,11 +21,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
-use tauri::{command, AppHandle, Emitter};
+use tauri::command;
 use tokenizers::Tokenizer;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::llm::model_manager;
+use crate::events::{EventSink, TauriSink};
 
 /// HuggingFace 仓库
 const REPO: &str = "liudev/roberta-multilabel-28-3-classes";
@@ -47,7 +47,7 @@ fn log_error(msg: &str) {
 }
 
 fn models_dir() -> PathBuf {
-    model_manager::get_models_dir().join(MODEL_DIR_NAME)
+    crate::paths::models_dir().join(MODEL_DIR_NAME)
 }
 
 fn file_url(name: &str) -> String {
@@ -170,31 +170,23 @@ fn build_http_client() -> Result<reqwest::Client, String> {
         .map_err(|e| format!("构建 HTTP 客户端失败: {e}"))
 }
 
-fn emit_progress(app: &AppHandle, file: &str, downloaded: u64, total: u64) {
-    let _ = app.emit(
+fn emit_progress(sink: &dyn EventSink, file: &str, downloaded: u64, total: u64) {
+    let _ = sink.emit(
         "emotion-download-progress",
-        EmotionDownloadProgress {
-            file: file.to_string(),
-            downloaded,
-            total,
-        },
+        serde_json::json!({ "file": file, "downloaded": downloaded, "total": total }),
     );
 }
 
-fn emit_import_progress(app: &AppHandle, file: &str, copied: u64, total: u64) {
-    let _ = app.emit(
+fn emit_import_progress(sink: &dyn EventSink, file: &str, copied: u64, total: u64) {
+    let _ = sink.emit(
         "emotion-import-progress",
-        EmotionImportProgress {
-            file: file.to_string(),
-            copied,
-            total,
-        },
+        serde_json::json!({ "file": file, "copied": copied, "total": total }),
     );
 }
 
 /// 下载单个文件（流式写入 .download 临时文件，完成后原子重命名）
 async fn download_file(
-    app: &AppHandle,
+    sink: &dyn EventSink,
     client: &reqwest::Client,
     name: &str,
     expected_bytes: u64,
@@ -240,7 +232,7 @@ async fn download_file(
 
         let mut downloaded: u64 = 0;
         let mut last_emit = Instant::now();
-        emit_progress(app, name, 0, total);
+        emit_progress(sink, name, 0, total);
         let mut stream = response.bytes_stream();
         let mut failed: Option<String> = None;
 
@@ -259,7 +251,7 @@ async fn download_file(
             downloaded += chunk.len() as u64;
             // 控制事件频率：约每 200ms 或下载完成时上报一次
             if last_emit.elapsed().as_millis() >= 200 || downloaded == total {
-                emit_progress(app, name, downloaded, total);
+                emit_progress(sink, name, downloaded, total);
                 last_emit = Instant::now();
             }
         }
@@ -296,7 +288,7 @@ async fn download_file(
             return Err(format!("保存 {name} 失败: {err}"));
         }
         log_info(&format!("{name} 下载完成（{downloaded} bytes）"));
-        emit_progress(app, name, downloaded, total.max(downloaded));
+        emit_progress(sink, name, downloaded, total.max(downloaded));
         return Ok(());
     }
 
@@ -311,7 +303,12 @@ pub fn emotion_local_status() -> EmotionStatus {
 
 /// 下载模型文件（已存在则跳过）；进度通过 `emotion-download-progress` 事件推送
 #[command]
-pub async fn emotion_local_download(app: AppHandle) -> Result<EmotionStatus, String> {
+pub async fn emotion_local_download(app: tauri::AppHandle) -> Result<EmotionStatus, String> {
+    download(&TauriSink::new(app)).await
+}
+
+/// 服务层实现：下载情感模型（Web 与桌面共用）
+pub async fn download(sink: &dyn EventSink) -> Result<EmotionStatus, String> {
     let _guard = download_lock().lock().await;
     if model_downloaded() {
         let mut status = build_status();
@@ -327,7 +324,7 @@ pub async fn emotion_local_download(app: AppHandle) -> Result<EmotionStatus, Str
         ("model.safetensors", 409_189_420),
     ];
     for (name, bytes) in expected {
-        download_file(&app, &client, name, bytes)
+        download_file(sink, &client, name, bytes)
             .await
             .map_err(|e| {
                 format!(
@@ -472,7 +469,15 @@ where
 /// 手动导入本地模型目录（复制到应用模型目录）；适用于 HuggingFace 下载失败的用户
 #[command]
 pub async fn emotion_local_import_dir(
-    app: AppHandle,
+    app: tauri::AppHandle,
+    source_dir: String,
+) -> Result<EmotionStatus, String> {
+    import_dir(&TauriSink::new(app), source_dir).await
+}
+
+/// 服务层实现：导入本地情感模型目录（Web 与桌面共用）
+pub async fn import_dir(
+    sink: &dyn EventSink,
     source_dir: String,
 ) -> Result<EmotionStatus, String> {
     let _guard = download_lock().lock().await;
@@ -504,7 +509,7 @@ pub async fn emotion_local_import_dir(
             &dest_dir.join(name),
             name,
             |copied, total| {
-                emit_import_progress(&app, name, copied, total);
+                emit_import_progress(sink, name, copied, total);
             },
         )
         .await?;
@@ -915,11 +920,11 @@ pub async fn emotion_local_analyze(
     let context = context.unwrap_or_default();
 
     let _guard = infer_lock().lock().await;
-    let model = tauri::async_runtime::spawn_blocking(load_model)
+    let model = tokio::task::spawn_blocking(load_model)
         .await
         .map_err(|e| format!("加载模型任务失败: {e}"))??;
 
-    tauri::async_runtime::spawn_blocking(move || predict(&model, &text, &context))
+    tokio::task::spawn_blocking(move || predict(&model, &text, &context))
         .await
         .map_err(|e| format!("推理任务失败: {e}"))?
 }
@@ -1107,7 +1112,7 @@ mod tests {
             Ok(base) => PathBuf::from(base),
             Err(_) => return,
         };
-        model_manager::set_models_dir(base);
+        crate::llm::model_manager::set_models_dir(base);
         let status = build_status();
         assert!(status.downloaded, "模型未就绪：{}", status.model_dir);
         let prediction = tauri::async_runtime::block_on(emotion_local_analyze(

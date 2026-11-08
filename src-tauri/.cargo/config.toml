@@ -2,6 +2,19 @@
 # Cargo 构建配置
 # ============================================================
 
+# 使用国内 sparse 镜像拉取 crate，避免 crates.io 直连过慢（容器内构建尤其明显）
+# 如需临时回到官方源，设置环境变量 CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+# 并把下面两段 [source.*] 注释掉，或直接 `cargo build --offline`
+[source.crates-io]
+replace-with = "rsproxy-sparse"
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
+# 该镜像同样可作为命名 registry 使用：cargo add -r rsproxy <crate>
+[registries.rsproxy]
+index = "sparse+https://rsproxy.cn/index/"
+
 [env]
 # macOS 27+ SDK 已移除 ___isPlatformVersionAtLeast 符号的 tbd 声明。
 # llama.cpp Metal 后端的 @available(macOS 15.0, *) 检查在部署目标 < 15.0 时

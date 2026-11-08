@@ -45,6 +45,7 @@ type ConfigTab = import("./components/ConfigModal").ConfigTab;
 const CharacterSettings = lazy(() => import("./components/CharacterSettings").then(m => ({ default: m.CharacterSettings })));
 const RoleplayModal = lazy(() => import("./components/RoleplayModal").then(m => ({ default: m.RoleplayModal })));
 const HomePage = lazy(() => import("./components/HomePage").then(m => ({ default: m.HomePage })));
+const ServerFilePickerModal = lazy(() => import("./components/ServerFilePickerModal").then(m => ({ default: m.ServerFilePickerModal })));
 
 type RightTab = "proofread" | "task";
 type MobileTab = "novels" | "chapters" | "reader" | "task" | "settings" | "roleplay";
@@ -97,9 +98,10 @@ export default function App() {
 	const [showCJKVariantModal, setShowCJKVariantModal] = useState(false);
 	// 移动端 header「更多」菜单开合状态
 	const [showMobileHeaderMenu, setShowMobileHeaderMenu] = useState(false);
-	const [showLocalGuide, setShowLocalGuide] = useState(false);
 	const localGuideShown = useLocalModelStore((s) => s.localGuideShown);
 	const markLocalGuideShown = useLocalModelStore((s) => s.markLocalGuideShown);
+	// 首次启动（已进入主界面且未展示过引导）时弹出 AI 模型来源引导；关闭后置为已展示，故可直接派生
+	const showLocalGuide = !showHome && !localGuideShown;
 	const [showRoleplay, setShowRoleplay] = useState(false);
 	const [rightTab, setRightTab] = useState<RightTab>("proofread");
 	const [mobileTab, setMobileTab] = useState<MobileTab>("novels");
@@ -125,16 +127,8 @@ export default function App() {
 		document.documentElement.setAttribute("data-theme", theme);
 	}, [theme]);
 
-	// 首次启动（已进入主界面且未展示过引导）时弹出 AI 模型来源引导
-	useEffect(() => {
-		if (!showHome && !localGuideShown) {
-			setShowLocalGuide(true);
-		}
-	}, [showHome, localGuideShown]);
-
 	const handleCloseLocalGuide = useCallback(() => {
 		markLocalGuideShown();
-		setShowLocalGuide(false);
 	}, [markLocalGuideShown]);
 
 	const audioCachePersistent = useConfigStore((s) => s.ttsConfig.audioCachePersistent);
@@ -878,6 +872,9 @@ export default function App() {
 					</ErrorBoundary>
 				</Suspense>
 			)}
+			<Suspense fallback={null}>
+				<ServerFilePickerModal />
+			</Suspense>
 			<ToastContainer
 				messages={toastMessages}
 				onClose={hideToast}

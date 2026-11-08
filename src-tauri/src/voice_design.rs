@@ -19,8 +19,9 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::{command, Emitter};
+use tauri::command;
 
+use crate::events::{EventSink, TauriSink};
 use crate::llm::model_manager;
 use crate::local_tts::download_file;
 
@@ -63,23 +64,12 @@ fn get_last_error() -> Option<String> {
     last_error_slot().lock().ok().and_then(|g| g.clone())
 }
 
-fn app_dir() -> PathBuf {
-    model_manager::get_models_dir()
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| {
-            dirs::data_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("novel-proofreader")
-        })
-}
-
 fn tools_dir() -> PathBuf {
-    app_dir().join("tools")
+    crate::paths::tools_dir()
 }
 
 fn logs_dir() -> PathBuf {
-    app_dir().join("logs")
+    crate::paths::logs_dir()
 }
 
 fn log_info(tag: &str, msg: &str) {
@@ -329,13 +319,6 @@ pub struct VoiceDesignServerInfo {
     pub codec_path: String,
     pub binary_path: String,
     pub started_secs: u64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct VoiceDesignProgress {
-    kind: &'static str,
-    downloaded: u64,
-    total: u64,
 }
 
 async fn reap_if_exited(guard: &mut Option<RunningServer>) {
@@ -731,6 +714,11 @@ pub async fn tts_voice_design_download_model(
     app: tauri::AppHandle,
     kind: String,
 ) -> Result<String, String> {
+    download_model(&TauriSink::new(app), kind).await
+}
+
+/// 服务层实现：下载 VoiceDesign 模型（Web 与桌面共用）
+pub async fn download_model(sink: &dyn EventSink, kind: String) -> Result<String, String> {
     let dir = model_manager::ensure_models_dir()?.join("qwen3-tts-voicedesign");
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建模型目录失败: {}", e))?;
 
@@ -752,15 +740,10 @@ pub async fn tts_voice_design_download_model(
         .map_err(|e| format!("创建下载客户端失败: {}", e))?;
     let mirror = url.replace("https://huggingface.co", "https://hf-mirror.com");
     let urls = vec![url.to_string(), mirror];
-    let emit_app = app.clone();
     download_file(&client, &urls, &dest, &|downloaded, total| {
-        let _ = emit_app.emit(
+        let _ = sink.emit(
             "tts-voice-design-download-progress",
-            VoiceDesignProgress {
-                kind: progress_kind,
-                downloaded,
-                total,
-            },
+            serde_json::json!({ "kind": progress_kind, "downloaded": downloaded, "total": total }),
         );
     })
     .await?;
@@ -810,6 +793,11 @@ pub async fn tts_voice_design_install_runtime(app: tauri::AppHandle) -> Result<S
         let _ = app;
         return Err("Android 端暂不支持 VoiceDesign 本地朗读，请使用桌面版".to_string());
     }
+    install_runtime(&TauriSink::new(app)).await
+}
+
+/// 服务层实现：安装 CrispASR 运行时（Web 与桌面共用）
+pub async fn install_runtime(sink: &dyn EventSink) -> Result<String, String> {
     if let Some(found) = find_binary_named(&tools_dir(), "crispasr", 0) {
         return Ok(found.to_string_lossy().to_string());
     }
@@ -852,15 +840,10 @@ pub async fn tts_voice_design_install_runtime(app: tauri::AppHandle) -> Result<S
     log_info("VoiceDesign", &format!("下载 CrispASR {}: {}", tag, asset));
     let runtimes = tools_dir().join("runtimes");
     let archive = runtimes.join(format!("crispasr-{}-download", tag));
-    let emit_app = app.clone();
     download_file(&client, &[asset], &archive, &|downloaded, total| {
-        let _ = emit_app.emit(
+        let _ = sink.emit(
             "tts-voice-design-download-progress",
-            VoiceDesignProgress {
-                kind: "crispasr",
-                downloaded,
-                total,
-            },
+            serde_json::json!({ "kind": "crispasr", "downloaded": downloaded, "total": total }),
         );
     })
     .await?;

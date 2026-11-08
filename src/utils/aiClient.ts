@@ -1,6 +1,7 @@
 // ============================================================
 // AI 调用封装 — 支持 OpenAI 兼容接口 & Anthropic 接口
 // ============================================================
+import { invoke } from "@tauri-apps/api/core";
 import type { AIConfig, AIProvider, ApiFormat, LocalModelConfig, NovelWorldbuilding, CharacterInfo, CharacterRelationship } from "../types";
 import { logger } from "./logger";
 import { normalizeCJKVariants } from "./normalizeCJK";
@@ -807,7 +808,6 @@ async function callBuiltinChat(
 			.join("\n") + "\n<|im_start|>assistant\n";
 
 	try {
-		const { invoke } = await import("@tauri-apps/api/core");
 		const output = await invoke<string>("llm_inference", { prompt });
 		if (isProofread) {
 			logger.info(

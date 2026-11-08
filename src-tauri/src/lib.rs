@@ -1,9 +1,14 @@
-mod commands;
-mod emotion;
-mod external_tts;
-mod llm;
-mod local_tts;
-mod voice_design;
+pub mod commands;
+pub mod emotion;
+pub mod events;
+pub mod external_tts;
+pub mod llm;
+pub mod local_tts;
+pub mod paths;
+pub mod voice_design;
+
+#[cfg(feature = "web-server")]
+pub mod web;
 
 #[cfg(target_os = "android")]
 use tauri::plugin::{Builder, TauriPlugin};

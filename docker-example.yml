@@ -1,0 +1,48 @@
+# ============================================================
+# 小说校对工具：容器化运行 + 浏览器访问
+# 启动：docker compose up -d --build
+# 访问：http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale
+# ============================================================
+services:
+  proofreader:
+    build:
+      context: .
+      args:
+        # 1 = 编译内置 llama.cpp 推理（镜像更大、构建更慢）；0 = 仅云端/外部推理
+        WITH_LOCAL_LLM: 1
+        # apt 镜像源，国内容器构建建议保持默认；置空则使用 archive.ubuntu.com
+        UBUNTU_MIRROR: ${UBUNTU_MIRROR:-mirrors.aliyun.com}
+        # cargo 编译并发数，内存不足时调低可避免 OOM
+        CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-4}
+        # Rust 工具链下载源，默认 rsproxy 国内镜像
+        RUSTUP_DIST_SERVER: ${RUSTUP_DIST_SERVER:-https://rsproxy.cn}
+        # rustup-init 本体下载源
+        RUSTUP_UPDATE_ROOT: ${RUSTUP_UPDATE_ROOT:-https://rsproxy.cn/rustup}
+    # 可直接使用 GHCR / Docker Hub 镜像：
+    # PROOFREADER_IMAGE=ghcr.io/<owner>/novel-proofreader PROOFREADER_VERSION=0.20.0 docker compose up -d --no-build
+    image: novel-proofreader:0.20.0
+    container_name: novel-proofreader
+    # 以 root 启动：入口脚本会先把下面挂载的数据目录属主修正为 1000:1000，
+    # 再降权为 app 用户运行。NAS 上目录默认属于 root，若不修正会在启动时
+    # 报 "Failed to setup app: Permission denied"（也可手动 chown 后去掉此行）
+    user: "0:0"
+    ports:
+      # 网页版（noVNC）：浏览器访问 http://<NAS_IP>:6080/vnc.html?autoconnect=true&resize=scale
+      - "6080:6080"
+      # 原生 VNC（可选）；不需要可删掉此行
+      - "5900:5900"
+    environment:
+      RESOLUTION: 1600x1000x24
+      TZ: Asia/Shanghai
+      # 对外暴露时强烈建议设置密码
+      VNC_PASSWORD: "123456"
+    volumes:
+      # 小说库、配置与本地 TTS 运行时都保存在这两个目录
+      - /volume3/MediaStorage/富媒体/文本/NPR/share:/home/app/.local/share
+      - /volume3/MediaStorage/富媒体/文本/NPR/config:/home/app/.config
+      # 模型目录单独挂载：便于从宿主机直接放 / 备份模型文件，不必进容器操作
+      - /volume3/MediaStorage/富媒体/文本/NPR/models:/home/app/.local/share/cn.helilab.proofreader/novel-proofreader/models
+      # 将宿主机小说目录挂载进来后，可在应用的文件选择器中直接打开
+      # - ./novels:/home/app/novels:ro
+    shm_size: "1gb"
+    restart: unless-stopped

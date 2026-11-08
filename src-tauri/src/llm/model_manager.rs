@@ -3,7 +3,6 @@
 // ============================================================
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
 /// 打印日志到控制台（Android 上可通过 logcat 查看）
 fn log_info(tag: &str, msg: &str) {
@@ -40,14 +39,11 @@ fn build_http_client() -> Result<reqwest::Client, reqwest::Error> {
         .build()
 }
 
-/// 模型目录覆盖（由 Tauri app setup 初始化，确保 Android 使用正确的 app_data_dir）
-static MODELS_DIR_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
-
-/// 设置模型存储根目录（应在应用启动时调用一次）
+/// 设置数据根目录（应在应用启动时调用一次，桌面端传 Tauri app_data_dir）
 pub fn set_models_dir(base: PathBuf) {
-    let dir = base.join("novel-proofreader").join("models");
-    log_info("ModelManager", &format!("设置模型目录: {}", dir.display()));
-    let _ = MODELS_DIR_OVERRIDE.set(dir);
+    let data_dir = base.join("novel-proofreader");
+    log_info("ModelManager", &format!("设置数据目录: {}", data_dir.display()));
+    crate::paths::set_data_dir(data_dir);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,15 +105,9 @@ pub fn get_preset_models() -> Vec<ModelInfo> {
 }
 
 /// 获取模型存储目录
-/// 优先使用 Tauri app_data_dir（Android 上正确），否则回退到 dirs::data_dir（桌面端）
+/// 由 [`crate::paths`] 统一解析（桌面端 app_data_dir，Web 端 PROOFREADER_DATA_DIR）
 pub fn get_models_dir() -> PathBuf {
-    MODELS_DIR_OVERRIDE
-        .get()
-        .cloned()
-        .unwrap_or_else(|| {
-            let base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
-            base.join("novel-proofreader").join("models")
-        })
+    crate::paths::models_dir()
 }
 
 /// 检查模型是否已下载

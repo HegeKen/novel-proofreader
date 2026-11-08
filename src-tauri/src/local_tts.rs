@@ -20,8 +20,9 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::{command, Emitter};
+use tauri::command;
 
+use crate::events::{EventSink, TauriSink};
 use crate::llm::model_manager;
 
 const MMPROJ_FILENAME: &str = "mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf";
@@ -75,23 +76,17 @@ fn get_last_error() -> Option<String> {
 // ------------------------------------------------------------
 
 /// 应用数据目录（models 的上一级）
+#[allow(dead_code)]
 fn app_dir() -> PathBuf {
-    model_manager::get_models_dir()
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| {
-            dirs::data_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("novel-proofreader")
-        })
+    crate::paths::data_dir()
 }
 
 fn tools_dir() -> PathBuf {
-    app_dir().join("tools")
+    crate::paths::tools_dir()
 }
 
 fn logs_dir() -> PathBuf {
-    app_dir().join("logs")
+    crate::paths::logs_dir()
 }
 
 fn log_info(tag: &str, msg: &str) {
@@ -890,13 +885,6 @@ pub async fn tts_local_synthesize(
 // mmproj / llama-server 运行时下载
 // ------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize)]
-struct LocalTtsDownloadProgress {
-    kind: &'static str,
-    downloaded: u64,
-    total: u64,
-}
-
 async fn fetch_release_asset(
     client: &reqwest::Client,
 ) -> Result<(String, String), String> {
@@ -1055,6 +1043,11 @@ pub(crate) async fn download_file(
 /// 下载配套 mmproj 到模型目录（自动尝试 HuggingFace 镜像）
 #[command]
 pub async fn tts_local_download_mmproj(app: tauri::AppHandle) -> Result<String, String> {
+    download_mmproj(&TauriSink::new(app)).await
+}
+
+/// 服务层实现：下载 mmproj（Web 与桌面共用）
+pub async fn download_mmproj(sink: &dyn EventSink) -> Result<String, String> {
     let dir = model_manager::ensure_models_dir()?;
     let dest = dir.join(MMPROJ_FILENAME);
     if dest.is_file() {
@@ -1069,15 +1062,10 @@ pub async fn tts_local_download_mmproj(app: tauri::AppHandle) -> Result<String, 
         .map_err(|e| format!("创建下载客户端失败: {}", e))?;
     let mirror = MMPROJ_URL.replace("https://huggingface.co", "https://hf-mirror.com");
     let urls = vec![MMPROJ_URL.to_string(), mirror];
-    let emit_app = app.clone();
     download_file(&client, &urls, &dest, &|downloaded, total| {
-        let _ = emit_app.emit(
+        let _ = sink.emit(
             "tts-local-download-progress",
-            LocalTtsDownloadProgress {
-                kind: "mmproj",
-                downloaded,
-                total,
-            },
+            serde_json::json!({ "kind": "mmproj", "downloaded": downloaded, "total": total }),
         );
     })
     .await?;
@@ -1096,6 +1084,11 @@ pub async fn tts_local_install_runtime(app: tauri::AppHandle) -> Result<String, 
         let _ = app;
         return Err("Android 端暂不支持本地 Qwen3-TTS 朗读，请使用桌面版".to_string());
     }
+    install_runtime(&TauriSink::new(app)).await
+}
+
+/// 服务层实现：安装 llama-server 运行时（Web 与桌面共用）
+pub async fn install_runtime(sink: &dyn EventSink) -> Result<String, String> {
     if let Some(found) = find_llama_server(&tools_dir(), 0) {
         return Ok(found.to_string_lossy().to_string());
     }
@@ -1110,15 +1103,10 @@ pub async fn tts_local_install_runtime(app: tauri::AppHandle) -> Result<String, 
 
     let runtimes = tools_dir().join("runtimes");
     let archive = runtimes.join(format!("llama-{}-download", tag));
-    let emit_app = app.clone();
     download_file(&client, &[url], &archive, &|downloaded, total| {
-        let _ = emit_app.emit(
+        let _ = sink.emit(
             "tts-local-download-progress",
-            LocalTtsDownloadProgress {
-                kind: "runtime",
-                downloaded,
-                total,
-            },
+            serde_json::json!({ "kind": "runtime", "downloaded": downloaded, "total": total }),
         );
     })
     .await?;

@@ -13648,3 +13648,139 @@ input[type="checkbox"]:disabled {
 	font-size: 0.92em;
 	background: var(--bg-overlay);
 	border-radius: 4px}
+
+/* ============================================================
+   Web 版：服务端文件选择弹窗
+   ============================================================ */
+.server-picker-modal {
+	width: min(720px, calc(100vw - 32px));
+	max-height: 82vh;
+	overflow: hidden}
+
+.server-picker-modal .config-body {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	min-height: 320px}
+
+.server-picker-roots {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px}
+
+.server-picker-root {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 12px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--bg-raised);
+	color: var(--text-secondary);
+	font-size: var(--fs-sm);
+	cursor: pointer;
+	transition: all var(--duration) var(--ease)}
+
+.server-picker-root:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary)}
+
+.server-picker-root.active {
+	border-color: var(--accent);
+	color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 10%, transparent)}
+
+.server-picker-path {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	background: var(--bg-surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm)}
+
+.server-picker-up {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-xs);
+	background: var(--bg-raised);
+	color: var(--text-secondary);
+	cursor: pointer}
+
+.server-picker-up:hover {
+	background: var(--bg-hover);
+	color: var(--text-primary)}
+
+.server-picker-path-text {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: var(--fs-sm);
+	color: var(--text-secondary);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace}
+
+.server-picker-list {
+	flex: 1;
+	min-height: 200px;
+	max-height: 48vh;
+	overflow-y: auto;
+	border: 1px solid var(--border);
+	border-radius: var(--r-md);
+	background: var(--bg-surface);
+	padding: 6px}
+
+.server-picker-item {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	padding: 9px 12px;
+	border: none;
+	border-radius: var(--r-xs);
+	background: transparent;
+	color: var(--text-primary);
+	font-size: var(--fs-sm);
+	text-align: left;
+	cursor: pointer;
+	transition: background var(--duration) var(--ease)}
+
+.server-picker-item:hover {
+	background: var(--bg-hover)}
+
+.server-picker-item.selected {
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+	color: var(--accent)}
+
+.server-picker-item-icon {
+	display: inline-flex;
+	color: var(--text-secondary)}
+
+.server-picker-item.selected .server-picker-item-icon {
+	color: var(--accent)}
+
+.server-picker-item-name {
+	flex: 1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap}
+
+.server-picker-hint,
+.server-picker-error {
+	padding: 24px;
+	text-align: center;
+	font-size: var(--fs-sm);
+	color: var(--text-muted)}
+
+.server-picker-error {
+	color: var(--red)}
+
+.server-picker-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 10px}

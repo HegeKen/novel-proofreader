@@ -18,6 +18,8 @@ import { EmptyState } from "./EmptyState";
 import { Icons } from "./Icons";
 import { useMobile } from "../hooks/useMobile";
 import { ConfirmModal } from "./config/ConfirmModal";
+import { requestServerSelection } from "../stores/filePickerStore";
+import { readServerFile } from "../lib/backend/serverFiles";
 import type { Novel } from "../types";
 
 export function NovelList({
@@ -47,6 +49,50 @@ export function NovelList({
 		message: string;
 		onConfirm: () => void;
 	}>({ show: false, message: "", onConfirm: () => {} });
+	const importNovelData = async (fileName: string, buffer: ArrayBuffer, isEpub: boolean) => {
+		let text: string;
+		let novelName: string;
+		if (isEpub) {
+			try {
+				const parsed = parseEpub(buffer);
+				text = parsed.text;
+				novelName = parsed.title || fileName.replace(/\.epub$/i, "");
+			} catch (err) {
+				logger.errorGeneric('[NovelList]', 'EPUB 解析失败:', err);
+				useUIStore.getState().showToast("EPUB 解析失败，请确认文件有效", "error");
+				return;
+			}
+		} else {
+			text = decodeTextBuffer(buffer);
+			novelName = fileName.replace(/\.txt$/i, "");
+		}
+		// 统一换行符、检测语言，并对英文 txt 清理缩进符/重排软换行
+		const prepared = prepareNovelText(text, { reflow: !isEpub });
+		text = prepared.text;
+		const novel: Novel = {
+			id: `novel-${Date.now()}`,
+			name: novelName,
+			fullText: text,
+			language: prepared.language,
+			importedAt: Date.now(),
+			chapters: [], // 添加空的章节数组以满足类型定义
+		};
+		addNovel(novel);
+
+		// 保存小说到 storage
+		await saveNovelToStorage(`${novel.name}.txt`, text);
+
+		// 同步到 IndexedDB（Web 端全文持久化依赖 IndexedDB，Tauri 端作为防丢失兜底）
+		await saveNovelText(getNovelStorageKey(novel.name), text);
+
+		// 为新小说创建角色模板文件
+		await createCharacterTemplate(novel.name);
+
+		// 解析章节
+		const chapters = splitChapters(text);
+		setChapters(chapters);
+	};
+
 	const handleImport = async () => {
 		const input = document.createElement("input");
 		input.type = "file";
@@ -54,52 +100,31 @@ export function NovelList({
 		input.onchange = async (e) => {
 			const file = (e.target as HTMLInputElement).files?.[0];
 			if (!file) return;
-
-			const isEpub = file.name.toLowerCase().endsWith(".epub");
 			const buffer = await file.arrayBuffer();
-			let text: string;
-			let novelName: string;
-			if (isEpub) {
-				try {
-					const parsed = parseEpub(buffer);
-					text = parsed.text;
-					novelName = parsed.title || file.name.replace(/\.epub$/i, "");
-				} catch (err) {
-					logger.errorGeneric('[NovelList]', 'EPUB 解析失败:', err);
-					useUIStore.getState().showToast("EPUB 解析失败，请确认文件有效", "error");
-					return;
-				}
-			} else {
-				text = decodeTextBuffer(buffer);
-				novelName = file.name.replace(/\.txt$/i, "");
-			}
-			// 统一换行符、检测语言，并对英文 txt 清理缩进符/重排软换行
-			const prepared = prepareNovelText(text, { reflow: !isEpub });
-			text = prepared.text;
-			const novel: Novel = {
-				id: `novel-${Date.now()}`,
-				name: novelName,
-				fullText: text,
-				language: prepared.language,
-				importedAt: Date.now(),
-				chapters: [], // 添加空的章节数组以满足类型定义
-			};
-			addNovel(novel);
-
-			// 保存小说到 storage
-			await saveNovelToStorage(`${novel.name}.txt`, text);
-
-			// 同步到 IndexedDB（Web 端全文持久化依赖 IndexedDB，Tauri 端作为防丢失兜底）
-			await saveNovelText(getNovelStorageKey(novel.name), text);
-
-			// 为新小说创建角色模板文件
-			await createCharacterTemplate(novel.name);
-
-			// 解析章节
-			const chapters = splitChapters(text);
-			setChapters(chapters);
+			await importNovelData(file.name, buffer, file.name.toLowerCase().endsWith(".epub"));
 		};
 		input.click();
+	};
+
+	// Web 版：从服务端挂载目录导入小说
+	const handleServerImport = async () => {
+		try {
+			const selected = await requestServerSelection({
+				title: "从服务器目录导入小说",
+				filters: [{ name: "小说文件", extensions: ["txt", "epub"] }],
+			});
+			const path = typeof selected === "string" ? selected : null;
+			if (!path) return;
+			const buffer = await readServerFile(path);
+			const fileName = path.split(/[\\/]/).pop() || "novel.txt";
+			await importNovelData(fileName, buffer, fileName.toLowerCase().endsWith(".epub"));
+		} catch (err) {
+			logger.errorGeneric("[NovelList] 从服务器目录导入失败:", err);
+			useUIStore.getState().showToast(
+				err instanceof Error ? err.message : "从服务器目录导入失败",
+				"error",
+			);
+		}
 	};
 
 	const handleSelect = async (novel: Novel) => {
@@ -185,6 +210,15 @@ export function NovelList({
 					>
 						<Icons.import size={18} />
 					</button>
+					{__PROOFREADER_WEB__ && (
+						<button
+							className={isMobile ? "btn-mobile" : "btn-import-novel"}
+							onClick={handleServerImport}
+							title="从服务器目录导入小说"
+						>
+							<Icons.server size={18} />
+						</button>
+					)}
 					<button
 						className={isMobile ? "btn-mobile" : "btn-refresh-novel"}
 						onClick={refreshNovels}

@@ -1,0 +1,32 @@
+# ============================================================
+# 小说校对工具 Web 版（绑定挂载示例，适合 NAS）
+# 启动：docker compose -f docker-compose.web-example.yml up -d --build
+# 访问：http://<NAS_IP>:8080
+# ============================================================
+services:
+  proofreader-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        WITH_LOCAL_LLM: 1
+        UBUNTU_MIRROR: ${UBUNTU_MIRROR:-mirrors.aliyun.com}
+        CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-4}
+        RUSTUP_DIST_SERVER: ${RUSTUP_DIST_SERVER:-https://rsproxy.cn}
+        RUSTUP_UPDATE_ROOT: ${RUSTUP_UPDATE_ROOT:-https://rsproxy.cn/rustup}
+    image: novel-proofreader-web:0.20.0
+    container_name: novel-proofreader-web
+    ports:
+      - "8080:8080"
+    environment:
+      TZ: Asia/Shanghai
+      PROOFREADER_LLM_GPU_LAYERS: "0"
+      PROOFREADER_NOVELS_DIRS: /novels
+    volumes:
+      # 应用数据目录（模型、运行时、日志），建议放在 SSD / 快照盘上
+      - /volume3/MediaStorage/富媒体/文本/NPR/web-data:/data
+      # 模型目录单独映射：可直接从宿主机放入 GGUF 模型
+      - /volume3/MediaStorage/富媒体/文本/NPR/models:/data/models
+      # 小说目录（只读），网页中可浏览导入
+      - /volume3/MediaStorage/富媒体/文本/NPR/novels:/novels:ro
+    restart: unless-stopped

@@ -4,6 +4,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { LocalModelState } from "../types";
+import { invoke } from "@tauri-apps/api/core";
 import { normalizeLocalEndpoint } from "../utils/aiClient";
 import { logger } from "../utils/logger";
 
@@ -289,7 +290,6 @@ export const useLocalModelStore = create<LocalModelStore>()(
 	refreshBuiltinStatus: async () => {
 		if (!isTauri()) return;
 		try {
-			const { invoke } = await import("@tauri-apps/api/core");
 			const status = await invoke<{
 				loaded: boolean;
 				model_id: string | null;
@@ -299,8 +299,7 @@ export const useLocalModelStore = create<LocalModelStore>()(
 				system: LlmSystemInfo;
 				models_dir: string;
 			}>("llm_get_status");
-			const { invoke: scanInvoke } = await import("@tauri-apps/api/core");
-			const scanned = await scanInvoke<BuiltinModelInfo[]>("llm_scan_models");
+			const scanned = await invoke<BuiltinModelInfo[]>("llm_scan_models");
 			const imported = scanned.filter((m) => m.description === "用户导入模型");
 			set({
 				builtin: {
@@ -329,7 +328,6 @@ export const useLocalModelStore = create<LocalModelStore>()(
 			set({ builtin: { ...builtin, downloading: { ...builtin.downloading, [modelId]: 0 } } });
 			logger.info(`[LocalModel] 开始下载模型: ${modelId}`);
 			try {
-				const { invoke } = await import("@tauri-apps/api/core");
 				await invoke("llm_download_model", { modelId });
 				await get().refreshBuiltinStatus();
 				logger.info(`[LocalModel] 模型下载完成: ${modelId}`);
@@ -350,7 +348,6 @@ export const useLocalModelStore = create<LocalModelStore>()(
 		if (!isTauri()) return false;
 		set({ builtin: { ...get().builtin, loading: true } });
 		try {
-			const { invoke } = await import("@tauri-apps/api/core");
 			await invoke("llm_load_model", {
 				modelId,
 				contextSize: contextSize ?? null,
@@ -369,7 +366,6 @@ export const useLocalModelStore = create<LocalModelStore>()(
 	unloadBuiltinModel: async () => {
 		if (!isTauri()) return;
 		try {
-			const { invoke } = await import("@tauri-apps/api/core");
 			await invoke("llm_unload_model");
 		} catch {
 			// 忽略
@@ -380,7 +376,6 @@ export const useLocalModelStore = create<LocalModelStore>()(
 	deleteBuiltinModel: async (modelId: string) => {
 		if (!isTauri()) return;
 		try {
-			const { invoke } = await import("@tauri-apps/api/core");
 			await invoke("llm_delete_model", { modelId });
 		} catch {
 			// 忽略
@@ -396,7 +391,6 @@ export const useLocalModelStore = create<LocalModelStore>()(
 			set({ builtin: { ...get().builtin, importing: true } });
 			logger.info(`[LocalModel] 开始导入模型: ${srcPath}`);
 			try {
-				const { invoke } = await import("@tauri-apps/api/core");
 				const result = await invoke<BuiltinModelInfo>("llm_import_model", { path: srcPath });
 				await get().refreshBuiltinStatus();
 				logger.info(`[LocalModel] 模型导入成功: ${result.filename} (${result.size_mb} MB)`);
@@ -416,7 +410,6 @@ export const useLocalModelStore = create<LocalModelStore>()(
 			return false;
 		}
 		try {
-			const { invoke } = await import("@tauri-apps/api/core");
 			await invoke("llm_open_models_dir");
 			logger.info("[LocalModel] 已打开模型目录");
 			return true;

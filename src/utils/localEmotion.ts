@@ -6,6 +6,7 @@
 //   2. 首次使用前下载 config.json / tokenizer.json / model.safetensors
 //   3. 调用 emotion_local_analyze 获取 31 维情感概率
 // ============================================================
+import { invoke } from "@tauri-apps/api/core";
 import { formatBytes, isTauriRuntime } from "./localTts";
 import { logger } from "./logger";
 
@@ -54,11 +55,6 @@ function errorMessage(err: unknown): string {
 	if (err instanceof Error) return err.message;
 	if (typeof err === "string") return err;
 	return JSON.stringify(err);
-}
-
-async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-	const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
-	return tauriInvoke<T>(command, args);
 }
 
 /** 查询本地情感模型状态（非 Tauri 环境返回 null） */

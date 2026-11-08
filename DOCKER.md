@@ -3,6 +3,8 @@
 将小说校对工具以 Linux 可执行文件的形式运行在容器中，通过浏览器（noVNC）访问完整桌面界面，并在镜像内启用本地 llama.cpp 推理。
 
 > 本方案把 **Tauri 桌面应用** 跑在虚拟显示里，不是纯 Web 版。因此浏览器中可以使用全部功能（文件选择器、本地模型、TTS、角色分析等），但音频不会回传到浏览器，详见「已知限制」。
+>
+> 如需**纯 Web 版**（浏览器直接访问、无 VNC、镜像更小），见文末「Web 版打包（无 VNC）」。
 
 ## 架构
 
@@ -138,7 +140,7 @@ docker run -d \
 ```bash
 docker build \
   --build-arg WITH_LOCAL_LLM=1 \
-  --build-arg NODE_MAJOR=24 \
+  --build-arg NODE_VERSION=24.22.2 \
   --build-arg PNPM_VERSION=9 \
   -t novel-proofreader:0.20.0 .
 ```
@@ -269,19 +271,103 @@ docker exec novel-proofreader bash -c 'ss -lntp | grep -E "5900|6080"'
 | 模型反复重新下载 | 确认 `/home/app/.local/share` 已持久化挂载 |
 | 端口被占用 | 修改 compose 中 `"${NOVNC_PORT:-6080}:6080"` 的宿主机端口 |
 
+## Web 版打包（无 VNC）
+
+前文方案把 Tauri 桌面应用跑在虚拟显示里；Web 版是纯浏览器应用——Vite 构建的 SPA + axum 服务端（`proofreader-web`），浏览器直接访问 `http://<host>:8080`，无需 Xvfb/VNC/WebKitGTK，镜像更小、界面即为本地渲染。
+
+- 前端：`PROOFREADER_WEB=1 pnpm build`（Vite alias 把 `@tauri-apps/*` 替换为 HTTP/浏览器适配层，产物在 `dist/`）
+- 服务端：`cargo build --release --features web-server --bin proofreader-web`（叠加 `local-llm` 启用内置推理），静态托管 `dist`，API 走 `/api/*`
+- 相关文件：`Dockerfile.web`、`docker-compose.web.yml`、`src-tauri/src/web/`
+
+### Compose 构建启动
+
+```bash
+docker compose -f docker-compose.web.yml up -d --build
+
+# 查看日志 / 健康检查
+docker compose -f docker-compose.web.yml logs -f proofreader-web
+curl http://127.0.0.1:8080/api/health
+```
+
+浏览器访问 `http://127.0.0.1:8080`。
+
+> Web 版**无鉴权**，默认面向局域网自用；对外暴露时请放在带鉴权的反向代理之后，并为 SSE 关闭代理缓冲（Nginx 加 `proxy_buffering off;`），否则流式输出会被攒批。
+
+### 环境变量与构建参数
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `WEB_PORT` | `8080` | 宿主机访问端口（映射到容器 8080） |
+| `PROOFREADER_LISTEN` | `0.0.0.0:8080` | 容器内监听地址 |
+| `PROOFREADER_DATA_DIR` | `/data` | 数据目录（配置、日志、本地 TTS 运行时） |
+| `PROOFREADER_MODELS_DIR` | `/data/models` | 模型目录 |
+| `PROOFREADER_NOVELS_DIRS` | `/novels` | 网页文件选择器可浏览的目录，多个用 `:` 或 `,` 分隔 |
+| `PROOFREADER_LLM_GPU_LAYERS` | `0` | 内置推理 GPU 层数；容器无 GPU 时保持 0（纯 CPU） |
+| `WITH_LOCAL_LLM` | `1` | 构建参数：`1` 编译内置 llama.cpp，`0` 仅云端/外部推理 |
+| `PROOFREADER_WEB_IMAGE` / `PROOFREADER_VERSION` | `novel-proofreader-web` / 当前版本 | 镜像名与标签 |
+
+`UBUNTU_MIRROR`、`CARGO_BUILD_JOBS`、`RUSTUP_DIST_SERVER` 等构建参数与桌面版一致。
+
+### 数据持久化
+
+| 挂载 | 内容 |
+|---|---|
+| `proofreader-web-data` → `/data` | 应用数据（配置、日志、本地 TTS 运行时） |
+| `proofreader-web-models` → `/data/models` | 模型文件（单独挂载便于备份，或直接在宿主机放模型） |
+| `./novels` → `/novels:ro` | 宿主机小说目录（只读），网页内「从服务器目录导入」即可浏览选择 |
+
+改用绑定挂载时无需手动 `chown`：入口脚本 `docker/entrypoint-web.sh` 会在 root 启动时把数据目录属主修正为 UID 1000，再降权运行。
+
+### 手动构建与运行
+
+```bash
+docker build -f Dockerfile.web -t novel-proofreader-web:0.20.0 .
+
+docker run -d \
+  --name novel-proofreader-web \
+  -p 8080:8080 \
+  -v proofreader-web-data:/data \
+  -v proofreader-web-models:/data/models \
+  -v "$PWD/novels":/novels:ro \
+  --restart unless-stopped \
+  novel-proofreader-web:0.20.0
+```
+
+### 不使用 Docker 的本地打包
+
+需本机具备 Tauri 编译依赖（WebKitGTK 等，清单见 `Dockerfile.web` builder 阶段）：
+
+```bash
+# 1. 构建前端（必须先于服务端构建：generate_context! 编译期读取 ../dist）
+PROOFREADER_WEB=1 pnpm build
+
+# 2. 构建 Web 服务端
+cargo build --manifest-path src-tauri/Cargo.toml --release \
+  --features local-llm,web-server --bin proofreader-web
+
+# 3. 运行（默认监听 0.0.0.0:8080）
+PROOFREADER_WEB_ROOT=./dist ./src-tauri/target/release/proofreader-web
+```
+
+开发调试可分开跑：`PROOFREADER_WEB=1 pnpm dev`（Vite 把 `/api` 代理到 `127.0.0.1:8080`，可用 `PROOFREADER_API_TARGET` 改目标）+ 本地运行的 `proofreader-web`。
+
 ## 升级
 
 ```bash
 git pull
 
-# 默认构建当前机器架构（Apple Silicon 为 arm64）
+# 桌面版镜像（默认构建当前机器架构，Apple Silicon 为 arm64）
 docker compose build
 
 # 需要 x86_64 镜像（例如使用 VoiceDesign 本地运行时）
 DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose build
 docker compose up -d
+
+# Web 版镜像
+docker compose -f docker-compose.web.yml up -d --build
+DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose -f docker-compose.web.yml up -d --build
 ```
 
 > `docker compose build` 本身不支持 `--platform` 参数；指定目标架构请使用 `DOCKER_DEFAULT_PLATFORM` 环境变量，或直接执行 `docker build --platform linux/amd64 -t novel-proofreader:0.20.0 .`。
 
-命名卷会保留小说库、配置、模型与本地 TTS 运行时。升级后应用版本号与镜像标签可在 `docker-compose.yml` 的 `PROOFREADER_VERSION` 中调整。
+命名卷会保留小说库、配置、模型与本地 TTS 运行时。升级后应用版本号与镜像标签可在 `docker-compose.yml` / `docker-compose.web.yml` 的 `PROOFREADER_VERSION` 中调整。

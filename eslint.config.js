@@ -28,6 +28,10 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // 与 scripts 配置一致：下划线前缀视为"故意未使用"（如与 plugin-fs 对齐的占位参数）
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    },
   },
   // 发布签名 / 可复现构建脚本（Node ESM）
   {

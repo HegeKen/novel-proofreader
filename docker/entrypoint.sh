@@ -25,6 +25,54 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+APP_HOME="${APP_HOME:-/home/app}"
+APP_UID="${APP_UID:-1000}"
+APP_GID="${APP_GID:-1000}"
+# 模型目录（与 model_manager::set_models_dir 保持一致：app_data_dir/novel-proofreader/models）
+APP_MODELS_DIR="${APP_MODELS_DIR:-$APP_HOME/.local/share/cn.helilab.proofreader/novel-proofreader/models}"
+
+# 0. 权限准备
+#   NAS 等环境把宿主机目录挂载到数据目录时，属主往往不是容器内的 app 用户，
+#   WebKit 初始化写入数据目录会直接抛 "Permission denied"，因此以 root 启动时
+#   先修正属主，再降权为 app 用户运行（docker-example.yml 里配 user: "0:0"）。
+prepare_dir() {
+	local dir="$1" owner
+	mkdir -p "$dir" 2>/dev/null || true
+	if [ ! -d "$dir" ]; then
+		log "无法创建目录：$dir"
+		return
+	fi
+	owner="$(stat -c '%u:%g' "$dir" 2>/dev/null || echo unknown)"
+	if [ "$owner" != "$APP_UID:$APP_GID" ]; then
+		if chown -R "$APP_UID:$APP_GID" "$dir" 2>/dev/null; then
+			log "已修正目录属主：$dir（$owner -> $APP_UID:$APP_GID）"
+		else
+			log "无法修正目录属主，请手动执行：chown -R $APP_UID:$APP_GID $dir"
+		fi
+	fi
+}
+
+if [ "$(id -u)" = "0" ]; then
+	prepare_dir "$APP_HOME/.local/share"
+	prepare_dir "$APP_HOME/.config"
+	prepare_dir "$APP_HOME/.cache"
+	prepare_dir "$APP_HOME/.vnc"
+	prepare_dir "$APP_MODELS_DIR"
+	export HOME="$APP_HOME"
+	log "以 root 启动，权限修正完成，降权为 $APP_UID:$APP_GID 运行"
+	exec setpriv --reuid="$APP_UID" --regid="$APP_GID" --init-groups "$0" "$@"
+fi
+
+# 数据目录不可写时给出可操作的提示，避免 Tauri 抛出原始 panic
+for dir in "${XDG_DATA_HOME:-$HOME/.local/share}" "${XDG_CONFIG_HOME:-$HOME/.config}"; do
+	if ! (mkdir -p "$dir" && touch "$dir/.write_test") 2>/dev/null; then
+		log "错误：数据目录不可写：$dir"
+		log "该目录通常由宿主机目录挂载而来，请执行 chown -R $APP_UID:$APP_GID <宿主机对应目录> 后重启容器"
+		exit 1
+	fi
+	rm -f "$dir/.write_test"
+done
+
 # 1. 虚拟显示
 if ! xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
 	log "启动 Xvfb：$DISPLAY（$RESOLUTION）"

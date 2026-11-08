@@ -6,6 +6,7 @@
 //   2. 首次合成前确保服务已就绪（同一配置复用同一实例）
 //   3. 调用 /tts 合成并把 base64 WAV 解码成 ArrayBuffer
 // ============================================================
+import { invoke } from "@tauri-apps/api/core";
 import type { TTSConfig } from "../types";
 import { logger } from "./logger";
 import { applyWordReplacements } from "./textReplace";
@@ -81,11 +82,6 @@ function errorMessage(err: unknown): string {
 	if (err instanceof Error) return err.message;
 	if (typeof err === "string") return err;
 	return JSON.stringify(err);
-}
-
-async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-	const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
-	return tauriInvoke<T>(command, args);
 }
 
 /** 查询本地朗读环境状态（路径留空时后端会自动在模型/下载目录中探测） */

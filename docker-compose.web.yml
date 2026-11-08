@@ -1,0 +1,42 @@
+# ============================================================
+# 小说校对工具 Web 版：浏览器直接访问（无 VNC）
+# 启动：docker compose -f docker-compose.web.yml up -d --build
+# 访问：http://127.0.0.1:8080
+# ============================================================
+services:
+  proofreader-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        # 1 = 编译内置 llama.cpp 推理；0 = 仅云端/外部推理
+        WITH_LOCAL_LLM: ${WITH_LOCAL_LLM:-1}
+        # apt 镜像源，国内容器构建建议保持默认；置空则使用 archive.ubuntu.com
+        UBUNTU_MIRROR: ${UBUNTU_MIRROR:-mirrors.aliyun.com}
+        # cargo 编译并发数，内存不足时调低可避免 OOM
+        CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-4}
+        RUSTUP_DIST_SERVER: ${RUSTUP_DIST_SERVER:-https://rsproxy.cn}
+        RUSTUP_UPDATE_ROOT: ${RUSTUP_UPDATE_ROOT:-https://rsproxy.cn/rustup}
+    image: ${PROOFREADER_WEB_IMAGE:-novel-proofreader-web}:${PROOFREADER_VERSION:-0.20.0}
+    container_name: novel-proofreader-web
+    ports:
+      # 浏览器访问 http://<宿主机IP>:8080
+      - "${WEB_PORT:-8080}:8080"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      # 容器通常无 GPU，默认纯 CPU 推理
+      PROOFREADER_LLM_GPU_LAYERS: ${PROOFREADER_LLM_GPU_LAYERS:-0}
+      # 允许浏览的小说目录（只读挂载）
+      PROOFREADER_NOVELS_DIRS: /novels
+    volumes:
+      # 应用数据：模型、tools（llama-server / crispasr 运行时）、日志
+      - proofreader-web-data:/data
+      # 模型目录单独挂载：便于备份与在宿主机直接放模型文件
+      - proofreader-web-models:/data/models
+      # 将宿主机小说目录挂载进来，网页中可浏览导入（只读）
+      - ./novels:/novels:ro
+    restart: unless-stopped
+
+volumes:
+  proofreader-web-data:
+  proofreader-web-models:
