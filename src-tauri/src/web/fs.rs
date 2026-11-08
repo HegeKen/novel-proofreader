@@ -97,7 +97,7 @@ pub async fn list(
 
     let mut entries: Vec<FileEntry> = Vec::new();
     let read_dir = std::fs::read_dir(&target)
-        .map_err(|e| error_response(&format!("读取目录失败: {}", e)))?;
+        .map_err(|e| error_response(&format!("读取目录失败 {}: {}", target.display(), e)))?;
     for entry in read_dir.flatten() {
         let path = entry.path();
         let is_dir = path.is_dir();

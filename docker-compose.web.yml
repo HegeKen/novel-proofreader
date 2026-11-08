@@ -17,7 +17,13 @@ services:
         CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-4}
         RUSTUP_DIST_SERVER: ${RUSTUP_DIST_SERVER:-https://rsproxy.cn}
         RUSTUP_UPDATE_ROOT: ${RUSTUP_UPDATE_ROOT:-https://rsproxy.cn/rustup}
-    image: ${PROOFREADER_WEB_IMAGE:-novel-proofreader-web}:${PROOFREADER_VERSION:-0.20.0}
+        # llama.cpp 运行时下载源，国内构建 GitHub 不通时可覆盖为代理前缀
+        LLAMA_CPP_MIRROR: ${LLAMA_CPP_MIRROR:-https://github.com/ggml-org/llama.cpp/releases/download}
+        CRISPASR_MIRROR: ${CRISPASR_MIRROR:-https://github.com/CrispStrobe/CrispASR/releases/download}
+    # 可直接使用 GHCR / Docker Hub 镜像：
+    # PROOFREADER_WEB_IMAGE=ghcr.io/<owner>/novel-proofreader-web PROOFREADER_VERSION=0.21.0 docker compose -f docker-compose.web.yml up -d --no-build
+    # 或导入 CI 导出的 tar 包后使用：docker load -i novel-proofreader-web-0.21.0.tar
+    image: ${PROOFREADER_WEB_IMAGE:-novel-proofreader-web}:${PROOFREADER_VERSION:-0.21.0}
     container_name: novel-proofreader-web
     ports:
       # 浏览器访问 http://<宿主机IP>:8080

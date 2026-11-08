@@ -1,5 +1,25 @@
 # Proof Reader Changelog
 
+## v0.21.0 (2026-11-09)
+
+### ✨ 功能更新
+
+**Web 版部署支持**
+- 新增纯 Web 版部署方案：浏览器直接访问完整应用，无需 noVNC 远程桌面；局域网自用、无鉴权，默认监听 `0.0.0.0:8080`
+- 同仓库双模式：前端按运行时自动切换 Tauri IPC / HTTP RPC，桌面版行为完全不变
+- 首版覆盖全部功能：AI 校对（云端 + 本地 llama.cpp）、本地 TTS、VoiceDesign、情感分析、角色管理、文本对比
+- 新增「从服务器目录导入」：小说文件来自服务端挂载目录，网页内弹窗浏览选择 txt / epub 后直接解析导入
+- 服务端文件浏览 API 严格 `canonicalize` 校验，读取限定在允许根目录内（上限 200MB），防止越权访问
+- 新增 `Dockerfile.web` 与 `docker-compose.web.yml` / `docker-compose.web-example.yml`：独立 Web 镜像（无需 Xvfb/VNC/音频库），`EXPOSE 8080`，带 `/api/health` 健康检查；`DOCKER.md` 同步补充 Web 部署指南
+
+### 🛠️ 工程与工具链
+
+- Rust 侧拆分平台无关服务层：新增 `paths.rs`（统一桌面 / Web 数据目录解析，支持 `PROOFREADER_DATA_DIR` 等环境变量）、`events.rs`（`EventSink` 抽象，桌面走 `app.emit`、Web 走 SSE 广播）、`llm/service.rs`（从 commands 迁出业务逻辑）
+- 新增 `src-tauri/src/web/` 模块：axum 装配、`POST /api/rpc` 命令分发、`GET /api/events` SSE 事件推送（含心跳、禁用缓冲）、`/api/llm/stream` 流式推理、文件浏览接口；Web 入口 `bin/proofreader-web.rs` 与 `web-server` Cargo feature
+- 前端新增 `src/lib/backend/` 适配层：统一 `invoke` / `listen` / 文件选择接口，新增 `ServerFilePickerModal` 服务器文件选择弹窗与 `filePickerStore`
+- Web 模式默认 `PROOFREADER_LLM_GPU_LAYERS=0`，推理互斥忙时返回 409，避免打满 blocking 线程池
+- 版本号提升至 `0.21.0`
+
 ## v0.20.0 (2026-11-08)
 
 ### ✨ 功能更新

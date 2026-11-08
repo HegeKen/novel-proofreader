@@ -5,7 +5,7 @@
 # ============================================================
 
 # ---------- 构建阶段 ----------
-FROM ubuntu:22.04 AS builder
+FROM ubuntu:24.04 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 # 1 = 编译内置 llama.cpp 推理；0 = 仅云端/外部推理（镜像更小、构建更快）
@@ -20,13 +20,13 @@ ARG RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup
 
 ENV CARGO_TERM_COLOR=never \
     CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS} \
-    LIBCLANG_PATH=/usr/lib/llvm-14/lib
+    LIBCLANG_PATH=/usr/lib/llvm-18/lib
 
 RUN --mount=type=cache,target=/var/cache/apt/archives,sharing=locked \
     if [ -n "${UBUNTU_MIRROR}" ]; then \
       sed -i "s|http://archive.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g; \
               s|http://security.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" \
-              /etc/apt/sources.list; \
+              /etc/apt/sources.list.d/ubuntu.sources; \
     fi \
     && apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl git gnupg build-essential pkg-config \
@@ -74,12 +74,22 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     && install -D -m 0755 /app/src-tauri/target/release/proofreader-web /app/bin/proofreader-web
 
 # ---------- 运行阶段 ----------
-FROM ubuntu:22.04 AS runtime
+FROM ubuntu:24.04 AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG APP_UID=1000
 ARG APP_GID=1000
 ARG UBUNTU_MIRROR=mirrors.aliyun.com
+# 内置 llama-server（本地 TTS 运行时）版本，钉住 tag 保证构建可复现
+ARG LLAMA_CPP_TAG=b12129
+# 下载源：默认 GitHub；国内本地构建可覆盖为代理前缀，如
+# https://gh-proxy.com/https://github.com/ggml-org/llama.cpp/releases/download
+# 注意：第三方代理有篡改二进制风险，可信网络下优先给 Docker Desktop 配本机代理
+ARG LLAMA_CPP_MIRROR=https://github.com/ggml-org/llama.cpp/releases/download
+# 内置 CrispASR（VoiceDesign 本地 TTS 运行时）版本与下载源
+ARG CRISPASR_TAG=v0.8.52
+ARG CRISPASR_MIRROR=https://github.com/CrispStrobe/CrispASR/releases/download
+ARG TARGETARCH
 
 ENV LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
@@ -88,19 +98,58 @@ ENV LANG=C.UTF-8 \
     PROOFREADER_WEB_ROOT=/app/web \
     PROOFREADER_NOVELS_DIRS=/novels \
     PROOFREADER_LISTEN=0.0.0.0:8080 \
-    PROOFREADER_LLM_GPU_LAYERS=0
+    PROOFREADER_LLM_GPU_LAYERS=0 \
+    PROOFREADER_LLAMA_SERVER=/opt/llama/llama-server \
+    CRISPASR_BIN=/opt/crispasr/crispasr
 
 RUN --mount=type=cache,target=/var/cache/apt/archives,sharing=locked \
     if [ -n "${UBUNTU_MIRROR}" ]; then \
       sed -i "s|http://archive.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g; \
               s|http://security.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" \
-              /etc/apt/sources.list; \
+              /etc/apt/sources.list.d/ubuntu.sources; \
     fi \
-    && apt-get update && apt-get install -y --no-install-recommends \
+    && apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     ca-certificates curl tini tar libgomp1 tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-RUN groupadd -g "${APP_GID}" app \
+# 内置 llama.cpp 预编译运行时（TTS 用 llama-server），NAS 离线部署无需再下载；
+# 构建期校验动态库依赖完整。UI 的「自动安装」仍可用于后续升级
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) asset_arch="x64" ;; \
+      arm64) asset_arch="arm64" ;; \
+      *) echo "不支持的架构: ${TARGETARCH:-unknown}" >&2; exit 1 ;; \
+    esac; \
+    curl -fSL "${LLAMA_CPP_MIRROR}/${LLAMA_CPP_TAG}/llama-${LLAMA_CPP_TAG}-bin-ubuntu-${asset_arch}.tar.gz" \
+      -o /tmp/llama.tar.gz; \
+    tar -xzf /tmp/llama.tar.gz -C /opt; \
+    mv "/opt/llama-${LLAMA_CPP_TAG}" /opt/llama; \
+    rm /tmp/llama.tar.gz; \
+    chmod +x /opt/llama/llama-server; \
+    missing="$(ldd /opt/llama/llama-server | grep 'not found' || true)"; \
+    if [ -n "${missing}" ]; then echo "llama-server 缺少动态库: ${missing}" >&2; exit 1; fi
+
+# 内置 CrispASR（VoiceDesign 引擎），库文件自带且 RPATH=$ORIGIN，无需额外依赖
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) asset_arch="x86_64" ;; \
+      arm64) asset_arch="arm64" ;; \
+      *) echo "不支持的架构: ${TARGETARCH:-unknown}" >&2; exit 1 ;; \
+    esac; \
+    curl -fSL "${CRISPASR_MIRROR}/${CRISPASR_TAG}/crispasr-linux-${asset_arch}.tar.gz" \
+      -o /tmp/crispasr.tar.gz; \
+    tar -xzf /tmp/crispasr.tar.gz -C /opt; \
+    mv "/opt/crispasr-linux-${asset_arch}" /opt/crispasr; \
+    rm /tmp/crispasr.tar.gz; \
+    chmod +x /opt/crispasr/crispasr; \
+    missing="$(ldd /opt/crispasr/crispasr | grep 'not found' || true)"; \
+    if [ -n "${missing}" ]; then echo "crispasr 缺少动态库: ${missing}" >&2; exit 1; fi
+
+# noble 基础镜像自带 UID/GID 1000 的 ubuntu 用户/组，先移除避免与 APP_UID/APP_GID 冲突
+RUN userdel -r ubuntu 2>/dev/null || true; \
+    groupdel ubuntu 2>/dev/null || true; \
+    groupadd -g "${APP_GID}" app \
     && useradd -m -u "${APP_UID}" -g app -s /bin/bash app \
     && mkdir -p /data /novels /app/web \
     && chown -R app:app /data /app

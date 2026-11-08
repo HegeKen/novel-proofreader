@@ -63,7 +63,7 @@ function ServerFilePickerContent({ options }: ContentProps) {
 			})
 			.catch((err: unknown) => {
 				if (cancelled) return;
-				logger.errorGeneric("[ServerFilePicker] 读取目录失败:", err);
+				logger.errorGeneric("[ServerFilePicker] 读取目录失败:", err instanceof Error ? err.message : String(err));
 				setDirResult({ path: currentPath, error: err instanceof Error ? err.message : String(err) });
 			});
 		return () => {

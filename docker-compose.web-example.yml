@@ -14,8 +14,15 @@ services:
         CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-4}
         RUSTUP_DIST_SERVER: ${RUSTUP_DIST_SERVER:-https://rsproxy.cn}
         RUSTUP_UPDATE_ROOT: ${RUSTUP_UPDATE_ROOT:-https://rsproxy.cn/rustup}
-    image: novel-proofreader-web:0.20.0
+        # llama.cpp 运行时下载源，国内构建 GitHub 不通时可覆盖为代理前缀
+        LLAMA_CPP_MIRROR: ${LLAMA_CPP_MIRROR:-https://github.com/ggml-org/llama.cpp/releases/download}
+        CRISPASR_MIRROR: ${CRISPASR_MIRROR:-https://github.com/CrispStrobe/CrispASR/releases/download}
+    # NAS 离线部署：下载 CI 导出的 tar 包后执行
+    #   docker load -i novel-proofreader-web-0.21.0.tar
+    #   docker compose -f docker-compose.web-example.yml up -d --no-build
+    image: novel-proofreader-web:0.21.0
     container_name: novel-proofreader-web
+    user: "0:0"
     ports:
       - "8080:8080"
     environment:
@@ -27,6 +34,6 @@ services:
       - /volume3/MediaStorage/富媒体/文本/NPR/web-data:/data
       # 模型目录单独映射：可直接从宿主机放入 GGUF 模型
       - /volume3/MediaStorage/富媒体/文本/NPR/models:/data/models
-      # 小说目录（只读），网页中可浏览导入
-      - /volume3/MediaStorage/富媒体/文本/NPR/novels:/novels:ro
+      # 小说目录，网页中可浏览导入
+      - /volume3/MediaStorage/富媒体/文本/NPR/novels:/novels
     restart: unless-stopped

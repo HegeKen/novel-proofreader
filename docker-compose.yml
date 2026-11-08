@@ -19,8 +19,9 @@ services:
         # rustup-init 本体下载源
         RUSTUP_UPDATE_ROOT: ${RUSTUP_UPDATE_ROOT:-https://rsproxy.cn/rustup}
     # 可直接使用 GHCR / Docker Hub 镜像：
-    # PROOFREADER_IMAGE=ghcr.io/<owner>/novel-proofreader PROOFREADER_VERSION=0.20.0 docker compose up -d --no-build
-    image: ${PROOFREADER_IMAGE:-novel-proofreader}:${PROOFREADER_VERSION:-0.20.0}
+    # PROOFREADER_IMAGE=ghcr.io/<owner>/novel-proofreader PROOFREADER_VERSION=0.21.0 docker compose up -d --no-build
+    # 或导入 CI 导出的 tar 包后使用：docker load -i novel-proofreader-0.21.0.tar
+    image: ${PROOFREADER_IMAGE:-novel-proofreader}:${PROOFREADER_VERSION:-0.21.0}
     container_name: novel-proofreader
     ports:
       # 网页版（noVNC）：浏览器访问 http://<宿主机IP>:6080/vnc.html?autoconnect=true&resize=scale

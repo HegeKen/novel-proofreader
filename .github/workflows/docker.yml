@@ -1,7 +1,8 @@
 # ============================================================
-# 构建并推送 Docker 镜像
+# 构建并推送 Docker 镜像（桌面版 + Web 版），并导出 docker save tar 包
 # 触发：由 Build Release 工作流在发布标签时调用，或手动运行
 # 默认推送 GHCR；配置 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN 后同时推送 Docker Hub
+# tar 包作为构件保留 7 天；标签构建时同时附加到 GitHub Release
 # ============================================================
 name: Docker Image
 
@@ -13,7 +14,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
-  contents: read
+  # contents: write 用于把 tar 包附加到 GitHub Release
+  contents: write
   packages: write
 
 concurrency:
@@ -22,7 +24,23 @@ concurrency:
 
 jobs:
   publish:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          # 桌面版：Xvfb / x11vnc / noVNC 网页访问
+          # ghcr_suffix 为空：GHCR 路径沿用 ghcr.io/<owner>/<repo>，保持向后兼容
+          - id: desktop
+            dockerfile: Dockerfile
+            image: novel-proofreader
+            ghcr_suffix: ''
+          # Web 版：axum 服务端，浏览器直接访问
+          - id: web
+            dockerfile: Dockerfile.web
+            image: novel-proofreader-web
+            ghcr_suffix: -web
+
+    runs-on: ubuntu-latest
     timeout-minutes: 180
 
     env:
@@ -43,7 +61,7 @@ jobs:
           fi
           SHORT_SHA=$(git rev-parse --short HEAD)
           REPO_LOWER=$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
-          GHCR_IMAGE="ghcr.io/${REPO_LOWER}"
+          GHCR_IMAGE="ghcr.io/${REPO_LOWER}${{ matrix.variant.ghcr_suffix }}"
 
           TAGS="${GHCR_IMAGE}:${VERSION}"$'\n'"${GHCR_IMAGE}:sha-${SHORT_SHA}"
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
@@ -52,14 +70,19 @@ jobs:
 
           if [[ -n "${DOCKERHUB_USERNAME}" ]]; then
             HUB_USER_LOWER=$(printf '%s' "${DOCKERHUB_USERNAME}" | tr '[:upper:]' '[:lower:]')
-            HUB_IMAGE="docker.io/${HUB_USER_LOWER}/novel-proofreader"
+            HUB_IMAGE="docker.io/${HUB_USER_LOWER}/${{ matrix.variant.image }}"
             TAGS="${TAGS}"$'\n'"${HUB_IMAGE}:${VERSION}"$'\n'"${HUB_IMAGE}:sha-${SHORT_SHA}"
             if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
               TAGS="${TAGS}"$'\n'"${HUB_IMAGE}:latest"
             fi
           fi
 
+          # tar 文件名包含镜像名（区分 desktop / web 变体）与版本号
+          TAR_NAME="${{ matrix.variant.image }}-${VERSION}.tar"
+
           printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
+          printf 'ghcr_image=%s\n' "$GHCR_IMAGE" >> "$GITHUB_OUTPUT"
+          printf 'tar_name=%s\n' "$TAR_NAME" >> "$GITHUB_OUTPUT"
           printf 'tags<<EOF\n%s\nEOF\n' "$TAGS" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
@@ -83,23 +106,54 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ${{ matrix.variant.dockerfile }}
           # 原生 x86_64 构建，避免在 Apple Silicon 上通过 QEMU 编译 llama.cpp
           platforms: linux/amd64
           push: true
           tags: ${{ steps.prep.outputs.tags }}
           build-args: |
             WITH_LOCAL_LLM=1
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # 两个变体的构建缓存用 scope 隔离，避免互相覆盖
+          cache-from: type=gha,scope=${{ matrix.variant.id }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant.id }}
+
+      # 拉回刚推送的镜像并换成本地短名再导出，
+      # 使 docker load 后直接得到 novel-proofreader(-web):<version>
+      - name: Export image as tar
+        run: |
+          set -euo pipefail
+          SRC="${{ steps.prep.outputs.ghcr_image }}:${{ steps.prep.outputs.version }}"
+          LOCAL="${{ matrix.variant.image }}:${{ steps.prep.outputs.version }}"
+          docker pull "$SRC"
+          docker tag "$SRC" "$LOCAL"
+          docker save "$LOCAL" -o "${{ steps.prep.outputs.tar_name }}"
+
+      - name: Upload tar artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: docker-image-${{ matrix.variant.id }}-${{ steps.prep.outputs.version }}
+          path: ${{ steps.prep.outputs.tar_name }}
+          retention-days: 7
+
+      # 标签构建时把 tar 包附加到（草稿）Release，便于 NAS 等离线环境直接下载
+      - name: Attach tar to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: true
+          files: ${{ steps.prep.outputs.tar_name }}
 
       - name: Write summary
         run: |
           {
-            echo "### Docker 镜像已推送"
+            echo "### Docker 镜像已推送（${{ matrix.variant.id }} 版）"
             echo ""
+            echo "- 变体：\`${{ matrix.variant.id }}\`（Dockerfile：\`${{ matrix.variant.dockerfile }}\`）"
             echo "- 版本：\`${{ steps.prep.outputs.version }}\`"
+            echo "- 平台：\`linux/amd64\`，内置 local-llm 推理"
             echo "- 标签："
             echo '```'
             echo "${{ steps.prep.outputs.tags }}"
             echo '```'
+            echo "- tar 包：\`${{ steps.prep.outputs.tar_name }}\`（$(du -h "${{ steps.prep.outputs.tar_name }}" | cut -f1)，构件保留 7 天）"
           } >> "$GITHUB_STEP_SUMMARY"

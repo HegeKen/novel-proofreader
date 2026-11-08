@@ -343,7 +343,8 @@ jobs:
     needs: [build, build-local-llm]
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
-      contents: read
+      # contents: write 供被调用的 docker.yml 把 tar 包附加到 Release
+      contents: write
       packages: write
     uses: ./.github/workflows/docker.yml
     secrets: inherit

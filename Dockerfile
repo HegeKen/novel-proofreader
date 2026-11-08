@@ -5,7 +5,7 @@
 # ============================================================
 
 # ---------- 构建阶段 ----------
-FROM ubuntu:22.04 AS builder
+FROM ubuntu:24.04 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG WITH_LOCAL_LLM=1
@@ -24,14 +24,14 @@ ARG RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup
 
 ENV CARGO_TERM_COLOR=never \
     CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS} \
-    LIBCLANG_PATH=/usr/lib/llvm-14/lib
+    LIBCLANG_PATH=/usr/lib/llvm-18/lib
 
 # 缓存 .deb 安装包：重试构建时无需重复下载
 RUN --mount=type=cache,target=/var/cache/apt/archives,sharing=locked \
     if [ -n "${UBUNTU_MIRROR}" ]; then \
       sed -i "s|http://archive.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g; \
               s|http://security.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" \
-              /etc/apt/sources.list; \
+              /etc/apt/sources.list.d/ubuntu.sources; \
     fi \
     && apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl git gnupg build-essential pkg-config \
@@ -80,7 +80,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry,sharing=locked \
     && install -D -m 0755 /app/src-tauri/target/release/proofreader /app/bin/proofreader
 
 # ---------- 运行阶段 ----------
-FROM ubuntu:22.04 AS runtime
+FROM ubuntu:24.04 AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG APP_UID=1000
@@ -102,18 +102,22 @@ RUN --mount=type=cache,target=/var/cache/apt/archives,sharing=locked \
     if [ -n "${UBUNTU_MIRROR}" ]; then \
       sed -i "s|http://archive.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g; \
               s|http://security.ubuntu.com/ubuntu|http://${UBUNTU_MIRROR}/ubuntu|g" \
-              /etc/apt/sources.list; \
+              /etc/apt/sources.list.d/ubuntu.sources; \
     fi \
-    && apt-get update && apt-get install -y --no-install-recommends \
+    && apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     ca-certificates curl tini \
-    libwebkit2gtk-4.1-0 libgtk-3-0 libappindicator3-1 librsvg2-2 libxdo3 \
+    libwebkit2gtk-4.1-0 libgtk-3-0t64 libappindicator3-1 librsvg2-2 libxdo3 \
     libgl1 libglx-mesa0 libgomp1 \
     xvfb x11vnc novnc websockify openbox x11-utils \
     dbus-x11 pulseaudio pulseaudio-utils \
     fonts-noto-cjk fonts-dejavu-core fontconfig \
     && rm -rf /var/lib/apt/lists/*
 
-RUN groupadd -g "${APP_GID}" app \
+# noble 基础镜像自带 UID/GID 1000 的 ubuntu 用户/组，先移除避免与 APP_UID/APP_GID 冲突
+RUN userdel -r ubuntu 2>/dev/null || true; \
+    groupdel ubuntu 2>/dev/null || true; \
+    groupadd -g "${APP_GID}" app \
     && useradd -m -u "${APP_UID}" -g app -s /bin/bash app \
     && mkdir -p /home/app/.local/share /home/app/.config \
        /home/app/.local/share/cn.helilab.proofreader/novel-proofreader/models \

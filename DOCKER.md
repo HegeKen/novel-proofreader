@@ -121,7 +121,7 @@ sudo chown -R 1000:1000 data config
 不使用 Compose 时：
 
 ```bash
-docker build -t novel-proofreader:0.20.0 .
+docker build -t novel-proofreader:0.21.0 .
 
 docker run -d \
   --name novel-proofreader \
@@ -132,7 +132,7 @@ docker run -d \
   -v proofreader-config:/home/app/.config \
   --shm-size=1g \
   --restart unless-stopped \
-  novel-proofreader:0.20.0
+  novel-proofreader:0.21.0
 ```
 
 指定构建参数：
@@ -142,7 +142,7 @@ docker build \
   --build-arg WITH_LOCAL_LLM=1 \
   --build-arg NODE_VERSION=24.22.2 \
   --build-arg PNPM_VERSION=9 \
-  -t novel-proofreader:0.20.0 .
+  -t novel-proofreader:0.21.0 .
 ```
 
 ## GitHub Actions 自动构建
@@ -165,10 +165,10 @@ docker build \
 
 ```bash
 # 私有仓库/私有包需先登录；公开包可匿名拉取
-docker pull ghcr.io/<owner>/<repo>:0.20.0
+docker pull ghcr.io/<owner>/<repo>:0.21.0
 
 PROOFREADER_IMAGE=ghcr.io/<owner>/<repo> \
-PROOFREADER_VERSION=0.20.0 \
+PROOFREADER_VERSION=0.21.0 \
 docker compose up -d --no-build
 ```
 
@@ -321,7 +321,7 @@ curl http://127.0.0.1:8080/api/health
 ### 手动构建与运行
 
 ```bash
-docker build -f Dockerfile.web -t novel-proofreader-web:0.20.0 .
+docker build -f Dockerfile.web -t novel-proofreader-web:0.21.0 .
 
 docker run -d \
   --name novel-proofreader-web \
@@ -330,7 +330,7 @@ docker run -d \
   -v proofreader-web-models:/data/models \
   -v "$PWD/novels":/novels:ro \
   --restart unless-stopped \
-  novel-proofreader-web:0.20.0
+  novel-proofreader-web:0.21.0
 ```
 
 ### 不使用 Docker 的本地打包
@@ -366,8 +366,12 @@ docker compose up -d
 # Web 版镜像
 docker compose -f docker-compose.web.yml up -d --build
 DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose -f docker-compose.web.yml up -d --build
+
+# 导出镜像
+docker save novel-proofreader:0.21.0 -o novel-proofreader-0.21.0.tar
+docker save novel-proofreader-web:0.21.0 -o novel-proofreader-web-0.21.0.tar
 ```
 
-> `docker compose build` 本身不支持 `--platform` 参数；指定目标架构请使用 `DOCKER_DEFAULT_PLATFORM` 环境变量，或直接执行 `docker build --platform linux/amd64 -t novel-proofreader:0.20.0 .`。
+> `docker compose build` 本身不支持 `--platform` 参数；指定目标架构请使用 `DOCKER_DEFAULT_PLATFORM` 环境变量，或直接执行 `docker build --platform linux/amd64 -t novel-proofreader:0.21.0 .`。
 
 命名卷会保留小说库、配置、模型与本地 TTS 运行时。升级后应用版本号与镜像标签可在 `docker-compose.yml` / `docker-compose.web.yml` 的 `PROOFREADER_VERSION` 中调整。

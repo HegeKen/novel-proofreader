@@ -13,6 +13,10 @@ const memoryCache = new Map<string, string>();
 let cryptoKey: CryptoKey | null = null;
 let initPromise: Promise<void> | null = null;
 
+// crypto.subtle 仅在安全上下文（HTTPS / localhost）可用；
+// 通过 http://<局域网IP> 访问时为 undefined，此时降级为明文存储
+const subtleAvailable = typeof crypto !== 'undefined' && typeof crypto.subtle !== 'undefined';
+
 // IndexedDB 用于存储加密密钥（比 localStorage 更安全）
 function openDB(): Promise<IDBDatabase> {
 	return new Promise((resolve, reject) => {
@@ -53,7 +57,8 @@ async function loadOrCreateKey(): Promise<CryptoKey> {
 	});
 }
 
-async function ensureKey(): Promise<CryptoKey> {
+async function ensureKey(): Promise<CryptoKey | null> {
+	if (!subtleAvailable) return null;
 	if (cryptoKey) return cryptoKey;
 	cryptoKey = await loadOrCreateKey();
 	return cryptoKey;
@@ -61,6 +66,8 @@ async function ensureKey(): Promise<CryptoKey> {
 
 async function encrypt(plaintext: string): Promise<string> {
 	const key = await ensureKey();
+	// 降级：非安全上下文下直接存储明文
+	if (!key) return plaintext;
 	const iv = crypto.getRandomValues(new Uint8Array(12));
 	const encoded = new TextEncoder().encode(plaintext);
 	const ciphertext = await crypto.subtle.encrypt(
@@ -74,6 +81,8 @@ async function encrypt(plaintext: string): Promise<string> {
 
 async function decrypt(cipherBase64: string): Promise<string> {
 	const key = await ensureKey();
+	// 降级：非安全上下文下按明文读取
+	if (!key) return cipherBase64;
 	const combined = Uint8Array.from(atob(cipherBase64), c => c.charCodeAt(0));
 	const iv = combined.slice(0, 12);
 	const ciphertext = combined.slice(12);
@@ -113,6 +122,9 @@ async function migrateOldData(): Promise<void> {
 
 function ensureInit(): void {
 	if (!initPromise) {
+		if (!subtleAvailable) {
+			logger.warn('[SecureStorage] crypto.subtle 不可用（非安全上下文），敏感配置将以明文存储；请通过 HTTPS 或 localhost 访问以启用 AES-GCM 加密');
+		}
 		initPromise = ensureKey().then(() => migrateOldData());
 	}
 }
