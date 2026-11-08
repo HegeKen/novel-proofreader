@@ -1,0 +1,23 @@
+# 依赖与构建产物
+node_modules
+dist
+dist-ssr
+src-tauri/target
+.pnpm-store
+*.log
+
+# 版本控制与本地数据
+.git
+.gitignore
+.DS_Store
+graphify-out
+release-manifest-*.json
+
+# 签名与密钥：绝不进入构建上下文
+.signing
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.p8
+src-tauri/private_keys

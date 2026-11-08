@@ -1,0 +1,35 @@
+# ============================================================
+# 小说校对工具：容器化运行 + 浏览器访问
+# 启动：docker compose up -d --build
+# 访问：http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale
+# ============================================================
+services:
+  proofreader:
+    build:
+      context: .
+      args:
+        # 1 = 编译内置 llama.cpp 推理（镜像更大、构建更慢）；0 = 仅云端/外部推理
+        WITH_LOCAL_LLM: ${WITH_LOCAL_LLM:-1}
+    # 可直接使用 GHCR / Docker Hub 镜像：
+    # PROOFREADER_IMAGE=ghcr.io/<owner>/novel-proofreader PROOFREADER_VERSION=0.19.0 docker compose up -d --no-build
+    image: ${PROOFREADER_IMAGE:-novel-proofreader}:${PROOFREADER_VERSION:-0.19.0}
+    container_name: novel-proofreader
+    ports:
+      - "${NOVNC_PORT:-6080}:6080"
+    environment:
+      RESOLUTION: ${RESOLUTION:-1600x1000x24}
+      TZ: ${TZ:-Asia/Shanghai}
+      # 对外暴露时强烈建议设置密码
+      VNC_PASSWORD: ${VNC_PASSWORD:-}
+    volumes:
+      # 小说库、配置、模型与本地 TTS 运行时都保存在这两个目录
+      - proofreader-data:/home/app/.local/share
+      - proofreader-config:/home/app/.config
+      # 将宿主机小说目录挂载进来后，可在应用的文件选择器中直接打开
+      # - ./novels:/home/app/novels:ro
+    shm_size: "1gb"
+    restart: unless-stopped
+
+volumes:
+  proofreader-data:
+  proofreader-config:

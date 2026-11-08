@@ -52,6 +52,9 @@
 ### 🛠️ 工程与工具链
 
 - 新增 `src/utils/language.ts`：小说语言检测、英文缩进符清理与软换行重排
+- 新增 `Dockerfile` / `docker-compose.yml` / `docker/entrypoint.sh`：容器化运行 Linux 版，通过 noVNC 在浏览器访问，默认编译内置推理
+- 新增 `DOCKER.md` 部署指南，覆盖推理配置、数据持久化、反向代理、安全与故障排查
+- 新增 GitHub Actions 工作流 `docker.yml`：在原生 x86_64 runner 上构建镜像并推送 GHCR，可选同时推送 Docker Hub
 - 新增语言、英文章节识别、编码区分与 AI 角色识别的单元测试
 - 前端测试：339 个通过
 - 版本号提升至 `0.19.0`

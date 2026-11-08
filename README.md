@@ -534,6 +534,17 @@ pnpm tauri android build --target aarch64 --split-per-abi
 正式发版（签名 + 逐字节可复现）请改用下方「发布签名与可复现打包」中的 `pnpm run build:release`，
 该脚本与 CI 都已固定加上 `--split-per-abi`，产物会落到 `apk/<abi>/release/` 并按实际架构命名。
 
+### Docker 容器部署
+
+提供 Linux 运行容器（Xvfb + x11vnc + noVNC 网页访问），默认编译内置 llama.cpp 推理，数据通过命名卷持久化：
+
+```bash
+docker compose up -d --build
+# 打开 http://127.0.0.1:6080/vnc.html?autoconnect=true&resize=scale
+```
+
+完整说明（推理配置、数据备份、反向代理、安全与排障）见 [DOCKER.md](DOCKER.md)。
+
 ### 测试
 
 ```bash
