@@ -11,8 +11,8 @@ services:
         # 1 = 编译内置 llama.cpp 推理（镜像更大、构建更慢）；0 = 仅云端/外部推理
         WITH_LOCAL_LLM: ${WITH_LOCAL_LLM:-1}
     # 可直接使用 GHCR / Docker Hub 镜像：
-    # PROOFREADER_IMAGE=ghcr.io/<owner>/novel-proofreader PROOFREADER_VERSION=0.19.0 docker compose up -d --no-build
-    image: ${PROOFREADER_IMAGE:-novel-proofreader}:${PROOFREADER_VERSION:-0.19.0}
+    # PROOFREADER_IMAGE=ghcr.io/<owner>/novel-proofreader PROOFREADER_VERSION=0.20.0 docker compose up -d --no-build
+    image: ${PROOFREADER_IMAGE:-novel-proofreader}:${PROOFREADER_VERSION:-0.20.0}
     container_name: novel-proofreader
     ports:
       - "${NOVNC_PORT:-6080}:6080"

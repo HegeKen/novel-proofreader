@@ -1,6 +1,6 @@
 # Proof Reader Changelog
 
-## v0.19.0 (2026-11-08)
+## v0.20.0 (2026-11-08)
 
 ### ✨ 功能更新
 
@@ -58,8 +58,9 @@
 - 修复 Docker 构建因 pnpm 9 不识别 `pnpm-workspace.yaml` 中的 overrides 导致 `--frozen-lockfile` 失败；统一 pnpm 版本为 12.18.0
 - 新增 GitHub Actions 工作流 `docker.yml`，在发布流程中随 `v*` 标签构建镜像并推送 GHCR，可选同时推送 Docker Hub
 - 新增语言、英文章节识别、编码区分与 AI 角色识别的单元测试
+- 修复发布签名自检失败：版本更新后未重新计算 `signing.config.json` 的 `configKey`，导致 `--strict` 校验中止所有构建
 - 前端测试：339 个通过
-- 版本号提升至 `0.19.0`
+- 版本号提升至 `0.20.0`
 
 ## v0.18.0 (2026-11-03)
 

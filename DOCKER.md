@@ -119,7 +119,7 @@ sudo chown -R 1000:1000 data config
 不使用 Compose 时：
 
 ```bash
-docker build -t novel-proofreader:0.19.0 .
+docker build -t novel-proofreader:0.20.0 .
 
 docker run -d \
   --name novel-proofreader \
@@ -130,7 +130,7 @@ docker run -d \
   -v proofreader-config:/home/app/.config \
   --shm-size=1g \
   --restart unless-stopped \
-  novel-proofreader:0.19.0
+  novel-proofreader:0.20.0
 ```
 
 指定构建参数：
@@ -140,7 +140,7 @@ docker build \
   --build-arg WITH_LOCAL_LLM=1 \
   --build-arg NODE_MAJOR=24 \
   --build-arg PNPM_VERSION=9 \
-  -t novel-proofreader:0.19.0 .
+  -t novel-proofreader:0.20.0 .
 ```
 
 ## GitHub Actions 自动构建
@@ -163,10 +163,10 @@ docker build \
 
 ```bash
 # 私有仓库/私有包需先登录；公开包可匿名拉取
-docker pull ghcr.io/<owner>/<repo>:0.19.0
+docker pull ghcr.io/<owner>/<repo>:0.20.0
 
 PROOFREADER_IMAGE=ghcr.io/<owner>/<repo> \
-PROOFREADER_VERSION=0.19.0 \
+PROOFREADER_VERSION=0.20.0 \
 docker compose up -d --no-build
 ```
 
@@ -282,6 +282,6 @@ DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose build
 docker compose up -d
 ```
 
-> `docker compose build` 本身不支持 `--platform` 参数；指定目标架构请使用 `DOCKER_DEFAULT_PLATFORM` 环境变量，或直接执行 `docker build --platform linux/amd64 -t novel-proofreader:0.19.0 .`。
+> `docker compose build` 本身不支持 `--platform` 参数；指定目标架构请使用 `DOCKER_DEFAULT_PLATFORM` 环境变量，或直接执行 `docker build --platform linux/amd64 -t novel-proofreader:0.20.0 .`。
 
 命名卷会保留小说库、配置、模型与本地 TTS 运行时。升级后应用版本号与镜像标签可在 `docker-compose.yml` 的 `PROOFREADER_VERSION` 中调整。

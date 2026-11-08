@@ -4,7 +4,7 @@
   "app": {
     "productName": "Proof Reader",
     "identifier": "cn.helilab.proofreader",
-    "version": "0.19.0"
+    "version": "0.20.0"
   },
   "reproducibility": {
     "sourceDateEpoch": "commit",
@@ -62,5 +62,5 @@
     "keyId": "main",
     "endpoints": []
   },
-  "configKey": "sha256:81ba79a9b8822ee200e26cc6e8f68950a36d8c23473eeba3fb54bcbe5cb32b8b"
+  "configKey": "sha256:d4c9531c73ca825c5ff70b90bd9f73894ef40adf8d654c88ae305900b6b103fb"
 }
