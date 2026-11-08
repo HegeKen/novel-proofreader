@@ -42,6 +42,7 @@
 ### 🔐 依赖与安全
 
 - 更新前端依赖：Vite 8.3.6、Vitest 5.1.0、jsdom 31.0.0、lucide-react 1.70.0、Tailwind CSS 4.3.5（含 `@tailwindcss/vite`）、Zustand 5.1.0、`@vitejs/plugin-react` 6.2.1 等
+- TypeScript 降至 6.0.3：typescript-eslint 尚不支持 TS 7 原生版，恢复 ESLint 可用性并消除 peer 依赖告警
 - 更新 Rust 依赖（`cargo update`），桌面与 Android 目标均重新通过编译检查
 - `pnpm audit` 清零：升级 vite / jsdom(undici) / eslint(zod) / postcss(source-map-js) 相关依赖，并通过 `pnpm-workspace.yaml` 的 override 将 `minimatch` 提升到 11.0.1，修复 glob 放大 DoS
 - 新增 README 平台与构建版本支持矩阵，说明正常版 / LLM cmake 版在各平台的能力差异

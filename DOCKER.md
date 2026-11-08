@@ -22,7 +22,7 @@
           └─ 小说库与配置（持久化到数据卷）
 ```
 
-- 构建阶段：Ubuntu 22.04 + Node 24 + pnpm 9 + Rust，`pnpm tauri build --no-bundle`
+- 构建阶段：Ubuntu 22.04 + Node 24 + pnpm 12.18.0 + Rust，`pnpm tauri build --no-bundle`
 - 运行阶段：Ubuntu 22.04 + WebKitGTK + Xvfb + x11vnc + noVNC + PulseAudio 虚拟声卡
 - 默认编译 `local-llm` feature（内置 llama.cpp 推理）
 
