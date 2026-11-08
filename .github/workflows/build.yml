@@ -73,7 +73,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 12.18.0
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -265,7 +265,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 12.18.0
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -336,6 +336,17 @@ jobs:
             release-manifest-${{ matrix.target }}-local-llm.json
           retention-days: 7
           compression-level: 0
+
+  # ========== Docker 镜像（随 release 一同构建并推送） ==========
+  # 复用 docker.yml；等待桌面端构建成功后再推送，避免构建失败时仍发布镜像。
+  docker:
+    needs: [build, build-local-llm]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker.yml
+    secrets: inherit
 
   release:
     needs: [build, build-local-llm]

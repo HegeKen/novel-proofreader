@@ -147,9 +147,10 @@ docker build \
 
 本机构建受网络（例如 Docker Hub 502）与 CPU 架构（Apple Silicon 通过 QEMU 编译 llama.cpp 很慢）影响时，可交给 GitHub Actions 在原生 x86_64 runner 上构建并推送镜像。
 
-工作流：[`.github/workflows/docker.yml`](.github/workflows/docker.yml)
+工作流：[`.github/workflows/docker.yml`](.github/workflows/docker.yml)，由 [`build.yml`](.github/workflows/build.yml) 在发布流程中复用。
 
-- **触发**：推送 `v*` 标签，或在 Actions 页面手动运行
+- **触发**：推送 `v*` 标签时随 Build Release 一同构建；也可在 Actions 页面单独手动运行
+- **前置条件**：等待桌面端 `build` 与 `build-local-llm` 成功后才推送，避免发布失败仍产出镜像
 - **平台**：`linux/amd64`（VoiceDesign 本地运行时仅提供 x86_64 包）
 - **构建参数**：`WITH_LOCAL_LLM=1`
 - **缓存**：BuildKit `type=gha`，后续构建会明显加快

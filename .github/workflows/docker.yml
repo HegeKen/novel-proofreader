@@ -1,14 +1,12 @@
 # ============================================================
 # 构建并推送 Docker 镜像
-# 触发：推送 v* 标签、手动运行
+# 触发：由 Build Release 工作流在发布标签时调用，或手动运行
 # 默认推送 GHCR；配置 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN 后同时推送 Docker Hub
 # ============================================================
 name: Docker Image
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
   workflow_dispatch:
 
 env:
